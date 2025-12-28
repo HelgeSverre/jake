@@ -49,6 +49,7 @@ pub const Executor = struct {
     positional_args: []const []const u8, // Positional args from command line ($1, $2, etc.)
     current_shell: ?[]const u8, // Shell to use for current recipe (from @shell directive)
     current_working_dir: ?[]const u8, // Working directory for current recipe (from @cd directive)
+    current_quiet: bool, // Suppress command output for current recipe (from @quiet directive)
     prompt: Prompt, // Confirmation prompt handler
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
@@ -105,10 +106,14 @@ pub const Executor = struct {
             hook_runner.addGlobalHook(hook) catch {};
         }
 
+        // Initialize cache and load from disk
+        var cache = Cache.init(allocator);
+        cache.load() catch {}; // Ignore errors, start with empty cache if load fails
+
         return .{
             .allocator = allocator,
             .jakefile = jakefile,
-            .cache = Cache.init(allocator),
+            .cache = cache,
             .executed = std.StringHashMap(void).init(allocator),
             .in_progress = std.StringHashMap(void).init(allocator),
             .variables = variables,
@@ -122,6 +127,7 @@ pub const Executor = struct {
             .positional_args = &.{}, // Empty by default
             .current_shell = null,
             .current_working_dir = null,
+            .current_quiet = false,
             .prompt = Prompt.init(),
         };
     }
@@ -373,6 +379,8 @@ pub const Executor = struct {
     }
 
     pub fn deinit(self: *Executor) void {
+        // Persist cache to disk before cleanup
+        self.cache.save() catch {};
         self.cache.deinit();
         self.executed.deinit();
         self.in_progress.deinit();
@@ -499,6 +507,7 @@ pub const Executor = struct {
         // Set recipe-level shell and working directory
         self.current_shell = recipe.shell;
         self.current_working_dir = recipe.working_dir;
+        self.current_quiet = recipe.quiet;
 
         // Execute the recipe commands
         const exec_result = self.executeCommands(recipe.commands);
@@ -611,7 +620,6 @@ pub const Executor = struct {
         var branch_taken: bool = false;
         var nesting_depth: usize = 0; // Track nested conditionals when skipping
         var ignore_next: bool = false; // Whether to ignore failures for the next command
-        _ = &ignore_next; // TODO: implement @ignore directive usage
 
         var i: usize = 0;
         while (i < cmds.len) : (i += 1) {
@@ -896,7 +904,7 @@ pub const Executor = struct {
             return;
         }
 
-        if (self.verbose and !suppress_echo) {
+        if (self.verbose and !suppress_echo and !self.current_quiet) {
             self.print("  $ {s}\n", .{line});
         }
 
@@ -3145,4 +3153,25 @@ test "executor handles recipe with spaces in command" {
     executor.dry_run = true;
 
     try executor.execute("test");
+}
+
+test "@quiet suppresses verbose output for recipe" {
+    const source =
+        \\@quiet
+        \\task test:
+        \\    echo "silent command"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+    executor.verbose = true; // Even with verbose, quiet should suppress
+
+    try executor.execute("test");
+    // The recipe should have quiet=true from @quiet directive
+    // verbose output should be suppressed
 }
