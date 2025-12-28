@@ -1,0 +1,26 @@
+# Test: Parallel execution with -j flag
+# Run with: jake -j4 all
+
+task compile-frontend:
+    echo "Compiling frontend..."
+    sleep 0.1
+    echo "Frontend done"
+
+task compile-backend:
+    echo "Compiling backend..."
+    sleep 0.1
+    echo "Backend done"
+
+task compile-worker:
+    echo "Compiling worker..."
+    sleep 0.1
+    echo "Worker done"
+
+task compile-cli:
+    echo "Compiling CLI..."
+    sleep 0.1
+    echo "CLI done"
+
+@default
+task all: [compile-frontend, compile-backend, compile-worker, compile-cli]
+    echo "All compilations complete"

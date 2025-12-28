@@ -1,0 +1,7 @@
+=== JAKE BUILD SYSTEM ===
+Compiling TypeScript
+TypeScript compiled
+Bundling myapp assets
+Bundle ready
+Build v1.0.0 complete
+=== BUILD COMPLETE ===
