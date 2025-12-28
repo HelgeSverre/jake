@@ -9,6 +9,12 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/lang-Zig-F7A41D?style=flat-square&logo=zig" alt="Zig">
+  <img src="https://img.shields.io/badge/built_with-Claude_Code-cc785c?style=flat-square&logo=anthropic" alt="Built with Claude Code">
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License">
+</p>
+
+<p align="center">
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#features">Features</a> •
@@ -38,7 +44,7 @@
 
 ```bash
 # Requires Zig 0.15+
-git clone https://github.com/helgeblod/jake.git
+git clone https://github.com/HelgeSverre/jake.git
 cd jake
 zig build -Doptimize=ReleaseFast
 cp zig-out/bin/jake ~/.local/bin/
@@ -46,7 +52,7 @@ cp zig-out/bin/jake ~/.local/bin/
 
 ### Pre-built Binaries
 
-Download from [Releases](https://github.com/helgeblod/jake/releases):
+Download from [Releases](https://github.com/HelgeSverre/jake/releases):
 - `jake-linux-x86_64`
 - `jake-linux-aarch64`
 - `jake-macos-x86_64`
