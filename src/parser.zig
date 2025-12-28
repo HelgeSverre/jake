@@ -473,11 +473,11 @@ pub const Parser = struct {
 
         var deps: std.ArrayListUnmanaged([]const u8) = .empty;
 
-        // Parse dependencies
+        // Parse dependencies (can be identifiers or paths like dist/app.js)
         if (self.current.tag == .l_bracket) {
             self.advance();
             while (self.current.tag != .r_bracket and self.current.tag != .eof) {
-                if (self.current.tag == .ident) {
+                if (self.current.tag == .ident or self.current.tag == .glob_pattern) {
                     deps.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
                 }
                 self.advance();
@@ -600,11 +600,11 @@ pub const Parser = struct {
 
         _ = try self.expectWithMessage(.colon, "expected ':' after task name");
 
-        // Parse dependencies
+        // Parse dependencies (can be identifiers or paths like dist/app.js)
         if (self.current.tag == .l_bracket) {
             self.advance();
             while (self.current.tag != .r_bracket and self.current.tag != .eof) {
-                if (self.current.tag == .ident) {
+                if (self.current.tag == .ident or self.current.tag == .glob_pattern) {
                     deps.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
                 }
                 self.advance();
