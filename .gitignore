@@ -15,3 +15,9 @@ zig-cache/
 
 # Debug
 *.pdb
+
+# Compiled libraries and objects
+*.a
+*.o
+*.so
+*.dylib
