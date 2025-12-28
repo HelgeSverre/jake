@@ -69,12 +69,6 @@ pub const Directive = struct {
     pub const Kind = enum {
         dotenv,
         require,
-        import,
-        default,
-        builtin,
-        before,
-        after,
-        on_error,
         @"export",
     };
 };
