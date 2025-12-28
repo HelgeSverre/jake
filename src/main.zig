@@ -26,6 +26,7 @@ pub fn main() !void {
     var jakefile_path: []const u8 = "Jakefile";
     var dry_run = false;
     var verbose = false;
+    var auto_yes = false;
     var list_recipes = false;
     var show_help = false;
     var show_version = false;
@@ -50,6 +51,8 @@ pub fn main() !void {
             dry_run = true;
         } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
             verbose = true;
+        } else if (std.mem.eql(u8, arg, "--yes") or std.mem.eql(u8, arg, "-y")) {
+            auto_yes = true;
         } else if (std.mem.eql(u8, arg, "-f") or std.mem.eql(u8, arg, "--jakefile")) {
             i += 1;
             if (i < args.len) {
@@ -124,6 +127,7 @@ pub fn main() !void {
     defer executor.deinit();
     executor.dry_run = dry_run;
     executor.verbose = verbose;
+    executor.auto_yes = auto_yes;
     executor.jobs = jobs;
     executor.setPositionalArgs(positional_args.items);
 
@@ -244,6 +248,7 @@ fn printHelp() void {
         \\    -l, --list         List available recipes
         \\    -n, --dry-run      Print commands without executing
         \\    -v, --verbose      Show verbose output
+        \\    -y, --yes          Auto-confirm all @confirm prompts
         \\    -f, --jakefile     Use specified Jakefile
         \\    -w, --watch [PAT]  Watch files and re-run on changes
         \\                       Optional: specify glob pattern to watch
