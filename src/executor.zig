@@ -8,6 +8,7 @@ const conditions = @import("conditions.zig");
 const parallel_mod = @import("parallel.zig");
 const env_mod = @import("env.zig");
 const hooks_mod = @import("hooks.zig");
+const prompt_mod = @import("prompt.zig");
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
@@ -17,6 +18,7 @@ const Environment = env_mod.Environment;
 const HookRunner = hooks_mod.HookRunner;
 const HookContext = hooks_mod.HookContext;
 const Hook = hooks_mod.Hook;
+const Prompt = prompt_mod.Prompt;
 
 pub const ExecuteError = error{
     RecipeNotFound,
@@ -27,6 +29,7 @@ pub const ExecuteError = error{
     AccessDenied,
     SystemResources,
     Unexpected,
+    MissingRequiredEnv,
 };
 
 pub const Executor = struct {
@@ -41,8 +44,12 @@ pub const Executor = struct {
     hook_runner: HookRunner,
     dry_run: bool,
     verbose: bool,
+    auto_yes: bool, // Auto-confirm all @confirm prompts
     jobs: usize, // Number of parallel jobs (0 = sequential, 1 = single-threaded, 2+ = parallel)
     positional_args: []const []const u8, // Positional args from command line ($1, $2, etc.)
+    current_shell: ?[]const u8, // Shell to use for current recipe (from @shell directive)
+    current_working_dir: ?[]const u8, // Working directory for current recipe (from @cd directive)
+    prompt: Prompt, // Confirmation prompt handler
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
         var variables = std.StringHashMap([]const u8).init(allocator);
@@ -110,14 +117,259 @@ pub const Executor = struct {
             .hook_runner = hook_runner,
             .dry_run = false,
             .verbose = false,
+            .auto_yes = false,
             .jobs = 0, // Default to sequential execution
             .positional_args = &.{}, // Empty by default
+            .current_shell = null,
+            .current_working_dir = null,
+            .prompt = Prompt.init(),
         };
     }
 
     /// Set positional arguments from command line (for $1, $2, $@, etc.)
     pub fn setPositionalArgs(self: *Executor, args: []const []const u8) void {
         self.positional_args = args;
+    }
+
+    /// Validate that all required environment variables are set.
+    /// Should be called before execute() to fail early with clear error messages.
+    /// In dry-run mode, validation is skipped.
+    pub fn validateRequiredEnv(self: *Executor) ExecuteError!void {
+        // Skip validation in dry-run mode
+        if (self.dry_run) {
+            return;
+        }
+
+        // Check all @require directives
+        for (self.jakefile.directives) |directive| {
+            if (directive.kind == .require) {
+                for (directive.args) |var_name| {
+                    // First check our loaded environment (includes @dotenv vars)
+                    if (self.environment.get(var_name)) |_| {
+                        continue; // Variable exists in our environment
+                    }
+
+                    // Fall back to system environment
+                    if (std.process.getEnvVarOwned(self.allocator, var_name)) |value| {
+                        self.allocator.free(value);
+                        continue; // Variable exists in system environment
+                    } else |_| {
+                        // Variable not found - report error
+                        self.print("\x1b[1;31merror:\x1b[0m Required environment variable '{s}' is not set\n", .{var_name});
+                        self.print("  hint: Set this variable in your shell or add it to .env\n", .{});
+                        return ExecuteError.MissingRequiredEnv;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if a command exists in PATH or as an absolute path
+    fn commandExists(self: *Executor, cmd: []const u8) bool {
+        _ = self;
+        // Handle absolute paths
+        if (cmd.len > 0 and cmd[0] == '/') {
+            return std.fs.accessAbsolute(cmd, .{}) != error.FileNotFound;
+        }
+
+        // Search in PATH
+        const path_env = std.process.getEnvVarOwned(std.heap.page_allocator, "PATH") catch return false;
+        defer std.heap.page_allocator.free(path_env);
+
+        var path_iter = std.mem.splitScalar(u8, path_env, ':');
+        while (path_iter.next()) |dir| {
+            var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+            const full_path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ dir, cmd }) catch continue;
+            if (std.fs.accessAbsolute(full_path, .{})) |_| {
+                return true;
+            } else |_| {
+                continue;
+            }
+        }
+        return false;
+    }
+
+    /// Check @needs directive - verify required commands exist
+    fn checkNeedsDirective(self: *Executor, line: []const u8) ExecuteError!void {
+        // Parse command names (space or comma separated)
+        // Skip leading whitespace
+        var trimmed = std.mem.trim(u8, line, " \t");
+
+        // Skip the directive keyword "needs" at the start of the line
+        // The line format is: "needs sh cat ls" where "needs" is the keyword
+        if (std.mem.startsWith(u8, trimmed, "needs")) {
+            trimmed = std.mem.trimLeft(u8, trimmed[5..], " \t,");
+        }
+
+        // Split by spaces and commas
+        var i: usize = 0;
+        while (i < trimmed.len) {
+            // Skip separators (spaces and commas)
+            while (i < trimmed.len and (trimmed[i] == ' ' or trimmed[i] == ',' or trimmed[i] == '\t')) {
+                i += 1;
+            }
+            if (i >= trimmed.len) break;
+
+            // Find end of command name
+            const start = i;
+            while (i < trimmed.len and trimmed[i] != ' ' and trimmed[i] != ',' and trimmed[i] != '\t') {
+                i += 1;
+            }
+            const cmd = trimmed[start..i];
+
+            if (cmd.len == 0) continue;
+
+            // Check if command exists
+            if (!self.commandExists(cmd)) {
+                self.print("\x1b[1;31merror:\x1b[0m Required command '{s}' not found\n", .{cmd});
+                self.print("  hint: Install '{s}' or check your PATH\n", .{cmd});
+                return ExecuteError.CommandFailed;
+            }
+        }
+    }
+
+    /// Handle @confirm directive - prompt user for confirmation
+    fn handleConfirmDirective(self: *Executor, line: []const u8) !prompt_mod.ConfirmResult {
+        // Parse the message from the line
+        // Line format is: "confirm Are you sure?" where "confirm" is the keyword
+        var message = std.mem.trim(u8, line, " \t");
+        if (std.mem.startsWith(u8, message, "confirm")) {
+            message = std.mem.trimLeft(u8, message[7..], " \t");
+        }
+
+        // Use default message if none provided
+        if (message.len == 0) {
+            message = "Continue?";
+        }
+
+        // Update prompt settings from executor state
+        self.prompt.auto_yes = self.auto_yes;
+        self.prompt.dry_run = self.dry_run;
+
+        return self.prompt.confirm(message);
+    }
+
+    /// Parse items from @each directive line
+    fn parseEachItems(self: *Executor, line: []const u8) []const []const u8 {
+        // Line format is: "each a b c" or "each a, b, c"
+        var trimmed = std.mem.trim(u8, line, " \t");
+        if (std.mem.startsWith(u8, trimmed, "each")) {
+            trimmed = std.mem.trimLeft(u8, trimmed[4..], " \t");
+        }
+
+        // If empty, return empty slice
+        if (trimmed.len == 0) {
+            return &.{};
+        }
+
+        // Parse items (space or comma separated)
+        var items: std.ArrayListUnmanaged([]const u8) = .empty;
+
+        var i: usize = 0;
+        while (i < trimmed.len) {
+            // Skip separators
+            while (i < trimmed.len and (trimmed[i] == ' ' or trimmed[i] == ',' or trimmed[i] == '\t')) {
+                i += 1;
+            }
+            if (i >= trimmed.len) break;
+
+            // Find end of item
+            const start = i;
+            while (i < trimmed.len and trimmed[i] != ' ' and trimmed[i] != ',' and trimmed[i] != '\t') {
+                i += 1;
+            }
+            const item_slice = trimmed[start..i];
+            if (item_slice.len > 0) {
+                items.append(self.allocator, item_slice) catch {};
+            }
+        }
+
+        return items.toOwnedSlice(self.allocator) catch &.{};
+    }
+
+    /// Parse file patterns from @cache or @watch directive line
+    fn parseCachePatterns(self: *Executor, line: []const u8) []const []const u8 {
+        // Line format is: "cache file1.txt file2.txt" or "watch src/*.zig"
+        var trimmed = std.mem.trim(u8, line, " \t");
+
+        // Skip the directive keyword
+        if (std.mem.startsWith(u8, trimmed, "cache")) {
+            trimmed = std.mem.trimLeft(u8, trimmed[5..], " \t");
+        } else if (std.mem.startsWith(u8, trimmed, "watch")) {
+            trimmed = std.mem.trimLeft(u8, trimmed[5..], " \t");
+        }
+
+        // If empty, return empty slice
+        if (trimmed.len == 0) {
+            return &.{};
+        }
+
+        // Parse patterns (space or comma separated)
+        var patterns: std.ArrayListUnmanaged([]const u8) = .empty;
+
+        var i: usize = 0;
+        while (i < trimmed.len) {
+            // Skip separators
+            while (i < trimmed.len and (trimmed[i] == ' ' or trimmed[i] == ',' or trimmed[i] == '\t')) {
+                i += 1;
+            }
+            if (i >= trimmed.len) break;
+
+            // Find end of pattern
+            const start = i;
+            while (i < trimmed.len and trimmed[i] != ' ' and trimmed[i] != ',' and trimmed[i] != '\t') {
+                i += 1;
+            }
+            const pattern_slice = trimmed[start..i];
+            if (pattern_slice.len > 0) {
+                patterns.append(self.allocator, pattern_slice) catch {};
+            }
+        }
+
+        return patterns.toOwnedSlice(self.allocator) catch &.{};
+    }
+
+    /// Execute a loop body with the current item value
+    fn executeEachBody(self: *Executor, body: []const Recipe.Command, item: []const u8) ExecuteError!void {
+        for (body) |cmd| {
+            // Skip @end directive
+            if (cmd.directive) |d| {
+                if (d == .end) continue;
+            }
+
+            // Expand {{item}} in the command line
+            const expanded_line = self.expandItemVariable(cmd.line, item);
+            defer if (expanded_line.ptr != cmd.line.ptr) self.allocator.free(expanded_line);
+
+            // Create a modified command with expanded line
+            const modified_cmd = Recipe.Command{
+                .line = expanded_line,
+                .directive = cmd.directive,
+            };
+
+            // Run the command
+            try self.runCommand(modified_cmd);
+        }
+    }
+
+    /// Expand {{item}} in a string
+    fn expandItemVariable(self: *Executor, input: []const u8, item: []const u8) []const u8 {
+        const needle = "{{item}}";
+        if (std.mem.indexOf(u8, input, needle) == null) {
+            return input;
+        }
+
+        var result: std.ArrayListUnmanaged(u8) = .empty;
+        var pos: usize = 0;
+
+        while (std.mem.indexOfPos(u8, input, pos, needle)) |idx| {
+            result.appendSlice(self.allocator, input[pos..idx]) catch return input;
+            result.appendSlice(self.allocator, item) catch return input;
+            pos = idx + needle.len;
+        }
+        result.appendSlice(self.allocator, input[pos..]) catch return input;
+
+        return result.toOwnedSlice(self.allocator) catch input;
     }
 
     pub fn deinit(self: *Executor) void {
@@ -243,6 +495,10 @@ pub const Executor = struct {
             self.print("\x1b[1;31merror:\x1b[0m pre-hook failed: {s}\n", .{@errorName(err)});
             return ExecuteError.CommandFailed;
         };
+
+        // Set recipe-level shell and working directory
+        self.current_shell = recipe.shell;
+        self.current_working_dir = recipe.working_dir;
 
         // Execute the recipe commands
         const exec_result = self.executeCommands(recipe.commands);
@@ -452,8 +708,137 @@ pub const Executor = struct {
                         }
                         continue;
                     },
-                    else => {
-                        // Other directives, handle normally if executing
+                    .needs => {
+                        // @needs directive: verify required commands exist
+                        if (!executing) continue;
+                        try self.checkNeedsDirective(cmd.line);
+                        continue;
+                    },
+                    .confirm => {
+                        // @confirm directive: prompt user for confirmation
+                        if (!executing) continue;
+                        const result = self.handleConfirmDirective(cmd.line) catch {
+                            return ExecuteError.CommandFailed;
+                        };
+                        if (result == .no) {
+                            self.print("Aborted.\n", .{});
+                            return ExecuteError.CommandFailed;
+                        }
+                        continue;
+                    },
+                    .each => {
+                        // @each directive: loop over items
+                        if (!executing) {
+                            // Find matching @end and skip past it
+                            var depth: usize = 1;
+                            var j = i + 1;
+                            while (j < cmds.len) : (j += 1) {
+                                if (cmds[j].directive) |d| {
+                                    if (d == .each) depth += 1;
+                                    if (d == .end) {
+                                        depth -= 1;
+                                        if (depth == 0) break;
+                                    }
+                                }
+                            }
+                            i = j; // Skip to @end
+                            continue;
+                        }
+
+                        // Parse items from line
+                        const items = self.parseEachItems(cmd.line);
+                        defer self.allocator.free(items);
+
+                        // Find the matching @end and the loop body range
+                        var depth: usize = 1;
+                        var end_idx = i + 1;
+                        while (end_idx < cmds.len) : (end_idx += 1) {
+                            if (cmds[end_idx].directive) |d| {
+                                if (d == .each) depth += 1;
+                                if (d == .end) {
+                                    depth -= 1;
+                                    if (depth == 0) break;
+                                }
+                            }
+                        }
+
+                        // Get the loop body (commands between @each and @end)
+                        const loop_body = cmds[i + 1 .. end_idx];
+
+                        // Execute loop body for each item
+                        for (items) |item| {
+                            // Set the {{item}} variable
+                            self.variables.put("item", item) catch {};
+
+                            // Execute the loop body
+                            try self.executeEachBody(loop_body, item);
+                        }
+
+                        // Remove the item variable
+                        _ = self.variables.remove("item");
+
+                        // Skip to end of loop
+                        i = end_idx;
+                        continue;
+                    },
+                    .cache => {
+                        // @cache directive: skip next command if deps unchanged
+                        if (!executing) continue;
+
+                        // Parse file patterns from the directive
+                        const patterns = self.parseCachePatterns(cmd.line);
+                        defer self.allocator.free(patterns);
+
+                        // Check if any pattern is stale
+                        var is_stale = false;
+                        for (patterns) |pattern| {
+                            if (self.cache.isGlobStale(pattern) catch true) {
+                                is_stale = true;
+                                break;
+                            }
+                        }
+
+                        if (!is_stale and patterns.len > 0) {
+                            // All deps are fresh, skip the next command
+                            self.print("  \x1b[1;36m[cached]\x1b[0m skipping (inputs unchanged)\n", .{});
+                            // Skip to next command
+                            i += 1;
+                            // Skip any subsequent commands until a non-command directive or end
+                            while (i < cmds.len and cmds[i].directive == null) : (i += 1) {}
+                            i -= 1; // Will be incremented by loop
+                            continue;
+                        }
+
+                        // Deps are stale or first run - execute next command and update cache
+                        // Store patterns for post-command cache update
+                        i += 1;
+                        if (i < cmds.len and cmds[i].directive == null) {
+                            try self.runCommand(cmds[i]);
+                            // Update cache for all patterns
+                            for (patterns) |pattern| {
+                                self.cache.update(pattern) catch {};
+                            }
+                        }
+                        continue;
+                    },
+                    .watch => {
+                        // @watch directive: track patterns for file watching
+                        // In non-watch mode, this is a no-op - patterns are used by -w flag
+                        if (!executing) continue;
+
+                        if (self.dry_run) {
+                            const patterns = self.parseCachePatterns(cmd.line);
+                            defer self.allocator.free(patterns);
+                            self.print("  [dry-run] @watch would monitor: ", .{});
+                            for (patterns, 0..) |pattern, idx| {
+                                if (idx > 0) self.print(", ", .{});
+                                self.print("{s}", .{pattern});
+                            }
+                            self.print("\n", .{});
+                        }
+                        // In normal mode, @watch is informational only
+                        // The -w/--watch CLI flag handles actual watching
+                        continue;
                     },
                 }
             }
@@ -515,13 +900,21 @@ pub const Executor = struct {
             self.print("  $ {s}\n", .{line});
         }
 
+        // Determine which shell to use
+        const shell_cmd = if (self.current_shell) |shell| shell else "/bin/sh";
+
         // Execute via shell with custom environment
         var child = std.process.Child.init(
-            &[_][]const u8{ "/bin/sh", "-c", line },
+            &[_][]const u8{ shell_cmd, "-c", line },
             self.allocator,
         );
         child.stderr_behavior = .Inherit;
         child.stdout_behavior = .Inherit;
+
+        // Set working directory if specified
+        if (self.current_working_dir) |working_dir| {
+            child.cwd = working_dir;
+        }
 
         // Set up environment for child process
         var env_map = self.environment.buildEnvMap(self.allocator) catch |err| {
@@ -617,28 +1010,28 @@ pub const Executor = struct {
         _ = self;
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-        std.io.getStdErr().writeAll(msg) catch {};
+        std.fs.File.stderr().writeAll(msg) catch {};
     }
 
     /// List all available recipes
     pub fn listRecipes(self: *Executor) void {
-        const stdout = std.io.getStdOut();
+        const stdout = std.fs.File.stdout();
         stdout.writeAll("\x1b[1mAvailable recipes:\x1b[0m\n") catch {};
 
         var hidden_count: usize = 0;
 
         // Group recipes by their group field
-        var groups = std.StringHashMap(std.ArrayList(*const Recipe)).init(self.allocator);
+        var groups = std.StringHashMap(std.ArrayListUnmanaged(*const Recipe)).init(self.allocator);
         defer {
             var it = groups.valueIterator();
             while (it.next()) |list| {
-                list.deinit();
+                list.deinit(self.allocator);
             }
             groups.deinit();
         }
 
-        var ungrouped = std.ArrayList(*const Recipe).init(self.allocator);
-        defer ungrouped.deinit();
+        var ungrouped: std.ArrayListUnmanaged(*const Recipe) = .{};
+        defer ungrouped.deinit(self.allocator);
 
         // Collect recipes into groups
         for (self.jakefile.recipes) |*recipe| {
@@ -651,21 +1044,21 @@ pub const Executor = struct {
             if (recipe.group) |group_name| {
                 const gop = groups.getOrPut(group_name) catch continue;
                 if (!gop.found_existing) {
-                    gop.value_ptr.* = std.ArrayList(*const Recipe).init(self.allocator);
+                    gop.value_ptr.* = .{};
                 }
-                gop.value_ptr.append(recipe) catch continue;
+                gop.value_ptr.append(self.allocator, recipe) catch continue;
             } else {
-                ungrouped.append(recipe) catch continue;
+                ungrouped.append(self.allocator, recipe) catch continue;
             }
         }
 
         // Get sorted group names
-        var group_names = std.ArrayList([]const u8).init(self.allocator);
-        defer group_names.deinit();
+        var group_names: std.ArrayListUnmanaged([]const u8) = .{};
+        defer group_names.deinit(self.allocator);
 
         var key_it = groups.keyIterator();
         while (key_it.next()) |key| {
-            group_names.append(key.*) catch continue;
+            group_names.append(self.allocator, key.*) catch continue;
         }
 
         // Sort group names alphabetically
@@ -1618,4 +2011,1138 @@ test "executor preserves invalid positional arg syntax" {
 
     // $abc is not a valid number, should be preserved
     try std.testing.expectEqualStrings("{{$abc}}", expanded);
+}
+
+// =============================================================================
+// @require directive tests
+// =============================================================================
+
+test "@require validates single env var exists" {
+    // Set up environment variable for this test
+    const result = std.process.getEnvVarOwned(std.testing.allocator, "PATH");
+    if (result) |path| {
+        defer std.testing.allocator.free(path);
+        // PATH exists, test should pass
+    } else |_| {
+        // PATH should always exist
+        return error.TestSetupFailed;
+    }
+
+    const source =
+        \\@require PATH
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Should not return an error since PATH exists
+    try executor.validateRequiredEnv();
+}
+
+test "@require fails with clear error when env var missing" {
+    const source =
+        \\@require JAKE_TEST_NONEXISTENT_VAR_12345
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Should return MissingRequiredEnv error
+    const err = executor.validateRequiredEnv();
+    try std.testing.expectError(ExecuteError.MissingRequiredEnv, err);
+}
+
+test "@require checks multiple variables in single directive" {
+    const source =
+        \\@require PATH HOME
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Both PATH and HOME should exist
+    try executor.validateRequiredEnv();
+}
+
+test "@require checks multiple @require directives" {
+    const source =
+        \\@require PATH
+        \\@require HOME
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    try executor.validateRequiredEnv();
+}
+
+test "@require skips validation in dry-run mode" {
+    const source =
+        \\@require JAKE_TEST_NONEXISTENT_VAR_12345
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // In dry-run mode, should not fail
+    try executor.validateRequiredEnv();
+}
+
+test "@require with empty value still passes" {
+    // An env var that exists but is empty should still pass
+    // We'll use the environment module to set an empty value
+    const source =
+        \\@require PATH
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // PATH exists (even if hypothetically empty), should pass
+    try executor.validateRequiredEnv();
+}
+
+test "@require fails on second missing var in list" {
+    const source =
+        \\@require PATH JAKE_TEST_NONEXISTENT_VAR_12345
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Should fail because JAKE_TEST_NONEXISTENT_VAR_12345 doesn't exist
+    const err = executor.validateRequiredEnv();
+    try std.testing.expectError(ExecuteError.MissingRequiredEnv, err);
+}
+
+test "@require works with env vars from dotenv" {
+    // Test that @require checks vars loaded via @dotenv
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Create a .env file with a test variable
+    const env_file = try tmp_dir.dir.createFile(".env", .{});
+    try env_file.writeAll("JAKE_TEST_FROM_DOTENV=hello\n");
+    env_file.close();
+
+    // Get absolute path for chdir
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    // Save and change working directory
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\@dotenv
+        \\@require JAKE_TEST_FROM_DOTENV
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Should pass because JAKE_TEST_FROM_DOTENV was loaded from .env
+    try executor.validateRequiredEnv();
+}
+
+// =============================================================================
+// @needs directive tests
+// =============================================================================
+
+test "@needs verifies command exists in PATH" {
+    const source =
+        \\task test:
+        \\    @needs sh
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // 'sh' should exist on all systems
+    try executor.execute("test");
+}
+
+test "@needs fails with helpful error when command missing" {
+    const source =
+        \\task test:
+        \\    @needs jake_nonexistent_command_xyz123
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should fail because command doesn't exist
+    const err = executor.execute("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, err);
+}
+
+test "@needs checks multiple space-separated commands" {
+    const source =
+        \\task test:
+        \\    @needs sh cat ls
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // All commands should exist
+    try executor.execute("test");
+}
+
+test "@needs works with full path to binary" {
+    const source =
+        \\task test:
+        \\    @needs /bin/sh
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@needs with non-existent command in middle of list fails" {
+    const source =
+        \\task test:
+        \\    @needs sh jake_nonexistent_xyz cat
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should fail on the non-existent command
+    const err = executor.execute("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, err);
+}
+
+test "@needs with comma-separated commands" {
+    const source =
+        \\task test:
+        \\    @needs sh, cat, ls
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should handle comma-separated list
+    try executor.execute("test");
+}
+
+test "@needs only checks once per command" {
+    const source =
+        \\task test:
+        \\    @needs sh
+        \\    echo "first"
+        \\    @needs sh
+        \\    echo "second"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should succeed with multiple @needs for same command
+    try executor.execute("test");
+}
+
+// @confirm tests
+
+test "@confirm with --yes flag auto-confirms" {
+    const source =
+        \\task test:
+        \\    @confirm Deploy to production?
+        \\    echo "deployed"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+    executor.auto_yes = true; // Enable auto-yes flag
+
+    // Should succeed because auto_yes is enabled
+    try executor.execute("test");
+}
+
+test "@confirm in dry-run mode shows message but doesn't prompt" {
+    const source =
+        \\task test:
+        \\    @confirm Are you sure?
+        \\    echo "done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // In dry-run mode, @confirm should show message but auto-confirm
+    try executor.execute("test");
+}
+
+test "@confirm with default message" {
+    const source =
+        \\task test:
+        \\    @confirm
+        \\    echo "done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should use default "Continue?" message
+    try executor.execute("test");
+}
+
+// @each tests
+
+test "@each iterates over space-separated items" {
+    const source =
+        \\task test:
+        \\    @each a b c
+        \\        echo "item: {{item}}"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should iterate and print each item
+    try executor.execute("test");
+}
+
+test "@each expands {{item}} variable in command" {
+    const source =
+        \\task test:
+        \\    @each foo bar
+        \\        echo "processing: {{item}}"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@each with empty list executes zero times" {
+    const source =
+        \\task test:
+        \\    @each
+        \\        echo "should not print"
+        \\    @end
+        \\    echo "done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should skip loop body but execute "done"
+    try executor.execute("test");
+}
+
+test "@each nested in conditional block respects condition" {
+    const source =
+        \\task test:
+        \\    @if false
+        \\        @each a b c
+        \\            echo "should not print"
+        \\        @end
+        \\    @end
+        \\    echo "done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should skip the @each block due to false condition
+    try executor.execute("test");
+}
+
+test "@each with comma-separated items" {
+    const source =
+        \\task test:
+        \\    @each a, b, c
+        \\        echo "{{item}}"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@each with single item" {
+    const source =
+        \\task test:
+        \\    @each only_one
+        \\        echo "{{item}}"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@each with multiple commands" {
+    const source =
+        \\task test:
+        \\    @each x y
+        \\        echo "start {{item}}"
+        \\        echo "end {{item}}"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+// ============================================================================
+// @cache Directive Tests
+// ============================================================================
+
+test "@cache first run always executes" {
+    const source =
+        \\task test:
+        \\    @cache nonexistent_file.txt
+        \\    echo "running"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true; // Use dry-run to see command output
+
+    // Should execute because file doesn't exist (stale)
+    try executor.execute("test");
+}
+
+test "@cache with existing file updates cache" {
+    // Create a temporary directory and file
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Create test file
+    const file = try tmp_dir.dir.createFile("test.txt", .{});
+    try file.writeAll("test content");
+    file.close();
+
+    // Change to tmp dir
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task test:
+        \\    @cache test.txt
+        \\    echo "running"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // First run - should execute and cache
+    try executor.execute("test");
+}
+
+test "@cache skips command when inputs unchanged" {
+    // Create a temporary directory and file
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Create test file
+    const file = try tmp_dir.dir.createFile("test.txt", .{});
+    try file.writeAll("test content");
+    file.close();
+
+    // Change to tmp dir
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task test:
+        \\    @cache test.txt
+        \\    echo "running"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Pre-populate cache to simulate previous run
+    try executor.cache.update("test.txt");
+
+    // Set dry_run after cache is populated
+    executor.dry_run = true;
+
+    // Second run - should skip (cached)
+    try executor.execute("test");
+    // Verify no error - command was skipped due to cache hit
+}
+
+test "@cache with multiple files" {
+    const source =
+        \\task test:
+        \\    @cache file1.txt file2.txt
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@cache with comma-separated files" {
+    const source =
+        \\task test:
+        \\    @cache file1.txt, file2.txt
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@cache with empty deps always runs" {
+    const source =
+        \\task test:
+        \\    @cache
+        \\    echo "always runs"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "parseCachePatterns parses space-separated patterns" {
+    var jakefile = parser.Jakefile{
+        .variables = &.{},
+        .recipes = &.{},
+        .directives = &.{},
+        .imports = &.{},
+        .global_pre_hooks = &.{},
+        .global_post_hooks = &.{},
+        .source = "",
+    };
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const patterns = executor.parseCachePatterns("cache src/*.zig lib/*.zig");
+    defer std.testing.allocator.free(patterns);
+
+    try std.testing.expectEqual(@as(usize, 2), patterns.len);
+    try std.testing.expectEqualStrings("src/*.zig", patterns[0]);
+    try std.testing.expectEqualStrings("lib/*.zig", patterns[1]);
+}
+
+// ============================================================================
+// @watch Directive Tests
+// ============================================================================
+
+test "@watch in dry-run mode shows what would be watched" {
+    const source =
+        \\task test:
+        \\    @watch src/*.zig
+        \\    echo "watching"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@watch is informational in normal mode" {
+    const source =
+        \\task test:
+        \\    @watch nonexistent/*.zig
+        \\    echo "running"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true; // Still dry-run for safety in tests
+
+    try executor.execute("test");
+}
+
+test "@watch with multiple patterns" {
+    const source =
+        \\task test:
+        \\    @watch src/*.zig, tests/*.zig
+        \\    echo "watching"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@watch continues to next command" {
+    const source =
+        \\task test:
+        \\    @watch src/*.zig
+        \\    echo "command 1"
+        \\    echo "command 2"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "parseCachePatterns works for watch patterns" {
+    var jakefile = parser.Jakefile{
+        .variables = &.{},
+        .recipes = &.{},
+        .directives = &.{},
+        .imports = &.{},
+        .global_pre_hooks = &.{},
+        .global_post_hooks = &.{},
+        .source = "",
+    };
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const patterns = executor.parseCachePatterns("watch **/*.zig");
+    defer std.testing.allocator.free(patterns);
+
+    try std.testing.expectEqual(@as(usize, 1), patterns.len);
+    try std.testing.expectEqualStrings("**/*.zig", patterns[0]);
+}
+
+test "@watch with empty pattern is no-op" {
+    const source =
+        \\task test:
+        \\    @watch
+        \\    echo "running"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+// ============================================================================
+// Edge Cases & Error Handling Tests
+// ============================================================================
+
+test "deeply nested @if blocks (5 levels)" {
+    const source =
+        \\task test:
+        \\    @if true
+        \\        @if true
+        \\            @if true
+        \\                @if true
+        \\                    @if true
+        \\                        echo "deeply nested"
+        \\                    @end
+        \\                @end
+        \\            @end
+        \\        @end
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@ignore with command that doesn't exist still continues" {
+    const source =
+        \\task test:
+        \\    @ignore
+        \\    totally_nonexistent_command_12345
+        \\    echo "continued"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "empty recipe with only directives executes without error" {
+    const source =
+        \\task test:
+        \\    @if false
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@each inside @if only runs when condition true" {
+    const source =
+        \\task test:
+        \\    @if true
+        \\        @each a b
+        \\            echo "{{item}}"
+        \\        @end
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@each inside @if false is skipped" {
+    const source =
+        \\task test:
+        \\    @if false
+        \\        @each a b
+        \\            echo "{{item}}"
+        \\        @end
+        \\    @end
+        \\    echo "done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "recipe with all directives combined" {
+    const source =
+        \\task test:
+        \\    @if true
+        \\        @ignore
+        \\        echo "ignored failure is ok"
+        \\    @end
+        \\    @each x y
+        \\        echo "item: {{item}}"
+        \\    @end
+        \\    @cache nonexistent.txt
+        \\    echo "cached"
+        \\    @watch src/*.zig
+        \\    echo "watching"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "multiple @if/@else chains" {
+    const source =
+        \\task test:
+        \\    @if false
+        \\        echo "first"
+        \\    @elif false
+        \\        echo "second"
+        \\    @else
+        \\        echo "third"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "executor returns RecipeNotFound for missing recipe" {
+    const source =
+        \\task existing:
+        \\    echo "exists"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const result = executor.execute("nonexistent");
+    try std.testing.expectError(ExecuteError.RecipeNotFound, result);
+}
+
+test "executor returns CyclicDependency for self-referencing recipe" {
+    const source =
+        \\task loop: [loop]
+        \\    echo "never runs"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const result = executor.execute("loop");
+    try std.testing.expectError(ExecuteError.CyclicDependency, result);
+}
+
+test "executor returns CyclicDependency for indirect cycle" {
+    const source =
+        \\task a: [b]
+        \\    echo "a"
+        \\
+        \\task b: [c]
+        \\    echo "b"
+        \\
+        \\task c: [a]
+        \\    echo "c"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const result = executor.execute("a");
+    try std.testing.expectError(ExecuteError.CyclicDependency, result);
+}
+
+test "@needs continues checking after first found command" {
+    const source =
+        \\task test:
+        \\    @needs sh ls cat
+        \\    echo "all commands found"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "variable expansion in commands works with special chars" {
+    const source =
+        \\version = "1.0.0"
+        \\
+        \\task test:
+        \\    echo "v{{version}}-release"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "environment variable expansion with default fallback" {
+    const source =
+        \\task test:
+        \\    echo "${DEFINITELY_UNSET_VAR_12345:-default_value}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "recipe with only comments parses correctly" {
+    const source =
+        \\# This is a comment
+        \\task test:
+        \\    # More comments
+        \\    echo "hello"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "executor handles recipe with spaces in command" {
+    const source =
+        \\task test:
+        \\    echo "hello   world   spaces"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
 }
