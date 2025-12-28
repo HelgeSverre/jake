@@ -179,9 +179,20 @@ pub const Executor = struct {
         self.in_progress.put(name, {}) catch return ExecuteError.OutOfMemory;
         defer _ = self.in_progress.remove(name);
 
-        // Execute dependencies first
+        // Execute recipe dependencies first
         for (recipe.dependencies) |dep| {
             try self.executeSequential(dep);
+        }
+
+        // For file targets, also ensure file dependencies exist by running their recipes
+        if (recipe.kind == .file) {
+            for (recipe.file_deps) |file_dep| {
+                // Check if this file dependency has a recipe that produces it
+                if (self.findRecipeByOutput(file_dep)) |producing_recipe| {
+                    // Execute that recipe to ensure the file exists
+                    try self.executeSequential(producing_recipe.name);
+                }
+            }
         }
 
         // Check if we need to run (for file targets)
@@ -269,6 +280,18 @@ pub const Executor = struct {
         return false;
     }
 
+    /// Find a recipe that produces the given output file
+    fn findRecipeByOutput(self: *Executor, output: []const u8) ?*const Recipe {
+        for (self.jakefile.recipes) |*recipe| {
+            if (recipe.output) |recipe_output| {
+                if (std.mem.eql(u8, recipe_output, output)) {
+                    return recipe;
+                }
+            }
+        }
+        return null;
+    }
+
     /// Execute commands with conditional block support
     fn executeCommands(self: *Executor, cmds: []const Recipe.Command) ExecuteError!void {
         // Conditional state tracking
@@ -295,9 +318,12 @@ pub const Executor = struct {
                             continue;
                         }
 
+                        // Extract condition from line (strip "if " prefix)
+                        const condition = extractCondition(cmd.line, "if ");
+
                         // Evaluate the condition
-                        const condition_result = conditions.evaluate(cmd.line, &self.variables) catch |err| blk: {
-                            self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ cmd.line, @errorName(err) });
+                        const condition_result = conditions.evaluate(condition, &self.variables) catch |err| blk: {
+                            self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ condition, @errorName(err) });
                             break :blk false;
                         };
 
@@ -322,9 +348,12 @@ pub const Executor = struct {
                             continue;
                         }
 
+                        // Extract condition from line (strip "elif " prefix)
+                        const condition = extractCondition(cmd.line, "elif ");
+
                         // Evaluate the condition
-                        const condition_result = conditions.evaluate(cmd.line, &self.variables) catch |err| blk: {
-                            self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ cmd.line, @errorName(err) });
+                        const condition_result = conditions.evaluate(condition, &self.variables) catch |err| blk: {
+                            self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ condition, @errorName(err) });
                             break :blk false;
                         };
 
@@ -516,6 +545,17 @@ pub const Executor = struct {
         }
     }
 };
+
+/// Extract condition from a directive line by stripping the prefix
+/// e.g., "if env(CI)" -> "env(CI)", "elif exists(foo)" -> "exists(foo)"
+fn extractCondition(line: []const u8, prefix: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, line, " \t");
+    if (std.mem.startsWith(u8, trimmed, prefix)) {
+        return std.mem.trim(u8, trimmed[prefix.len..], " \t");
+    }
+    // Fallback: return the whole line trimmed
+    return trimmed;
+}
 
 /// Strip surrounding quotes from a string
 fn stripQuotes(s: []const u8) []const u8 {
