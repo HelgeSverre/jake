@@ -33,6 +33,8 @@ pub fn main() !void {
     var jobs: usize = 0; // 0 = sequential (default), N = parallel with N threads
     var watch_patterns: std.ArrayListUnmanaged([]const u8) = .empty;
     defer watch_patterns.deinit(allocator);
+    var positional_args: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer positional_args.deinit(allocator);
 
     // Parse arguments
     var i: usize = 1;
@@ -84,7 +86,12 @@ pub fn main() !void {
                 jobs = std.Thread.getCpuCount() catch 4;
             }
         } else if (arg[0] != '-') {
-            recipe_name = arg;
+            if (recipe_name == null) {
+                recipe_name = arg;
+            } else {
+                // After recipe name, collect as positional args
+                try positional_args.append(allocator, arg);
+            }
         }
     }
 
@@ -118,6 +125,7 @@ pub fn main() !void {
     executor.dry_run = dry_run;
     executor.verbose = verbose;
     executor.jobs = jobs;
+    executor.setPositionalArgs(positional_args.items);
 
     // List recipes or run default if no recipe specified
     if (list_recipes or (recipe_name == null and args.len == 1)) {

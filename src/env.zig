@@ -6,6 +6,7 @@
 // - Manage environment for child processes
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 /// Environment variable storage and expansion
 pub const Environment = struct {
@@ -53,8 +54,20 @@ pub const Environment = struct {
         if (self.vars.get(key)) |value| {
             return value;
         }
-        // Fall back to system environment
-        return std.posix.getenv(key);
+        // Fall back to system environment (cross-platform)
+        return getSystemEnv(key);
+    }
+
+    /// Cross-platform system environment variable lookup
+    fn getSystemEnv(key: []const u8) ?[]const u8 {
+        if (comptime builtin.os.tag == .windows) {
+            // Windows: environment strings are in WTF-16, can't use posix.getenv
+            // Return null on Windows (we rely on locally set vars via .env files)
+            _ = key;
+            return null;
+        } else {
+            return std.posix.getenv(key);
+        }
     }
 
     /// Load environment variables from a .env file

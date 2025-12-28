@@ -1,6 +1,7 @@
 // Jake Conditions - Evaluates conditional expressions for @if/@elif directives
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const ConditionError = error{
     InvalidSyntax,
@@ -48,10 +49,20 @@ pub fn evaluate(
 fn evaluateEnv(args: []const u8) bool {
     const var_name = stripQuotes(std.mem.trim(u8, args, " \t"));
 
-    if (std.posix.getenv(var_name)) |value| {
+    if (getSystemEnv(var_name)) |value| {
         return value.len > 0;
     }
     return false;
+}
+
+/// Cross-platform system environment variable lookup
+fn getSystemEnv(key: []const u8) ?[]const u8 {
+    if (comptime builtin.os.tag == .windows) {
+        // Windows: environment strings are in WTF-16, can't use posix.getenv
+        // Return null on Windows (we rely on locally set vars via .env files)
+        return @as(?[]const u8, null);
+    }
+    return std.posix.getenv(key);
 }
 
 /// exists(path) - returns true if file or directory exists
@@ -97,7 +108,7 @@ fn resolveValue(value: []const u8, variables: *const std.StringHashMap([]const u
             var_name = stripped[1..];
         }
 
-        if (std.posix.getenv(var_name)) |env_val| {
+        if (getSystemEnv(var_name)) |env_val| {
             return env_val;
         }
         return "";
@@ -261,11 +272,14 @@ test "exists with variable" {
 }
 
 test "eq with env variable" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
     // HOME should be set on most systems
-    if (std.posix.getenv("HOME")) |home_val| {
+    if (getSystemEnv("HOME")) |home_val| {
         // Create a variable with the same value
         try variables.put("home", home_val);
 
@@ -275,6 +289,9 @@ test "eq with env variable" {
 }
 
 test "neq with different env variables" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
@@ -294,11 +311,14 @@ test "eq with empty vs non-empty" {
 }
 
 test "eq with braced env variable" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
     // HOME should be set on most systems
-    if (std.posix.getenv("HOME")) |_| {
+    if (getSystemEnv("HOME")) |_| {
         const matches = try evaluate("eq(${HOME}, $HOME)", &variables);
         try std.testing.expect(matches);
     }

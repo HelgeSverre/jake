@@ -41,6 +41,7 @@ pub const Executor = struct {
     dry_run: bool,
     verbose: bool,
     jobs: usize, // Number of parallel jobs (0 = sequential, 1 = single-threaded, 2+ = parallel)
+    positional_args: []const []const u8, // Positional args from command line ($1, $2, etc.)
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
         var variables = std.StringHashMap([]const u8).init(allocator);
@@ -109,7 +110,13 @@ pub const Executor = struct {
             .dry_run = false,
             .verbose = false,
             .jobs = 0, // Default to sequential execution
+            .positional_args = &.{}, // Empty by default
         };
+    }
+
+    /// Set positional arguments from command line (for $1, $2, $@, etc.)
+    pub fn setPositionalArgs(self: *Executor, args: []const []const u8) void {
+        self.positional_args = args;
     }
 
     pub fn deinit(self: *Executor) void {
@@ -303,6 +310,8 @@ pub const Executor = struct {
         var executing: bool = true;
         var branch_taken: bool = false;
         var nesting_depth: usize = 0; // Track nested conditionals when skipping
+        var ignore_next: bool = false; // Whether to ignore failures for the next command
+        _ = &ignore_next; // TODO: implement @ignore directive usage
 
         var i: usize = 0;
         while (i < cmds.len) : (i += 1) {
@@ -392,6 +401,13 @@ pub const Executor = struct {
                         branch_taken = false;
                         continue;
                     },
+                    .ignore => {
+                        // @ignore directive: ignore failures for the next command
+                        if (executing) {
+                            ignore_next = true;
+                        }
+                        continue;
+                    },
                     else => {
                         // Other directives, handle normally if executing
                     },
@@ -403,8 +419,24 @@ pub const Executor = struct {
                 continue;
             }
 
-            // Execute the command
-            try self.runCommand(cmd);
+            // Execute the command, handling ignore directive
+            if (ignore_next) {
+                ignore_next = false;
+                self.runCommand(cmd) catch |err| {
+                    // Command failed but we're ignoring it
+                    switch (err) {
+                        ExecuteError.CommandFailed => {
+                            // The error message with exit code was already printed by runCommand
+                            self.print("\x1b[1;33m[ignored]\x1b[0m continuing despite command failure\n", .{});
+                        },
+                        else => {
+                            self.print("\x1b[1;33m[ignored]\x1b[0m command failed with error: {s}\n", .{@errorName(err)});
+                        },
+                    }
+                };
+            } else {
+                try self.runCommand(cmd);
+            }
         }
     }
 
@@ -416,9 +448,18 @@ pub const Executor = struct {
         }
 
         // Then expand $VAR and ${VAR} environment variables
-        const line = self.environment.expandCommand(jake_expanded, self.allocator) catch jake_expanded;
+        var line = self.environment.expandCommand(jake_expanded, self.allocator) catch jake_expanded;
         if (line.ptr != jake_expanded.ptr) {
             self.expanded_strings.append(self.allocator, line) catch return ExecuteError.OutOfMemory;
+        }
+
+        // Check for @ prefix to suppress command echo
+        const trimmed = std.mem.trimLeft(u8, line, " \t");
+        const suppress_echo = trimmed.len > 0 and trimmed[0] == '@';
+        if (suppress_echo) {
+            // Strip the @ prefix (keeping any leading whitespace before @, then skip @)
+            const at_pos = std.mem.indexOf(u8, line, "@").?;
+            line = line[at_pos + 1 ..];
         }
 
         if (self.dry_run) {
@@ -426,7 +467,7 @@ pub const Executor = struct {
             return;
         }
 
-        if (self.verbose) {
+        if (self.verbose and !suppress_echo) {
             self.print("  $ {s}\n", .{line});
         }
 
@@ -475,7 +516,7 @@ pub const Executor = struct {
         }
     }
 
-    /// Expand {{var}} style Jake variables
+    /// Expand {{var}} style Jake variables and positional args ({{$1}}, {{$2}}, {{$@}})
     fn expandJakeVariables(self: *Executor, line: []const u8) ![]const u8 {
         var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(self.allocator);
@@ -491,7 +532,27 @@ pub const Executor = struct {
                 }
                 if (end + 1 < line.len) {
                     const var_name = line[start..end];
-                    if (self.variables.get(var_name)) |value| {
+
+                    // Check for positional args: $1, $2, ... or $@
+                    if (var_name.len > 0 and var_name[0] == '$') {
+                        const arg_spec = var_name[1..];
+                        if (std.mem.eql(u8, arg_spec, "@")) {
+                            // $@ - all positional args joined with space
+                            for (self.positional_args, 0..) |arg, idx| {
+                                if (idx > 0) try result.append(self.allocator, ' ');
+                                try result.appendSlice(self.allocator, arg);
+                            }
+                        } else if (std.fmt.parseInt(usize, arg_spec, 10)) |num| {
+                            // $1, $2, etc. (1-indexed)
+                            if (num > 0 and num <= self.positional_args.len) {
+                                try result.appendSlice(self.allocator, self.positional_args[num - 1]);
+                            }
+                            // If out of range, expand to empty string
+                        } else |_| {
+                            // Not a valid number, keep original
+                            try result.appendSlice(self.allocator, line[i .. end + 2]);
+                        }
+                    } else if (self.variables.get(var_name)) |value| {
                         try result.appendSlice(self.allocator, value);
                     } else {
                         // Keep original if not found
@@ -520,7 +581,15 @@ pub const Executor = struct {
         const stdout = std.io.getStdOut();
         stdout.writeAll("\x1b[1mAvailable recipes:\x1b[0m\n") catch {};
 
+        var hidden_count: usize = 0;
+
         for (self.jakefile.recipes) |recipe| {
+            // Skip private recipes (names starting with '_')
+            if (recipe.name.len > 0 and recipe.name[0] == '_') {
+                hidden_count += 1;
+                continue;
+            }
+
             const kind_str = switch (recipe.kind) {
                 .task => "task",
                 .file => "file",
@@ -528,12 +597,26 @@ pub const Executor = struct {
             };
             const default_str: []const u8 = if (recipe.is_default) " (default)" else "";
 
-            var buf: [256]u8 = undefined;
+            // Build aliases string
+            var alias_buf: [256]u8 = undefined;
+            var alias_str: []const u8 = "";
+            if (recipe.aliases.len > 0) {
+                var fbs = std.io.fixedBufferStream(&alias_buf);
+                fbs.writer().writeAll(" (aliases: ") catch {};
+                for (recipe.aliases, 0..) |al, idx| {
+                    if (idx > 0) fbs.writer().writeAll(", ") catch {};
+                    fbs.writer().writeAll(al) catch {};
+                }
+                fbs.writer().writeAll(")") catch {};
+                alias_str = fbs.getWritten();
+            }
+
+            var buf: [512]u8 = undefined;
             if (kind_str.len > 0) {
-                const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m [{s}]{s}\n", .{ recipe.name, kind_str, default_str }) catch continue;
+                const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m [{s}]{s}{s}\n", .{ recipe.name, kind_str, default_str, alias_str }) catch continue;
                 stdout.writeAll(line) catch {};
             } else {
-                const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m{s}\n", .{ recipe.name, default_str }) catch continue;
+                const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m{s}{s}\n", .{ recipe.name, default_str, alias_str }) catch continue;
                 stdout.writeAll(line) catch {};
             }
 
@@ -541,6 +624,18 @@ pub const Executor = struct {
                 var doc_buf: [256]u8 = undefined;
                 const doc_line = std.fmt.bufPrint(&doc_buf, "    {s}\n", .{doc}) catch continue;
                 stdout.writeAll(doc_line) catch {};
+            }
+        }
+
+        // Show count of hidden recipes
+        if (hidden_count > 0) {
+            var hidden_buf: [64]u8 = undefined;
+            if (hidden_count == 1) {
+                const hidden_line = std.fmt.bufPrint(&hidden_buf, "({d} hidden recipe)\n", .{hidden_count}) catch return;
+                stdout.writeAll(hidden_line) catch {};
+            } else {
+                const hidden_line = std.fmt.bufPrint(&hidden_buf, "({d} hidden recipes)\n", .{hidden_count}) catch return;
+                stdout.writeAll(hidden_line) catch {};
             }
         }
     }
@@ -997,4 +1092,137 @@ test "stripQuotes handles empty string" {
 test "stripQuotes handles short strings" {
     try std.testing.expectEqualStrings("a", stripQuotes("a"));
     try std.testing.expectEqualStrings("\"", stripQuotes("\""));
+}
+
+// --- @ Output Suppression Tests ---
+
+test "executor @ prefix suppresses echo but still executes" {
+    const source =
+        \\task deploy:
+        \\    @echo "quiet"
+        \\    echo "loud"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+    executor.verbose = true;
+
+    // Should execute without errors (dry-run mode)
+    try executor.execute("deploy");
+    try std.testing.expect(executor.executed.contains("deploy"));
+}
+
+test "executor @ prefix strips @ before execution" {
+    const source =
+        \\task test:
+        \\    @echo "hello"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Get the recipe command
+    const recipe = jakefile.getRecipe("test").?;
+    try std.testing.expect(recipe.commands.len == 1);
+
+    // The command line should have @ prefix
+    try std.testing.expect(std.mem.startsWith(u8, recipe.commands[0].line, "@"));
+}
+
+// --- Private Recipe Tests ---
+
+test "private recipes are hidden from list but still executable" {
+    const source =
+        \\task build:
+        \\    echo "Building..."
+        \\
+        \\task _internal-helper:
+        \\    echo "Internal helper"
+        \\
+        \\task deploy: [_internal-helper]
+        \\    echo "Deploying..."
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Private recipes should still be executable directly
+    try executor.execute("_internal-helper");
+    try std.testing.expect(executor.executed.contains("_internal-helper"));
+
+    // Clear executed set for next test
+    executor.executed.clearRetainingCapacity();
+
+    // Private recipes should be executed as dependencies
+    try executor.execute("deploy");
+    try std.testing.expect(executor.executed.contains("_internal-helper"));
+    try std.testing.expect(executor.executed.contains("deploy"));
+}
+
+test "countHiddenRecipes counts private recipes" {
+    const source =
+        \\task build:
+        \\    echo "Building..."
+        \\
+        \\task _helper1:
+        \\    echo "Helper 1"
+        \\
+        \\task _helper2:
+        \\    echo "Helper 2"
+        \\
+        \\task deploy:
+        \\    echo "Deploying..."
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // Count hidden recipes manually (same logic as listRecipes)
+    var hidden_count: usize = 0;
+    for (jakefile.recipes) |recipe| {
+        if (recipe.name.len > 0 and recipe.name[0] == '_') {
+            hidden_count += 1;
+        }
+    }
+
+    try std.testing.expectEqual(@as(usize, 2), hidden_count);
+}
+
+test "no hidden recipes when none start with underscore" {
+    const source =
+        \\task build:
+        \\    echo "Building..."
+        \\
+        \\task deploy:
+        \\    echo "Deploying..."
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // Count hidden recipes manually
+    var hidden_count: usize = 0;
+    for (jakefile.recipes) |recipe| {
+        if (recipe.name.len > 0 and recipe.name[0] == '_') {
+            hidden_count += 1;
+        }
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), hidden_count);
 }

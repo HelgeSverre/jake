@@ -12,6 +12,7 @@ pub const watch = @import("watch.zig");
 pub const parallel = @import("parallel.zig");
 pub const env = @import("env.zig");
 pub const import_mod = @import("import.zig");
+pub const functions = @import("functions.zig");
 
 pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;

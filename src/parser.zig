@@ -19,6 +19,13 @@ pub const Recipe = struct {
     post_hooks: []const Hook, // @post commands to run after recipe
     doc_comment: ?[]const u8,
     is_default: bool,
+    aliases: []const []const u8, // Alternative names for this recipe
+    group: ?[]const u8, // Recipe group/category for organization
+    description: ?[]const u8, // Recipe description (distinct from doc_comment)
+    shell: ?[]const u8, // Shell to use (e.g., "bash", "zsh", "powershell")
+    working_dir: ?[]const u8, // Working directory for recipe execution
+    only_os: []const []const u8, // List of OSes this recipe runs on (e.g., ["linux", "macos"])
+    quiet: bool, // Suppress command echoing for this recipe
 
     pub const Kind = enum {
         task, // Always runs
@@ -46,6 +53,7 @@ pub const Recipe = struct {
         @"else",
         end,
         each,
+        ignore,
     };
 };
 
@@ -97,6 +105,8 @@ pub const Jakefile = struct {
             allocator.free(recipe.commands);
             allocator.free(recipe.pre_hooks);
             allocator.free(recipe.post_hooks);
+            allocator.free(recipe.aliases);
+            allocator.free(recipe.only_os);
         }
         allocator.free(self.recipes);
         for (self.directives) |directive| {
@@ -112,6 +122,12 @@ pub const Jakefile = struct {
         for (self.recipes) |*recipe| {
             if (std.mem.eql(u8, recipe.name, name)) {
                 return recipe;
+            }
+            // Check aliases
+            for (recipe.aliases) |alias| {
+                if (std.mem.eql(u8, alias, name)) {
+                    return recipe;
+                }
             }
         }
         return null;
@@ -205,6 +221,13 @@ pub const Parser = struct {
     // Last error information for detailed reporting
     last_error: ?ErrorInfo,
 
+    // Pending aliases for the next recipe
+    pending_aliases: std.ArrayListUnmanaged([]const u8),
+
+    // Pending metadata for next recipe
+    pending_group: ?[]const u8,
+    pending_description: ?[]const u8,
+
     pub fn init(allocator: std.mem.Allocator, lex: *Lexer) Parser {
         return .{
             .allocator = allocator,
@@ -218,6 +241,9 @@ pub const Parser = struct {
             .global_pre_hooks = .empty,
             .global_post_hooks = .empty,
             .last_error = null,
+            .pending_aliases = .empty,
+            .pending_group = null,
+            .pending_description = null,
         };
     }
 
@@ -231,6 +257,8 @@ pub const Parser = struct {
             self.allocator.free(recipe.commands);
             self.allocator.free(recipe.pre_hooks);
             self.allocator.free(recipe.post_hooks);
+            self.allocator.free(recipe.aliases);
+            self.allocator.free(recipe.only_os);
         }
         self.recipes.deinit(self.allocator);
         for (self.directives.items) |directive| {
@@ -240,6 +268,7 @@ pub const Parser = struct {
         self.imports.deinit(self.allocator);
         self.global_pre_hooks.deinit(self.allocator);
         self.global_post_hooks.deinit(self.allocator);
+        self.pending_aliases.deinit(self.allocator);
     }
 
     fn advance(self: *Parser) void {
@@ -291,6 +320,29 @@ pub const Parser = struct {
 
     fn slice(self: *Parser, tok: Token) []const u8 {
         return tok.slice(self.source);
+    }
+
+    /// Consume and return pending aliases, clearing them for the next recipe
+    fn consumePendingAliases(self: *Parser) ParseError![]const []const u8 {
+        if (self.pending_aliases.items.len == 0) {
+            return &[_][]const u8{};
+        }
+        const aliases = self.pending_aliases.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        return aliases;
+    }
+
+    /// Consume and return pending group, clearing it for the next recipe
+    fn consumePendingGroup(self: *Parser) ?[]const u8 {
+        const group = self.pending_group;
+        self.pending_group = null;
+        return group;
+    }
+
+    /// Consume and return pending description, clearing it for the next recipe
+    fn consumePendingDescription(self: *Parser) ?[]const u8 {
+        const desc = self.pending_description;
+        self.pending_description = null;
+        return desc;
     }
 
     pub fn parseJakefile(self: *Parser) ParseError!Jakefile {
@@ -353,6 +405,65 @@ pub const Parser = struct {
         if (self.current.tag == .kw_import) {
             self.advance();
             try self.parseImportDirective();
+            return;
+        }
+
+        // Handle @alias directive for recipes
+        if (self.current.tag == .kw_alias) {
+            self.advance();
+
+            // Collect alias names until newline
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                if (self.current.tag == .ident) {
+                    self.pending_aliases.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
+                }
+                self.advance();
+            }
+            return;
+        }
+
+        // Handle @group directive for recipe organization
+        if (self.current.tag == .kw_group) {
+            self.advance();
+
+            // Get group name (identifier or string)
+            if (self.current.tag == .ident or self.current.tag == .string) {
+                self.pending_group = stripQuotes(self.slice(self.current));
+                self.advance();
+            }
+
+            // Skip to end of line
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                self.advance();
+            }
+            return;
+        }
+
+        // Handle @desc or @description directive
+        if (self.current.tag == .kw_desc) {
+            self.advance();
+
+            // Get description (string or remaining text)
+            if (self.current.tag == .string) {
+                self.pending_description = stripQuotes(self.slice(self.current));
+                self.advance();
+            } else {
+                // Collect everything until newline as description
+                const desc_start = self.current.loc.start;
+                while (self.current.tag != .newline and self.current.tag != .eof) {
+                    self.advance();
+                }
+                const desc_end = self.current.loc.start;
+                const desc = std.mem.trim(u8, self.source[desc_start..desc_end], " \t");
+                if (desc.len > 0) {
+                    self.pending_description = desc;
+                }
+            }
+
+            // Skip to end of line
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                self.advance();
+            }
             return;
         }
 
@@ -554,6 +665,9 @@ pub const Parser = struct {
             if (self.current.tag == .newline) self.advance();
         }
 
+        // Consume any pending aliases
+        const aliases = try self.consumePendingAliases();
+
         self.recipes.append(self.allocator, .{
             .name = name,
             .kind = .simple,
@@ -566,6 +680,13 @@ pub const Parser = struct {
             .post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .doc_comment = null,
             .is_default = false,
+            .aliases = aliases,
+            .group = self.consumePendingGroup(),
+            .description = self.consumePendingDescription(),
+            .shell = null,
+            .working_dir = null,
+            .only_os = &[_][]const u8{},
+            .quiet = false,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -666,6 +787,7 @@ pub const Parser = struct {
                     .kw_else => .@"else",
                     .kw_end => .end,
                     .kw_each => .each,
+                    .kw_ignore => .ignore,
                     else => null, // Unknown directive
                 };
             }
@@ -684,6 +806,9 @@ pub const Parser = struct {
             if (self.current.tag == .newline) self.advance();
         }
 
+        // Consume any pending aliases
+        const aliases = try self.consumePendingAliases();
+
         self.recipes.append(self.allocator, .{
             .name = name,
             .kind = .task,
@@ -696,6 +821,13 @@ pub const Parser = struct {
             .post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .doc_comment = null,
             .is_default = false,
+            .aliases = aliases,
+            .group = self.consumePendingGroup(),
+            .description = self.consumePendingDescription(),
+            .shell = null,
+            .working_dir = null,
+            .only_os = &[_][]const u8{},
+            .quiet = false,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -790,6 +922,9 @@ pub const Parser = struct {
             if (self.current.tag == .newline) self.advance();
         }
 
+        // Consume any pending aliases
+        const aliases = try self.consumePendingAliases();
+
         // Use output as recipe name
         self.recipes.append(self.allocator, .{
             .name = output,
@@ -803,6 +938,13 @@ pub const Parser = struct {
             .post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .doc_comment = null,
             .is_default = false,
+            .aliases = aliases,
+            .group = null,
+            .description = null,
+            .shell = null,
+            .working_dir = null,
+            .only_os = &[_][]const u8{},
+            .quiet = false,
         }) catch return ParseError.OutOfMemory;
     }
 };
