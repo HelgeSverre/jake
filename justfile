@@ -104,6 +104,25 @@ docs:
     zig build-lib src/root.zig -femit-docs -fno-emit-bin
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CI (requires: brew install act)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Run CI workflow locally via act (requires: brew install act)
+# Note: May fail if Zig download mirrors are unavailable
+[group('ci')]
+ci:
+    act push -W .github/workflows/ci.yml -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/amd64
+
+# ─────────────────────────────────────────────────────────────────────────────
+# E2E Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Run E2E test suite using jake
+[group('test')]
+e2e: release
+    cd samples && ../zig-out/bin/jake test-all
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Info
 # ─────────────────────────────────────────────────────────────────────────────
 
