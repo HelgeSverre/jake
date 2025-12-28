@@ -227,6 +227,7 @@ pub const Parser = struct {
     // Pending metadata for next recipe
     pending_group: ?[]const u8,
     pending_description: ?[]const u8,
+    pending_only_os: std.ArrayListUnmanaged([]const u8),
 
     pub fn init(allocator: std.mem.Allocator, lex: *Lexer) Parser {
         return .{
@@ -244,6 +245,7 @@ pub const Parser = struct {
             .pending_aliases = .empty,
             .pending_group = null,
             .pending_description = null,
+            .pending_only_os = .empty,
         };
     }
 
@@ -269,6 +271,7 @@ pub const Parser = struct {
         self.global_pre_hooks.deinit(self.allocator);
         self.global_post_hooks.deinit(self.allocator);
         self.pending_aliases.deinit(self.allocator);
+        self.pending_only_os.deinit(self.allocator);
     }
 
     fn advance(self: *Parser) void {
@@ -343,6 +346,15 @@ pub const Parser = struct {
         const desc = self.pending_description;
         self.pending_description = null;
         return desc;
+    }
+
+    /// Consume and return pending only_os, clearing it for the next recipe
+    fn consumePendingOnlyOs(self: *Parser) ParseError![]const []const u8 {
+        if (self.pending_only_os.items.len == 0) {
+            return &[_][]const u8{};
+        }
+        const only_os = self.pending_only_os.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        return only_os;
     }
 
     pub fn parseJakefile(self: *Parser) ParseError!Jakefile {
@@ -462,6 +474,20 @@ pub const Parser = struct {
 
             // Skip to end of line
             while (self.current.tag != .newline and self.current.tag != .eof) {
+                self.advance();
+            }
+            return;
+        }
+
+        // Handle @only or @only-os directive for OS-specific recipes
+        if (self.current.tag == .kw_only or self.current.tag == .kw_only_os) {
+            self.advance();
+
+            // Collect OS names until newline (e.g., linux macos windows)
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                if (self.current.tag == .ident) {
+                    self.pending_only_os.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
+                }
                 self.advance();
             }
             return;
@@ -603,6 +629,8 @@ pub const Parser = struct {
         var commands: std.ArrayListUnmanaged(Recipe.Command) = .empty;
         var pre_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         var post_hooks: std.ArrayListUnmanaged(Hook) = .empty;
+        var working_dir: ?[]const u8 = null;
+        var shell: ?[]const u8 = null;
 
         while (self.current.tag == .indent) {
             self.advance();
@@ -636,6 +664,28 @@ pub const Parser = struct {
 
                     if (self.current.tag == .newline) self.advance();
                     continue;
+                } else if (self.current.tag == .kw_cd) {
+                    // @cd directive - set working directory for recipe
+                    self.advance();
+                    const path_start = self.current.loc.start;
+                    while (self.current.tag != .newline and self.current.tag != .eof) {
+                        self.advance();
+                    }
+                    const path_end = self.current.loc.start;
+                    working_dir = stripQuotes(std.mem.trim(u8, self.source[path_start..path_end], " \t"));
+                    if (self.current.tag == .newline) self.advance();
+                    continue;
+                } else if (self.current.tag == .kw_shell) {
+                    // @shell directive - set shell for recipe
+                    self.advance();
+                    const shell_start = self.current.loc.start;
+                    while (self.current.tag != .newline and self.current.tag != .eof) {
+                        self.advance();
+                    }
+                    const shell_end = self.current.loc.start;
+                    shell = stripQuotes(std.mem.trim(u8, self.source[shell_start..shell_end], " \t"));
+                    if (self.current.tag == .newline) self.advance();
+                    continue;
                 } else {
                     // Not a hook, treat as regular command starting with @
                     const cmd_start = at_pos;
@@ -665,8 +715,9 @@ pub const Parser = struct {
             if (self.current.tag == .newline) self.advance();
         }
 
-        // Consume any pending aliases
+        // Consume any pending metadata
         const aliases = try self.consumePendingAliases();
+        const only_os = try self.consumePendingOnlyOs();
 
         self.recipes.append(self.allocator, .{
             .name = name,
@@ -683,9 +734,9 @@ pub const Parser = struct {
             .aliases = aliases,
             .group = self.consumePendingGroup(),
             .description = self.consumePendingDescription(),
-            .shell = null,
-            .working_dir = null,
-            .only_os = &[_][]const u8{},
+            .shell = shell,
+            .working_dir = working_dir,
+            .only_os = only_os,
             .quiet = false,
         }) catch return ParseError.OutOfMemory;
     }
@@ -740,6 +791,8 @@ pub const Parser = struct {
         var commands: std.ArrayListUnmanaged(Recipe.Command) = .empty;
         var pre_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         var post_hooks: std.ArrayListUnmanaged(Hook) = .empty;
+        var working_dir: ?[]const u8 = null;
+        var shell: ?[]const u8 = null;
 
         while (self.current.tag == .indent) {
             self.advance();
@@ -776,6 +829,32 @@ pub const Parser = struct {
                     continue;
                 }
 
+                // Check for @cd directive
+                if (self.current.tag == .kw_cd) {
+                    self.advance();
+                    const path_start = self.current.loc.start;
+                    while (self.current.tag != .newline and self.current.tag != .eof) {
+                        self.advance();
+                    }
+                    const path_end = self.current.loc.start;
+                    working_dir = stripQuotes(std.mem.trim(u8, self.source[path_start..path_end], " \t"));
+                    if (self.current.tag == .newline) self.advance();
+                    continue;
+                }
+
+                // Check for @shell directive
+                if (self.current.tag == .kw_shell) {
+                    self.advance();
+                    const shell_start = self.current.loc.start;
+                    while (self.current.tag != .newline and self.current.tag != .eof) {
+                        self.advance();
+                    }
+                    const shell_end = self.current.loc.start;
+                    shell = stripQuotes(std.mem.trim(u8, self.source[shell_start..shell_end], " \t"));
+                    if (self.current.tag == .newline) self.advance();
+                    continue;
+                }
+
                 // Other directives
                 directive = switch (self.current.tag) {
                     .kw_cache => .cache,
@@ -806,8 +885,9 @@ pub const Parser = struct {
             if (self.current.tag == .newline) self.advance();
         }
 
-        // Consume any pending aliases
+        // Consume any pending metadata
         const aliases = try self.consumePendingAliases();
+        const only_os = try self.consumePendingOnlyOs();
 
         self.recipes.append(self.allocator, .{
             .name = name,
@@ -826,7 +906,7 @@ pub const Parser = struct {
             .description = self.consumePendingDescription(),
             .shell = null,
             .working_dir = null,
-            .only_os = &[_][]const u8{},
+            .only_os = only_os,
             .quiet = false,
         }) catch return ParseError.OutOfMemory;
     }
@@ -861,6 +941,8 @@ pub const Parser = struct {
         var commands: std.ArrayListUnmanaged(Recipe.Command) = .empty;
         var pre_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         var post_hooks: std.ArrayListUnmanaged(Hook) = .empty;
+        var working_dir: ?[]const u8 = null;
+        var shell: ?[]const u8 = null;
 
         while (self.current.tag == .indent) {
             self.advance();
@@ -894,6 +976,28 @@ pub const Parser = struct {
 
                     if (self.current.tag == .newline) self.advance();
                     continue;
+                } else if (self.current.tag == .kw_cd) {
+                    // @cd directive - set working directory for recipe
+                    self.advance();
+                    const path_start = self.current.loc.start;
+                    while (self.current.tag != .newline and self.current.tag != .eof) {
+                        self.advance();
+                    }
+                    const path_end = self.current.loc.start;
+                    working_dir = stripQuotes(std.mem.trim(u8, self.source[path_start..path_end], " \t"));
+                    if (self.current.tag == .newline) self.advance();
+                    continue;
+                } else if (self.current.tag == .kw_shell) {
+                    // @shell directive - set shell for recipe
+                    self.advance();
+                    const shell_start = self.current.loc.start;
+                    while (self.current.tag != .newline and self.current.tag != .eof) {
+                        self.advance();
+                    }
+                    const shell_end = self.current.loc.start;
+                    shell = stripQuotes(std.mem.trim(u8, self.source[shell_start..shell_end], " \t"));
+                    if (self.current.tag == .newline) self.advance();
+                    continue;
                 } else {
                     // Not a hook, treat as regular command starting with @
                     const cmd_start = at_pos;
@@ -922,8 +1026,9 @@ pub const Parser = struct {
             if (self.current.tag == .newline) self.advance();
         }
 
-        // Consume any pending aliases
+        // Consume any pending metadata
         const aliases = try self.consumePendingAliases();
+        const only_os = try self.consumePendingOnlyOs();
 
         // Use output as recipe name
         self.recipes.append(self.allocator, .{
@@ -939,11 +1044,11 @@ pub const Parser = struct {
             .doc_comment = null,
             .is_default = false,
             .aliases = aliases,
-            .group = null,
-            .description = null,
-            .shell = null,
-            .working_dir = null,
-            .only_os = &[_][]const u8{},
+            .group = self.consumePendingGroup(),
+            .description = self.consumePendingDescription(),
+            .shell = shell,
+            .working_dir = working_dir,
+            .only_os = only_os,
             .quiet = false,
         }) catch return ParseError.OutOfMemory;
     }
@@ -1634,4 +1739,307 @@ test "stripQuotes handles empty string" {
 
 test "stripQuotes handles empty quoted string" {
     try std.testing.expectEqualStrings("", stripQuotes("\"\""));
+}
+
+// --- @ignore Directive Tests ---
+
+test "parse task with ignore directive" {
+    const source =
+        \\task test-all:
+        \\    @ignore
+        \\    npm test
+        \\    @ignore
+        \\    cargo test
+        \\    echo "Tests complete"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 5), jakefile.recipes[0].commands.len);
+    // First command is @ignore directive
+    try std.testing.expectEqual(Recipe.CommandDirective.ignore, jakefile.recipes[0].commands[0].directive.?);
+    // Second command (npm test) has no directive
+    try std.testing.expect(jakefile.recipes[0].commands[1].directive == null);
+    // Third command is @ignore directive
+    try std.testing.expectEqual(Recipe.CommandDirective.ignore, jakefile.recipes[0].commands[2].directive.?);
+    // Fourth command (cargo test) has no directive
+    try std.testing.expect(jakefile.recipes[0].commands[3].directive == null);
+    // Fifth command (echo) has no directive
+    try std.testing.expect(jakefile.recipes[0].commands[4].directive == null);
+}
+
+// --- @group and @description Tests ---
+
+test "parse group directive" {
+    const source =
+        \\@group build
+        \\task compile:
+        \\    gcc -o app main.c
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("compile", jakefile.recipes[0].name);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].group.?);
+}
+
+test "parse desc directive with string" {
+    const source =
+        \\@desc "Build the application"
+        \\task build:
+        \\    npm run build
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].name);
+    try std.testing.expectEqualStrings("Build the application", jakefile.recipes[0].description.?);
+}
+
+test "parse description directive with string" {
+    const source =
+        \\@description "Run all tests"
+        \\task test:
+        \\    npm test
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("test", jakefile.recipes[0].name);
+    try std.testing.expectEqualStrings("Run all tests", jakefile.recipes[0].description.?);
+}
+
+test "parse group and desc together" {
+    const source =
+        \\@group build
+        \\@desc "Build the frontend application"
+        \\task build-frontend:
+        \\    npm run build
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("build-frontend", jakefile.recipes[0].name);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].group.?);
+    try std.testing.expectEqualStrings("Build the frontend application", jakefile.recipes[0].description.?);
+}
+
+test "parse multiple recipes with different groups" {
+    const source =
+        \\@group build
+        \\@desc "Build frontend"
+        \\task build-frontend:
+        \\    npm run build
+        \\
+        \\@group build
+        \\@desc "Build backend"
+        \\task build-backend:
+        \\    cargo build
+        \\
+        \\@group test
+        \\@desc "Run all tests"
+        \\task test:
+        \\    npm test && cargo test
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes.len);
+
+    try std.testing.expectEqualStrings("build-frontend", jakefile.recipes[0].name);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].group.?);
+    try std.testing.expectEqualStrings("Build frontend", jakefile.recipes[0].description.?);
+
+    try std.testing.expectEqualStrings("build-backend", jakefile.recipes[1].name);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[1].group.?);
+    try std.testing.expectEqualStrings("Build backend", jakefile.recipes[1].description.?);
+
+    try std.testing.expectEqualStrings("test", jakefile.recipes[2].name);
+    try std.testing.expectEqualStrings("test", jakefile.recipes[2].group.?);
+    try std.testing.expectEqualStrings("Run all tests", jakefile.recipes[2].description.?);
+}
+
+test "parse recipe without group or description" {
+    const source =
+        \\task clean:
+        \\    rm -rf dist
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("clean", jakefile.recipes[0].name);
+    try std.testing.expect(jakefile.recipes[0].group == null);
+    try std.testing.expect(jakefile.recipes[0].description == null);
+}
+
+test "parse group with quoted string" {
+    const source =
+        \\@group "Development Tools"
+        \\task dev-server:
+        \\    npm run dev
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("Development Tools", jakefile.recipes[0].group.?);
+}
+
+test "parse ignore directive standalone" {
+    const source =
+        \\task build:
+        \\    @ignore
+        \\    exit 1
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].commands.len);
+    try std.testing.expectEqual(Recipe.CommandDirective.ignore, jakefile.recipes[0].commands[0].directive.?);
+}
+
+// --- Alias Tests ---
+
+test "parse task recipe with single alias" {
+    const source =
+        \\@alias compile
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].name);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].aliases.len);
+    try std.testing.expectEqualStrings("compile", jakefile.recipes[0].aliases[0]);
+}
+
+test "parse task recipe with multiple aliases" {
+    const source =
+        \\@alias compile bundle make
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes[0].aliases.len);
+    try std.testing.expectEqualStrings("compile", jakefile.recipes[0].aliases[0]);
+    try std.testing.expectEqualStrings("bundle", jakefile.recipes[0].aliases[1]);
+    try std.testing.expectEqualStrings("make", jakefile.recipes[0].aliases[2]);
+}
+
+test "parse simple recipe with alias" {
+    const source =
+        \\@alias c
+        \\clean:
+        \\    rm -rf build
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("clean", jakefile.recipes[0].name);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].aliases.len);
+    try std.testing.expectEqualStrings("c", jakefile.recipes[0].aliases[0]);
+}
+
+test "getRecipe finds recipe by alias" {
+    const source =
+        \\@alias compile bundle
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // Should find by name
+    const by_name = jakefile.getRecipe("build");
+    try std.testing.expect(by_name != null);
+    try std.testing.expectEqualStrings("build", by_name.?.name);
+
+    // Should find by first alias
+    const by_alias1 = jakefile.getRecipe("compile");
+    try std.testing.expect(by_alias1 != null);
+    try std.testing.expectEqualStrings("build", by_alias1.?.name);
+
+    // Should find by second alias
+    const by_alias2 = jakefile.getRecipe("bundle");
+    try std.testing.expect(by_alias2 != null);
+    try std.testing.expectEqualStrings("build", by_alias2.?.name);
+
+    // Should not find non-existent
+    const not_found = jakefile.getRecipe("nonexistent");
+    try std.testing.expect(not_found == null);
+}
+
+test "alias only applies to next recipe" {
+    const source =
+        \\@alias a1
+        \\task first:
+        \\    echo "first"
+        \\
+        \\task second:
+        \\    echo "second"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].aliases.len);
+    try std.testing.expectEqual(@as(usize, 0), jakefile.recipes[1].aliases.len);
+}
+
+test "alias with default directive" {
+    const source =
+        \\@alias b
+        \\@default
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expect(jakefile.recipes[0].is_default);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].aliases.len);
+    try std.testing.expectEqualStrings("b", jakefile.recipes[0].aliases[0]);
 }

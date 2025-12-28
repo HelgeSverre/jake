@@ -388,6 +388,8 @@ pub const Lexer = struct {
             .kw_group
         else if (std.mem.eql(u8, text, "desc"))
             .kw_desc
+        else if (std.mem.eql(u8, text, "description"))
+            .kw_desc
         else if (std.mem.eql(u8, text, "only"))
             .kw_only
         else if (std.mem.eql(u8, text, "only-os"))
@@ -1237,7 +1239,7 @@ test "lexer quiet keyword" {
 }
 
 test "lexer new keywords as identifiers with suffix" {
-    const source = "cdrom shelling ignored grouping description only_linux aliased quietly";
+    const source = "cdrom shelling ignored grouping descriptive only_linux aliased quietly";
     var lex = Lexer.init(source);
 
     // These should all be identifiers, not keywords
@@ -1259,7 +1261,7 @@ test "lexer new keywords as identifiers with suffix" {
 
     tok = lex.next();
     try std.testing.expectEqual(Token.Tag.ident, tok.tag);
-    try std.testing.expectEqualStrings("description", tok.slice(source));
+    try std.testing.expectEqualStrings("descriptive", tok.slice(source));
 
     tok = lex.next();
     try std.testing.expectEqual(Token.Tag.ident, tok.tag);

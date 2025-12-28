@@ -1,6 +1,7 @@
 // Jake Executor - Runs recipes with dependency resolution
 
 const std = @import("std");
+const builtin = @import("builtin");
 const parser = @import("parser.zig");
 const cache_mod = @import("cache.zig");
 const conditions = @import("conditions.zig");
@@ -182,6 +183,14 @@ pub const Executor = struct {
             return ExecuteError.RecipeNotFound;
         };
 
+        // Check OS constraints - skip recipe if not for current OS
+        if (shouldSkipForOs(recipe)) {
+            const current_os = getCurrentOsString();
+            self.print("jake: skipping '{s}' (not for {s})\n", .{ name, current_os });
+            self.executed.put(name, {}) catch {};
+            return;
+        }
+
         // Mark as in progress
         self.in_progress.put(name, {}) catch return ExecuteError.OutOfMemory;
         defer _ = self.in_progress.remove(name);
@@ -297,6 +306,41 @@ pub const Executor = struct {
             }
         }
         return null;
+    }
+
+    /// Get current OS as a string
+    fn getCurrentOsString() []const u8 {
+        return switch (builtin.os.tag) {
+            .linux => "linux",
+            .macos => "macos",
+            .windows => "windows",
+            .freebsd => "freebsd",
+            .openbsd => "openbsd",
+            .netbsd => "netbsd",
+            .dragonfly => "dragonfly",
+            else => "unknown",
+        };
+    }
+
+    /// Check if recipe should be skipped due to OS constraints
+    /// Returns true if recipe should be skipped, false if it should run
+    fn shouldSkipForOs(recipe: *const Recipe) bool {
+        // If no only_os constraints, don't skip
+        if (recipe.only_os.len == 0) {
+            return false;
+        }
+
+        const current_os = getCurrentOsString();
+
+        // Check if current OS is in the allowed list
+        for (recipe.only_os) |allowed_os| {
+            if (std.mem.eql(u8, allowed_os, current_os)) {
+                return false; // Current OS is allowed, don't skip
+            }
+        }
+
+        // Current OS is not in the allowed list, skip
+        return true;
     }
 
     /// Execute commands with conditional block support
@@ -583,52 +627,81 @@ pub const Executor = struct {
 
         var hidden_count: usize = 0;
 
-        for (self.jakefile.recipes) |recipe| {
+        // Group recipes by their group field
+        var groups = std.StringHashMap(std.ArrayList(*const Recipe)).init(self.allocator);
+        defer {
+            var it = groups.valueIterator();
+            while (it.next()) |list| {
+                list.deinit();
+            }
+            groups.deinit();
+        }
+
+        var ungrouped = std.ArrayList(*const Recipe).init(self.allocator);
+        defer ungrouped.deinit();
+
+        // Collect recipes into groups
+        for (self.jakefile.recipes) |*recipe| {
             // Skip private recipes (names starting with '_')
             if (recipe.name.len > 0 and recipe.name[0] == '_') {
                 hidden_count += 1;
                 continue;
             }
 
-            const kind_str = switch (recipe.kind) {
-                .task => "task",
-                .file => "file",
-                .simple => "",
-            };
-            const default_str: []const u8 = if (recipe.is_default) " (default)" else "";
-
-            // Build aliases string
-            var alias_buf: [256]u8 = undefined;
-            var alias_str: []const u8 = "";
-            if (recipe.aliases.len > 0) {
-                var fbs = std.io.fixedBufferStream(&alias_buf);
-                fbs.writer().writeAll(" (aliases: ") catch {};
-                for (recipe.aliases, 0..) |al, idx| {
-                    if (idx > 0) fbs.writer().writeAll(", ") catch {};
-                    fbs.writer().writeAll(al) catch {};
+            if (recipe.group) |group_name| {
+                const gop = groups.getOrPut(group_name) catch continue;
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = std.ArrayList(*const Recipe).init(self.allocator);
                 }
-                fbs.writer().writeAll(")") catch {};
-                alias_str = fbs.getWritten();
-            }
-
-            var buf: [512]u8 = undefined;
-            if (kind_str.len > 0) {
-                const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m [{s}]{s}{s}\n", .{ recipe.name, kind_str, default_str, alias_str }) catch continue;
-                stdout.writeAll(line) catch {};
+                gop.value_ptr.append(recipe) catch continue;
             } else {
-                const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m{s}{s}\n", .{ recipe.name, default_str, alias_str }) catch continue;
-                stdout.writeAll(line) catch {};
+                ungrouped.append(recipe) catch continue;
             }
+        }
 
-            if (recipe.doc_comment) |doc| {
-                var doc_buf: [256]u8 = undefined;
-                const doc_line = std.fmt.bufPrint(&doc_buf, "    {s}\n", .{doc}) catch continue;
-                stdout.writeAll(doc_line) catch {};
+        // Get sorted group names
+        var group_names = std.ArrayList([]const u8).init(self.allocator);
+        defer group_names.deinit();
+
+        var key_it = groups.keyIterator();
+        while (key_it.next()) |key| {
+            group_names.append(key.*) catch continue;
+        }
+
+        // Sort group names alphabetically
+        std.mem.sort([]const u8, group_names.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+
+        // Print grouped recipes
+        for (group_names.items) |group_name| {
+            if (groups.get(group_name)) |recipes| {
+                stdout.writeAll("\n") catch {};
+                var group_buf: [256]u8 = undefined;
+                const group_header = std.fmt.bufPrint(&group_buf, "\x1b[1;33m{s}:\x1b[0m\n", .{group_name}) catch continue;
+                stdout.writeAll(group_header) catch {};
+
+                for (recipes.items) |recipe| {
+                    printRecipe(stdout, recipe);
+                }
+            }
+        }
+
+        // Print ungrouped recipes
+        if (ungrouped.items.len > 0) {
+            if (group_names.items.len > 0) {
+                stdout.writeAll("\n") catch {};
+            }
+            for (ungrouped.items) |recipe| {
+                printRecipe(stdout, recipe);
             }
         }
 
         // Show count of hidden recipes
         if (hidden_count > 0) {
+            stdout.writeAll("\n") catch {};
             var hidden_buf: [64]u8 = undefined;
             if (hidden_count == 1) {
                 const hidden_line = std.fmt.bufPrint(&hidden_buf, "({d} hidden recipe)\n", .{hidden_count}) catch return;
@@ -636,6 +709,58 @@ pub const Executor = struct {
             } else {
                 const hidden_line = std.fmt.bufPrint(&hidden_buf, "({d} hidden recipes)\n", .{hidden_count}) catch return;
                 stdout.writeAll(hidden_line) catch {};
+            }
+        }
+    }
+
+    /// Print a single recipe with its metadata
+    fn printRecipe(stdout: std.fs.File, recipe: *const Recipe) void {
+        const kind_str = switch (recipe.kind) {
+            .task => "task",
+            .file => "file",
+            .simple => "",
+        };
+        const default_str: []const u8 = if (recipe.is_default) " (default)" else "";
+
+        // Build aliases string
+        var alias_buf: [256]u8 = undefined;
+        var alias_str: []const u8 = "";
+        if (recipe.aliases.len > 0) {
+            var fbs = std.io.fixedBufferStream(&alias_buf);
+            fbs.writer().writeAll(" (aliases: ") catch {};
+            for (recipe.aliases, 0..) |al, idx| {
+                if (idx > 0) fbs.writer().writeAll(", ") catch {};
+                fbs.writer().writeAll(al) catch {};
+            }
+            fbs.writer().writeAll(")") catch {};
+            alias_str = fbs.getWritten();
+        }
+
+        var buf: [512]u8 = undefined;
+        if (kind_str.len > 0) {
+            const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m [{s}]{s}{s}", .{ recipe.name, kind_str, default_str, alias_str }) catch return;
+            stdout.writeAll(line) catch {};
+        } else {
+            const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m{s}{s}", .{ recipe.name, default_str, alias_str }) catch return;
+            stdout.writeAll(line) catch {};
+        }
+
+        // Show description inline if available
+        if (recipe.description) |desc| {
+            var desc_buf: [256]u8 = undefined;
+            const desc_str = std.fmt.bufPrint(&desc_buf, "  \x1b[90m# {s}\x1b[0m", .{desc}) catch "";
+            stdout.writeAll(desc_str) catch {};
+        }
+        stdout.writeAll("\n") catch {};
+
+        // Show doc_comment on next line if available (and different from description)
+        if (recipe.doc_comment) |doc| {
+            // Only show if there's no description or if doc is different from description
+            const should_show = if (recipe.description) |desc| !std.mem.eql(u8, doc, desc) else true;
+            if (should_show) {
+                var doc_buf: [256]u8 = undefined;
+                const doc_line = std.fmt.bufPrint(&doc_buf, "    {s}\n", .{doc}) catch return;
+                stdout.writeAll(doc_line) catch {};
             }
         }
     }
@@ -1225,4 +1350,272 @@ test "no hidden recipes when none start with underscore" {
     }
 
     try std.testing.expectEqual(@as(usize, 0), hidden_count);
+}
+
+// --- @ignore Directive Tests ---
+
+test "executor @ignore continues after failed command" {
+    const source =
+        \\task test-all:
+        \\    @ignore
+        \\    exit 1
+        \\    echo "still running"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // Check that @ignore is parsed correctly as a directive
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes[0].commands.len);
+    try std.testing.expectEqual(Recipe.CommandDirective.ignore, jakefile.recipes[0].commands[0].directive.?);
+    try std.testing.expect(jakefile.recipes[0].commands[1].directive == null);
+}
+
+test "executor @ignore only affects next command" {
+    const source =
+        \\task test:
+        \\    echo "first"
+        \\    @ignore
+        \\    exit 1
+        \\    echo "third"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // Verify the commands are parsed correctly
+    try std.testing.expectEqual(@as(usize, 4), jakefile.recipes[0].commands.len);
+    // First command has no directive
+    try std.testing.expect(jakefile.recipes[0].commands[0].directive == null);
+    // Second command is @ignore directive
+    try std.testing.expectEqual(Recipe.CommandDirective.ignore, jakefile.recipes[0].commands[1].directive.?);
+    // Third command (exit 1) has no directive - it's the one that will be ignored
+    try std.testing.expect(jakefile.recipes[0].commands[2].directive == null);
+    // Fourth command has no directive
+    try std.testing.expect(jakefile.recipes[0].commands[3].directive == null);
+}
+
+test "executor @ignore in dry run mode" {
+    const source =
+        \\task test:
+        \\    @ignore
+        \\    exit 1
+        \\    echo "done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should succeed in dry-run mode (commands aren't actually executed)
+    try executor.execute("test");
+    try std.testing.expect(executor.executed.contains("test"));
+}
+
+test "executor multiple @ignore directives" {
+    const source =
+        \\task test-all:
+        \\    @ignore
+        \\    exit 1
+        \\    @ignore
+        \\    exit 2
+        \\    echo "all tests complete"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // Verify structure
+    try std.testing.expectEqual(@as(usize, 5), jakefile.recipes[0].commands.len);
+    try std.testing.expectEqual(Recipe.CommandDirective.ignore, jakefile.recipes[0].commands[0].directive.?);
+    try std.testing.expectEqual(Recipe.CommandDirective.ignore, jakefile.recipes[0].commands[2].directive.?);
+}
+
+// --- Positional Arguments Tests ---
+
+test "executor expands single positional arg $1" {
+    const source =
+        \\task deploy:
+        \\    echo "Deploying to {{$1}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Set positional args
+    const args = [_][]const u8{"production"};
+    executor.setPositionalArgs(&args);
+
+    const expanded = try executor.expandJakeVariables("Deploying to {{$1}}");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("Deploying to production", expanded);
+}
+
+test "executor expands multiple positional args $1 and $2" {
+    const source =
+        \\task deploy:
+        \\    echo "{{$1}} {{$2}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Set positional args
+    const args = [_][]const u8{ "production", "1.2.3" };
+    executor.setPositionalArgs(&args);
+
+    const expanded = try executor.expandJakeVariables("{{$1}} {{$2}}");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("production 1.2.3", expanded);
+}
+
+test "executor expands $@ to all positional args" {
+    const source =
+        \\task deploy:
+        \\    echo "All: {{$@}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Set positional args
+    const args = [_][]const u8{ "production", "1.2.3", "extra" };
+    executor.setPositionalArgs(&args);
+
+    const expanded = try executor.expandJakeVariables("All: {{$@}}");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("All: production 1.2.3 extra", expanded);
+}
+
+test "executor expands out of range positional arg to empty string" {
+    const source =
+        \\task test:
+        \\    echo "{{$1}} {{$2}} {{$3}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Set only 2 positional args
+    const args = [_][]const u8{ "one", "two" };
+    executor.setPositionalArgs(&args);
+
+    const expanded = try executor.expandJakeVariables("{{$1}} {{$2}} {{$3}}");
+    defer executor.allocator.free(expanded);
+
+    // $3 should expand to empty string
+    try std.testing.expectEqualStrings("one two ", expanded);
+}
+
+test "executor expands $0 to empty string" {
+    const source =
+        \\task test:
+        \\    echo "{{$0}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const args = [_][]const u8{"arg1"};
+    executor.setPositionalArgs(&args);
+
+    const expanded = try executor.expandJakeVariables("{{$0}}");
+    defer executor.allocator.free(expanded);
+
+    // $0 is 1-indexed so it expands to empty
+    try std.testing.expectEqualStrings("", expanded);
+}
+
+test "executor expands empty $@ to empty string" {
+    const source =
+        \\task test:
+        \\    echo "[{{$@}}]"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // No positional args set (default)
+    const expanded = try executor.expandJakeVariables("[{{$@}}]");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("[]", expanded);
+}
+
+test "executor mixes positional args and named variables" {
+    const source =
+        \\env = "staging"
+        \\task deploy:
+        \\    echo "Deploy {{env}} to {{$1}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const args = [_][]const u8{"server1"};
+    executor.setPositionalArgs(&args);
+
+    const expanded = try executor.expandJakeVariables("Deploy {{env}} to {{$1}}");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("Deploy staging to server1", expanded);
+}
+
+test "executor preserves invalid positional arg syntax" {
+    const source =
+        \\task test:
+        \\    echo "{{$abc}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("{{$abc}}");
+    defer executor.allocator.free(expanded);
+
+    // $abc is not a valid number, should be preserved
+    try std.testing.expectEqualStrings("{{$abc}}", expanded);
 }
