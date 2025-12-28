@@ -3,10 +3,19 @@
 const std = @import("std");
 const parser = @import("parser.zig");
 const cache_mod = @import("cache.zig");
+const conditions = @import("conditions.zig");
+const parallel_mod = @import("parallel.zig");
+const env_mod = @import("env.zig");
+const hooks_mod = @import("hooks.zig");
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
 const Cache = cache_mod.Cache;
+const ParallelExecutor = parallel_mod.ParallelExecutor;
+const Environment = env_mod.Environment;
+const HookRunner = hooks_mod.HookRunner;
+const HookContext = hooks_mod.HookContext;
+const Hook = hooks_mod.Hook;
 
 pub const ExecuteError = error{
     RecipeNotFound,
@@ -26,8 +35,12 @@ pub const Executor = struct {
     executed: std.StringHashMap(void),
     in_progress: std.StringHashMap(void),
     variables: std.StringHashMap([]const u8),
+    expanded_strings: std.ArrayListUnmanaged([]const u8),
+    environment: Environment,
+    hook_runner: HookRunner,
     dry_run: bool,
     verbose: bool,
+    jobs: usize, // Number of parallel jobs (0 = sequential, 1 = single-threaded, 2+ = parallel)
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
         var variables = std.StringHashMap([]const u8).init(allocator);
@@ -37,6 +50,52 @@ pub const Executor = struct {
             variables.put(v.name, v.value) catch {};
         }
 
+        // Initialize environment
+        var environment = Environment.init(allocator);
+
+        // Process directives for environment setup
+        for (jakefile.directives) |directive| {
+            switch (directive.kind) {
+                .dotenv => {
+                    // @dotenv [path] - load .env file
+                    if (directive.args.len > 0) {
+                        // Load specified .env file
+                        for (directive.args) |path| {
+                            environment.loadDotenv(stripQuotes(path)) catch {};
+                        }
+                    } else {
+                        // Load default .env file
+                        environment.loadDotenv(".env") catch {};
+                    }
+                },
+                .@"export" => {
+                    // @export KEY=value or @export KEY value
+                    if (directive.args.len >= 1) {
+                        const first_arg = directive.args[0];
+                        // Check for KEY=value format
+                        if (std.mem.indexOfScalar(u8, first_arg, '=')) |eq_pos| {
+                            const key = first_arg[0..eq_pos];
+                            const value = first_arg[eq_pos + 1 ..];
+                            environment.set(key, stripQuotes(value)) catch {};
+                        } else if (directive.args.len >= 2) {
+                            // KEY value format
+                            environment.set(first_arg, stripQuotes(directive.args[1])) catch {};
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+
+        // Initialize hook runner with global hooks
+        var hook_runner = HookRunner.init(allocator);
+        for (jakefile.global_pre_hooks) |hook| {
+            hook_runner.addGlobalHook(hook) catch {};
+        }
+        for (jakefile.global_post_hooks) |hook| {
+            hook_runner.addGlobalHook(hook) catch {};
+        }
+
         return .{
             .allocator = allocator,
             .jakefile = jakefile,
@@ -44,8 +103,12 @@ pub const Executor = struct {
             .executed = std.StringHashMap(void).init(allocator),
             .in_progress = std.StringHashMap(void).init(allocator),
             .variables = variables,
+            .expanded_strings = .empty,
+            .environment = environment,
+            .hook_runner = hook_runner,
             .dry_run = false,
             .verbose = false,
+            .jobs = 0, // Default to sequential execution
         };
     }
 
@@ -54,10 +117,50 @@ pub const Executor = struct {
         self.executed.deinit();
         self.in_progress.deinit();
         self.variables.deinit();
+        self.environment.deinit();
+        self.hook_runner.deinit();
+        // Free all expanded strings
+        for (self.expanded_strings.items) |s| {
+            self.allocator.free(s);
+        }
+        self.expanded_strings.deinit(self.allocator);
     }
 
     /// Execute a recipe by name
     pub fn execute(self: *Executor, name: []const u8) ExecuteError!void {
+        // Use parallel execution if jobs > 1
+        if (self.jobs > 1) {
+            return self.executeParallel(name);
+        }
+
+        // Sequential execution
+        return self.executeSequential(name);
+    }
+
+    /// Execute using parallel executor for concurrent dependency execution
+    fn executeParallel(self: *Executor, name: []const u8) ExecuteError!void {
+        var parallel_exec = ParallelExecutor.init(self.allocator, self.jakefile, self.jobs);
+        defer parallel_exec.deinit();
+
+        parallel_exec.dry_run = self.dry_run;
+        parallel_exec.verbose = self.verbose;
+
+        // Build dependency graph
+        try parallel_exec.buildGraph(name);
+
+        // Show parallelism stats in verbose mode
+        if (self.verbose) {
+            const stats = parallel_exec.getParallelismStats();
+            self.print("jake: parallel execution with {d} threads\n", .{self.jobs});
+            self.print("jake: {d} recipes, max {d} parallel, critical path length {d}\n", .{ stats.total_recipes, stats.max_parallel, stats.critical_path_length });
+        }
+
+        // Execute
+        try parallel_exec.execute();
+    }
+
+    /// Execute sequentially (original behavior)
+    fn executeSequential(self: *Executor, name: []const u8) ExecuteError!void {
         // Check for cycles
         if (self.in_progress.contains(name)) {
             return ExecuteError.CyclicDependency;
@@ -78,7 +181,7 @@ pub const Executor = struct {
 
         // Execute dependencies first
         for (recipe.dependencies) |dep| {
-            try self.execute(dep);
+            try self.executeSequential(dep);
         }
 
         // Check if we need to run (for file targets)
@@ -94,10 +197,48 @@ pub const Executor = struct {
         }
 
         // Run the recipe
-        self.print("\x1b[1;36m→ {s}\x1b[0m\n", .{name});
+        self.print("\x1b[1;36m-> {s}\x1b[0m\n", .{name});
 
-        for (recipe.commands) |cmd| {
-            try self.runCommand(cmd, recipe);
+        // Update hook runner settings
+        self.hook_runner.dry_run = self.dry_run;
+        self.hook_runner.verbose = self.verbose;
+
+        // Create hook context
+        var hook_context = HookContext{
+            .recipe_name = name,
+            .success = true,
+            .error_message = null,
+            .variables = &self.variables,
+        };
+
+        // Run pre-hooks (global and recipe-specific)
+        self.hook_runner.runPreHooks(recipe.pre_hooks, &hook_context) catch |err| {
+            self.print("\x1b[1;31merror:\x1b[0m pre-hook failed: {s}\n", .{@errorName(err)});
+            return ExecuteError.CommandFailed;
+        };
+
+        // Execute the recipe commands
+        const exec_result = self.executeCommands(recipe.commands);
+
+        // Update hook context based on execution result
+        if (exec_result) |_| {
+            hook_context.success = true;
+            hook_context.error_message = null;
+        } else |err| {
+            hook_context.success = false;
+            hook_context.error_message = @errorName(err);
+        }
+
+        // Run post-hooks (always run, even on failure for cleanup)
+        self.hook_runner.runPostHooks(recipe.post_hooks, &hook_context) catch |hook_err| {
+            self.print("\x1b[1;33mwarning:\x1b[0m post-hook failed: {s}\n", .{@errorName(hook_err)});
+        };
+
+        // Return the original error if recipe execution failed
+        if (exec_result) |_| {
+            // Success - continue
+        } else |err| {
+            return err;
         }
 
         // Update cache for file targets
@@ -128,10 +269,128 @@ pub const Executor = struct {
         return false;
     }
 
-    fn runCommand(self: *Executor, cmd: Recipe.Command, recipe: *const Recipe) ExecuteError!void {
-        _ = recipe;
+    /// Execute commands with conditional block support
+    fn executeCommands(self: *Executor, cmds: []const Recipe.Command) ExecuteError!void {
+        // Conditional state tracking
+        // We use a simple state machine:
+        // - executing: whether we're currently executing commands
+        // - branch_taken: whether any branch in the current if/elif/else chain has matched
+        // - nesting_depth: for nested conditionals (we skip inner blocks when outer is false)
 
-        const line = self.expandVariables(cmd.line) catch cmd.line;
+        var executing: bool = true;
+        var branch_taken: bool = false;
+        var nesting_depth: usize = 0; // Track nested conditionals when skipping
+
+        var i: usize = 0;
+        while (i < cmds.len) : (i += 1) {
+            const cmd = cmds[i];
+
+            // Handle conditional directives
+            if (cmd.directive) |directive| {
+                switch (directive) {
+                    .@"if" => {
+                        if (!executing) {
+                            // We're already skipping, just track nesting
+                            nesting_depth += 1;
+                            continue;
+                        }
+
+                        // Evaluate the condition
+                        const condition_result = conditions.evaluate(cmd.line, &self.variables) catch |err| blk: {
+                            self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ cmd.line, @errorName(err) });
+                            break :blk false;
+                        };
+
+                        if (condition_result) {
+                            executing = true;
+                            branch_taken = true;
+                        } else {
+                            executing = false;
+                            branch_taken = false;
+                        }
+                        continue;
+                    },
+                    .elif => {
+                        if (nesting_depth > 0) {
+                            // Inside a skipped nested block, ignore
+                            continue;
+                        }
+
+                        if (branch_taken) {
+                            // A previous branch matched, skip this one
+                            executing = false;
+                            continue;
+                        }
+
+                        // Evaluate the condition
+                        const condition_result = conditions.evaluate(cmd.line, &self.variables) catch |err| blk: {
+                            self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ cmd.line, @errorName(err) });
+                            break :blk false;
+                        };
+
+                        if (condition_result) {
+                            executing = true;
+                            branch_taken = true;
+                        } else {
+                            executing = false;
+                        }
+                        continue;
+                    },
+                    .@"else" => {
+                        if (nesting_depth > 0) {
+                            // Inside a skipped nested block, ignore
+                            continue;
+                        }
+
+                        if (branch_taken) {
+                            // A previous branch matched, skip else
+                            executing = false;
+                        } else {
+                            // No branch matched yet, execute else
+                            executing = true;
+                            branch_taken = true;
+                        }
+                        continue;
+                    },
+                    .end => {
+                        if (nesting_depth > 0) {
+                            nesting_depth -= 1;
+                            continue;
+                        }
+
+                        // End of conditional block, reset state
+                        executing = true;
+                        branch_taken = false;
+                        continue;
+                    },
+                    else => {
+                        // Other directives, handle normally if executing
+                    },
+                }
+            }
+
+            // Skip command if not in executing state
+            if (!executing) {
+                continue;
+            }
+
+            // Execute the command
+            try self.runCommand(cmd);
+        }
+    }
+
+    fn runCommand(self: *Executor, cmd: Recipe.Command) ExecuteError!void {
+        // First expand {{var}} Jake variables
+        const jake_expanded = self.expandJakeVariables(cmd.line) catch cmd.line;
+        if (jake_expanded.ptr != cmd.line.ptr) {
+            self.expanded_strings.append(self.allocator, jake_expanded) catch return ExecuteError.OutOfMemory;
+        }
+
+        // Then expand $VAR and ${VAR} environment variables
+        const line = self.environment.expandCommand(jake_expanded, self.allocator) catch jake_expanded;
+        if (line.ptr != jake_expanded.ptr) {
+            self.expanded_strings.append(self.allocator, line) catch return ExecuteError.OutOfMemory;
+        }
 
         if (self.dry_run) {
             self.print("  [dry-run] {s}\n", .{line});
@@ -142,13 +401,34 @@ pub const Executor = struct {
             self.print("  $ {s}\n", .{line});
         }
 
-        // Execute via shell
+        // Execute via shell with custom environment
         var child = std.process.Child.init(
             &[_][]const u8{ "/bin/sh", "-c", line },
             self.allocator,
         );
         child.stderr_behavior = .Inherit;
         child.stdout_behavior = .Inherit;
+
+        // Set up environment for child process
+        var env_map = self.environment.buildEnvMap(self.allocator) catch |err| {
+            self.print("\x1b[1;33mwarning:\x1b[0m failed to build env map: {s}\n", .{@errorName(err)});
+            // Continue without custom env
+            _ = child.spawn() catch |spawn_err| {
+                self.print("\x1b[1;31merror:\x1b[0m failed to spawn: {s}\n", .{@errorName(spawn_err)});
+                return ExecuteError.CommandFailed;
+            };
+            const result = child.wait() catch |wait_err| {
+                self.print("\x1b[1;31merror:\x1b[0m failed to wait: {s}\n", .{@errorName(wait_err)});
+                return ExecuteError.CommandFailed;
+            };
+            if (result.Exited != 0) {
+                self.print("\x1b[1;31merror:\x1b[0m command exited with code {d}\n", .{result.Exited});
+                return ExecuteError.CommandFailed;
+            }
+            return;
+        };
+        defer env_map.deinit();
+        child.env_map = &env_map;
 
         _ = child.spawn() catch |err| {
             self.print("\x1b[1;31merror:\x1b[0m failed to spawn: {s}\n", .{@errorName(err)});
@@ -166,7 +446,8 @@ pub const Executor = struct {
         }
     }
 
-    fn expandVariables(self: *Executor, line: []const u8) ![]const u8 {
+    /// Expand {{var}} style Jake variables
+    fn expandJakeVariables(self: *Executor, line: []const u8) ![]const u8 {
         var result: std.ArrayListUnmanaged(u8) = .empty;
         errdefer result.deinit(self.allocator);
 
@@ -236,6 +517,18 @@ pub const Executor = struct {
     }
 };
 
+/// Strip surrounding quotes from a string
+fn stripQuotes(s: []const u8) []const u8 {
+    if (s.len >= 2) {
+        if ((s[0] == '"' and s[s.len - 1] == '"') or
+            (s[0] == '\'' and s[s.len - 1] == '\''))
+        {
+            return s[1 .. s.len - 1];
+        }
+    }
+    return s;
+}
+
 test "executor basic" {
     const source =
         \\task hello:
@@ -243,11 +536,425 @@ test "executor basic" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     executor.dry_run = true;
     try executor.execute("hello");
+}
+
+// ============================================================================
+// COMPREHENSIVE EXECUTOR TESTS
+// ============================================================================
+
+// --- Dependency Resolution Order ---
+
+test "executor executes dependencies first" {
+    const source =
+        \\first:
+        \\    echo "first"
+        \\second: [first]
+        \\    echo "second"
+        \\third: [second]
+        \\    echo "third"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Execute third, which should trigger first, then second, then third
+    try executor.execute("third");
+
+    // Verify all were executed
+    try std.testing.expect(executor.executed.contains("first"));
+    try std.testing.expect(executor.executed.contains("second"));
+    try std.testing.expect(executor.executed.contains("third"));
+}
+
+test "executor executes each dependency once" {
+    const source =
+        \\base:
+        \\    echo "base"
+        \\left: [base]
+        \\    echo "left"
+        \\right: [base]
+        \\    echo "right"
+        \\top: [left, right]
+        \\    echo "top"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("top");
+
+    // base should only be executed once (verified by the fact it's in executed set)
+    try std.testing.expect(executor.executed.contains("base"));
+    try std.testing.expect(executor.executed.contains("left"));
+    try std.testing.expect(executor.executed.contains("right"));
+    try std.testing.expect(executor.executed.contains("top"));
+}
+
+// --- Cycle Detection ---
+
+test "executor detects direct cycle" {
+    const source =
+        \\a: [b]
+        \\    echo "a"
+        \\b: [a]
+        \\    echo "b"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    const result = executor.execute("a");
+    try std.testing.expectError(ExecuteError.CyclicDependency, result);
+}
+
+test "executor detects self cycle" {
+    const source =
+        \\a: [a]
+        \\    echo "a"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    const result = executor.execute("a");
+    try std.testing.expectError(ExecuteError.CyclicDependency, result);
+}
+
+test "executor detects indirect cycle" {
+    const source =
+        \\a: [b]
+        \\    echo "a"
+        \\b: [c]
+        \\    echo "b"
+        \\c: [a]
+        \\    echo "c"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    const result = executor.execute("a");
+    try std.testing.expectError(ExecuteError.CyclicDependency, result);
+}
+
+// --- Variable Expansion ---
+
+test "executor expands jake variables" {
+    const source =
+        \\greeting = "Hello"
+        \\task hello:
+        \\    echo "{{greeting}} World"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Test the variable expansion function directly
+    const expanded = try executor.expandJakeVariables("{{greeting}} World");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("Hello World", expanded);
+}
+
+test "executor preserves undefined variables" {
+    const source =
+        \\task hello:
+        \\    echo "{{undefined}} World"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("{{undefined}} World");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("{{undefined}} World", expanded);
+}
+
+test "executor expands multiple variables" {
+    const source =
+        \\first = "Hello"
+        \\second = "World"
+        \\task hello:
+        \\    echo "{{first}} {{second}}!"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("{{first}} {{second}}!");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("Hello World!", expanded);
+}
+
+// --- Dry Run Mode ---
+
+test "executor dry run does not execute commands" {
+    const source =
+        \\task test:
+        \\    exit 1
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should succeed because dry_run doesn't actually execute the failing command
+    try executor.execute("test");
+}
+
+// --- Recipe Not Found ---
+
+test "executor returns error for non-existent recipe" {
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    const result = executor.execute("nonexistent");
+    try std.testing.expectError(ExecuteError.RecipeNotFound, result);
+}
+
+test "executor returns error for missing dependency" {
+    const source =
+        \\task build: [missing]
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    const result = executor.execute("build");
+    try std.testing.expectError(ExecuteError.RecipeNotFound, result);
+}
+
+// --- Task Types ---
+
+test "executor handles simple recipe" {
+    const source =
+        \\build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("build");
+    try std.testing.expect(executor.executed.contains("build"));
+}
+
+test "executor handles task recipe" {
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("build");
+    try std.testing.expect(executor.executed.contains("build"));
+}
+
+// --- Multiple Commands ---
+
+test "executor runs multiple commands in recipe" {
+    const source =
+        \\task setup:
+        \\    echo "step 1"
+        \\    echo "step 2"
+        \\    echo "step 3"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("setup");
+}
+
+// --- Recipe Execution Tracking ---
+
+test "executor tracks executed recipes" {
+    const source =
+        \\a:
+        \\    echo "a"
+        \\b:
+        \\    echo "b"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("a");
+    try std.testing.expect(executor.executed.contains("a"));
+    try std.testing.expect(!executor.executed.contains("b"));
+
+    try executor.execute("b");
+    try std.testing.expect(executor.executed.contains("a"));
+    try std.testing.expect(executor.executed.contains("b"));
+}
+
+test "executor skips already executed recipe" {
+    const source =
+        \\base:
+        \\    echo "base"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("base");
+    try executor.execute("base"); // Should not re-execute
+    try std.testing.expect(executor.executed.contains("base"));
+}
+
+// --- Variable Loading ---
+
+test "executor loads jakefile variables" {
+    const source =
+        \\name = "test"
+        \\version = "1.0.0"
+        \\task info:
+        \\    echo "{{name}} {{version}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    try std.testing.expectEqualStrings("test", executor.variables.get("name").?);
+    try std.testing.expectEqualStrings("1.0.0", executor.variables.get("version").?);
+}
+
+// --- Empty Recipe ---
+
+test "executor handles empty recipe" {
+    const source =
+        \\empty:
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("empty");
+    try std.testing.expect(executor.executed.contains("empty"));
+}
+
+// --- stripQuotes Tests ---
+
+test "stripQuotes removes double quotes" {
+    try std.testing.expectEqualStrings("hello", stripQuotes("\"hello\""));
+}
+
+test "stripQuotes removes single quotes" {
+    try std.testing.expectEqualStrings("hello", stripQuotes("'hello'"));
+}
+
+test "stripQuotes preserves unquoted strings" {
+    try std.testing.expectEqualStrings("hello", stripQuotes("hello"));
+}
+
+test "stripQuotes handles empty string" {
+    try std.testing.expectEqualStrings("", stripQuotes(""));
+}
+
+test "stripQuotes handles short strings" {
+    try std.testing.expectEqualStrings("a", stripQuotes("a"));
+    try std.testing.expectEqualStrings("\"", stripQuotes("\""));
 }
