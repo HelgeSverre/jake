@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - target: x86_64-linux
+            os: ubuntu-latest
+            artifact: jake-linux-x86_64
+          - target: aarch64-linux
+            os: ubuntu-latest
+            artifact: jake-linux-aarch64
+
+          # macOS
+          - target: x86_64-macos
+            os: macos-latest
+            artifact: jake-macos-x86_64
+          - target: aarch64-macos
+            os: macos-latest
+            artifact: jake-macos-aarch64
+
+          # Windows
+          - target: x86_64-windows
+            os: windows-latest
+            artifact: jake-windows-x86_64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - name: Build
+        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
+
+      - name: Rename Binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mv zig-out/bin/jake ${{ matrix.artifact }}
+          chmod +x ${{ matrix.artifact }}
+
+      - name: Rename Binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          move zig-out\bin\jake.exe ${{ matrix.artifact }}
+        shell: cmd
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare Release Assets
+        run: |
+          mkdir -p release
+          for dir in artifacts/*/; do
+            cp "$dir"* release/ 2>/dev/null || true
+          done
+          ls -la release/
+
+      - name: Generate Checksums
+        run: |
+          cd release
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
