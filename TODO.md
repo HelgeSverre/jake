@@ -48,20 +48,22 @@
 
 | File | Test Count | Coverage |
 |------|------------|----------|
+| executor.zig | 95 | Excellent |
 | parser.zig | 75 | Good |
 | lexer.zig | 64 | Excellent |
-| executor.zig | 104 | Excellent |
 | conditions.zig | 17 | Good |
 | cache.zig | 16 | Good |
-| prompt.zig | 11 | Good |
 | glob.zig | 10 | Good |
 | env.zig | 10 | Good |
+| prompt.zig | 8 | Good |
 | functions.zig | 6 | Adequate |
 | parallel.zig | 3 | Basic |
 | hooks.zig | 3 | Basic |
 | import.zig | 2 | Minimal |
+| main.zig | 1 | Minimal |
+| root.zig | 1 | Minimal |
 | watch.zig | 1 | Minimal |
-| **TOTAL** | **311** | |
+| **TOTAL** | **312** | |
 
 ---
 
@@ -106,7 +108,7 @@
 - [x] `test "@confirm in dry-run mode shows message but doesn't prompt"`
 - [x] `test "@confirm with default message"`
 - [x] Create `src/prompt.zig`
-- [ ] Add `--yes` flag to main.zig (deferred)
+- [x] Add `--yes` flag to main.zig
 
 ### Step 5: @each - Loop Iteration (7 tests) ✅
 - [x] `test "@each iterates over space-separated items"`
@@ -239,12 +241,19 @@ src/
 
 ## Next Steps
 
-All 10 TDD implementation steps are complete with 311 passing tests.
+All TDD implementation steps are complete with 312 passing tests.
 
-1. **Immediate**: Add `--yes` flag to main.zig for @confirm auto-confirmation
-2. **Short-term**: Add integration tests for complex multi-recipe scenarios
-3. **Medium-term**: Remote cache support (S3/HTTP backends)
-4. **Long-term**: Container execution and workspace/monorepo support
+**Cleanup tasks completed:**
+- ✅ Added `--yes`/`-y` flag to main.zig
+- ✅ Removed stale TODO comment about @ignore
+- ✅ Removed dead Directive.Kind enum values
+- ✅ Wired cache persistence (load/save on init/deinit)
+- ✅ Implemented recipe.quiet field
+
+**Future work:**
+1. **Short-term**: Add integration tests for complex multi-recipe scenarios
+2. **Medium-term**: Remote cache support (S3/HTTP backends)
+3. **Long-term**: Container execution and workspace/monorepo support
 
 ---
 
