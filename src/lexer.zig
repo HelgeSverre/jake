@@ -947,11 +947,11 @@ test "lexer complex recipe header" {
 }
 
 test "lexer file recipe with globs" {
-    const source = "file output.js: src/**/*.ts, lib/*.ts";
+    const source = "file dist/output.js: src/**/*.ts, lib/*.ts";
     var lex = Lexer.init(source);
 
     try std.testing.expectEqual(Token.Tag.kw_file, lex.next().tag);
-    // output.js contains / so it's a glob_pattern
+    // dist/output.js contains / so it's a glob_pattern
     try std.testing.expectEqual(Token.Tag.glob_pattern, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.colon, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.glob_pattern, lex.next().tag);
@@ -965,7 +965,8 @@ test "lexer directive sequence" {
 
     try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_dotenv, lex.next().tag);
-    try std.testing.expectEqual(Token.Tag.glob_pattern, lex.next().tag);
+    // .env doesn't contain * or /, so it's an identifier (dotted name)
+    try std.testing.expectEqual(Token.Tag.ident, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.newline, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_require, lex.next().tag);
