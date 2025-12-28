@@ -45,7 +45,7 @@ Jake uses a simple, readable syntax without Make's tab sensitivity or arcane fea
 Requires [Zig](https://ziglang.org/) 0.15 or later:
 
 ```bash
-git clone https://github.com/helgeblod/jake.git
+git clone https://github.com/HelgeSverre/jake.git
 cd jake
 zig build -Doptimize=ReleaseFast
 ```
@@ -60,7 +60,7 @@ sudo cp zig-out/bin/jake /usr/local/bin/
 
 ### Pre-built Binaries
 
-Download from [GitHub Releases](https://github.com/helgeblod/jake/releases) for:
+Download from [GitHub Releases](https://github.com/HelgeSverre/jake/releases) for:
 - Linux (x86_64, aarch64)
 - macOS (x86_64, aarch64/Apple Silicon)
 - Windows (x86_64)
@@ -863,7 +863,7 @@ Create a `Jakefile` in current directory, or use `-f` to specify path.
 
 ## Getting Help
 
-- **GitHub Issues**: [github.com/helgeblod/jake/issues](https://github.com/helgeblod/jake/issues)
+- **GitHub Issues**: [github.com/HelgeSverre/jake/issues](https://github.com/HelgeSverre/jake/issues)
 - **Examples**: See the `samples/` directory
 
 ---

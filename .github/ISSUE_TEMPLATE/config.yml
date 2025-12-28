@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/HelgeSverre/jake/blob/main/GUIDE.md
+    about: Check the user guide for answers to common questions
+  - name: Discussions
+    url: https://github.com/HelgeSverre/jake/discussions
+    about: Ask questions and discuss ideas with the community
