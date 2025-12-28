@@ -167,14 +167,22 @@ pub const Cache = struct {
         const cache_file = try std.fs.cwd().createFile(".jake/cache", .{});
         defer cache_file.close();
 
-        var writer = cache_file.writer();
         var iter = self.hashes.iterator();
         while (iter.next()) |entry| {
-            try writer.print("{s}\x00{s}\x00{d}\n", .{
-                entry.key_ptr.*,
-                std.fmt.fmtSliceHexLower(&entry.value_ptr.content_hash),
-                entry.value_ptr.mtime,
-            });
+            // Write key
+            cache_file.writeAll(entry.key_ptr.*) catch continue;
+            cache_file.writeAll("\x00") catch continue;
+            // Write hash as hex
+            var hex_buf: [64]u8 = undefined;
+            for (entry.value_ptr.content_hash, 0..) |byte, i| {
+                _ = std.fmt.bufPrint(hex_buf[i * 2 ..][0..2], "{x:0>2}", .{byte}) catch break;
+            }
+            cache_file.writeAll(hex_buf[0..64]) catch continue;
+            cache_file.writeAll("\x00") catch continue;
+            // Write mtime
+            var mtime_buf: [32]u8 = undefined;
+            const mtime = std.fmt.bufPrint(&mtime_buf, "{d}\n", .{entry.value_ptr.mtime}) catch continue;
+            cache_file.writeAll(mtime) catch continue;
         }
     }
 };
@@ -228,7 +236,7 @@ test "cache isStale returns true for file not in cache" {
     defer cache.deinit();
 
     // Create a temporary file
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     const file = try tmp_dir.dir.createFile("test.txt", .{});
@@ -258,7 +266,7 @@ test "cache update stores file hash" {
     defer cache.deinit();
 
     // Create a temporary file
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     const file = try tmp_dir.dir.createFile("test.txt", .{});
@@ -289,7 +297,7 @@ test "cache isStale returns false after update" {
     defer cache.deinit();
 
     // Create a temporary file
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     const file = try tmp_dir.dir.createFile("test.txt", .{});
@@ -320,7 +328,7 @@ test "cache update can be called multiple times" {
     defer cache.deinit();
 
     // Create a temporary file
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     const file = try tmp_dir.dir.createFile("test.txt", .{});
@@ -354,7 +362,7 @@ test "cache save creates cache directory" {
     defer cache.deinit();
 
     // Create a temporary directory
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     // Change to tmp dir
@@ -378,7 +386,7 @@ test "cache save creates cache directory" {
 
 test "cache save and load roundtrip" {
     // Create temporary directory
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     // Change to tmp dir
@@ -428,7 +436,7 @@ test "cache load handles missing cache file" {
     defer cache.deinit();
 
     // Create temporary directory (no cache file)
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     // Change to tmp dir
@@ -454,7 +462,7 @@ test "cache detects content change" {
     defer cache.deinit();
 
     // Create temporary directory
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     // Change to tmp dir
@@ -529,7 +537,7 @@ test "cache deinit frees allocated keys" {
     var cache = Cache.init(std.testing.allocator);
 
     // Create temporary directory
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     // Change to tmp dir
@@ -569,7 +577,7 @@ test "cache handles multiple files" {
     defer cache.deinit();
 
     // Create temporary directory
-    const tmp_dir = std.testing.tmpDir(.{});
+    var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     // Change to tmp dir
