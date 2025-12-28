@@ -43,7 +43,7 @@
 ### From Source
 
 ```bash
-# Requires Zig 0.15+
+# Requires Zig 0.14+
 git clone https://github.com/HelgeSverre/jake.git
 cd jake
 zig build -Doptimize=ReleaseFast

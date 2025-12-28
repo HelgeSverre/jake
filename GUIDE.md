@@ -42,7 +42,7 @@ Jake uses a simple, readable syntax without Make's tab sensitivity or arcane fea
 
 ### From Source (Recommended)
 
-Requires [Zig](https://ziglang.org/) 0.15 or later:
+Requires [Zig](https://ziglang.org/) 0.14 or later:
 
 ```bash
 git clone https://github.com/HelgeSverre/jake.git

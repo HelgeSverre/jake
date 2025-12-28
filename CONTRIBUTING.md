@@ -4,7 +4,7 @@ Thank you for your interest in contributing to Jake!
 
 ## Development Setup
 
-1. Install [Zig](https://ziglang.org/) 0.15 or later
+1. Install [Zig](https://ziglang.org/) 0.14 or later
 2. Clone the repository:
    ```bash
    git clone https://github.com/HelgeSverre/jake.git
