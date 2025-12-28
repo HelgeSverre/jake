@@ -7,11 +7,22 @@ pub const lexer = @import("lexer.zig");
 pub const parser = @import("parser.zig");
 pub const executor = @import("executor.zig");
 pub const cache = @import("cache.zig");
+pub const glob = @import("glob.zig");
+pub const watch = @import("watch.zig");
+pub const parallel = @import("parallel.zig");
+pub const env = @import("env.zig");
+pub const import_mod = @import("import.zig");
 
 pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;
 pub const Executor = executor.Executor;
 pub const Jakefile = parser.Jakefile;
+pub const ImportDirective = parser.ImportDirective;
+pub const Watcher = watch.Watcher;
+pub const ParallelExecutor = parallel.ParallelExecutor;
+pub const Environment = env.Environment;
+pub const ImportResolver = import_mod.ImportResolver;
+pub const resolveImports = import_mod.resolveImports;
 
 /// Parse a Jakefile from source
 pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Jakefile {
