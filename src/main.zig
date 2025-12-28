@@ -7,11 +7,11 @@ const jake = @import("jake");
 const version = "0.1.0";
 
 fn getStdout() std.fs.File {
-    return std.io.getStdOut();
+    return std.fs.File.stdout();
 }
 
 fn getStderr() std.fs.File {
-    return std.io.getStdErr();
+    return std.fs.File.stderr();
 }
 
 pub fn main() !void {

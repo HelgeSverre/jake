@@ -7,6 +7,7 @@
 // 4. Collecting and merging results with synchronized output
 
 const std = @import("std");
+const builtin = @import("builtin");
 const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
 const cache_mod = @import("cache.zig");
@@ -348,6 +349,13 @@ pub const ParallelExecutor = struct {
         const node = &self.nodes.items[node_idx];
         const recipe = node.recipe;
 
+        // Check OS constraints - skip recipe if not for current OS
+        if (shouldSkipForOs(recipe)) {
+            const current_os = getCurrentOsString();
+            self.printSynchronized("jake: skipping '{s}' (not for {s})\n", .{ recipe.name, current_os });
+            return true; // Success (skipped)
+        }
+
         // Check if file target needs rebuilding
         if (recipe.kind == .file) {
             const needs_run = self.checkFileTarget(recipe) catch true;
@@ -438,12 +446,12 @@ pub const ParallelExecutor = struct {
         if (stdout_len > 0) {
             self.output_mutex.lock();
             defer self.output_mutex.unlock();
-            std.io.getStdOut().writeAll(stdout_buf[0..stdout_len]) catch {};
+            std.fs.File.stdout().writeAll(stdout_buf[0..stdout_len]) catch {};
         }
         if (stderr_len > 0) {
             self.output_mutex.lock();
             defer self.output_mutex.unlock();
-            std.io.getStdErr().writeAll(stderr_buf[0..stderr_len]) catch {};
+            std.fs.File.stderr().writeAll(stderr_buf[0..stderr_len]) catch {};
         }
 
         if (result.Exited != 0) {
@@ -524,7 +532,7 @@ pub const ParallelExecutor = struct {
 
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-        std.io.getStdErr().writeAll(msg) catch {};
+        std.fs.File.stderr().writeAll(msg) catch {};
     }
 
     /// Execute sequentially (for single-threaded or dry-run mode)
@@ -633,6 +641,41 @@ pub const ParallelExecutor = struct {
         };
     }
 };
+
+/// Get current OS as a string
+fn getCurrentOsString() []const u8 {
+    return switch (builtin.os.tag) {
+        .linux => "linux",
+        .macos => "macos",
+        .windows => "windows",
+        .freebsd => "freebsd",
+        .openbsd => "openbsd",
+        .netbsd => "netbsd",
+        .dragonfly => "dragonfly",
+        else => "unknown",
+    };
+}
+
+/// Check if recipe should be skipped due to OS constraints
+/// Returns true if recipe should be skipped, false if it should run
+fn shouldSkipForOs(recipe: *const Recipe) bool {
+    // If no only_os constraints, don't skip
+    if (recipe.only_os.len == 0) {
+        return false;
+    }
+
+    const current_os = getCurrentOsString();
+
+    // Check if current OS is in the allowed list
+    for (recipe.only_os) |allowed_os| {
+        if (std.mem.eql(u8, allowed_os, current_os)) {
+            return false; // Current OS is allowed, don't skip
+        }
+    }
+
+    // Current OS is not in the allowed list, skip
+    return true;
+}
 
 // Tests
 test "parallel executor basic" {
