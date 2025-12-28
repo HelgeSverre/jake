@@ -1326,3 +1326,15 @@ test "lexer multiple new directives" {
     try std.testing.expectEqual(Token.Tag.kw_quiet, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
 }
+
+test "lexer description keyword" {
+    const source = "@description \"Build the app\"";
+    var lex = Lexer.init(source);
+
+    try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
+    const desc_tok = lex.next();
+    try std.testing.expectEqual(Token.Tag.kw_desc, desc_tok.tag);
+    try std.testing.expectEqualStrings("description", desc_tok.slice(source));
+    try std.testing.expectEqual(Token.Tag.string, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
+}

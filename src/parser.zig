@@ -904,8 +904,8 @@ pub const Parser = struct {
             .aliases = aliases,
             .group = self.consumePendingGroup(),
             .description = self.consumePendingDescription(),
-            .shell = null,
-            .working_dir = null,
+            .shell = shell,
+            .working_dir = working_dir,
             .only_os = only_os,
             .quiet = false,
         }) catch return ParseError.OutOfMemory;
@@ -2042,4 +2042,256 @@ test "alias with default directive" {
     try std.testing.expect(jakefile.recipes[0].is_default);
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].aliases.len);
     try std.testing.expectEqualStrings("b", jakefile.recipes[0].aliases[0]);
+}
+
+// --- @only-os and @only Tests ---
+
+test "parse only-os directive with single os" {
+    const source =
+        \\@only-os linux
+        \\task build-linux:
+        \\    ./build.sh
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
+}
+
+test "parse only-os directive with multiple os" {
+    const source =
+        \\@only-os linux macos
+        \\task build-unix:
+        \\    ./build.sh
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
+    try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[1]);
+}
+
+test "parse only directive with multiple os" {
+    const source =
+        \\@only linux macos windows
+        \\task cross-platform:
+        \\    ./build.sh
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
+    try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[1]);
+    try std.testing.expectEqualStrings("windows", jakefile.recipes[0].only_os[2]);
+}
+
+test "parse only-os applies only to next recipe" {
+    const source =
+        \\@only-os windows
+        \\task build-windows:
+        \\    build.bat
+        \\
+        \\task build-all:
+        \\    echo "all"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("windows", jakefile.recipes[0].only_os[0]);
+    try std.testing.expectEqual(@as(usize, 0), jakefile.recipes[1].only_os.len);
+}
+
+test "parse only-os with simple recipe" {
+    const source =
+        \\@only-os macos
+        \\brew-install:
+        \\    brew install deps
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[0]);
+}
+
+test "parse only-os with file recipe" {
+    const source =
+        \\@only-os linux
+        \\file output.so: src/*.c
+        \\    gcc -shared -o output.so src/*.c
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
+}
+
+test "parse only-os combined with other directives" {
+    const source =
+        \\@only-os linux macos
+        \\@alias b
+        \\@group build
+        \\task build-unix:
+        \\    ./build.sh
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(@as(usize, 2), recipe.only_os.len);
+    try std.testing.expectEqual(@as(usize, 1), recipe.aliases.len);
+    try std.testing.expectEqualStrings("build", recipe.group.?);
+}
+
+test "parse @cd directive in task recipe" {
+    const source =
+        \\task build:
+        \\    @cd ./packages/frontend
+        \\    npm run build
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("build", recipe.name);
+    try std.testing.expectEqualStrings("./packages/frontend", recipe.working_dir.?);
+    try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
+    try std.testing.expectEqualStrings("npm run build", recipe.commands[0].line);
+}
+
+test "parse @shell directive in task recipe" {
+    const source =
+        \\task build:
+        \\    @shell bash
+        \\    echo "using bash"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("build", recipe.name);
+    try std.testing.expectEqualStrings("bash", recipe.shell.?);
+    try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
+}
+
+test "parse @cd and @shell together in task recipe" {
+    const source =
+        \\task build:
+        \\    @cd ./packages/frontend
+        \\    @shell bash
+        \\    npm run build
+        \\    npm run test
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("build", recipe.name);
+    try std.testing.expectEqualStrings("./packages/frontend", recipe.working_dir.?);
+    try std.testing.expectEqualStrings("bash", recipe.shell.?);
+    try std.testing.expectEqual(@as(usize, 2), recipe.commands.len);
+    try std.testing.expectEqualStrings("npm run build", recipe.commands[0].line);
+    try std.testing.expectEqualStrings("npm run test", recipe.commands[1].line);
+}
+
+test "parse @shell with quoted path" {
+    const source =
+        \\task build:
+        \\    @shell "/bin/zsh"
+        \\    echo "using zsh"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("/bin/zsh", recipe.shell.?);
+}
+
+test "parse @cd directive in simple recipe" {
+    const source =
+        \\build:
+        \\    @cd ./src
+        \\    make all
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("build", recipe.name);
+    try std.testing.expectEqualStrings("./src", recipe.working_dir.?);
+    try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
+}
+
+test "parse @shell directive in simple recipe" {
+    const source =
+        \\build:
+        \\    @shell zsh
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("zsh", recipe.shell.?);
+}
+
+test "parse @cd directive in file recipe" {
+    const source =
+        \\file dist/app.js: src/*.ts
+        \\    @cd ./frontend
+        \\    npm run build
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("./frontend", recipe.working_dir.?);
+    try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
 }
