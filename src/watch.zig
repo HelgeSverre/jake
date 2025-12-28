@@ -293,7 +293,7 @@ pub const Watcher = struct {
         _ = self;
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-        std.fs.File.stderr().writeAll(msg) catch {};
+        std.io.getStdErr().writeAll(msg) catch {};
     }
 };
 
