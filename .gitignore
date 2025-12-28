@@ -1,23 +1,30 @@
-# Zig build artifacts
+# Zig
 zig-out/
 zig-cache/
 .zig-cache/
 
-# Editor/IDE
+# Jake cache
+.jake/
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+
+# Editor
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# macOS
+# OS
 .DS_Store
+Thumbs.db
 
-# Debug
-*.pdb
+# Test artifacts
+samples/*/dist/
 
-# Compiled libraries and objects
-*.a
-*.o
-*.so
-*.dylib
+# Docs
+docs/
