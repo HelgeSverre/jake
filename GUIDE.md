@@ -17,12 +17,16 @@ A comprehensive guide to using Jake, the modern command runner with dependency t
 11. [Environment Variables](#environment-variables)
 12. [Conditionals](#conditionals)
 13. [Hooks](#hooks)
-14. [Parallel Execution](#parallel-execution)
-15. [Watch Mode](#watch-mode)
-16. [CLI Reference](#cli-reference)
-17. [Best Practices](#best-practices)
-18. [Migrating from Make](#migrating-from-make)
-19. [Migrating from Just](#migrating-from-just)
+14. [Command Directives](#command-directives)
+15. [Recipe Metadata](#recipe-metadata)
+16. [Positional Arguments](#positional-arguments)
+17. [Built-in Functions](#built-in-functions)
+18. [Parallel Execution](#parallel-execution)
+19. [Watch Mode](#watch-mode)
+20. [CLI Reference](#cli-reference)
+21. [Best Practices](#best-practices)
+22. [Migrating from Make](#migrating-from-make)
+23. [Migrating from Just](#migrating-from-just)
 
 ---
 
@@ -501,6 +505,302 @@ task test:
 
 ---
 
+## Command Directives
+
+Directives control command execution behavior within recipes.
+
+### @confirm - Interactive Prompts
+
+Ask for confirmation before proceeding:
+
+```jake
+task deploy:
+    @confirm "Deploy to production?"
+    ./deploy.sh production
+```
+
+Use `-y` or `--yes` to auto-confirm all prompts:
+
+```bash
+jake -y deploy
+```
+
+### @needs - Command Existence Check
+
+Verify required commands are available:
+
+```jake
+task build:
+    @needs docker npm node
+    docker build -t myapp .
+```
+
+If any command is missing, Jake exits with a helpful error.
+
+### @require - Environment Variables
+
+Validate required environment variables before running:
+
+```jake
+@require API_KEY DATABASE_URL
+
+task deploy:
+    echo "Deploying with $API_KEY"
+```
+
+### @each - Loop Iteration
+
+Iterate over items:
+
+```jake
+task lint-all:
+    @each src test lib
+        echo "Linting {{item}}..."
+        eslint {{item}}/
+    @end
+```
+
+Items can be space or comma-separated.
+
+### @cache - Skip When Unchanged
+
+Skip commands if input files haven't changed:
+
+```jake
+task build:
+    @cache src/*.ts package.json
+    npm run build
+```
+
+The command only runs if any of the cached files have changed since the last run.
+
+### @ignore - Continue on Failure
+
+Continue execution even if command fails:
+
+```jake
+task cleanup:
+    @ignore
+    rm -rf temp/
+    rm -rf cache/
+    echo "Cleanup done"
+```
+
+### @cd - Working Directory
+
+Run commands in a different directory:
+
+```jake
+task build-frontend:
+    @cd frontend
+    npm install
+    npm run build
+```
+
+### @shell - Custom Shell
+
+Use a different shell for the recipe:
+
+```jake
+task powershell-task:
+    @shell powershell
+    Write-Host "Hello from PowerShell"
+
+task zsh-task:
+    @shell zsh
+    echo "Running in zsh"
+```
+
+### @ Command Prefix - Silent Execution
+
+Prefix a command with `@` to suppress echoing:
+
+```jake
+task build:
+    @echo "This won't show the 'echo' command itself"
+    npm run build
+```
+
+---
+
+## Recipe Metadata
+
+### @group - Organize Recipes
+
+Group related recipes together in listings:
+
+```jake
+@group build
+task build-frontend:
+    npm run build
+
+@group build
+task build-backend:
+    cargo build
+
+@group test
+task test-unit:
+    npm test
+```
+
+`jake --list` will show recipes organized by group.
+
+### @description - Recipe Description
+
+Add a description shown in listings:
+
+```jake
+task deploy:
+    @description "Deploy application to production server"
+    ./deploy.sh
+```
+
+### @only-os - Platform-Specific Recipes
+
+Run recipes only on specific operating systems:
+
+```jake
+@only-os linux macos
+task install-deps:
+    ./install.sh
+
+@only-os windows
+task install-deps:
+    install.bat
+```
+
+Valid OS values: `linux`, `macos`, `windows`
+
+### @quiet - Suppress Output
+
+Suppress command echoing for a recipe:
+
+```jake
+@quiet
+task secret-task:
+    echo "Commands won't be echoed"
+```
+
+### Recipe Aliases
+
+Define alternative names for a recipe:
+
+```jake
+task build | b | compile:
+    cargo build
+```
+
+Now `jake build`, `jake b`, and `jake compile` all work.
+
+### Private Recipes
+
+Prefix recipe names with `_` to hide from listings:
+
+```jake
+task _internal-helper:
+    echo "This won't show in jake --list"
+
+task public-task: [_internal-helper]
+    echo "This uses the private helper"
+```
+
+---
+
+## Positional Arguments
+
+Pass arguments directly to recipes using shell-style variables.
+
+### Basic Usage
+
+```jake
+task greet:
+    echo "Hello, $1!"
+```
+
+```bash
+$ jake greet World
+Hello, World!
+```
+
+### Multiple Arguments
+
+```jake
+task deploy:
+    echo "Deploying $1 to $2"
+```
+
+```bash
+$ jake deploy v1.0.0 production
+Deploying v1.0.0 to production
+```
+
+### All Arguments ($@)
+
+Access all arguments at once:
+
+```jake
+task echo-all:
+    echo "Arguments: $@"
+```
+
+```bash
+$ jake echo-all a b c d
+Arguments: a b c d
+```
+
+### Combined with Parameters
+
+Positional args work alongside named parameters:
+
+```jake
+task deploy env="staging":
+    echo "Deploying to {{env}} with args: $@"
+```
+
+---
+
+## Built-in Functions
+
+Use functions in variable expansion with `{{function(arg)}}` syntax.
+
+### String Functions
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `uppercase(s)` | Convert to uppercase | `{{uppercase(hello)}}` → `HELLO` |
+| `lowercase(s)` | Convert to lowercase | `{{lowercase(HELLO)}}` → `hello` |
+| `trim(s)` | Remove whitespace | `{{trim( hello )}}` → `hello` |
+
+### Path Functions
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `dirname(p)` | Get directory part | `{{dirname(/a/b/c.txt)}}` → `/a/b` |
+| `basename(p)` | Get filename part | `{{basename(/a/b/c.txt)}}` → `c.txt` |
+| `extension(p)` | Get file extension | `{{extension(file.txt)}}` → `.txt` |
+| `without_extension(p)` | Remove extension | `{{without_extension(file.txt)}}` → `file` |
+| `absolute_path(p)` | Get absolute path | `{{absolute_path(./src)}}` → `/home/user/project/src` |
+
+### Using with Variables
+
+```jake
+file_path = "src/components/Button.tsx"
+
+task info:
+    echo "Directory: {{dirname(file_path)}}"
+    echo "Filename: {{basename(file_path)}}"
+    echo "Extension: {{extension(file_path)}}"
+```
+
+Output:
+```
+Directory: src/components
+Filename: Button.tsx
+Extension: .tsx
+```
+
+---
+
 ## Parallel Execution
 
 ### Running in Parallel
@@ -591,6 +891,7 @@ OPTIONS:
     -l, --list              List available recipes
     -n, --dry-run           Print commands without executing
     -v, --verbose           Show verbose output
+    -y, --yes               Auto-confirm all @confirm prompts
     -f, --jakefile PATH     Use specified Jakefile
     -w, --watch [PATTERN]   Watch and re-run on changes
     -j, --jobs [N]          Parallel jobs (default: CPU count)
@@ -868,4 +1169,4 @@ Create a `Jakefile` in current directory, or use `-f` to specify path.
 
 ---
 
-*Jake v0.1.0 • MIT License*
+*Jake v0.2.0 • MIT License*

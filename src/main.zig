@@ -4,7 +4,7 @@
 const std = @import("std");
 const jake = @import("jake");
 
-const version = "0.1.0";
+const version = "0.2.0";
 
 fn getStdout() std.fs.File {
     return std.fs.File.stdout();
@@ -131,6 +131,13 @@ pub fn main() !void {
     executor.jobs = jobs;
     executor.setPositionalArgs(positional_args.items);
 
+    // Validate required environment variables (@require directives)
+    executor.validateRequiredEnv() catch |err| {
+        if (err == error.MissingRequiredEnv) {
+            std.process.exit(1);
+        }
+    };
+
     // List recipes or run default if no recipe specified
     if (list_recipes or (recipe_name == null and args.len == 1)) {
         executor.listRecipes();
@@ -153,7 +160,7 @@ pub fn main() !void {
         watcher.dry_run = dry_run;
         watcher.verbose = verbose;
 
-        // Add explicit watch patterns from CLI
+        // Add explicit watch patterns from CLI (OOM failures would result in 0 watched files)
         for (watch_patterns.items) |pattern| {
             watcher.addPattern(pattern) catch {};
         }

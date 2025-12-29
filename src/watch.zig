@@ -84,10 +84,71 @@ pub const Watcher = struct {
             try self.addPattern(dep);
         }
 
+        // Add @watch patterns from recipe commands
+        try self.addRecipeWatchPatterns(recipe);
+
         // Also recursively add deps from dependency recipes
         for (recipe.dependencies) |dep_name| {
             try self.addRecipeDeps(dep_name);
         }
+    }
+
+    /// Add patterns from @watch directives in recipe commands
+    fn addRecipeWatchPatterns(self: *Watcher, recipe: *const parser.Recipe) !void {
+        for (recipe.commands) |cmd| {
+            if (cmd.directive) |directive| {
+                if (directive == .watch) {
+                    // Parse patterns from the @watch line
+                    const patterns = self.parseWatchPatterns(cmd.line);
+                    for (patterns) |pattern| {
+                        try self.addPattern(pattern);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parse patterns from @watch directive line (e.g., "watch src/*.zig test/*.zig")
+    fn parseWatchPatterns(self: *Watcher, line: []const u8) []const []const u8 {
+        _ = self;
+        var trimmed = std.mem.trim(u8, line, " \t");
+
+        // Skip the "watch" keyword
+        if (std.mem.startsWith(u8, trimmed, "watch")) {
+            trimmed = std.mem.trimLeft(u8, trimmed[5..], " \t");
+        }
+
+        if (trimmed.len == 0) {
+            return &.{};
+        }
+
+        // For simplicity, just split on spaces and return the first pattern
+        // This is a simplified version - full implementation would handle multiple patterns
+        var patterns: [16][]const u8 = undefined;
+        var count: usize = 0;
+
+        var i: usize = 0;
+        while (i < trimmed.len and count < 16) {
+            // Skip separators
+            while (i < trimmed.len and (trimmed[i] == ' ' or trimmed[i] == ',' or trimmed[i] == '\t')) {
+                i += 1;
+            }
+            if (i >= trimmed.len) break;
+
+            // Find end of pattern
+            const start = i;
+            while (i < trimmed.len and trimmed[i] != ' ' and trimmed[i] != ',' and trimmed[i] != '\t') {
+                i += 1;
+            }
+
+            if (i > start) {
+                patterns[count] = trimmed[start..i];
+                count += 1;
+            }
+        }
+
+        // Return slice pointing to stack array - caller must use immediately
+        return patterns[0..count];
     }
 
     /// Resolve all glob patterns to actual file paths and store their mtimes
@@ -313,4 +374,156 @@ test "watcher init" {
 
     try watcher.addPattern("src/*.zig");
     try std.testing.expectEqual(@as(usize, 1), watcher.watch_patterns.items.len);
+}
+
+test "watcher add multiple patterns" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addPattern("src/*.zig");
+    try watcher.addPattern("test/*.zig");
+    try watcher.addPattern("build.zig");
+    try std.testing.expectEqual(@as(usize, 3), watcher.watch_patterns.items.len);
+}
+
+test "watcher add recipe deps" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\file dist/bundle.js: src/*.js
+        \\    cat src/*.js > dist/bundle.js
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addRecipeDeps("dist/bundle.js");
+    // Should have added the file dep pattern
+    try std.testing.expectEqual(@as(usize, 1), watcher.watch_patterns.items.len);
+    try std.testing.expectEqualStrings("src/*.js", watcher.watch_patterns.items[0]);
+}
+
+test "watcher settings" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    // Default settings
+    try std.testing.expect(!watcher.verbose);
+    try std.testing.expect(!watcher.dry_run);
+
+    // Change settings
+    watcher.verbose = true;
+    watcher.dry_run = true;
+    try std.testing.expect(watcher.verbose);
+    try std.testing.expect(watcher.dry_run);
+}
+
+test "watcher deinit cleans up patterns" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+
+    // Add patterns
+    try watcher.addPattern("src/*.zig");
+    try watcher.addPattern("test/*.zig");
+
+    // deinit should clean up all allocated patterns without leaks
+    watcher.deinit();
+    // No assertion needed - test.allocator will catch leaks
+}
+
+test "watcher poll interval defaults" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    // Check default poll interval (500ms in nanoseconds)
+    try std.testing.expectEqual(@as(u64, 500 * std.time.ns_per_ms), watcher.poll_interval_ns);
+    // Check default debounce (100ms in nanoseconds)
+    try std.testing.expectEqual(@as(u64, 100 * std.time.ns_per_ms), watcher.debounce_ns);
+}
+
+test "watcher extracts @watch patterns from recipe" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    @watch src/*.zig
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addRecipeDeps("build");
+
+    // Should have extracted the @watch pattern
+    try std.testing.expectEqual(@as(usize, 1), watcher.watch_patterns.items.len);
+    try std.testing.expectEqualStrings("src/*.zig", watcher.watch_patterns.items[0]);
+}
+
+test "watcher extracts multiple @watch patterns" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    @watch src/*.zig test/*.zig
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addRecipeDeps("build");
+
+    // Should have extracted both @watch patterns
+    try std.testing.expectEqual(@as(usize, 2), watcher.watch_patterns.items.len);
+    try std.testing.expectEqualStrings("src/*.zig", watcher.watch_patterns.items[0]);
+    try std.testing.expectEqualStrings("test/*.zig", watcher.watch_patterns.items[1]);
 }

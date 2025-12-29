@@ -222,6 +222,8 @@ pub const Parser = struct {
     pending_group: ?[]const u8,
     pending_description: ?[]const u8,
     pending_only_os: std.ArrayListUnmanaged([]const u8),
+    pending_quiet: bool,
+    pending_doc_comment: ?[]const u8,
 
     pub fn init(allocator: std.mem.Allocator, lex: *Lexer) Parser {
         return .{
@@ -240,6 +242,8 @@ pub const Parser = struct {
             .pending_group = null,
             .pending_description = null,
             .pending_only_os = .empty,
+            .pending_quiet = false,
+            .pending_doc_comment = null,
         };
     }
 
@@ -342,6 +346,20 @@ pub const Parser = struct {
         return desc;
     }
 
+    /// Consume and return pending quiet flag, clearing it for the next recipe
+    fn consumePendingQuiet(self: *Parser) bool {
+        const quiet = self.pending_quiet;
+        self.pending_quiet = false;
+        return quiet;
+    }
+
+    /// Consume and return pending doc comment, clearing it for the next recipe
+    fn consumePendingDocComment(self: *Parser) ?[]const u8 {
+        const doc = self.pending_doc_comment;
+        self.pending_doc_comment = null;
+        return doc;
+    }
+
     /// Consume and return pending only_os, clearing it for the next recipe
     fn consumePendingOnlyOs(self: *Parser) ParseError![]const []const u8 {
         if (self.pending_only_os.items.len == 0) {
@@ -364,7 +382,17 @@ pub const Parser = struct {
                 .ident => try self.parseVariableOrRecipe(),
                 .kw_task => try self.parseTaskRecipe(),
                 .kw_file => try self.parseFileRecipe(),
-                .comment => self.advance(),
+                .comment => {
+                    // Store comment as potential doc comment for next recipe
+                    const comment_text = self.slice(self.current);
+                    // Strip leading "# " from comment
+                    if (comment_text.len > 2 and comment_text[0] == '#') {
+                        self.pending_doc_comment = std.mem.trimLeft(u8, comment_text[1..], " ");
+                    } else if (comment_text.len > 0 and comment_text[0] == '#') {
+                        self.pending_doc_comment = comment_text[1..];
+                    }
+                    self.advance();
+                },
                 .newline => self.advance(),
                 else => {
                     self.advance(); // Skip invalid token
@@ -482,6 +510,18 @@ pub const Parser = struct {
                 if (self.current.tag == .ident) {
                     self.pending_only_os.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
                 }
+                self.advance();
+            }
+            return;
+        }
+
+        // Handle @quiet directive for suppressing command echoing
+        if (self.current.tag == .kw_quiet) {
+            self.advance();
+            self.pending_quiet = true;
+
+            // Skip to end of line
+            while (self.current.tag != .newline and self.current.tag != .eof) {
                 self.advance();
             }
             return;
@@ -723,7 +763,7 @@ pub const Parser = struct {
             .commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .doc_comment = null,
+            .doc_comment = self.consumePendingDocComment(),
             .is_default = false,
             .aliases = aliases,
             .group = self.consumePendingGroup(),
@@ -731,7 +771,7 @@ pub const Parser = struct {
             .shell = shell,
             .working_dir = working_dir,
             .only_os = only_os,
-            .quiet = false,
+            .quiet = self.consumePendingQuiet(),
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -893,7 +933,7 @@ pub const Parser = struct {
             .commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .doc_comment = null,
+            .doc_comment = self.consumePendingDocComment(),
             .is_default = false,
             .aliases = aliases,
             .group = self.consumePendingGroup(),
@@ -901,7 +941,7 @@ pub const Parser = struct {
             .shell = shell,
             .working_dir = working_dir,
             .only_os = only_os,
-            .quiet = false,
+            .quiet = self.consumePendingQuiet(),
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1035,7 +1075,7 @@ pub const Parser = struct {
             .commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .doc_comment = null,
+            .doc_comment = self.consumePendingDocComment(),
             .is_default = false,
             .aliases = aliases,
             .group = self.consumePendingGroup(),
@@ -1043,7 +1083,7 @@ pub const Parser = struct {
             .shell = shell,
             .working_dir = working_dir,
             .only_os = only_os,
-            .quiet = false,
+            .quiet = self.consumePendingQuiet(),
         }) catch return ParseError.OutOfMemory;
     }
 };
@@ -2288,4 +2328,65 @@ test "parse @cd directive in file recipe" {
     const recipe = jakefile.recipes[0];
     try std.testing.expectEqualStrings("./frontend", recipe.working_dir.?);
     try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
+}
+
+test "parse doc comment before recipe" {
+    const source =
+        \\# Build the application
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("Build the application", recipe.doc_comment.?);
+}
+
+test "doc comment only applies to next recipe" {
+    const source =
+        \\# Comment for build
+        \\task build:
+        \\    echo "building"
+        \\
+        \\task test:
+        \\    echo "testing"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+
+    // First recipe should have the doc comment
+    const build = jakefile.getRecipe("build").?;
+    try std.testing.expectEqualStrings("Comment for build", build.doc_comment.?);
+
+    // Second recipe should not have a doc comment
+    const test_recipe = jakefile.getRecipe("test").?;
+    try std.testing.expect(test_recipe.doc_comment == null);
+}
+
+test "description takes precedence over doc_comment in display" {
+    const source =
+        \\# Doc comment here
+        \\@description "Explicit description"
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+
+    // Both should be set
+    try std.testing.expectEqualStrings("Doc comment here", recipe.doc_comment.?);
+    try std.testing.expectEqualStrings("Explicit description", recipe.description.?);
 }

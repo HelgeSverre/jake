@@ -9,6 +9,7 @@ const parallel_mod = @import("parallel.zig");
 const env_mod = @import("env.zig");
 const hooks_mod = @import("hooks.zig");
 const prompt_mod = @import("prompt.zig");
+const functions = @import("functions.zig");
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
@@ -55,7 +56,7 @@ pub const Executor = struct {
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
         var variables = std.StringHashMap([]const u8).init(allocator);
 
-        // Load variables from jakefile
+        // Load variables from jakefile (OOM here is unrecoverable)
         for (jakefile.variables) |v| {
             variables.put(v.name, v.value) catch {};
         }
@@ -67,28 +68,24 @@ pub const Executor = struct {
         for (jakefile.directives) |directive| {
             switch (directive.kind) {
                 .dotenv => {
-                    // @dotenv [path] - load .env file
+                    // @dotenv [path] - load .env file (best-effort: missing files are ignored)
                     if (directive.args.len > 0) {
-                        // Load specified .env file
                         for (directive.args) |path| {
                             environment.loadDotenv(stripQuotes(path)) catch {};
                         }
                     } else {
-                        // Load default .env file
                         environment.loadDotenv(".env") catch {};
                     }
                 },
                 .@"export" => {
-                    // @export KEY=value or @export KEY value
+                    // @export KEY=value or @export KEY value (OOM here is unrecoverable)
                     if (directive.args.len >= 1) {
                         const first_arg = directive.args[0];
-                        // Check for KEY=value format
                         if (std.mem.indexOfScalar(u8, first_arg, '=')) |eq_pos| {
                             const key = first_arg[0..eq_pos];
                             const value = first_arg[eq_pos + 1 ..];
                             environment.set(key, stripQuotes(value)) catch {};
                         } else if (directive.args.len >= 2) {
-                            // KEY value format
                             environment.set(first_arg, stripQuotes(directive.args[1])) catch {};
                         }
                     }
@@ -97,7 +94,7 @@ pub const Executor = struct {
             }
         }
 
-        // Initialize hook runner with global hooks
+        // Initialize hook runner with global hooks (OOM here is unrecoverable)
         var hook_runner = HookRunner.init(allocator);
         for (jakefile.global_pre_hooks) |hook| {
             hook_runner.addGlobalHook(hook) catch {};
@@ -255,7 +252,8 @@ pub const Executor = struct {
         return self.prompt.confirm(message);
     }
 
-    /// Parse items from @each directive line
+    /// Parse items from @each directive line.
+    /// Returns empty slice on OOM (loop will simply not execute).
     fn parseEachItems(self: *Executor, line: []const u8) []const []const u8 {
         // Line format is: "each a b c" or "each a, b, c"
         var trimmed = std.mem.trim(u8, line, " \t");
@@ -293,7 +291,8 @@ pub const Executor = struct {
         return items.toOwnedSlice(self.allocator) catch &.{};
     }
 
-    /// Parse file patterns from @cache or @watch directive line
+    /// Parse file patterns from @cache or @watch directive line.
+    /// Returns empty slice on OOM (caching/watching will be disabled for this directive).
     fn parseCachePatterns(self: *Executor, line: []const u8) []const []const u8 {
         // Line format is: "cache file1.txt file2.txt" or "watch src/*.zig"
         var trimmed = std.mem.trim(u8, line, " \t");
@@ -447,7 +446,7 @@ pub const Executor = struct {
         if (shouldSkipForOs(recipe)) {
             const current_os = getCurrentOsString();
             self.print("jake: skipping '{s}' (not for {s})\n", .{ name, current_os });
-            self.executed.put(name, {}) catch {};
+            self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
             return;
         }
 
@@ -478,7 +477,7 @@ pub const Executor = struct {
                 if (self.verbose) {
                     self.print("jake: '{s}' is up to date\n", .{name});
                 }
-                self.executed.put(name, {}) catch {};
+                self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
                 return;
             }
         }
@@ -509,6 +508,12 @@ pub const Executor = struct {
         self.current_working_dir = recipe.working_dir;
         self.current_quiet = recipe.quiet;
 
+        // Bind recipe parameters to variables
+        self.bindRecipeParams(recipe) catch |err| {
+            self.print("\x1b[1;31merror:\x1b[0m failed to bind parameters: {s}\n", .{@errorName(err)});
+            return ExecuteError.CommandFailed;
+        };
+
         // Execute the recipe commands
         const exec_result = self.executeCommands(recipe.commands);
 
@@ -536,11 +541,40 @@ pub const Executor = struct {
         // Update cache for file targets
         if (recipe.kind == .file) {
             if (recipe.output) |output| {
+                // Cache update is best-effort; failure doesn't affect recipe execution
                 self.cache.update(output) catch {};
             }
         }
 
-        self.executed.put(name, {}) catch {};
+        self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
+    }
+
+    /// Bind recipe parameters to variables based on CLI args and defaults
+    fn bindRecipeParams(self: *Executor, recipe: *const Recipe) !void {
+        // Build a map of CLI args in key=value format
+        var cli_args = std.StringHashMap([]const u8).init(self.allocator);
+        defer cli_args.deinit();
+
+        for (self.positional_args) |arg| {
+            if (std.mem.indexOfScalar(u8, arg, '=')) |eq_pos| {
+                const key = arg[0..eq_pos];
+                const value = arg[eq_pos + 1 ..];
+                try cli_args.put(key, value);
+            }
+        }
+
+        // For each recipe parameter, bind to a variable
+        for (recipe.params) |param| {
+            if (cli_args.get(param.name)) |value| {
+                // CLI arg takes precedence
+                try self.variables.put(param.name, value);
+            } else if (param.default) |default_value| {
+                // Use default value
+                try self.variables.put(param.name, default_value);
+            }
+            // If no CLI arg and no default, param is simply not set
+            // (could add required param check here if needed)
+        }
     }
 
     fn checkFileTarget(self: *Executor, recipe: *const Recipe) !bool {
@@ -775,7 +809,7 @@ pub const Executor = struct {
 
                         // Execute loop body for each item
                         for (items) |item| {
-                            // Set the {{item}} variable
+                            // Set the {{item}} variable (OOM would leave item unset but loop still runs)
                             self.variables.put("item", item) catch {};
 
                             // Execute the loop body
@@ -995,6 +1029,15 @@ pub const Executor = struct {
                             // If out of range, expand to empty string
                         } else |_| {
                             // Not a valid number, keep original
+                            try result.appendSlice(self.allocator, line[i .. end + 2]);
+                        }
+                    } else if (std.mem.indexOfScalar(u8, var_name, '(') != null) {
+                        // Function call: {{func(arg)}}
+                        if (functions.evaluate(self.allocator, var_name, &self.variables)) |func_result| {
+                            try result.appendSlice(self.allocator, func_result);
+                            try self.expanded_strings.append(self.allocator, func_result);
+                        } else |_| {
+                            // Function failed, keep original
                             try result.appendSlice(self.allocator, line[i .. end + 2]);
                         }
                     } else if (self.variables.get(var_name)) |value| {
@@ -3166,12 +3209,299 @@ test "@quiet suppresses verbose output for recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
+    // Verify the recipe has quiet=true from @quiet directive
+    const recipe = jakefile.getRecipe("test").?;
+    try std.testing.expect(recipe.quiet);
+
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.dry_run = true;
     executor.verbose = true; // Even with verbose, quiet should suppress
 
     try executor.execute("test");
-    // The recipe should have quiet=true from @quiet directive
-    // verbose output should be suppressed
+}
+
+test "@quiet only applies to next recipe" {
+    const source =
+        \\@quiet
+        \\task quiet_task:
+        \\    echo "quiet"
+        \\
+        \\task normal_task:
+        \\    echo "normal"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // First recipe should be quiet
+    const quiet_recipe = jakefile.getRecipe("quiet_task").?;
+    try std.testing.expect(quiet_recipe.quiet);
+
+    // Second recipe should NOT be quiet
+    const normal_recipe = jakefile.getRecipe("normal_task").?;
+    try std.testing.expect(!normal_recipe.quiet);
+}
+
+test "recipe parameter with default value binds to variable" {
+    const source =
+        \\task greet name="World":
+        \\    echo "Hello, {{name}}!"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("greet");
+
+    // After execution, the default value should be bound
+    try std.testing.expectEqualStrings("World", executor.variables.get("name").?);
+}
+
+test "recipe parameter CLI arg overrides default" {
+    const source =
+        \\task greet name="World":
+        \\    echo "Hello, {{name}}!"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Simulate CLI args: jake greet name=Alice
+    const args = [_][]const u8{"name=Alice"};
+    executor.setPositionalArgs(&args);
+
+    try executor.execute("greet");
+
+    // CLI arg should override default
+    try std.testing.expectEqualStrings("Alice", executor.variables.get("name").?);
+}
+
+test "recipe parameter without default stays unset if no CLI arg" {
+    const source =
+        \\task greet name:
+        \\    echo "Hello, {{name}}!"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("greet");
+
+    // Without CLI arg and no default, param should not be set
+    try std.testing.expect(executor.variables.get("name") == null);
+}
+
+test "recipe multiple parameters bind correctly" {
+    const source =
+        \\task deploy env="dev" region="us-east-1":
+        \\    echo "Deploying to {{env}} in {{region}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Override just one param
+    const args = [_][]const u8{"env=prod"};
+    executor.setPositionalArgs(&args);
+
+    try executor.execute("deploy");
+
+    try std.testing.expectEqualStrings("prod", executor.variables.get("env").?);
+    try std.testing.expectEqualStrings("us-east-1", executor.variables.get("region").?);
+}
+
+test "recipe parameter with quoted value in CLI" {
+    const source =
+        \\task greet name="World":
+        \\    echo "Hello, {{name}}!"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // CLI args with value containing spaces (shell would handle quotes)
+    const args = [_][]const u8{"name=John Doe"};
+    executor.setPositionalArgs(&args);
+
+    try executor.execute("greet");
+
+    try std.testing.expectEqualStrings("John Doe", executor.variables.get("name").?);
+}
+
+test "recipe parameter value with equals sign" {
+    const source =
+        \\task test expr="1+1":
+        \\    echo "{{expr}}"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // CLI arg with value containing equals: expr=2+2=4
+    const args = [_][]const u8{"expr=2+2=4"};
+    executor.setPositionalArgs(&args);
+
+    try executor.execute("test");
+
+    // Should capture everything after the first equals
+    try std.testing.expectEqualStrings("2+2=4", executor.variables.get("expr").?);
+}
+
+test "function call uppercase in variable expansion" {
+    const source =
+        \\task test:
+        \\    echo "Hello"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("{{uppercase(hello)}}");
+    defer std.testing.allocator.free(expanded);
+    try std.testing.expectEqualStrings("HELLO", expanded);
+}
+
+test "function call lowercase in variable expansion" {
+    const source =
+        \\task test:
+        \\    echo "Hello"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("{{lowercase(HELLO)}}");
+    defer std.testing.allocator.free(expanded);
+    try std.testing.expectEqualStrings("hello", expanded);
+}
+
+test "function call dirname in variable expansion" {
+    const source =
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("{{dirname(/path/to/file.txt)}}");
+    defer std.testing.allocator.free(expanded);
+    try std.testing.expectEqualStrings("/path/to", expanded);
+}
+
+test "function call basename in variable expansion" {
+    const source =
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("{{basename(/path/to/file.txt)}}");
+    defer std.testing.allocator.free(expanded);
+    try std.testing.expectEqualStrings("file.txt", expanded);
+}
+
+test "function call with variable argument" {
+    const source =
+        \\name = "world"
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("Hello {{uppercase(name)}}!");
+    defer std.testing.allocator.free(expanded);
+    try std.testing.expectEqualStrings("Hello WORLD!", expanded);
+}
+
+test "function call extension" {
+    const source =
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("{{extension(file.txt)}}");
+    defer std.testing.allocator.free(expanded);
+    try std.testing.expectEqualStrings(".txt", expanded);
+}
+
+test "unknown function keeps original" {
+    const source =
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    const expanded = try executor.expandJakeVariables("{{unknownfunc(arg)}}");
+    defer std.testing.allocator.free(expanded);
+    try std.testing.expectEqualStrings("{{unknownfunc(arg)}}", expanded);
 }

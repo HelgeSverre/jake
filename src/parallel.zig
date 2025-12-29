@@ -109,7 +109,7 @@ pub const ParallelExecutor = struct {
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, thread_count: usize) ParallelExecutor {
         var variables = std.StringHashMap([]const u8).init(allocator);
 
-        // Load variables from jakefile
+        // Load variables from jakefile (OOM here is unrecoverable)
         for (jakefile.variables) |v| {
             variables.put(v.name, v.value) catch {};
         }
@@ -516,6 +516,7 @@ pub const ParallelExecutor = struct {
                 dependent.in_degree -= 1;
                 if (dependent.in_degree == 0 and dependent.state == .pending) {
                     dependent.state = .ready;
+                    // OOM here could cause dependent tasks to not be scheduled
                     self.ready_queue.append(self.allocator, dependent_idx) catch {};
                 }
             }

@@ -65,35 +65,69 @@ Create a `Jakefile` in your project:
 
 ```jake
 # Variables
+app_name = "myapp"
 version = "1.0.0"
 
-# Default task
+# Load environment variables
+@dotenv
+
+# Default task - runs when you just type 'jake'
 @default
 task build:
-    echo "Building v{{version}}..."
-    cargo build --release
+    @description "Build the application"
+    echo "Building {{app_name}} v{{version}}..."
+    mkdir -p dist
+    echo "Build complete!"
 
-# Task with dependencies
+# Task with dependencies - test runs build first
 task test: [build]
-    cargo test
+    @description "Run all tests"
+    echo "Running tests..."
+    echo "All tests passed!"
 
-# File target (only runs if output is stale)
-file dist/app.js: src/**/*.ts
-    esbuild src/index.ts --outfile=dist/app.js
+# Clean task
+task clean:
+    @description "Remove build artifacts"
+    rm -rf dist
 
-# Parallel execution
-task all: [frontend, backend, docs]
-    echo "All done!"
+# Task with parameter
+task greet name="World":
+    echo "Hello, {{name}}!"
+
+# Conditional based on environment
+task deploy: [build, test]
+    @description "Deploy to production"
+    @confirm "Deploy to production?"
+    @if env(CI)
+        echo "Deploying from CI..."
+    @else
+        echo "Deploying locally..."
+    @end
+    echo "Deployed {{app_name}} v{{version}}"
+
+# File target - only rebuilds when sources change
+file dist/bundle.js: src/*.js
+    cat src/*.js > dist/bundle.js
+
+# Parallel execution - all subtasks run together
+task all: [build, test, lint]
+    echo "All tasks complete!"
+
+task lint:
+    @description "Check code style"
+    echo "Linting..."
 ```
 
 Run it:
 
 ```bash
-jake              # Run default task
-jake build        # Run specific task
-jake -j4 all      # Run with 4 parallel jobs
-jake -l           # List available tasks
-jake -n deploy    # Dry-run (show what would run)
+jake                    # Run default task (build)
+jake test               # Run tests (builds first)
+jake greet name=Alice   # Pass parameters
+jake -j4 all            # Run with 4 parallel jobs
+jake -l                 # List available tasks
+jake -n deploy          # Dry-run (show what would run)
+jake -w build           # Watch mode - rebuild on changes
 ```
 
 ## Features

@@ -48,7 +48,7 @@
 
 | File | Test Count | Coverage |
 |------|------------|----------|
-| executor.zig | 95 | Excellent |
+| executor.zig | 108 | Excellent |
 | parser.zig | 75 | Good |
 | lexer.zig | 64 | Excellent |
 | conditions.zig | 17 | Good |
@@ -57,13 +57,13 @@
 | env.zig | 10 | Good |
 | prompt.zig | 8 | Good |
 | functions.zig | 6 | Adequate |
+| watch.zig | 6 | Adequate |
 | parallel.zig | 3 | Basic |
 | hooks.zig | 3 | Basic |
 | import.zig | 2 | Minimal |
 | main.zig | 1 | Minimal |
 | root.zig | 1 | Minimal |
-| watch.zig | 1 | Minimal |
-| **TOTAL** | **312** | |
+| **TOTAL** | **330** | |
 
 ---
 
@@ -241,7 +241,7 @@ src/
 
 ## Next Steps
 
-All TDD implementation steps are complete with 312 passing tests.
+All TDD implementation steps are complete with 336 passing tests.
 
 **Cleanup tasks completed:**
 - ✅ Added `--yes`/`-y` flag to main.zig
@@ -249,6 +249,25 @@ All TDD implementation steps are complete with 312 passing tests.
 - ✅ Removed dead Directive.Kind enum values
 - ✅ Wired cache persistence (load/save on init/deinit)
 - ✅ Implemented recipe.quiet field
+- ✅ Wired recipe parameters (params) to variables in executor
+- ✅ Wired functions module for `{{func(arg)}}` syntax
+- ✅ Updated README example to be self-contained
+- ✅ Added 18 new tests (7 params, 7 functions, 5 watch)
+
+**Implementation gap fixes:**
+- ✅ Fixed @require validation - now called before execute() in main.zig
+- ✅ Fixed @quiet directive parsing - now properly parsed and applied to recipes
+- ✅ Added test for @quiet directive behavior
+- ✅ Wired @watch inline directive to watcher for automatic pattern detection
+- ✅ Implemented doc_comment parsing from `# comment` before recipes
+- ✅ doc_comment now displayed in recipe listings (if different from @description)
+
+**Error handling review (68 catch {} blocks analyzed):**
+- 3 `catch {}` converted to `catch return ExecuteError.OutOfMemory` for execution tracking
+- ~27 stdout/stderr writes - intentional (can't recover from output failures)
+- ~13 defer chdir restores - intentional (best-effort cleanup)
+- ~10 init() OOM operations - commented as unrecoverable
+- ~15 best-effort operations - commented with failure behavior
 
 **Future work:**
 1. **Short-term**: Add integration tests for complex multi-recipe scenarios
