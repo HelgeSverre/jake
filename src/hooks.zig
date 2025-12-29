@@ -7,11 +7,11 @@
 
 const std = @import("std");
 
-/// Represents a single hook (pre or post execution)
+/// Represents a single hook (pre, post, or on_error execution)
 pub const Hook = struct {
     /// The command to execute
     command: []const u8,
-    /// Whether this is a pre or post hook
+    /// Whether this is a pre, post, or on_error hook
     kind: Kind,
     /// Optional: Only run for specific recipe (null = global)
     recipe_name: ?[]const u8,
@@ -19,6 +19,7 @@ pub const Hook = struct {
     pub const Kind = enum {
         pre,
         post,
+        on_error, // Runs only when a recipe fails
     };
 };
 
@@ -44,6 +45,7 @@ pub const HookRunner = struct {
     allocator: std.mem.Allocator,
     global_pre_hooks: std.ArrayListUnmanaged(Hook),
     global_post_hooks: std.ArrayListUnmanaged(Hook),
+    global_on_error_hooks: std.ArrayListUnmanaged(Hook),
     dry_run: bool,
     verbose: bool,
 
@@ -52,6 +54,7 @@ pub const HookRunner = struct {
             .allocator = allocator,
             .global_pre_hooks = .empty,
             .global_post_hooks = .empty,
+            .global_on_error_hooks = .empty,
             .dry_run = false,
             .verbose = false,
         };
@@ -60,6 +63,7 @@ pub const HookRunner = struct {
     pub fn deinit(self: *HookRunner) void {
         self.global_pre_hooks.deinit(self.allocator);
         self.global_post_hooks.deinit(self.allocator);
+        self.global_on_error_hooks.deinit(self.allocator);
     }
 
     /// Add a global hook
@@ -67,7 +71,18 @@ pub const HookRunner = struct {
         switch (hook.kind) {
             .pre => try self.global_pre_hooks.append(self.allocator, hook),
             .post => try self.global_post_hooks.append(self.allocator, hook),
+            .on_error => try self.global_on_error_hooks.append(self.allocator, hook),
         }
+    }
+
+    /// Check if a hook should run for the given recipe
+    fn shouldRunHook(hook: Hook, recipe_name: []const u8) bool {
+        if (hook.recipe_name) |target_recipe| {
+            // Targeted hook: only run if recipe name matches
+            return std.mem.eql(u8, target_recipe, recipe_name);
+        }
+        // Global hook: always run
+        return true;
     }
 
     /// Run all pre-hooks for a recipe
@@ -76,9 +91,11 @@ pub const HookRunner = struct {
         recipe_pre_hooks: []const Hook,
         context: *const HookContext,
     ) HookError!void {
-        // Run global pre-hooks first
+        // Run global pre-hooks first (only if they match the current recipe)
         for (self.global_pre_hooks.items) |hook| {
-            try self.executeHook(hook, context);
+            if (shouldRunHook(hook, context.recipe_name)) {
+                try self.executeHook(hook, context);
+            }
         }
 
         // Run recipe-specific pre-hooks
@@ -102,20 +119,41 @@ pub const HookRunner = struct {
             };
         }
 
-        // Run global post-hooks
+        // Run global post-hooks (only if they match the current recipe)
         for (self.global_post_hooks.items) |hook| {
-            self.executeHook(hook, context) catch |err| {
-                if (first_error == null) first_error = err;
-            };
+            if (shouldRunHook(hook, context.recipe_name)) {
+                self.executeHook(hook, context) catch |err| {
+                    if (first_error == null) first_error = err;
+                };
+            }
         }
 
         // Return the first error if any occurred
         if (first_error) |err| return err;
     }
 
+    /// Run all on_error hooks for a recipe (only runs when recipe fails)
+    pub fn runOnErrorHooks(
+        self: *HookRunner,
+        context: *const HookContext,
+    ) void {
+        // Only run if the recipe failed
+        if (context.success) return;
+
+        // Run global on_error hooks (only if they match the current recipe)
+        for (self.global_on_error_hooks.items) |hook| {
+            if (shouldRunHook(hook, context.recipe_name)) {
+                self.executeHook(hook, context) catch {};
+            }
+        }
+    }
+
     /// Execute a single hook command
     fn executeHook(self: *HookRunner, hook: Hook, context: *const HookContext) HookError!void {
         const expanded_cmd = self.expandHookVariables(hook.command, context) catch hook.command;
+        // Track if we allocated memory (expanded_cmd ptr differs from original)
+        const needs_free = expanded_cmd.ptr != hook.command.ptr;
+        defer if (needs_free) self.allocator.free(expanded_cmd);
 
         if (self.dry_run) {
             self.printHook("[dry-run @{s}] {s}\n", .{ @tagName(hook.kind), expanded_cmd });
@@ -264,4 +302,68 @@ test "hook variable expansion" {
     defer std.testing.allocator.free(expanded);
 
     try std.testing.expectEqualStrings("Building deploy v2.0", expanded);
+}
+
+test "hook runner adds on_error hooks" {
+    var runner = HookRunner.init(std.testing.allocator);
+    defer runner.deinit();
+
+    try runner.addGlobalHook(.{
+        .command = "echo 'error'",
+        .kind = .on_error,
+        .recipe_name = null,
+    });
+
+    try std.testing.expectEqual(@as(usize, 0), runner.global_pre_hooks.items.len);
+    try std.testing.expectEqual(@as(usize, 0), runner.global_post_hooks.items.len);
+    try std.testing.expectEqual(@as(usize, 1), runner.global_on_error_hooks.items.len);
+}
+
+test "shouldRunHook returns true for global hook" {
+    const hook = Hook{
+        .command = "echo test",
+        .kind = .pre,
+        .recipe_name = null, // Global hook
+    };
+
+    try std.testing.expect(HookRunner.shouldRunHook(hook, "build"));
+    try std.testing.expect(HookRunner.shouldRunHook(hook, "test"));
+    try std.testing.expect(HookRunner.shouldRunHook(hook, "deploy"));
+}
+
+test "shouldRunHook returns true only for targeted recipe" {
+    const hook = Hook{
+        .command = "echo test",
+        .kind = .pre,
+        .recipe_name = "build", // Targeted hook
+    };
+
+    try std.testing.expect(HookRunner.shouldRunHook(hook, "build"));
+    try std.testing.expect(!HookRunner.shouldRunHook(hook, "test"));
+    try std.testing.expect(!HookRunner.shouldRunHook(hook, "deploy"));
+}
+
+test "on_error hook kind exists" {
+    const hook = Hook{
+        .command = "echo error",
+        .kind = .on_error,
+        .recipe_name = null,
+    };
+
+    try std.testing.expectEqual(Hook.Kind.on_error, hook.kind);
+}
+
+test "hook context with error message" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const context = HookContext{
+        .recipe_name = "build",
+        .success = false,
+        .error_message = "CommandFailed",
+        .variables = &variables,
+    };
+
+    try std.testing.expect(!context.success);
+    try std.testing.expectEqualStrings("CommandFailed", context.error_message.?);
 }

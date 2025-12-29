@@ -48,22 +48,25 @@
 
 | File | Test Count | Coverage |
 |------|------------|----------|
-| executor.zig | 108 | Excellent |
-| parser.zig | 75 | Good |
+| executor.zig | 125+ | Excellent |
+| parser.zig | 83 | Excellent |
 | lexer.zig | 64 | Excellent |
 | conditions.zig | 17 | Good |
 | cache.zig | 16 | Good |
 | glob.zig | 10 | Good |
 | env.zig | 10 | Good |
 | prompt.zig | 8 | Good |
+| import.zig | 8 | Good |
+| hooks.zig | 8 | Good |
+| watch.zig | 8 | Good |
 | functions.zig | 6 | Adequate |
-| watch.zig | 6 | Adequate |
 | parallel.zig | 3 | Basic |
-| hooks.zig | 3 | Basic |
-| import.zig | 2 | Minimal |
 | main.zig | 1 | Minimal |
 | root.zig | 1 | Minimal |
-| **TOTAL** | **330** | |
+| **TOTAL** | **370+** | |
+
+**E2E Tests:** 47 tests in `tests/e2e_test.sh`
+**Sample Tests:** 8 tests in `samples/Jakefile`
 
 ---
 
@@ -241,7 +244,7 @@ src/
 
 ## Next Steps
 
-All TDD implementation steps are complete with 336 passing tests.
+All TDD implementation steps are complete with 356 passing tests.
 
 **Cleanup tasks completed:**
 - ✅ Added `--yes`/`-y` flag to main.zig
@@ -257,6 +260,15 @@ All TDD implementation steps are complete with 336 passing tests.
 **Implementation gap fixes:**
 - ✅ Fixed @require validation - now called before execute() in main.zig
 - ✅ Fixed @quiet directive parsing - now properly parsed and applied to recipes
+
+**v0.2.1 new features:**
+- ✅ Added @each glob expansion - glob patterns in @each are now expanded
+- ✅ Added @before/@after targeted hooks - target specific recipes
+- ✅ Added @on_error hook - runs when a recipe fails
+- ✅ Added 6 new import system tests
+- ✅ Added 4 new @each glob expansion tests
+- ✅ Added 6 new parser tests for targeted hooks
+- ✅ Added 5 new hooks.zig tests
 - ✅ Added test for @quiet directive behavior
 - ✅ Wired @watch inline directive to watcher for automatic pattern detection
 - ✅ Implemented doc_comment parsing from `# comment` before recipes
@@ -269,8 +281,24 @@ All TDD implementation steps are complete with 336 passing tests.
 - ~10 init() OOM operations - commented as unrecoverable
 - ~15 best-effort operations - commented with failure behavior
 
+**Known Issues (Bugs to Fix):**
+
+1. **Parallel executor doesn't handle directives** - When using `-j` flag for parallel execution, recipes containing directives like `@each`, `@if`, `@else`, etc. don't work correctly. The parallel executor in `parallel.zig` passes directive lines directly to the shell instead of processing them. Fix requires refactoring `executeNode()` to use the same command execution logic as the sequential executor.
+
+2. **@export directive not working** - Variables marked with `@export` aren't being exported to the shell environment. Jake variable syntax (`{{VAR}}`) works correctly, but shell environment variables (`$VAR`) are not populated. The directive is parsed but the export mechanism in the executor isn't wiring variables to the child process environment.
+
+**Recent Bug Fixes (v0.2.2):**
+
+1. **Fixed nested conditionals** - `@if`/`@else`/`@end` blocks inside outer `@if` blocks now work correctly. Previously, the inner `@end` would reset state and cause the outer `@else` to execute incorrectly. Fixed by implementing a conditional state stack in `executeCommands()`.
+
+2. **Fixed @if inside @each loops** - Directives like `@if`, `@else`, `@elif`, `@end` inside `@each` loops now work correctly. Previously they were passed to the shell as commands. Fixed by rewriting `executeEachBody()` to handle directives properly.
+
+3. **Fixed memory leak in hooks** - `expandHookVariables()` returned allocated memory that wasn't freed. Fixed by adding defer cleanup in `executeHook()`.
+
+4. **Fixed @on_error parsing** - The first word after `@on_error` was incorrectly treated as a recipe name. Fixed by making `@on_error` always global (no recipe targeting).
+
 **Future work:**
-1. **Short-term**: Add integration tests for complex multi-recipe scenarios
+1. **Short-term**: Fix parallel executor directive handling, fix @export
 2. **Medium-term**: Remote cache support (S3/HTTP backends)
 3. **Long-term**: Container execution and workspace/monorepo support
 

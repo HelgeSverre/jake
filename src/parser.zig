@@ -88,6 +88,7 @@ pub const Jakefile = struct {
     imports: []const ImportDirective,
     global_pre_hooks: []const Hook, // Global @pre hooks run before any recipe
     global_post_hooks: []const Hook, // Global @post hooks run after any recipe
+    global_on_error_hooks: []const Hook, // Global @on_error hooks run when a recipe fails
     source: []const u8,
 
     pub fn deinit(self: *Jakefile, allocator: std.mem.Allocator) void {
@@ -110,6 +111,7 @@ pub const Jakefile = struct {
         allocator.free(self.imports);
         allocator.free(self.global_pre_hooks);
         allocator.free(self.global_post_hooks);
+        allocator.free(self.global_on_error_hooks);
     }
 
     pub fn getRecipe(self: *const Jakefile, name: []const u8) ?*const Recipe {
@@ -211,6 +213,7 @@ pub const Parser = struct {
     imports: std.ArrayListUnmanaged(ImportDirective),
     global_pre_hooks: std.ArrayListUnmanaged(Hook),
     global_post_hooks: std.ArrayListUnmanaged(Hook),
+    global_on_error_hooks: std.ArrayListUnmanaged(Hook),
 
     // Last error information for detailed reporting
     last_error: ?ErrorInfo,
@@ -237,6 +240,7 @@ pub const Parser = struct {
             .imports = .empty,
             .global_pre_hooks = .empty,
             .global_post_hooks = .empty,
+            .global_on_error_hooks = .empty,
             .last_error = null,
             .pending_aliases = .empty,
             .pending_group = null,
@@ -268,6 +272,7 @@ pub const Parser = struct {
         self.imports.deinit(self.allocator);
         self.global_pre_hooks.deinit(self.allocator);
         self.global_post_hooks.deinit(self.allocator);
+        self.global_on_error_hooks.deinit(self.allocator);
         self.pending_aliases.deinit(self.allocator);
         self.pending_only_os.deinit(self.allocator);
     }
@@ -407,6 +412,7 @@ pub const Parser = struct {
             .imports = self.imports.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .global_pre_hooks = self.global_pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .global_post_hooks = self.global_post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+            .global_on_error_hooks = self.global_on_error_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .source = self.source,
         };
     }
@@ -549,7 +555,70 @@ pub const Parser = struct {
             switch (hook_kind) {
                 .pre => self.global_pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                 .post => self.global_post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+                .on_error => {}, // Not applicable for @pre/@post
             }
+            return;
+        }
+
+        // Handle targeted hooks: @before recipe_name, @after recipe_name
+        if (self.current.tag == .kw_before or self.current.tag == .kw_after) {
+            const hook_kind: Hook.Kind = if (self.current.tag == .kw_before) .pre else .post;
+            self.advance();
+
+            // Get the target recipe name
+            if (self.current.tag != .ident) {
+                // No recipe name, skip
+                while (self.current.tag != .newline and self.current.tag != .eof) {
+                    self.advance();
+                }
+                return;
+            }
+            const target_recipe = self.slice(self.current);
+            self.advance();
+
+            // Collect the command until newline
+            const cmd_start = self.current.loc.start;
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                self.advance();
+            }
+            const cmd_end = self.current.loc.start;
+            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t");
+
+            const hook = Hook{
+                .command = command,
+                .kind = hook_kind,
+                .recipe_name = target_recipe, // Targeted hook
+            };
+
+            switch (hook_kind) {
+                .pre => self.global_pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+                .post => self.global_post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+                .on_error => {}, // Not applicable
+            }
+            return;
+        }
+
+        // Handle @on_error or @on-error hook
+        // Note: @on_error is always global (runs on any recipe failure)
+        // For recipe-specific error handling, use conditionals inside recipes
+        if (self.current.tag == .kw_on_error) {
+            self.advance();
+
+            // Collect the entire command until newline
+            const cmd_start = self.current.loc.start;
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                self.advance();
+            }
+            const cmd_end = self.current.loc.start;
+            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t");
+
+            const hook = Hook{
+                .command = command,
+                .kind = .on_error,
+                .recipe_name = null, // Always global
+            };
+
+            self.global_on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory;
             return;
         }
 
@@ -694,6 +763,7 @@ pub const Parser = struct {
                     switch (hook_kind) {
                         .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                         .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+                        .on_error => {}, // on_error not valid inside recipe
                     }
 
                     if (self.current.tag == .newline) self.advance();
@@ -857,6 +927,7 @@ pub const Parser = struct {
                     switch (hook_kind) {
                         .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                         .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+                        .on_error => {}, // on_error not valid inside recipe
                     }
 
                     if (self.current.tag == .newline) self.advance();
@@ -1006,6 +1077,7 @@ pub const Parser = struct {
                     switch (hook_kind) {
                         .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                         .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+                        .on_error => {}, // on_error not valid inside recipe
                     }
 
                     if (self.current.tag == .newline) self.advance();
@@ -1256,6 +1328,108 @@ test "parse global and recipe hooks together" {
     try std.testing.expectEqual(@as(usize, 1), recipe.post_hooks.len);
     try std.testing.expectEqualStrings("echo \"Test pre\"", recipe.pre_hooks[0].command);
     try std.testing.expectEqualStrings("echo \"Test post\"", recipe.post_hooks[0].command);
+}
+
+test "parse @before targeted hook" {
+    const source =
+        \\@before build echo "Before build"
+        \\
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.global_pre_hooks.len);
+    try std.testing.expectEqual(@as(usize, 0), jakefile.global_post_hooks.len);
+    try std.testing.expectEqualStrings("echo \"Before build\"", jakefile.global_pre_hooks[0].command);
+    try std.testing.expectEqual(Hook.Kind.pre, jakefile.global_pre_hooks[0].kind);
+    try std.testing.expectEqualStrings("build", jakefile.global_pre_hooks[0].recipe_name.?);
+}
+
+test "parse @after targeted hook" {
+    const source =
+        \\@after deploy echo "After deploy"
+        \\
+        \\task deploy:
+        \\    echo "deploying"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), jakefile.global_pre_hooks.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.global_post_hooks.len);
+    try std.testing.expectEqualStrings("echo \"After deploy\"", jakefile.global_post_hooks[0].command);
+    try std.testing.expectEqual(Hook.Kind.post, jakefile.global_post_hooks[0].kind);
+    try std.testing.expectEqualStrings("deploy", jakefile.global_post_hooks[0].recipe_name.?);
+}
+
+test "parse @on_error global hook" {
+    const source =
+        \\@on_error echo "Something failed!"
+        \\
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.global_on_error_hooks.len);
+    try std.testing.expectEqualStrings("echo \"Something failed!\"", jakefile.global_on_error_hooks[0].command);
+    try std.testing.expectEqual(Hook.Kind.on_error, jakefile.global_on_error_hooks[0].kind);
+    try std.testing.expectEqual(@as(?[]const u8, null), jakefile.global_on_error_hooks[0].recipe_name);
+}
+
+test "parse @on_error is always global" {
+    // @on_error is always global - the entire line after it is the command
+    const source =
+        \\@on_error notify "Build failed!"
+        \\
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.global_on_error_hooks.len);
+    try std.testing.expectEqualStrings("notify \"Build failed!\"", jakefile.global_on_error_hooks[0].command);
+    try std.testing.expectEqual(Hook.Kind.on_error, jakefile.global_on_error_hooks[0].kind);
+    try std.testing.expectEqual(@as(?[]const u8, null), jakefile.global_on_error_hooks[0].recipe_name);
+}
+
+test "parse multiple targeted hooks" {
+    const source =
+        \\@before build echo "Before build"
+        \\@after build echo "After build"
+        \\@before test echo "Before test"
+        \\@after test echo "After test"
+        \\
+        \\task build:
+        \\    echo "building"
+        \\
+        \\task test:
+        \\    echo "testing"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.global_pre_hooks.len);
+    try std.testing.expectEqual(@as(usize, 2), jakefile.global_post_hooks.len);
+
+    // First @before targets build
+    try std.testing.expectEqualStrings("build", jakefile.global_pre_hooks[0].recipe_name.?);
+    // Second @before targets test
+    try std.testing.expectEqualStrings("test", jakefile.global_pre_hooks[1].recipe_name.?);
 }
 
 // ============================================================================

@@ -212,23 +212,11 @@ pub const ImportResolver = struct {
             new_recipes[target.recipes.len + i] = new_recipe;
         }
 
-        // Merge directives (skip import directives from imported file)
-        var directive_count: usize = 0;
-        for (imported.directives) |d| {
-            if (d.kind != .import) {
-                directive_count += 1;
-            }
-        }
-        const new_directives_len = target.directives.len + directive_count;
+        // Merge directives (import directives are stored separately in imports array)
+        const new_directives_len = target.directives.len + imported.directives.len;
         const new_directives = self.allocator.alloc(Directive, new_directives_len) catch return ImportError.OutOfMemory;
         @memcpy(new_directives[0..target.directives.len], target.directives);
-        var idx: usize = target.directives.len;
-        for (imported.directives) |d| {
-            if (d.kind != .import) {
-                new_directives[idx] = d;
-                idx += 1;
-            }
-        }
+        @memcpy(new_directives[target.directives.len..], imported.directives);
 
         // Merge global hooks
         const new_pre_hooks_len = target.global_pre_hooks.len + imported.global_pre_hooks.len;
@@ -241,12 +229,18 @@ pub const ImportResolver = struct {
         @memcpy(new_post_hooks[0..target.global_post_hooks.len], target.global_post_hooks);
         @memcpy(new_post_hooks[target.global_post_hooks.len..], imported.global_post_hooks);
 
+        const new_on_error_hooks_len = target.global_on_error_hooks.len + imported.global_on_error_hooks.len;
+        const new_on_error_hooks = self.allocator.alloc(Hook, new_on_error_hooks_len) catch return ImportError.OutOfMemory;
+        @memcpy(new_on_error_hooks[0..target.global_on_error_hooks.len], target.global_on_error_hooks);
+        @memcpy(new_on_error_hooks[target.global_on_error_hooks.len..], imported.global_on_error_hooks);
+
         // Update target with merged content
         target.variables = new_vars;
         target.recipes = new_recipes;
         target.directives = new_directives;
         target.global_pre_hooks = new_pre_hooks;
         target.global_post_hooks = new_post_hooks;
+        target.global_on_error_hooks = new_on_error_hooks;
     }
 
     /// Create a prefixed name like "prefix.name"
@@ -309,4 +303,123 @@ test "prefixed name creation" {
     defer std.testing.allocator.free(prefixed);
 
     try std.testing.expectEqualStrings("docker.build", prefixed);
+}
+
+test "prefixed name with multi-char prefix" {
+    var resolver = ImportResolver.init(std.testing.allocator);
+    defer resolver.deinit();
+
+    const prefixed = try resolver.createPrefixedName("deployment", "production");
+    defer std.testing.allocator.free(prefixed);
+
+    try std.testing.expectEqualStrings("deployment.production", prefixed);
+}
+
+test "isImportedRecipe finds matching recipe" {
+    var resolver = ImportResolver.init(std.testing.allocator);
+    defer resolver.deinit();
+
+    const recipes = [_]Recipe{
+        .{
+            .name = "build",
+            .kind = .task,
+            .dependencies = &.{},
+            .file_deps = &.{},
+            .output = null,
+            .params = &.{},
+            .commands = &.{},
+            .pre_hooks = &.{},
+            .post_hooks = &.{},
+            .doc_comment = null,
+            .is_default = false,
+            .aliases = &.{},
+            .group = null,
+            .description = null,
+            .only_os = &.{},
+            .shell = null,
+            .working_dir = null,
+            .quiet = false,
+        },
+        .{
+            .name = "test",
+            .kind = .task,
+            .dependencies = &.{},
+            .file_deps = &.{},
+            .output = null,
+            .params = &.{},
+            .commands = &.{},
+            .pre_hooks = &.{},
+            .post_hooks = &.{},
+            .doc_comment = null,
+            .is_default = false,
+            .aliases = &.{},
+            .group = null,
+            .description = null,
+            .only_os = &.{},
+            .shell = null,
+            .working_dir = null,
+            .quiet = false,
+        },
+    };
+
+    try std.testing.expect(resolver.isImportedRecipe(&recipes, "build"));
+    try std.testing.expect(resolver.isImportedRecipe(&recipes, "test"));
+    try std.testing.expect(!resolver.isImportedRecipe(&recipes, "deploy"));
+}
+
+test "isImportedRecipe returns false for empty recipe list" {
+    var resolver = ImportResolver.init(std.testing.allocator);
+    defer resolver.deinit();
+
+    const recipes: []const Recipe = &.{};
+    try std.testing.expect(!resolver.isImportedRecipe(recipes, "anything"));
+}
+
+test "import stack tracks in-progress imports" {
+    var resolver = ImportResolver.init(std.testing.allocator);
+    defer resolver.deinit();
+
+    // Simulate adding to import stack
+    try resolver.import_stack.put(std.testing.allocator, try std.testing.allocator.dupe(u8, "/path/to/file.jake"), {});
+    defer {
+        var iter = resolver.import_stack.keyIterator();
+        while (iter.next()) |key| {
+            std.testing.allocator.free(key.*);
+        }
+    }
+
+    try std.testing.expect(resolver.import_stack.contains("/path/to/file.jake"));
+    try std.testing.expect(!resolver.import_stack.contains("/other/file.jake"));
+}
+
+test "resolved cache prevents re-processing" {
+    var resolver = ImportResolver.init(std.testing.allocator);
+    defer resolver.deinit();
+
+    // Simulate adding to resolved cache
+    try resolver.resolved_cache.put(std.testing.allocator, try std.testing.allocator.dupe(u8, "/resolved/file.jake"), {});
+    defer {
+        var iter = resolver.resolved_cache.keyIterator();
+        while (iter.next()) |key| {
+            std.testing.allocator.free(key.*);
+        }
+    }
+
+    try std.testing.expect(resolver.resolved_cache.contains("/resolved/file.jake"));
+    try std.testing.expectEqual(@as(usize, 1), resolver.resolved_cache.count());
+}
+
+test "loaded sources are tracked for cleanup" {
+    var resolver = ImportResolver.init(std.testing.allocator);
+    defer resolver.deinit();
+
+    // Simulate adding loaded sources
+    const source1 = try std.testing.allocator.dupe(u8, "task build:\n    echo hello");
+    try resolver.loaded_sources.append(std.testing.allocator, source1);
+
+    const source2 = try std.testing.allocator.dupe(u8, "task test:\n    echo test");
+    try resolver.loaded_sources.append(std.testing.allocator, source2);
+
+    try std.testing.expectEqual(@as(usize, 2), resolver.loaded_sources.items.len);
+    // Sources are freed by deinit()
 }

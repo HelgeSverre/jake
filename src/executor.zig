@@ -10,6 +10,7 @@ const env_mod = @import("env.zig");
 const hooks_mod = @import("hooks.zig");
 const prompt_mod = @import("prompt.zig");
 const functions = @import("functions.zig");
+const glob_mod = @import("glob.zig");
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
@@ -100,6 +101,9 @@ pub const Executor = struct {
             hook_runner.addGlobalHook(hook) catch {};
         }
         for (jakefile.global_post_hooks) |hook| {
+            hook_runner.addGlobalHook(hook) catch {};
+        }
+        for (jakefile.global_on_error_hooks) |hook| {
             hook_runner.addGlobalHook(hook) catch {};
         }
 
@@ -253,9 +257,11 @@ pub const Executor = struct {
     }
 
     /// Parse items from @each directive line.
+    /// Supports literal items, comma/space separated, and glob patterns.
+    /// Glob patterns (containing *, ?, [) are expanded to matching files.
     /// Returns empty slice on OOM (loop will simply not execute).
     fn parseEachItems(self: *Executor, line: []const u8) []const []const u8 {
-        // Line format is: "each a b c" or "each a, b, c"
+        // Line format is: "each a b c" or "each a, b, c" or "each src/*.zig"
         var trimmed = std.mem.trim(u8, line, " \t");
         if (std.mem.startsWith(u8, trimmed, "each")) {
             trimmed = std.mem.trimLeft(u8, trimmed[4..], " \t");
@@ -268,6 +274,9 @@ pub const Executor = struct {
 
         // Parse items (space or comma separated)
         var items: std.ArrayListUnmanaged([]const u8) = .empty;
+        // Track expanded paths for cleanup (owned memory)
+        var expanded_paths: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer expanded_paths.deinit(self.allocator);
 
         var i: usize = 0;
         while (i < trimmed.len) {
@@ -284,7 +293,26 @@ pub const Executor = struct {
             }
             const item_slice = trimmed[start..i];
             if (item_slice.len > 0) {
-                items.append(self.allocator, item_slice) catch {};
+                // Check if this is a glob pattern
+                if (glob_mod.isGlobPattern(item_slice)) {
+                    // Expand the glob pattern
+                    const expanded = glob_mod.expandGlob(self.allocator, item_slice) catch {
+                        // On error, treat as literal
+                        items.append(self.allocator, item_slice) catch {};
+                        continue;
+                    };
+
+                    // Add all expanded paths to items
+                    for (expanded) |path| {
+                        items.append(self.allocator, path) catch {};
+                        // Track for registration (but not cleanup - they're owned by items now)
+                        self.expanded_strings.append(self.allocator, path) catch {};
+                    }
+                    // Free the slice container but not the contents
+                    self.allocator.free(expanded);
+                } else {
+                    items.append(self.allocator, item_slice) catch {};
+                }
             }
         }
 
@@ -335,25 +363,128 @@ pub const Executor = struct {
     }
 
     /// Execute a loop body with the current item value
+    /// This handles nested directives like @if/@else/@end within @each loops
     fn executeEachBody(self: *Executor, body: []const Recipe.Command, item: []const u8) ExecuteError!void {
-        for (body) |cmd| {
-            // Skip @end directive
-            if (cmd.directive) |d| {
-                if (d == .end) continue;
-            }
+        // Conditional state tracking using a stack for proper nesting (same as executeCommands)
+        const ConditionalState = struct {
+            executing: bool,
+            branch_taken: bool,
+        };
+        var cond_stack: [32]ConditionalState = undefined;
+        var cond_depth: usize = 0;
+
+        var executing: bool = true;
+        var branch_taken: bool = false;
+
+        var i: usize = 0;
+        while (i < body.len) : (i += 1) {
+            const cmd = body[i];
 
             // Expand {{item}} in the command line
             const expanded_line = self.expandItemVariable(cmd.line, item);
             defer if (expanded_line.ptr != cmd.line.ptr) self.allocator.free(expanded_line);
 
-            // Create a modified command with expanded line
-            const modified_cmd = Recipe.Command{
-                .line = expanded_line,
-                .directive = cmd.directive,
-            };
+            if (cmd.directive) |d| {
+                switch (d) {
+                    .@"if" => {
+                        // Push current state onto stack
+                        if (cond_depth < cond_stack.len) {
+                            cond_stack[cond_depth] = .{ .executing = executing, .branch_taken = branch_taken };
+                            cond_depth += 1;
+                        }
 
-            // Run the command
-            try self.runCommand(modified_cmd);
+                        if (!executing) {
+                            // Parent not executing, this block won't execute either
+                            branch_taken = true; // Prevent @else from executing
+                            continue;
+                        }
+
+                        // Extract condition from line (strip "if " prefix)
+                        const condition = extractCondition(expanded_line, "if ");
+                        const condition_result = conditions.evaluate(condition, &self.variables) catch false;
+
+                        if (condition_result) {
+                            executing = true;
+                            branch_taken = true;
+                        } else {
+                            executing = false;
+                            branch_taken = false;
+                        }
+                        continue;
+                    },
+                    .elif => {
+                        // Get parent's executing state
+                        const parent_executing = if (cond_depth > 0) cond_stack[cond_depth - 1].executing else true;
+
+                        if (!parent_executing) {
+                            // Parent wasn't executing, we can't execute either
+                            continue;
+                        }
+
+                        if (branch_taken) {
+                            executing = false;
+                            continue;
+                        }
+                        // Extract condition from line (strip "elif " prefix)
+                        const condition = extractCondition(expanded_line, "elif ");
+                        const condition_result = conditions.evaluate(condition, &self.variables) catch false;
+
+                        if (condition_result) {
+                            executing = true;
+                            branch_taken = true;
+                        } else {
+                            executing = false;
+                        }
+                        continue;
+                    },
+                    .@"else" => {
+                        // Get parent's executing state
+                        const parent_executing = if (cond_depth > 0) cond_stack[cond_depth - 1].executing else true;
+
+                        if (!parent_executing) {
+                            // Parent wasn't executing, we can't execute either
+                            continue;
+                        }
+
+                        if (!branch_taken) {
+                            executing = true;
+                            branch_taken = true;
+                        } else {
+                            executing = false;
+                        }
+                        continue;
+                    },
+                    .end => {
+                        // Pop state from stack
+                        if (cond_depth > 0) {
+                            cond_depth -= 1;
+                            executing = cond_stack[cond_depth].executing;
+                            branch_taken = cond_stack[cond_depth].branch_taken;
+                        } else {
+                            executing = true;
+                            branch_taken = false;
+                        }
+                        continue;
+                    },
+                    .ignore => {
+                        // @ignore inside @each is not currently supported
+                        continue;
+                    },
+                    else => {
+                        // Other directives not handled inside @each loop body
+                        continue;
+                    },
+                }
+            }
+
+            // Run the command if we're executing
+            if (executing) {
+                const modified_cmd = Recipe.Command{
+                    .line = expanded_line,
+                    .directive = null,
+                };
+                try self.runCommand(modified_cmd);
+            }
         }
     }
 
@@ -531,6 +662,11 @@ pub const Executor = struct {
             self.print("\x1b[1;33mwarning:\x1b[0m post-hook failed: {s}\n", .{@errorName(hook_err)});
         };
 
+        // Run on_error hooks if recipe failed
+        if (!hook_context.success) {
+            self.hook_runner.runOnErrorHooks(&hook_context);
+        }
+
         // Return the original error if recipe execution failed
         if (exec_result) |_| {
             // Success - continue
@@ -644,15 +780,18 @@ pub const Executor = struct {
 
     /// Execute commands with conditional block support
     fn executeCommands(self: *Executor, cmds: []const Recipe.Command) ExecuteError!void {
-        // Conditional state tracking
-        // We use a simple state machine:
-        // - executing: whether we're currently executing commands
-        // - branch_taken: whether any branch in the current if/elif/else chain has matched
-        // - nesting_depth: for nested conditionals (we skip inner blocks when outer is false)
+        // Conditional state tracking using a stack for proper nesting
+        // Each entry: (executing, branch_taken) for that nesting level
+        const ConditionalState = struct {
+            executing: bool,
+            branch_taken: bool,
+        };
+        var cond_stack: [32]ConditionalState = undefined; // Max nesting depth of 32
+        var cond_depth: usize = 0;
 
+        // Current state (top of conceptual stack)
         var executing: bool = true;
         var branch_taken: bool = false;
-        var nesting_depth: usize = 0; // Track nested conditionals when skipping
         var ignore_next: bool = false; // Whether to ignore failures for the next command
 
         var i: usize = 0;
@@ -663,9 +802,18 @@ pub const Executor = struct {
             if (cmd.directive) |directive| {
                 switch (directive) {
                     .@"if" => {
+                        // Push current state onto stack before entering new conditional
+                        if (cond_depth < cond_stack.len) {
+                            cond_stack[cond_depth] = .{
+                                .executing = executing,
+                                .branch_taken = branch_taken,
+                            };
+                            cond_depth += 1;
+                        }
+
                         if (!executing) {
-                            // We're already skipping, just track nesting
-                            nesting_depth += 1;
+                            // Parent is not executing, so this entire block is skipped
+                            branch_taken = false;
                             continue;
                         }
 
@@ -688,8 +836,10 @@ pub const Executor = struct {
                         continue;
                     },
                     .elif => {
-                        if (nesting_depth > 0) {
-                            // Inside a skipped nested block, ignore
+                        // Check if parent was executing (look at stack)
+                        const parent_executing = if (cond_depth > 0) cond_stack[cond_depth - 1].executing else true;
+                        if (!parent_executing) {
+                            // Parent block is not executing, skip
                             continue;
                         }
 
@@ -717,8 +867,10 @@ pub const Executor = struct {
                         continue;
                     },
                     .@"else" => {
-                        if (nesting_depth > 0) {
-                            // Inside a skipped nested block, ignore
+                        // Check if parent was executing (look at stack)
+                        const parent_executing = if (cond_depth > 0) cond_stack[cond_depth - 1].executing else true;
+                        if (!parent_executing) {
+                            // Parent block is not executing, skip
                             continue;
                         }
 
@@ -733,14 +885,16 @@ pub const Executor = struct {
                         continue;
                     },
                     .end => {
-                        if (nesting_depth > 0) {
-                            nesting_depth -= 1;
-                            continue;
+                        // Pop state from stack
+                        if (cond_depth > 0) {
+                            cond_depth -= 1;
+                            executing = cond_stack[cond_depth].executing;
+                            branch_taken = cond_stack[cond_depth].branch_taken;
+                        } else {
+                            // No matching @if, reset to default
+                            executing = true;
+                            branch_taken = false;
                         }
-
-                        // End of conditional block, reset state
-                        executing = true;
-                        branch_taken = false;
                         continue;
                     },
                     .ignore => {
@@ -2591,6 +2745,90 @@ test "@each with multiple commands" {
     try executor.execute("test");
 }
 
+test "@each with glob pattern expands matching files" {
+    // This test verifies that glob patterns in @each are expanded
+    // We use a pattern that should match existing zig files in src/
+    const source =
+        \\task test:
+        \\    @each src/glob.zig
+        \\        echo "processing: {{item}}"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should iterate over the literal file (not a glob)
+    try executor.execute("test");
+}
+
+test "@each with asterisk glob expands files" {
+    // Create temp test files
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Create test files
+    tmp_dir.dir.writeFile(.{ .sub_path = "test1.txt", .data = "content1" }) catch {};
+    tmp_dir.dir.writeFile(.{ .sub_path = "test2.txt", .data = "content2" }) catch {};
+    tmp_dir.dir.writeFile(.{ .sub_path = "other.md", .data = "other" }) catch {};
+
+    // The executor's parseEachItems should expand globs
+    var executor: Executor = undefined;
+    executor.allocator = std.testing.allocator;
+    executor.expanded_strings = .empty;
+
+    // Test isGlobPattern detection
+    try std.testing.expect(glob_mod.isGlobPattern("*.txt"));
+    try std.testing.expect(glob_mod.isGlobPattern("src/**/*.zig"));
+    try std.testing.expect(!glob_mod.isGlobPattern("literal.txt"));
+}
+
+test "@each with non-matching glob returns empty" {
+    const source =
+        \\task test:
+        \\    @each nonexistent_dir_12345/*.nonexistent
+        \\        echo "should not print: {{item}}"
+        \\    @end
+        \\    echo "done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should skip the loop (no matches) but execute "done"
+    try executor.execute("test");
+}
+
+test "@each with mixed literal and glob items" {
+    const source =
+        \\task test:
+        \\    @each literal1 literal2
+        \\        echo "item: {{item}}"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should process both literal items
+    try executor.execute("test");
+}
+
 // ============================================================================
 // @cache Directive Tests
 // ============================================================================
@@ -2907,6 +3145,62 @@ test "deeply nested @if blocks (5 levels)" {
         \\                @end
         \\            @end
         \\        @end
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "nested @if with @else does not execute outer else" {
+    // Regression test: ensure inner @if/@else doesn't affect outer @else
+    const source =
+        \\task test:
+        \\    @if true
+        \\        echo "outer-if"
+        \\        @if true
+        \\            echo "inner-if"
+        \\        @else
+        \\            echo "inner-else"
+        \\        @end
+        \\        echo "after-inner"
+        \\    @else
+        \\        echo "outer-else-should-not-run"
+        \\    @end
+        \\    echo "after-outer"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // This should not error - previously the outer @else would wrongly execute
+    try executor.execute("test");
+}
+
+test "nested @if with false outer does not execute inner" {
+    const source =
+        \\task test:
+        \\    @if false
+        \\        echo "outer-if-skip"
+        \\        @if true
+        \\            echo "inner-if-skip"
+        \\        @else
+        \\            echo "inner-else-skip"
+        \\        @end
+        \\    @else
+        \\        echo "outer-else-runs"
         \\    @end
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
@@ -3504,4 +3798,357 @@ test "unknown function keeps original" {
     const expanded = try executor.expandJakeVariables("{{unknownfunc(arg)}}");
     defer std.testing.allocator.free(expanded);
     try std.testing.expectEqualStrings("{{unknownfunc(arg)}}", expanded);
+}
+
+// ============================================================================
+// Stress Tests - Complex Scenarios
+// ============================================================================
+
+test "stress: deeply nested conditionals with mixed branches" {
+    const source =
+        \\task test:
+        \\    @if true
+        \\        echo "level1-if"
+        \\        @if false
+        \\            echo "level2-if-skip"
+        \\        @elif true
+        \\            echo "level2-elif"
+        \\            @if true
+        \\                echo "level3-if"
+        \\                @if false
+        \\                    echo "level4-skip"
+        \\                @else
+        \\                    echo "level4-else"
+        \\                @end
+        \\            @else
+        \\                echo "level3-else-skip"
+        \\            @end
+        \\        @else
+        \\            echo "level2-else-skip"
+        \\        @end
+        \\    @else
+        \\        echo "level1-else-skip"
+        \\    @end
+        \\    echo "after-all"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "stress: complex dependency chain" {
+    const source =
+        \\task a:
+        \\    echo "a"
+        \\task b: [a]
+        \\    echo "b"
+        \\task c: [a]
+        \\    echo "c"
+        \\task d: [b, c]
+        \\    echo "d"
+        \\task e: [d]
+        \\    echo "e"
+        \\task f: [d]
+        \\    echo "f"
+        \\task g: [e, f]
+        \\    echo "g"
+        \\task h: [g, a]
+        \\    echo "h"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("h");
+}
+
+test "stress: @each inside conditional" {
+    const source =
+        \\task test:
+        \\    @if true
+        \\        @each a b c
+        \\            echo "item: {{item}}"
+        \\        @end
+        \\    @else
+        \\        echo "skip-each"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "stress: conditional inside @each" {
+    const source =
+        \\task test:
+        \\    @each x y z
+        \\        @if true
+        \\            echo "processing: {{item}}"
+        \\        @else
+        \\            echo "skip"
+        \\        @end
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "stress: multiple directives in single recipe" {
+    const source =
+        \\task test:
+        \\    @needs echo
+        \\    @if true
+        \\        @each a b
+        \\            echo "{{item}}"
+        \\        @end
+        \\    @end
+        \\    @ignore
+        \\    nonexistent_cmd
+        \\    echo "after ignore"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "stress: hooks with dependencies" {
+    const source =
+        \\@pre echo "global-pre"
+        \\@post echo "global-post"
+        \\
+        \\task setup:
+        \\    @pre echo "setup-pre"
+        \\    echo "setup"
+        \\    @post echo "setup-post"
+        \\
+        \\task build: [setup]
+        \\    @pre echo "build-pre"
+        \\    echo "build"
+        \\    @post echo "build-post"
+        \\
+        \\task test: [build]
+        \\    @pre echo "test-pre"
+        \\    echo "test"
+        \\    @post echo "test-post"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "stress: recipe with parameters and conditionals" {
+    const source =
+        \\task deploy env="staging":
+        \\    @if eq({{env}}, "production")
+        \\        echo "deploying to PROD"
+        \\    @elif eq({{env}}, "staging")
+        \\        echo "deploying to STAGING"
+        \\    @else
+        \\        echo "unknown env: {{env}}"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("deploy");
+}
+
+test "stress: targeted hooks with multiple recipes" {
+    const source =
+        \\@before build echo "BEFORE BUILD"
+        \\@after build echo "AFTER BUILD"
+        \\@before test echo "BEFORE TEST"
+        \\@after test echo "AFTER TEST"
+        \\
+        \\task build:
+        \\    echo "building"
+        \\
+        \\task test: [build]
+        \\    echo "testing"
+        \\
+        \\task deploy: [test]
+        \\    echo "deploying"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("deploy");
+}
+
+test "stress: file target with multiple deps" {
+    const source =
+        \\file output.txt: src/*.ts lib/*.ts
+        \\    echo "compiling"
+        \\
+        \\task build: [output.txt]
+        \\    echo "build done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("build");
+}
+
+test "stress: empty @each list produces no iterations" {
+    const source =
+        \\task test:
+        \\    @each
+        \\        echo "should not print"
+        \\    @end
+        \\    echo "done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "stress: diamond dependency pattern" {
+    // A depends on B and C, both depend on D
+    // D should only run once
+    const source =
+        \\task d:
+        \\    echo "d"
+        \\task b: [d]
+        \\    echo "b"
+        \\task c: [d]
+        \\    echo "c"
+        \\task a: [b, c]
+        \\    echo "a"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("a");
+}
+
+test "stress: 20+ recipes large project" {
+    const source =
+        \\version = "1.0.0"
+        \\app = "myapp"
+        \\
+        \\task clean:
+        \\    echo "cleaning"
+        \\task lint: [clean]
+        \\    echo "linting"
+        \\task format: [clean]
+        \\    echo "formatting"
+        \\task compile: [lint, format]
+        \\    echo "compiling {{app}} v{{version}}"
+        \\task test-unit: [compile]
+        \\    @each unit1 unit2 unit3
+        \\        echo "testing {{item}}"
+        \\    @end
+        \\task test-integration: [compile]
+        \\    @if true
+        \\        echo "integration tests"
+        \\    @end
+        \\task test: [test-unit, test-integration]
+        \\    echo "all tests done"
+        \\task bundle: [compile]
+        \\    echo "bundling"
+        \\task minify: [bundle]
+        \\    echo "minifying"
+        \\task assets: [minify]
+        \\    echo "processing assets"
+        \\task build: [assets, test]
+        \\    echo "build complete"
+        \\task staging: [build]
+        \\    echo "deploy staging"
+        \\task production: [build]
+        \\    @pre echo "PRODUCTION DEPLOY"
+        \\    echo "deploy production"
+        \\    @post echo "DEPLOYED"
+        \\task deploy: [staging]
+        \\    echo "deploy done"
+        \\task release: [production]
+        \\    echo "release {{version}}"
+        \\task docs:
+        \\    echo "generating docs"
+        \\task publish: [release, docs]
+        \\    echo "publishing"
+        \\task all: [publish]
+        \\    echo "all done"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("all");
 }
