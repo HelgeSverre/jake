@@ -4,6 +4,7 @@
 // Polls every 500ms for changes, with 100ms debounce after last change.
 
 const std = @import("std");
+const compat = @import("compat.zig");
 const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
 const glob_mod = @import("glob.zig");
@@ -354,7 +355,7 @@ pub const Watcher = struct {
         _ = self;
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-        std.fs.File.stderr().writeAll(msg) catch {};
+        compat.getStdErr().writeAll(msg) catch {};
     }
 };
 

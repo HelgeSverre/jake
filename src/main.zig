@@ -3,15 +3,16 @@
 
 const std = @import("std");
 const jake = @import("jake");
+const compat = jake.compat;
 
 const version = "0.2.0";
 
 fn getStdout() std.fs.File {
-    return std.fs.File.stdout();
+    return compat.getStdOut();
 }
 
 fn getStderr() std.fs.File {
-    return std.fs.File.stderr();
+    return compat.getStdErr();
 }
 
 pub fn main() !void {

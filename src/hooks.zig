@@ -6,6 +6,7 @@
 // 2. Recipe-specific hooks - run only for a specific recipe
 
 const std = @import("std");
+const compat = @import("compat.zig");
 
 /// Represents a single hook (pre, post, or on_error execution)
 pub const Hook = struct {
@@ -241,7 +242,7 @@ pub const HookRunner = struct {
         _ = self;
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-        std.fs.File.stderr().writeAll(msg) catch {};
+        compat.getStdErr().writeAll(msg) catch {};
     }
 };
 

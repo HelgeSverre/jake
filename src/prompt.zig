@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat.zig");
 
 /// Result from a confirmation prompt
 pub const ConfirmResult = enum {
@@ -18,8 +19,8 @@ pub const Prompt = struct {
     /// Ask for confirmation with a message
     /// Returns .yes if user confirms, .no if user denies
     pub fn confirm(self: *Prompt, message: []const u8) !ConfirmResult {
-        const stdout = std.fs.File.stdout();
-        const stdin = std.fs.File.stdin();
+        const stdout = compat.getStdOut();
+        const stdin = compat.getStdIn();
 
         // In dry-run mode, show message but don't prompt
         if (self.dry_run) {

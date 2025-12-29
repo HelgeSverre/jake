@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const compat = @import("compat.zig");
 const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
 const cache_mod = @import("cache.zig");
@@ -446,12 +447,12 @@ pub const ParallelExecutor = struct {
         if (stdout_len > 0) {
             self.output_mutex.lock();
             defer self.output_mutex.unlock();
-            std.fs.File.stdout().writeAll(stdout_buf[0..stdout_len]) catch {};
+            compat.getStdOut().writeAll(stdout_buf[0..stdout_len]) catch {};
         }
         if (stderr_len > 0) {
             self.output_mutex.lock();
             defer self.output_mutex.unlock();
-            std.fs.File.stderr().writeAll(stderr_buf[0..stderr_len]) catch {};
+            compat.getStdErr().writeAll(stderr_buf[0..stderr_len]) catch {};
         }
 
         if (result.Exited != 0) {
@@ -533,7 +534,7 @@ pub const ParallelExecutor = struct {
 
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-        std.fs.File.stderr().writeAll(msg) catch {};
+        compat.getStdErr().writeAll(msg) catch {};
     }
 
     /// Execute sequentially (for single-threaded or dry-run mode)

@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const compat = @import("compat.zig");
 const parser = @import("parser.zig");
 const cache_mod = @import("cache.zig");
 const conditions = @import("conditions.zig");
@@ -1215,12 +1216,12 @@ pub const Executor = struct {
         _ = self;
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-        std.fs.File.stderr().writeAll(msg) catch {};
+        compat.getStdErr().writeAll(msg) catch {};
     }
 
     /// List all available recipes
     pub fn listRecipes(self: *Executor) void {
-        const stdout = std.fs.File.stdout();
+        const stdout = compat.getStdOut();
         stdout.writeAll("\x1b[1mAvailable recipes:\x1b[0m\n") catch {};
 
         var hidden_count: usize = 0;

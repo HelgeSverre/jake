@@ -503,6 +503,47 @@ task test:
     @post docker-compose down
 ```
 
+### Targeted Hooks
+
+Target specific recipes without modifying them:
+
+```jake
+# Run before the "build" recipe only
+@before build echo "Checking dependencies..."
+
+# Run after the "deploy" recipe only
+@after deploy notify "Deployment complete"
+
+# Multiple targeted hooks
+@before test docker-compose up -d
+@after test docker-compose down
+```
+
+### Error Hooks
+
+Run commands when any recipe fails:
+
+```jake
+# Error handler - runs on any recipe failure
+@on_error echo "Recipe failed! Check logs."
+
+# Send notification on failure
+@on_error notify "Build failed - see logs"
+```
+
+Note: `@on_error` is always global - it runs when any recipe fails.
+
+### Complete Hook Execution Order
+
+1. Global `@pre` hooks (matching recipe)
+2. `@before` hooks targeting this recipe
+3. Recipe `@pre` hooks (inside recipe)
+4. Recipe commands
+5. Recipe `@post` hooks (inside recipe)
+6. `@after` hooks targeting this recipe
+7. Global `@post` hooks (matching recipe)
+8. `@on_error` hooks (only if recipe failed)
+
 ---
 
 ## Command Directives
@@ -561,6 +602,25 @@ task lint-all:
 ```
 
 Items can be space or comma-separated.
+
+#### Glob Pattern Expansion
+
+Glob patterns in `@each` are automatically expanded to matching files:
+
+```jake
+# Process all TypeScript files
+task check-all:
+    @each src/**/*.ts
+        echo "Checking {{item}}..."
+        tsc --noEmit {{item}}
+    @end
+
+# Process specific file types
+task format:
+    @each *.go cmd/**/*.go
+        go fmt {{item}}
+    @end
+```
 
 ### @cache - Skip When Unchanged
 
