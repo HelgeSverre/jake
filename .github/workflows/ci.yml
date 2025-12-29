@@ -21,7 +21,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v1
         with:
-          version: 0.15.0
+          version: master
 
       - name: Build
         run: zig build
@@ -44,7 +44,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v1
         with:
-          version: 0.15.0
+          version: master
 
       - name: Check Formatting
         run: zig fmt --check src/
@@ -58,7 +58,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v1
         with:
-          version: 0.15.0
+          version: master
 
       - name: Build Release
         run: zig build -Doptimize=ReleaseFast

@@ -49,6 +49,9 @@ pub const Token = struct {
         kw_only_os, // only-os (hyphenated keyword)
         kw_alias,
         kw_quiet,
+        kw_before,
+        kw_after,
+        kw_on_error,
 
         // Symbols
         equals, // =
@@ -398,6 +401,12 @@ pub const Lexer = struct {
             .kw_alias
         else if (std.mem.eql(u8, text, "quiet"))
             .kw_quiet
+        else if (std.mem.eql(u8, text, "before"))
+            .kw_before
+        else if (std.mem.eql(u8, text, "after"))
+            .kw_after
+        else if (std.mem.eql(u8, text, "on_error"))
+            .kw_on_error
         else
             .ident;
 
