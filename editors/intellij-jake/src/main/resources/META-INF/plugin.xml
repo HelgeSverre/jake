@@ -44,7 +44,7 @@
     <!-- TextMate bundle support -->
     <depends>org.jetbrains.plugins.textmate</depends>
 
-    <extensions defaultExtensionNs="org.jetbrains.plugins.textmate">
-        <bundle name="Jakefile" path="/bundle"/>
+    <extensions defaultExtensionNs="com.intellij">
+        <textmate.bundleProvider implementation="com.jakefile.intellij.JakeTextMateBundleProvider"/>
     </extensions>
 </idea-plugin>
