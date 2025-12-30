@@ -36,6 +36,7 @@ task all: [build, test]
 @group dev
 @desc "Development build with optional watch mode"
 task dev: [build]
+    @watch src/*.zig build.zig Jakefile jake/*.jake
     @if is_watching()
         echo "Watching for changes..."
     @else
@@ -202,7 +203,7 @@ for i in range(1000):
 
 @desc "Build release binary for current platform"
 @group packaging
-task package-binary:
+task package.binary:
     @needs zig
     @pre echo "Building release binary..."
     zig build -Doptimize=ReleaseSafe
@@ -210,7 +211,7 @@ task package-binary:
 
 @desc "Build release binaries for all platforms (requires cross-compilation)"
 @group packaging
-task package-binaries:
+task package.binaries:
     @needs zig
     @pre echo "Building cross-platform binaries..."
     mkdir -p dist
@@ -223,7 +224,7 @@ task package-binaries:
 
 @desc "Build Docker image"
 @group packaging
-task package-docker:
+task package.docker:
     @needs docker
     @pre echo "Building Docker image..."
     docker build -t jake:{{version}} -t jake:latest -f packaging/docker/Dockerfile .
@@ -232,7 +233,7 @@ task package-docker:
 @desc "Test Homebrew formula locally"
 @group packaging
 @only-os macos
-task package-homebrew-test:
+task package.homebrew-test:
     @needs brew
     @pre echo "Testing Homebrew formula..."
     brew install --build-from-source ./packaging/homebrew/jake.rb
@@ -240,7 +241,7 @@ task package-homebrew-test:
 
 @desc "Build Nix package"
 @group packaging
-task package-nix:
+task package.nix:
     @needs nix
     @pre echo "Building Nix package..."
     cd packaging/nix && nix build
@@ -248,14 +249,14 @@ task package-nix:
 
 @desc "Generate AUR source package"
 @group packaging
-task package-aur:
+task package.aur:
     @pre echo "Generating AUR source package..."
     cd packaging/aur && makepkg --source
     @post ls -lh packaging/aur/*.src.tar.gz
 
 @desc "Generate checksums for release binaries"
 @group packaging
-task package-checksums:
+task package.checksums:
     @pre echo "Generating checksums..."
     @if exists(dist)
         cd dist && sha256sum jake-* > SHA256SUMS
@@ -266,7 +267,7 @@ task package-checksums:
 
 @desc "Test install script locally"
 @group packaging
-task package-install-test:
+task package.install-test:
     @pre echo "Testing install script..."
     JAKE_INSTALL=/tmp/jake-test sh packaging/install.sh
     /tmp/jake-test/jake --version
@@ -274,7 +275,7 @@ task package-install-test:
 
 @desc "Build all packages"
 @group packaging
-task package-all: [package-binaries, package-docker, package-checksums]
+task package.all: [package-binaries, package-docker, package-checksums]
     @post echo "All packages built! See dist/ directory."
 
 # ============================================================================
@@ -288,10 +289,10 @@ task loc:
     find src -name "*.zig" | xargs wc -l | tail -1
 
 @group stats
-@desc "Find TODO/FIXME/HACK comments in source"
+@desc "Find TODO:/FIXME:/HACK: comments in source"
 task todos:
     @ignore
-    grep -rn "TODO\|FIXME\|HACK\|XXX" src/ || echo "No TODOs found!"
+    grep -rn "TODO:\|FIXME:\|HACK:\|XXX:" src/ || echo "No TODOs found!"
 
 @group stats
 @desc "Show largest source files by line count"
@@ -352,7 +353,9 @@ task env-info:
 @desc "Rebuild and reinstall jake"
 task self-update: [build-release]
     @pre echo "Reinstalling jake..."
-    cp zig-out/bin/jake {{local_bin("jake")}}
+    # Use atomic replacement to avoid macOS code signature invalidation
+    cp zig-out/bin/jake {{local_bin("jake")}}.new
+    mv {{local_bin("jake")}}.new {{local_bin("jake")}}
     @post echo "Updated {{local_bin(\"jake\")}}"
 
 @group maintenance

@@ -122,30 +122,10 @@ ci:
 # Fuzzing
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Build all fuzzing targets
+# Run coverage-guided fuzz tests
 [group('fuzz')]
-fuzz-build:
-    zig build fuzz-parse -Doptimize=ReleaseSafe
-    zig build fuzz-lexer -Doptimize=ReleaseSafe
-    zig build fuzz-executor -Doptimize=ReleaseSafe
-    zig build fuzz-glob -Doptimize=ReleaseSafe
-
-# Fuzz the Jakefile parser (dumb fuzzer, no dependencies)
-[group('fuzz')]
-fuzz ITERATIONS="1000":
-    zig build fuzz-parse -Doptimize=ReleaseSafe
-    ./scripts/dumb-fuzz.sh {{ ITERATIONS }}
-
-# Fuzz using AFL++ in dumb mode (requires: brew install afl++)
-# Use -n because Zig's -ffuzz instrumentation isn't AFL-compatible
-[group('fuzz')]
-fuzz-afl:
-    zig build fuzz-parse -Doptimize=ReleaseSafe
-    mkdir -p corpus findings
-    cp Jakefile corpus/main.jake 2>/dev/null || true
-    find samples -name "Jakefile" -exec sh -c 'cp "$1" "corpus/$(echo $1 | tr / -)"' _ {} \; 2>/dev/null || true
-    find samples -name "*.jake" -type f -exec cp {} corpus/ \; 2>/dev/null || true
-    AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 afl-fuzz -n -i corpus -o findings -- ./zig-out/bin/jake-fuzz-parse @@
+fuzz:
+    zig build fuzz --fuzz
 
 # ─────────────────────────────────────────────────────────────────────────────
 # E2E Tests
@@ -154,7 +134,7 @@ fuzz-afl:
 # Run E2E test suite using jake
 [group('test')]
 e2e: release
-    cd samples && ../zig-out/bin/jake test-all
+    cd tests/e2e && ../../zig-out/bin/jake test-all
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Benchmarking & Profiling
