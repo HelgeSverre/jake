@@ -19,8 +19,7 @@ zig build test                       # Unit tests
 jake e2e                             # E2E tests (jake testing jake)
 
 # Fuzz testing
-zig build fuzz-parse                 # Build parser fuzzer
-./scripts/dumb-fuzz.sh 1000          # Run 1000 fuzz iterations
+zig build test --fuzz                # Run coverage-guided fuzz tests
 
 # Formatting
 zig fmt src/                         # Format source files
@@ -49,8 +48,7 @@ jake profile        # CPU profiling with samply
 jake leaks          # Memory leak check (macOS only)
 
 # Fuzzing
-jake fuzz           # Fuzz parser (1000 iterations)
-jake fuzz-afl       # Fuzz with AFL++
+jake fuzz           # Run coverage-guided fuzz tests
 
 # Installation
 jake install        # Install to ~/.local/bin
