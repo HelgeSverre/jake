@@ -1,5 +1,6 @@
 # Dockerfile for testing jake shell completions
 # Tests bash, zsh, and fish completions in isolated environment
+# This tests VANILLA installs (no Oh-My-Zsh, no Homebrew)
 #
 # Build: docker build -t jake-completions-test -f tests/Dockerfile.completions .
 # Run:   docker run --rm jake-completions-test
@@ -13,31 +14,23 @@ RUN apt-get update && apt-get install -y curl xz-utils \
 RUN curl -L https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ -C /opt \
     && ln -s /opt/zig-linux-x86_64-0.14.0/zig /usr/local/bin/zig
 
-# Set up working directory
 WORKDIR /jake
-
-# Copy source code
 COPY . .
-
-# Build jake
 RUN zig build -Doptimize=ReleaseFast
 
 # ============================================================================
-# Test stage
+# Test stage - vanilla Linux environment (no Oh-My-Zsh, no Homebrew)
 # ============================================================================
 FROM debian:bookworm-slim
 
-# Install shells
 RUN apt-get update && apt-get install -y \
     bash \
     zsh \
     fish \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the built binary from builder stage
 COPY --from=builder /jake/zig-out/bin/jake /usr/local/bin/jake
 
-# Create test user (some shells behave differently as root)
 RUN useradd -m testuser
 USER testuser
 WORKDIR /home/testuser
@@ -45,15 +38,23 @@ WORKDIR /home/testuser
 # Create a simple Jakefile for testing
 RUN echo 'task hello:\n    echo "Hello from jake!"\n\ntask build:\n    echo "Building..."\n\ntask test:\n    echo "Testing..."\n' > /home/testuser/Jakefile
 
-# Create test script
+# Create comprehensive test script
 RUN echo '#!/bin/bash\n\
 set -e\n\
-echo "=== Testing Jake Shell Completions in Docker ==="\n\
+\n\
+echo "=== Jake Shell Completions Docker Test Suite ==="\n\
+echo "Environment: Vanilla Linux (no Oh-My-Zsh, no Homebrew)"\n\
 echo ""\n\
 \n\
-# Test basic functionality\n\
+# Test --summary\n\
 echo "--- Testing jake --summary ---"\n\
-jake --summary && echo "PASS: --summary works"\n\
+SUMMARY=$(jake --summary 2>/dev/null)\n\
+if [ -n "$SUMMARY" ]; then\n\
+    echo "PASS: --summary returns: $SUMMARY"\n\
+else\n\
+    echo "FAIL: --summary returned empty"\n\
+    exit 1\n\
+fi\n\
 echo ""\n\
 \n\
 # Test bash completions\n\
@@ -62,29 +63,61 @@ jake --completions bash > ~/.bash_completion_jake\n\
 bash -c "source ~/.bash_completion_jake && type _jake" && echo "PASS: bash completions load"\n\
 echo ""\n\
 \n\
-# Test zsh completions\n\
-echo "--- Testing Zsh Completions ---"\n\
-mkdir -p ~/.zsh/completions\n\
-jake --completions zsh > ~/.zsh/completions/_jake\n\
-zsh -c "fpath=(~/.zsh/completions \\$fpath); autoload -Uz compinit; compinit -u; type _jake" 2>&1 | grep -q "_jake is" && echo "PASS: zsh completions load"\n\
+# Test zsh completions (vanilla - should patch .zshrc)\n\
+echo "--- Testing Zsh Completions (Vanilla) ---"\n\
+jake --completions zsh --install 2>&1\n\
+\n\
+# Verify completion file was created\n\
+if [ -f ~/.zsh/completions/_jake ]; then\n\
+    echo "PASS: zsh completion file created at ~/.zsh/completions/_jake"\n\
+else\n\
+    echo "FAIL: zsh completion file not created"\n\
+    exit 1\n\
+fi\n\
+\n\
+# Verify .zshrc was patched\n\
+if [ -f ~/.zshrc ] && grep -q "jake completion" ~/.zshrc; then\n\
+    echo "PASS: .zshrc was patched with jake completion block"\n\
+    echo "--- .zshrc content ---"\n\
+    cat ~/.zshrc\n\
+    echo "--- end .zshrc ---"\n\
+else\n\
+    echo "FAIL: .zshrc was not patched"\n\
+    exit 1\n\
+fi\n\
+\n\
+# Test zsh loads the completion\n\
+zsh -c "source ~/.zshrc 2>/dev/null; fpath=(~/.zsh/completions \\$fpath); autoload -Uz compinit; compinit -u; type _jake" 2>&1 | grep -q "_jake is" && echo "PASS: zsh completions load"\n\
 echo ""\n\
 \n\
 # Test fish completions\n\
 echo "--- Testing Fish Completions ---"\n\
-mkdir -p ~/.config/fish/completions\n\
-jake --completions fish > ~/.config/fish/completions/jake.fish\n\
+jake --completions fish --install 2>&1\n\
 fish -c "source ~/.config/fish/completions/jake.fish; functions __jake_recipes" && echo "PASS: fish completions load"\n\
 echo ""\n\
 \n\
-# Test install command\n\
-echo "--- Testing --completions --install ---"\n\
-jake --completions bash --install && echo "PASS: bash install works"\n\
-jake --completions zsh --install && echo "PASS: zsh install works"\n\
-jake --completions fish --install && echo "PASS: fish install works"\n\
+# Test uninstall\n\
+echo "--- Testing Uninstall ---"\n\
+jake --completions zsh --uninstall 2>&1\n\
+\n\
+if [ ! -f ~/.zsh/completions/_jake ]; then\n\
+    echo "PASS: zsh completion file removed"\n\
+else\n\
+    echo "FAIL: zsh completion file not removed"\n\
+    exit 1\n\
+fi\n\
+\n\
+if [ -f ~/.zshrc ] && ! grep -q "jake completion" ~/.zshrc; then\n\
+    echo "PASS: .zshrc block removed"\n\
+elif [ ! -f ~/.zshrc ]; then\n\
+    echo "PASS: .zshrc cleaned up"\n\
+else\n\
+    echo "FAIL: .zshrc block not removed"\n\
+    exit 1\n\
+fi\n\
 echo ""\n\
 \n\
 echo "=== All Docker completion tests passed! ==="\n\
 ' > /home/testuser/test_completions.sh && chmod +x /home/testuser/test_completions.sh
 
-# Run tests
 CMD ["/home/testuser/test_completions.sh"]

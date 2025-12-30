@@ -16,6 +16,7 @@ const ImportDirective = parser_mod.ImportDirective;
 const Recipe = parser_mod.Recipe;
 const Variable = parser_mod.Variable;
 const Directive = parser_mod.Directive;
+const NeedsRequirement = parser_mod.NeedsRequirement;
 const Parser = parser_mod.Parser;
 const Lexer = lexer_mod.Lexer;
 const Hook = hooks_mod.Hook;
@@ -69,6 +70,7 @@ pub const ImportResolver = struct {
         post_hooks: std.ArrayListUnmanaged([]const Hook),
         on_error_hooks: std.ArrayListUnmanaged([]const Hook),
         dependencies: std.ArrayListUnmanaged([]const []const u8),
+        needs: std.ArrayListUnmanaged([]const NeedsRequirement),
     },
 
     pub fn init(allocator: std.mem.Allocator) ImportResolver {
@@ -86,6 +88,7 @@ pub const ImportResolver = struct {
                 .post_hooks = .{},
                 .on_error_hooks = .{},
                 .dependencies = .{},
+                .needs = .{},
             },
         };
     }
@@ -144,6 +147,11 @@ pub const ImportResolver = struct {
             self.allocator.free(slice);
         }
         self.replaced_slices.dependencies.deinit(self.allocator);
+
+        for (self.replaced_slices.needs.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.needs.deinit(self.allocator);
 
         // Note: allocated_names and loaded_sources are NOT freed here.
         // They are returned to the caller via extractPersistentAllocations()
@@ -327,6 +335,13 @@ pub const ImportResolver = struct {
         }
         if (imported.global_on_error_hooks.len > 0) {
             self.replaced_slices.on_error_hooks.append(self.allocator, imported.global_on_error_hooks) catch return ImportError.OutOfMemory;
+        }
+
+        // Track needs slices from imported recipes (allocated during parsing)
+        for (imported.recipes) |recipe| {
+            if (recipe.needs.len > 0) {
+                self.replaced_slices.needs.append(self.allocator, recipe.needs) catch return ImportError.OutOfMemory;
+            }
         }
 
         // Merge variables (no prefix on variables)

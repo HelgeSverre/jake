@@ -9,7 +9,7 @@ const test_paths = [_][]const u8{
     "src/lexer.zig",
     "src/parser.zig",
     "src/bench/main.zig",
-    "tests/e2e_test.sh",
+    "tests/e2e/Jakefile",
     "build.zig",
     "Jakefile",
 };
