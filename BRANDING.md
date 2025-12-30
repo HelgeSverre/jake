@@ -67,7 +67,7 @@ The Jake logo is a simple, code-native mark using curly braces around a lowercas
 
 | Role | Name | Hex | Usage |
 |------|------|-----|-------|
-| **Background Dark** | Charcoal | `#0f0f0f` | Dark mode background |
+| **Background Dark** | Charcoal | `#0a0a0a` | Dark mode background |
 | **Background Light** | Off-white | `#fafafa` | Light mode background |
 | **Surface Dark** | Dark Gray | `#1a1a1a` | Cards, code blocks (dark) |
 | **Surface Light** | Light Gray | `#f4f4f5` | Cards, code blocks (light) |
@@ -81,13 +81,13 @@ The Jake logo is a simple, code-native mark using curly braces around a lowercas
 |------|-----|-------|
 | Success | `#22c55e` | Task complete, passed |
 | Error | `#ef4444` | Failed, errors |
-| Warning | `#f59e0b` | Warnings, caution |
+| Warning | `#eab308` | Warnings, caution |
 | Info | `#3b82f6` | Information, tips |
 
 ### Color in Context
 
 ```
-Dark mode:   #0f0f0f background, #f43f5e accents, #fafafa text
+Dark mode:   #0a0a0a background, #f43f5e accents, #fafafa text
 Light mode:  #fafafa background, #f43f5e accents, #18181b text
 ```
 
@@ -104,7 +104,7 @@ font-family: Inter, system-ui, -apple-system, sans-serif;
 
 **Code & Monospace:**
 ```css
-font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+font-family: 'Fira Code', 'JetBrains Mono', 'SF Mono', Consolas, monospace;
 ```
 
 ### Font Weights
@@ -136,7 +136,7 @@ Running task: build
 | Success/Done | Green | `\x1b[32m` |
 | Error/Failed | Red | `\x1b[31m` |
 | Warning | Yellow | `\x1b[33m` |
-| Running/Info | Cyan | `\x1b[36m` |
+| Running/Info | Blue | `\x1b[34m` |
 | Muted/Dim | Gray | `\x1b[90m` |
 | Task Name | Bold | `\x1b[1m` |
 | Reset | - | `\x1b[0m` |
@@ -187,6 +187,44 @@ Done in 2.35s
 [![Release](https://img.shields.io/github/v/release/HelgeSverre/jake?style=flat-square)](https://github.com/HelgeSverre/jake/releases)
 [![Zig](https://img.shields.io/badge/lang-Zig-F7A41D?style=flat-square&logo=zig)](https://ziglang.org)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE.md)
+```
+
+### Jake Logo Badges
+
+Custom shield.io badges with the `{j}` logo. The logo is embedded as base64-encoded SVG.
+
+**Logo SVGs (base64):**
+| Logo Color | Base64 |
+|------------|--------|
+| White | `PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=` |
+| Red | `PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iI0Y0M0Y1RSI+e2p9PC90ZXh0Pjwvc3ZnPg==` |
+| Black | `PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iYmxhY2siPntqfTwvdGV4dD48L3N2Zz4=` |
+
+**Minimal badges (logo only):**
+```markdown
+![jake](https://img.shields.io/badge/jake-F43F5E?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=)
+```
+
+**Labeled badges:**
+```markdown
+![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=)
+```
+
+Available label prefixes: `Built_with`, `Powered_by`, `Made_with`, `Automated_with`, `Runs_on`, `Uses`, `Managed_by`
+
+**Two-tone badges (label color / badge color):**
+```markdown
+![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat&labelColor=000000&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=)
+```
+
+Common two-tone combinations:
+- Gray/Rose: `labelColor=555555` + badge `F43F5E`
+- Black/Rose: `labelColor=000000` + badge `F43F5E`
+- Rose/Black: `labelColor=F43F5E` + badge `000000`
+
+**With link wrapper:**
+```markdown
+[![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=)](https://jakefile.dev)
 ```
 
 ---
@@ -267,6 +305,6 @@ Done in 2.35s
 Logo:       {j}
 Color:      #f43f5e
 Tagline:    Modern command running
-Font:       Inter + JetBrains Mono
+Font:       Inter + Fira Code
 CLI icon:   {j} or ✓/✗/→/○
 ```
