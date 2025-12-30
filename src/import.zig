@@ -17,6 +17,7 @@ const Recipe = parser_mod.Recipe;
 const Variable = parser_mod.Variable;
 const Directive = parser_mod.Directive;
 const NeedsRequirement = parser_mod.NeedsRequirement;
+const RecipeOrigin = parser_mod.RecipeOrigin;
 const Parser = parser_mod.Parser;
 const Lexer = lexer_mod.Lexer;
 const Hook = hooks_mod.Hook;
@@ -229,7 +230,7 @@ pub const ImportResolver = struct {
         };
 
         // Merge the imported content into target
-        self.mergeJakefile(target, imported, import_directive.prefix) catch |err| {
+        self.mergeJakefile(target, imported, import_directive.prefix, resolved_path) catch |err| {
             if (self.import_stack.fetchRemove(resolved_path)) |entry| {
                 self.allocator.free(entry.key);
             }
@@ -295,6 +296,7 @@ pub const ImportResolver = struct {
         target: *Jakefile,
         imported: Jakefile,
         prefix: ?[]const u8,
+        source_file: []const u8,
     ) ImportError!void {
         // Track old slices from target that will be replaced (only if they have content)
         // These will be freed when the resolver is deinitialized
@@ -363,6 +365,13 @@ pub const ImportResolver = struct {
                 // Track the allocated name so it can be freed later
                 self.allocated_names.append(self.allocator, prefixed_name) catch return ImportError.OutOfMemory;
                 new_recipe.name = prefixed_name;
+
+                // Set origin to track where this recipe came from
+                new_recipe.origin = .{
+                    .original_name = recipe.name,
+                    .import_prefix = p,
+                    .source_file = source_file,
+                };
 
                 // Also prefix dependencies that point to imported recipes
                 if (recipe.dependencies.len > 0) {
@@ -661,6 +670,126 @@ test "import resolution cleans up all memory" {
     try std.testing.expect(found_main);
     try std.testing.expect(found_lib_helper);
     try std.testing.expect(found_lib_util);
+}
+
+test "import resolution cleans up needs arrays from imported recipes" {
+    // This test verifies that @needs arrays from imported recipes are properly freed.
+    // Without proper tracking, the needs slices would leak memory.
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Imported file with @needs directive - this allocates a needs array during parsing
+    const imported_content =
+        \\@needs git
+        \\task deploy:
+        \\    echo "deploying"
+        \\
+        \\@needs docker
+        \\@needs kubectl "Install kubectl"
+        \\task k8s:
+        \\    echo "kubernetes"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "imported.jake", .data = imported_content });
+
+    const main_content = "@import \"imported.jake\" as lib\n\ntask main:\n    echo \"main\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data = main_content });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+
+    var lex = Lexer.init(main_source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    // Resolve imports - the testing allocator will fail if needs arrays leak
+    var import_allocs = try resolveImports(allocator, &jakefile, main_path);
+    defer import_allocs.deinit();
+
+    // Verify recipes were merged
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes.len);
+
+    // Verify the imported recipes have their needs
+    for (jakefile.recipes) |recipe| {
+        if (std.mem.eql(u8, recipe.name, "lib.deploy")) {
+            try std.testing.expectEqual(@as(usize, 1), recipe.needs.len);
+            try std.testing.expectEqualStrings("git", recipe.needs[0].command);
+        }
+        if (std.mem.eql(u8, recipe.name, "lib.k8s")) {
+            try std.testing.expectEqual(@as(usize, 2), recipe.needs.len);
+        }
+    }
+}
+
+test "import sets origin for prefixed recipes with private detection" {
+    // This test verifies that:
+    // 1. RecipeOrigin is set correctly for imported recipes
+    // 2. Private recipes (starting with _) can be detected via origin.original_name
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Imported file with a private helper task
+    const imported_content =
+        \\task build:
+        \\    echo "building"
+        \\
+        \\task _helper:
+        \\    echo "private helper"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "imported.jake", .data = imported_content });
+
+    const main_content = "@import \"imported.jake\" as lib\n\ntask main:\n    echo \"main\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data = main_content });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+
+    var lex = Lexer.init(main_source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var import_allocs = try resolveImports(allocator, &jakefile, main_path);
+    defer import_allocs.deinit();
+
+    // Verify recipes were merged (main + lib.build + lib._helper)
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes.len);
+
+    // Verify origin tracking for imported recipes
+    for (jakefile.recipes) |recipe| {
+        if (std.mem.eql(u8, recipe.name, "main")) {
+            // Main recipe should have no origin
+            try std.testing.expect(recipe.origin == null);
+        }
+        if (std.mem.eql(u8, recipe.name, "lib.build")) {
+            // Should have origin with original_name = "build"
+            try std.testing.expect(recipe.origin != null);
+            const origin = recipe.origin.?;
+            try std.testing.expectEqualStrings("build", origin.original_name);
+            try std.testing.expectEqualStrings("lib", origin.import_prefix.?);
+            try std.testing.expect(origin.source_file != null);
+        }
+        if (std.mem.eql(u8, recipe.name, "lib._helper")) {
+            // Should have origin with original_name = "_helper" (private)
+            try std.testing.expect(recipe.origin != null);
+            const origin = recipe.origin.?;
+            try std.testing.expectEqualStrings("_helper", origin.original_name);
+            // Verify we can detect it's private from original_name
+            try std.testing.expect(origin.original_name[0] == '_');
+        }
+    }
 }
 
 test "import detects direct circular dependency" {
