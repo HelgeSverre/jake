@@ -1,0 +1,351 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { FolderInput, FileCode, Terminal, CheckCircle, ArrowRight, ArrowLeft, Folder } from 'lucide-astro';
+
+const codeExample = `<span class="text-syntax-comment"># Jakefile</span>
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"jake/web.jake"</span> <span class="text-syntax-keyword">as</span> web
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"jake/api.jake"</span> <span class="text-syntax-keyword">as</span> api
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"jake/deploy.jake"</span> <span class="text-syntax-keyword">as</span> deploy
+
+<span class="text-syntax-keyword">@default</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">all</span>: [web.build, api.build]
+    echo <span class="text-syntax-string">"All packages built!"</span>
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">release</span>: [all, deploy.production]
+    echo <span class="text-syntax-string">"Released!"</span>`;
+
+const moduleExample = `<span class="text-syntax-comment"># jake/web.jake</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">build</span>:
+    npm --prefix packages/web build
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">dev</span>:
+    npm --prefix packages/web dev
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">test</span>:
+    npm --prefix packages/web test`;
+
+const outputExample = `<span class="text-text-muted">$</span> jake -l
+
+<span class="text-jake">Available tasks:</span>
+  all              Build all packages
+  release          Release to production
+  web.build        Build web package
+  web.dev          Start web dev server
+  web.test         Run web tests
+  api.build        Build API package
+  api.dev          Start API dev server
+  deploy.staging   Deploy to staging
+  deploy.production Deploy to production
+
+<span class="text-text-muted">$</span> jake web.build
+<span class="text-jake">→</span> web.build
+<span class="text-green-500">✓</span> web.build <span class="text-text-muted">(2.4s)</span>`;
+
+const scopeExampleA = `<span class="text-syntax-variable">registry</span> = <span class="text-syntax-string">"docker.io/mycompany"</span>
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">push</span>:
+    docker push <span class="text-syntax-variable">${"{{"}registry${"}}"}}</span>/app`;
+
+const scopeExampleB = `<span class="text-syntax-variable">registry</span> = <span class="text-syntax-string">"gcr.io/my-project"</span>  <span class="text-syntax-comment"># Different!</span>
+
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"docker.jake"</span> <span class="text-syntax-keyword">as</span> docker
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">push</span>:
+    echo <span class="text-syntax-variable">${"{{"}registry${"}}"}}</span>  <span class="text-syntax-comment"># gcr.io/my-project</span>
+    <span class="text-syntax-comment"># docker.push uses docker.io/mycompany</span>`;
+
+const projectStructure = `project/
+├── Jakefile           # Main entry point
+└── jake/
+    ├── web.jake       # Web team owns this
+    ├── api.jake       # API team owns this
+    ├── mobile.jake    # Mobile team owns this
+    └── deploy.jake    # DevOps owns this`;
+
+const monorepoStructure = `monorepo/
+├── Jakefile
+├── packages/
+│   ├── web/
+│   │   ├── src/
+│   │   └── package.json
+│   ├── api/
+│   │   ├── src/
+│   │   └── package.json
+│   └── shared/
+│       └── src/
+└── jake/
+    ├── web.jake
+    ├── api.jake
+    └── shared.jake`;
+
+const useCases = [
+  {
+    title: 'Team Ownership',
+    code: `<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"jake/frontend.jake"</span> <span class="text-syntax-keyword">as</span> fe  <span class="text-syntax-comment"># Frontend team</span>
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"jake/backend.jake"</span> <span class="text-syntax-keyword">as</span> be  <span class="text-syntax-comment"># Backend team</span>
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"jake/infra.jake"</span> <span class="text-syntax-keyword">as</span> ops  <span class="text-syntax-comment"># DevOps team</span>`,
+    description: 'Each team maintains their own file. Merge conflicts are rare.',
+  },
+  {
+    title: 'Environment Configs',
+    code: `<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"jake/staging.jake"</span> <span class="text-syntax-keyword">as</span> staging
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"jake/production.jake"</span> <span class="text-syntax-keyword">as</span> prod
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">deploy-staging</span>: [build, staging.deploy]
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">deploy-prod</span>: [build, prod.deploy]`,
+    description: 'Separate deployment logic per environment.',
+  },
+  {
+    title: 'Shared Utilities',
+    code: `<span class="text-syntax-comment"># jake/utils.jake</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">notify</span> message:
+    curl -X POST $SLACK_WEBHOOK -d <span class="text-syntax-string">'{"text":"{{message}}"}'</span>
+
+<span class="text-syntax-comment"># Jakefile</span>
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"jake/utils.jake"</span> <span class="text-syntax-keyword">as</span> utils
+<span class="text-syntax-keyword">@after</span> deploy utils.notify <span class="text-syntax-string">"Deployed!"</span>`,
+    description: 'Reusable utility tasks across projects.',
+  },
+  {
+    title: 'Cross-File Dependencies',
+    code: `<span class="text-syntax-comment"># jake/web.jake</span>
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"shared.jake"</span> <span class="text-syntax-keyword">as</span> shared
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">build</span>: [shared.build]  <span class="text-syntax-comment"># Depends on shared</span>
+    npm run build`,
+    description: 'Modules can depend on each other.',
+  },
+];
+---
+
+<BaseLayout title="Imports & Modules - Jake">
+  <!-- Hero -->
+  <section class="relative pt-32 pb-16 bg-grid bg-radial overflow-hidden">
+    <div class="max-w-6xl mx-auto px-6">
+      <a href="/features" class="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors mb-8">
+        <ArrowLeft size={16} />
+        All Features
+      </a>
+
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <div class="space-y-6">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <FolderInput size={14} />
+            Scale Your Builds
+          </div>
+
+          <h1 class="text-5xl font-bold">
+            <span class="text-gradient">Imports & Modules</span>
+          </h1>
+
+          <p class="text-xl text-text-secondary leading-relaxed">
+            Split your Jakefile across multiple files with namespaced imports.
+            Essential for monorepos and team collaboration.
+          </p>
+
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Namespaced imports</span> — <code class="text-jake">@import "x.jake" as x</code></span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Scoped variables</span> — Variables don't leak between files</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Cross-file deps</span> — Tasks can depend on imported tasks</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="space-y-4">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden glow-sm">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Jakefile</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={codeExample}></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Project Structure -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Project Structure</h2>
+      <p class="text-text-secondary text-center mb-12 max-w-2xl mx-auto">
+        Organize tasks by concern. Each team or domain gets their own file.
+      </p>
+
+      <div class="grid lg:grid-cols-2 gap-8">
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-6 py-4 border-b border-border flex items-center gap-2">
+            <Folder size={16} class="text-jake" />
+            <span class="font-semibold">Recommended Structure</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed font-mono text-text-secondary">{projectStructure}</pre>
+        </div>
+
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-6 py-4 border-b border-border flex items-center gap-2">
+            <Folder size={16} class="text-jake" />
+            <span class="font-semibold">Monorepo Structure</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed font-mono text-text-secondary">{monorepoStructure}</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">How It Works</h2>
+      <p class="text-text-secondary text-center mb-12 max-w-2xl mx-auto">
+        Import files with a namespace, then reference tasks with the prefix.
+      </p>
+
+      <div class="grid lg:grid-cols-2 gap-8">
+        <div class="space-y-4">
+          <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-tertiary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">jake/web.jake</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={moduleExample}></code></pre>
+          </div>
+
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <h3 class="font-semibold mb-3">Key Points</h3>
+            <ul class="space-y-2 text-sm text-text-secondary">
+              <li class="flex items-start gap-2">
+                <span class="text-jake">•</span>
+                <span><code class="text-jake">as web</code> creates the namespace</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-jake">•</span>
+                <span>Tasks become <code class="text-jake">web.build</code>, <code class="text-jake">web.dev</code>, etc.</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-jake">•</span>
+                <span>Variables in web.jake don't affect the main Jakefile</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-tertiary">
+            <Terminal size={16} class="text-text-muted" />
+            <span class="text-xs text-text-muted font-mono">Terminal</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={outputExample}></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Variable Scoping -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Variable Scoping</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Variables are scoped to their file. No accidental conflicts.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-text-secondary">docker.jake</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={scopeExampleA}></code></pre>
+        </div>
+
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-jake">Jakefile</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={scopeExampleB}></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Use Cases -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Use Cases</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Patterns for organizing large projects.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        {useCases.map((useCase) => (
+          <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-border">
+              <h3 class="font-semibold">{useCase.title}</h3>
+              <p class="text-sm text-text-muted mt-1">{useCase.description}</p>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={useCase.code}></code></pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- vs Make -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">vs Make</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Make's <code class="text-jake">include</code> is global and fragile. Jake's imports are namespaced.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-text-secondary">Makefile</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto text-text-muted"><code># Global include - variables and
+# targets can conflict!
+include scripts/docker.mk
+include scripts/k8s.mk
+
+# Which "build" is this?</code></pre>
+        </div>
+
+        <div class="bg-bg-card border border-jake/30 rounded-xl overflow-hidden glow-sm">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-jake">Jakefile</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code><span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"scripts/docker.jake"</span> <span class="text-syntax-keyword">as</span> docker
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"scripts/k8s.jake"</span> <span class="text-syntax-keyword">as</span> k8s
+
+<span class="text-syntax-comment"># Clear: docker.build vs k8s.build</span></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-4">Try Imports</h2>
+      <p class="text-text-secondary text-lg mb-8">Organize your builds at any scale.</p>
+
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="/docs/imports" class="inline-flex items-center gap-2 bg-jake hover:bg-jake-dark text-white px-6 py-3 rounded-lg font-medium transition-all hover:scale-105">
+          Read the Docs
+          <ArrowRight size={18} />
+        </a>
+        <a href="/features/watch-mode" class="inline-flex items-center gap-2 border border-border hover:border-jake/50 px-6 py-3 rounded-lg font-medium transition-colors">
+          Next: Watch Mode
+          <ArrowRight size={18} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

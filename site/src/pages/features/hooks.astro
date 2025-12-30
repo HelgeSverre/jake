@@ -1,0 +1,337 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { Anchor, FileCode, Terminal, CheckCircle, ArrowRight, ArrowLeft, AlertTriangle } from 'lucide-astro';
+
+const codeExample = `<span class="text-syntax-comment"># Global hooks - run for every task</span>
+<span class="text-syntax-keyword">@pre</span> echo <span class="text-syntax-string">"Starting..."</span>
+<span class="text-syntax-keyword">@post</span> echo <span class="text-syntax-string">"Complete!"</span>
+
+<span class="text-syntax-comment"># Per-task hooks</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">test</span>:
+    <span class="text-syntax-keyword">@pre</span> docker-compose up -d
+    npm test
+    <span class="text-syntax-keyword">@post</span> docker-compose down
+
+<span class="text-syntax-comment"># Targeted hooks - affect specific tasks</span>
+<span class="text-syntax-keyword">@before</span> deploy ./check-health.sh
+<span class="text-syntax-keyword">@after</span> deploy ./notify-team.sh
+
+<span class="text-syntax-comment"># Error hooks - run on failure</span>
+<span class="text-syntax-keyword">@on_error</span> notify-slack <span class="text-syntax-string">"Build failed!"</span>`;
+
+const outputExample = `<span class="text-text-muted">$</span> jake test
+
+<span class="text-text-muted"># @pre hook runs first</span>
+<span class="text-jake">→</span> docker-compose up -d
+<span class="text-green-500">✓</span> Database started
+
+<span class="text-text-muted"># Task commands run</span>
+<span class="text-jake">→</span> npm test
+<span class="text-red-500">✗</span> 2 tests failed
+
+<span class="text-text-muted"># @post hook STILL runs (cleanup guaranteed)</span>
+<span class="text-jake">→</span> docker-compose down
+<span class="text-green-500">✓</span> Database stopped
+
+<span class="text-text-muted"># @on_error hook runs because task failed</span>
+<span class="text-jake">→</span> notify-slack "Build failed!"
+<span class="text-green-500">✓</span> Notification sent`;
+
+const executionOrder = [
+  { step: '1', name: 'Global @pre hooks', color: 'text-blue-400' },
+  { step: '2', name: '@before hooks targeting this task', color: 'text-blue-400' },
+  { step: '3', name: 'Task @pre hooks (inside task)', color: 'text-blue-400' },
+  { step: '4', name: 'Task commands', color: 'text-text-primary' },
+  { step: '5', name: 'Task @post hooks (inside task)', color: 'text-green-400' },
+  { step: '6', name: '@after hooks targeting this task', color: 'text-green-400' },
+  { step: '7', name: 'Global @post hooks', color: 'text-green-400' },
+  { step: '8', name: '@on_error hooks (only if failed)', color: 'text-red-400' },
+];
+
+const useCases = [
+  {
+    title: 'Database Testing',
+    code: `<span class="text-syntax-keyword">@before</span> test docker-compose up -d postgres
+<span class="text-syntax-keyword">@after</span> test docker-compose down
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">test</span>:
+    npm test`,
+    description: 'Start database before tests, stop after—even if tests fail.',
+  },
+  {
+    title: 'Deployment Notifications',
+    code: `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">deploy</span>:
+    <span class="text-syntax-keyword">@pre</span> ./notify.sh <span class="text-syntax-string">"Deploying..."</span>
+    kubectl apply -f k8s/
+    <span class="text-syntax-keyword">@post</span> ./notify.sh <span class="text-syntax-string">"Deployed!"</span>
+
+<span class="text-syntax-keyword">@on_error</span> ./alert-pagerduty.sh`,
+    description: 'Notify team on deploy start/end, alert on failure.',
+  },
+  {
+    title: 'Backup Before Deploy',
+    code: `<span class="text-syntax-keyword">@before</span> deploy ./backup-database.sh
+<span class="text-syntax-keyword">@before</span> deploy ./verify-main-branch.sh
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">deploy</span>:
+    ./deploy.sh`,
+    description: 'Run safety checks before deployment without cluttering the task.',
+  },
+  {
+    title: 'Lock Management',
+    code: `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">release</span>:
+    <span class="text-syntax-keyword">@pre</span> ./acquire-lock.sh
+    ./build-release.sh
+    <span class="text-syntax-keyword">@post</span> ./release-lock.sh  <span class="text-syntax-comment"># Always runs!</span>`,
+    description: 'Acquire locks before, release after—guaranteed cleanup.',
+  },
+];
+---
+
+<BaseLayout title="Hooks - Jake">
+  <!-- Hero -->
+  <section class="relative pt-32 pb-16 bg-grid bg-radial overflow-hidden">
+    <div class="max-w-6xl mx-auto px-6">
+      <a href="/features" class="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors mb-8">
+        <ArrowLeft size={16} />
+        All Features
+      </a>
+
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <div class="space-y-6">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <Anchor size={14} />
+            Jake Exclusive
+          </div>
+
+          <h1 class="text-5xl font-bold">
+            <span class="text-gradient">Hooks</span>
+          </h1>
+
+          <p class="text-xl text-text-secondary leading-relaxed">
+            Pre/post hooks run before and after tasks. Post-hooks <em>always</em> run—even on failure—making them perfect for cleanup.
+            Neither Make nor Just has this.
+          </p>
+
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Guaranteed cleanup</span> — Post-hooks run even when tasks fail</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Targeted hooks</span> — Attach to any task without modifying it</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Error handling</span> — <code class="text-jake">@on_error</code> for failure notifications</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="space-y-4">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden glow-sm">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Jakefile</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={codeExample}></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Key Insight -->
+  <section class="py-12 border-t border-border bg-jake/5">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="flex items-start gap-4">
+        <AlertTriangle class="w-6 h-6 text-jake flex-shrink-0 mt-1" />
+        <div>
+          <h3 class="font-semibold text-lg mb-2">The Problem with Manual Cleanup</h3>
+          <p class="text-text-secondary">
+            Without hooks, cleanup code after a failing command never runs.
+            <code class="text-jake mx-1">docker-compose down</code> after a failed test?
+            It won't execute. Your container keeps running. Hooks guarantee cleanup runs.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Execution Order</h2>
+      <p class="text-text-secondary text-center mb-12 max-w-2xl mx-auto">
+        Hooks run in a specific, predictable order. Post-hooks always run.
+      </p>
+
+      <div class="grid lg:grid-cols-2 gap-8 items-start">
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <h3 class="font-semibold mb-6">Order of Execution</h3>
+          <div class="space-y-3">
+            {executionOrder.map((item) => (
+              <div class="flex items-center gap-4">
+                <span class="w-8 h-8 rounded-full bg-bg-tertiary flex items-center justify-center font-mono text-sm text-text-muted">{item.step}</span>
+                <span class={`text-sm ${item.color}`}>{item.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+            <Terminal size={16} class="text-text-muted" />
+            <span class="text-xs text-text-muted font-mono">Output when test fails</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={outputExample}></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Hook Types -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Hook Types</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Different hooks for different needs.
+      </p>
+
+      <div class="space-y-6">
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="flex items-center gap-3 mb-3">
+            <code class="text-jake font-mono">@pre / @post</code>
+            <span class="text-xs px-2 py-1 rounded bg-blue-500/10 text-blue-400">Inside Task</span>
+          </div>
+          <p class="text-text-secondary text-sm mb-4">
+            Declared inside a task definition. Run immediately before/after that task's commands.
+          </p>
+          <pre class="bg-bg-code rounded-lg p-4 text-sm"><code><span class="text-syntax-keyword">task</span> <span class="text-syntax-function">test</span>:
+    <span class="text-syntax-keyword">@pre</span> echo "Setup"
+    npm test
+    <span class="text-syntax-keyword">@post</span> echo "Cleanup"</code></pre>
+        </div>
+
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="flex items-center gap-3 mb-3">
+            <code class="text-jake font-mono">@before / @after</code>
+            <span class="text-xs px-2 py-1 rounded bg-purple-500/10 text-purple-400">Targeted</span>
+          </div>
+          <p class="text-text-secondary text-sm mb-4">
+            Declared outside tasks. Target specific tasks by name without modifying them.
+          </p>
+          <pre class="bg-bg-code rounded-lg p-4 text-sm"><code><span class="text-syntax-keyword">@before</span> deploy ./backup.sh
+<span class="text-syntax-keyword">@after</span> deploy ./notify.sh
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">deploy</span>:
+    kubectl apply -f k8s/</code></pre>
+        </div>
+
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="flex items-center gap-3 mb-3">
+            <code class="text-jake font-mono">@pre / @post</code>
+            <span class="text-xs px-2 py-1 rounded bg-green-500/10 text-green-400">Global</span>
+          </div>
+          <p class="text-text-secondary text-sm mb-4">
+            Declared at the top level (outside any task). Run for every task.
+          </p>
+          <pre class="bg-bg-code rounded-lg p-4 text-sm"><code><span class="text-syntax-keyword">@pre</span> echo "Starting Jake..."
+<span class="text-syntax-keyword">@post</span> echo "Jake complete!"
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">build</span>:
+    cargo build</code></pre>
+        </div>
+
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="flex items-center gap-3 mb-3">
+            <code class="text-jake font-mono">@on_error</code>
+            <span class="text-xs px-2 py-1 rounded bg-red-500/10 text-red-400">Error Handler</span>
+          </div>
+          <p class="text-text-secondary text-sm mb-4">
+            Runs only when a task fails. Perfect for notifications and alerts.
+          </p>
+          <pre class="bg-bg-code rounded-lg p-4 text-sm"><code><span class="text-syntax-keyword">@on_error</span> notify-slack "Build failed!"
+<span class="text-syntax-keyword">@on_error</span> echo "Check logs at /var/log/build.log"</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Use Cases -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Use Cases</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Real-world patterns for hooks.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        {useCases.map((useCase) => (
+          <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-border">
+              <h3 class="font-semibold">{useCase.title}</h3>
+              <p class="text-sm text-text-muted mt-1">{useCase.description}</p>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={useCase.code}></code></pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- vs Others -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">vs Make & Just</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Neither Make nor Just has hooks. Here's what you'd have to do without them.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-text-secondary">Without hooks</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto text-text-muted"><code># Shell workaround - fragile!
+test:
+    docker-compose up -d && \
+    npm test; \
+    EXIT=$$?; \
+    docker-compose down; \
+    exit $$EXIT</code></pre>
+        </div>
+
+        <div class="bg-bg-card border border-jake/30 rounded-xl overflow-hidden glow-sm">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-jake">With Jake hooks</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code><span class="text-syntax-keyword">task</span> <span class="text-syntax-function">test</span>:
+    <span class="text-syntax-keyword">@pre</span> docker-compose up -d
+    npm test
+    <span class="text-syntax-keyword">@post</span> docker-compose down</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-4">Try Hooks</h2>
+      <p class="text-text-secondary text-lg mb-8">Guaranteed cleanup and error handling for your builds.</p>
+
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="/docs/hooks" class="inline-flex items-center gap-2 bg-jake hover:bg-jake-dark text-white px-6 py-3 rounded-lg font-medium transition-all hover:scale-105">
+          Read the Docs
+          <ArrowRight size={18} />
+        </a>
+        <a href="/features/imports" class="inline-flex items-center gap-2 border border-border hover:border-jake/50 px-6 py-3 rounded-lg font-medium transition-colors">
+          Next: Imports
+          <ArrowRight size={18} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

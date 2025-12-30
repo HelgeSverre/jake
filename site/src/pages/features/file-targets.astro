@@ -1,0 +1,279 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { Package, FileCode, Terminal, CheckCircle, ArrowRight, ArrowLeft } from 'lucide-astro';
+
+const codeExample = `<span class="text-syntax-comment"># File target with glob pattern</span>
+<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/bundle.js</span>: <span class="text-text-secondary">src/**/*.ts</span>
+    esbuild src/index.ts --bundle --outfile=dist/bundle.js
+
+<span class="text-syntax-comment"># Chain file targets together</span>
+<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/app.min.js</span>: <span class="text-text-secondary">dist/bundle.js</span>
+    terser dist/bundle.js -o dist/app.min.js
+
+<span class="text-syntax-comment"># Task depends on file target</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">build</span>: [dist/app.min.js]
+    echo <span class="text-syntax-string">"Build complete!"</span>`;
+
+const outputExample = `<span class="text-text-muted">$</span> jake build
+<span class="text-jake">→</span> dist/bundle.js
+  esbuild src/index.ts --bundle --outfile=dist/bundle.js
+<span class="text-green-500">✓</span> dist/bundle.js <span class="text-text-muted">(0.42s)</span>
+<span class="text-jake">→</span> dist/app.min.js
+  terser dist/bundle.js -o dist/app.min.js
+<span class="text-green-500">✓</span> dist/app.min.js <span class="text-text-muted">(0.18s)</span>
+<span class="text-jake">→</span> build
+  echo "Build complete!"
+<span class="text-green-500">✓</span> build <span class="text-text-muted">(0.01s)</span>
+
+<span class="text-text-muted">$</span> jake build  <span class="text-syntax-comment"># Run again</span>
+<span class="text-text-muted">⊘</span> dist/bundle.js <span class="text-text-muted">(up to date)</span>
+<span class="text-text-muted">⊘</span> dist/app.min.js <span class="text-text-muted">(up to date)</span>
+<span class="text-green-500">✓</span> build <span class="text-text-muted">(0.01s)</span>`;
+
+const makeComparison = `<span class="text-syntax-comment"># Makefile</span>
+<span class="text-syntax-function">dist/app.js</span>: $(wildcard src/*.ts)
+	esbuild src/index.ts --bundle -o <span class="text-syntax-variable">$@</span>`;
+
+const jakeComparison = `<span class="text-syntax-comment"># Jakefile</span>
+<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/app.js</span>: <span class="text-text-secondary">src/**/*.ts</span>
+    esbuild src/index.ts --bundle --outfile=dist/app.js`;
+
+const globPatterns = [
+  { pattern: '*.ts', description: 'TypeScript files in current directory' },
+  { pattern: '**/*.ts', description: 'TypeScript files anywhere (recursive)' },
+  { pattern: 'src/**/*.{ts,tsx}', description: 'TS/TSX files under src/' },
+  { pattern: '[abc].txt', description: 'a.txt, b.txt, or c.txt' },
+  { pattern: '??.js', description: 'Two-character JS files' },
+];
+
+const useCases = [
+  {
+    title: 'TypeScript Builds',
+    code: `<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/index.js</span>: <span class="text-text-secondary">src/**/*.ts tsconfig.json</span>
+    npx tsc`,
+  },
+  {
+    title: 'CSS Processing',
+    code: `<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/styles.css</span>: <span class="text-text-secondary">src/**/*.scss</span>
+    sass src/main.scss dist/styles.css`,
+  },
+  {
+    title: 'Binary Compilation',
+    code: `<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">app</span>: <span class="text-text-secondary">*.c *.h</span>
+    gcc -o app *.c`,
+  },
+  {
+    title: 'Docker Images',
+    code: `<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">.docker-built</span>: <span class="text-text-secondary">Dockerfile src/**/*</span>
+    docker build -t myapp . && touch .docker-built`,
+  },
+];
+---
+
+<BaseLayout title="File Targets - Jake">
+  <!-- Hero -->
+  <section class="relative pt-32 pb-16 bg-grid bg-radial overflow-hidden">
+    <div class="max-w-6xl mx-auto px-6">
+      <a href="/features" class="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors mb-8">
+        <ArrowLeft size={16} />
+        All Features
+      </a>
+
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <div class="space-y-6">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <Package size={14} />
+            The Make Advantage
+          </div>
+
+          <h1 class="text-5xl font-bold">
+            <span class="text-gradient">File Targets</span>
+          </h1>
+
+          <p class="text-xl text-text-secondary leading-relaxed">
+            Track file modifications and only rebuild when sources change.
+            Chain builds together for multi-stage pipelines that skip unnecessary work automatically.
+          </p>
+
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Glob patterns</span> — Match files with <code class="text-jake">src/**/*.ts</code></span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Dependency chains</span> — File targets can depend on other file targets</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Automatic skip</span> — "Up to date" when nothing changed</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="space-y-4">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden glow-sm">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Jakefile</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={codeExample}></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">How It Works</h2>
+      <p class="text-text-secondary text-center mb-12 max-w-2xl mx-auto">
+        Jake checks modification times and only runs commands when sources are newer than outputs.
+      </p>
+
+      <div class="grid lg:grid-cols-2 gap-8">
+        <div class="space-y-6">
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <h3 class="font-semibold mb-4">1. First Run</h3>
+            <p class="text-text-secondary text-sm mb-4">
+              Jake checks if <code class="text-jake">dist/bundle.js</code> exists. It doesn't, so Jake runs the build command.
+            </p>
+          </div>
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <h3 class="font-semibold mb-4">2. Second Run</h3>
+            <p class="text-text-secondary text-sm mb-4">
+              Jake expands <code class="text-jake">src/**/*.ts</code> and compares timestamps. All sources are older than the output, so Jake skips the build.
+            </p>
+          </div>
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <h3 class="font-semibold mb-4">3. After Edit</h3>
+            <p class="text-text-secondary text-sm mb-4">
+              You edit <code class="text-jake">src/index.ts</code>. Now one source is newer than the output, so Jake rebuilds.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+            <Terminal size={16} class="text-text-muted" />
+            <span class="text-xs text-text-muted font-mono">Terminal</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={outputExample}></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Glob Patterns -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Glob Patterns</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Match files with powerful glob syntax—no need to list every file manually.
+      </p>
+
+      <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-border bg-bg-tertiary">
+              <th class="text-left px-6 py-3 font-medium text-text-secondary">Pattern</th>
+              <th class="text-left px-6 py-3 font-medium text-text-secondary">Matches</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            {globPatterns.map((item) => (
+              <tr>
+                <td class="px-6 py-3 font-mono text-jake">{item.pattern}</td>
+                <td class="px-6 py-3 text-text-secondary">{item.description}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Use Cases -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Use Cases</h2>
+      <p class="text-text-secondary text-center mb-12">
+        File targets work with any build tool or language.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        {useCases.map((useCase) => (
+          <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-border">
+              <h3 class="font-semibold">{useCase.title}</h3>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={useCase.code}></code></pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Comparison -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">vs Make</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Same power, cleaner syntax.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-3 border-b border-border flex items-center justify-between">
+            <span class="font-mono text-sm text-text-secondary">Makefile</span>
+            <span class="text-xs px-2 py-1 rounded bg-text-muted/10 text-text-muted">Make</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto text-text-secondary"><code set:html={makeComparison}></code></pre>
+        </div>
+
+        <div class="bg-bg-card border border-jake/30 rounded-xl overflow-hidden glow-sm">
+          <div class="px-4 py-3 border-b border-border flex items-center justify-between">
+            <span class="font-mono text-sm text-jake">Jakefile</span>
+            <span class="text-xs px-2 py-1 rounded bg-jake/10 text-jake font-medium">Jake</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={jakeComparison}></code></pre>
+        </div>
+      </div>
+
+      <div class="mt-8 grid md:grid-cols-3 gap-4 text-center">
+        <div class="bg-bg-card border border-border rounded-lg p-4">
+          <div class="text-jake font-semibold mb-1">Native globs</div>
+          <div class="text-sm text-text-muted">No $(wildcard ...) needed</div>
+        </div>
+        <div class="bg-bg-card border border-border rounded-lg p-4">
+          <div class="text-jake font-semibold mb-1">No magic vars</div>
+          <div class="text-sm text-text-muted">No $@, $<, $^ to memorize</div>
+        </div>
+        <div class="bg-bg-card border border-border rounded-lg p-4">
+          <div class="text-jake font-semibold mb-1">Flexible indent</div>
+          <div class="text-sm text-text-muted">Tabs or spaces work</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-4">Try File Targets</h2>
+      <p class="text-text-secondary text-lg mb-8">Add incremental builds to your project in minutes.</p>
+
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="/docs/file-targets" class="inline-flex items-center gap-2 bg-jake hover:bg-jake-dark text-white px-6 py-3 rounded-lg font-medium transition-all hover:scale-105">
+          Read the Docs
+          <ArrowRight size={18} />
+        </a>
+        <a href="/features/parallel-execution" class="inline-flex items-center gap-2 border border-border hover:border-jake/50 px-6 py-3 rounded-lg font-medium transition-colors">
+          Next: Parallel Execution
+          <ArrowRight size={18} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

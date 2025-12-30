@@ -35,6 +35,39 @@ const logo = "{j}";
         <span>jake</span>
       </a>
       <div class="flex items-center gap-6">
+        <!-- Features Dropdown -->
+        <div class="relative group">
+          <a href="/features" class="text-text-secondary hover:text-text-primary transition-colors text-sm flex items-center gap-1">
+            Features
+            <svg class="w-4 h-4 transition-transform group-hover:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </a>
+          <div class="absolute top-full left-0 mt-2 w-56 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+            <div class="bg-bg-secondary border border-border rounded-lg shadow-xl overflow-hidden">
+              <a href="/features/file-targets" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
+                <div class="font-medium">File Targets</div>
+                <div class="text-xs text-text-muted">Incremental builds with caching</div>
+              </a>
+              <a href="/features/parallel-execution" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
+                <div class="font-medium">Parallel Execution</div>
+                <div class="text-xs text-text-muted">Run tasks concurrently</div>
+              </a>
+              <a href="/features/hooks" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
+                <div class="font-medium">Hooks</div>
+                <div class="text-xs text-text-muted">Setup and cleanup automation</div>
+              </a>
+              <a href="/features/imports" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
+                <div class="font-medium">Imports & Modules</div>
+                <div class="text-xs text-text-muted">Modular Jakefiles</div>
+              </a>
+              <a href="/features/watch-mode" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
+                <div class="font-medium">Watch Mode</div>
+                <div class="text-xs text-text-muted">Auto-rebuild on changes</div>
+              </a>
+            </div>
+          </div>
+        </div>
         <a href="/docs/introduction" class="text-text-secondary hover:text-text-primary transition-colors text-sm">Docs</a>
         <a href="https://github.com/HelgeSverre/jake" class="text-text-secondary hover:text-text-primary transition-colors text-sm">GitHub</a>
         <a href="/docs/installation" class="bg-jake hover:bg-jake-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">

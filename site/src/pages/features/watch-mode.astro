@@ -1,0 +1,361 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { RefreshCw, FileCode, Terminal, CheckCircle, ArrowRight, ArrowLeft, Eye } from 'lucide-astro';
+
+const codeExample = `<span class="text-syntax-comment"># File target - watched automatically</span>
+<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/bundle.js</span>: <span class="text-text-secondary">src/**/*.ts</span>
+    esbuild src/index.ts --bundle --outfile=dist/bundle.js
+
+<span class="text-syntax-comment"># Task with explicit watch patterns</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">dev</span>:
+    <span class="text-syntax-keyword">@watch</span> src/**/*.ts tests/**/*.ts
+    npm run dev
+
+<span class="text-syntax-comment"># Conditional behavior during watch</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">build</span>:
+    <span class="text-syntax-keyword">@if</span> <span class="text-syntax-function">is_watching</span>()
+        echo <span class="text-syntax-string">"Quick dev build..."</span>
+        esbuild src/index.ts --bundle --outfile=dist/app.js
+    <span class="text-syntax-keyword">@else</span>
+        echo <span class="text-syntax-string">"Full production build..."</span>
+        npm run lint
+        npm run typecheck
+        esbuild src/index.ts --bundle --minify --outfile=dist/app.js
+    <span class="text-syntax-keyword">@end</span>`;
+
+const outputExample = `<span class="text-text-muted">$</span> jake -w build
+
+<span class="text-blue-400">[watch]</span> Watching 47 file(s) for changes...
+<span class="text-blue-400">[watch]</span> Patterns: src/**/*.ts
+<span class="text-blue-400">[watch]</span> Press Ctrl+C to stop
+
+<span class="text-jake">→</span> build
+  Quick dev build...
+  esbuild src/index.ts --bundle --outfile=dist/app.js
+<span class="text-green-500">✓</span> build <span class="text-text-muted">(0.42s)</span>
+
+<span class="text-syntax-comment"># Edit src/index.ts...</span>
+
+<span class="text-yellow-500">[watch]</span> Change detected: src/index.ts
+<span class="text-jake">→</span> build
+  Quick dev build...
+<span class="text-green-500">✓</span> build <span class="text-text-muted">(0.18s)</span>
+
+<span class="text-syntax-comment"># Jake keeps watching...</span>`;
+
+const useCases = [
+  {
+    title: 'Frontend Development',
+    code: `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">dev</span>:
+    <span class="text-syntax-keyword">@watch</span> src/**/*.{ts,tsx,css}
+    npm run dev`,
+    usage: 'jake -w dev',
+    description: 'Auto-refresh on any source file change.',
+  },
+  {
+    title: 'Test-Driven Development',
+    code: `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">test</span>:
+    <span class="text-syntax-keyword">@watch</span> src/**/*.ts tests/**/*.ts
+    npm test`,
+    usage: 'jake -w test',
+    description: 'Tests re-run automatically as you code.',
+  },
+  {
+    title: 'Documentation',
+    code: `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">docs</span>:
+    <span class="text-syntax-keyword">@watch</span> docs/**/*.md
+    mkdocs serve`,
+    usage: 'jake -w docs',
+    description: 'Live preview of documentation changes.',
+  },
+  {
+    title: 'Multi-Stage Builds',
+    code: `<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/compiled.js</span>: <span class="text-text-secondary">src/**/*.ts</span>
+    tsc
+
+<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/bundle.js</span>: <span class="text-text-secondary">dist/compiled.js</span>
+    esbuild dist/compiled.js --bundle -o dist/bundle.js`,
+    usage: 'jake -w dist/bundle.js',
+    description: 'Chained file targets rebuild on change.',
+  },
+];
+
+const commands = [
+  { cmd: 'jake -w build', desc: 'Watch and rebuild on changes' },
+  { cmd: 'jake -w "src/**/*.ts" build', desc: 'Watch specific pattern' },
+  { cmd: 'jake -w -v build', desc: 'Verbose - show which files changed' },
+  { cmd: 'jake -w -j4 build', desc: 'Parallel rebuilds on change' },
+];
+---
+
+<BaseLayout title="Watch Mode - Jake">
+  <!-- Hero -->
+  <section class="relative pt-32 pb-16 bg-grid bg-radial overflow-hidden">
+    <div class="max-w-6xl mx-auto px-6">
+      <a href="/features" class="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors mb-8">
+        <ArrowLeft size={16} />
+        All Features
+      </a>
+
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <div class="space-y-6">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <RefreshCw size={14} />
+            Development Velocity
+          </div>
+
+          <h1 class="text-5xl font-bold">
+            <span class="text-gradient">Watch Mode</span>
+          </h1>
+
+          <p class="text-xl text-text-secondary leading-relaxed">
+            Automatically re-run tasks when files change. No more switching to the terminal
+            and running <code class="text-jake">jake build</code> after every edit.
+          </p>
+
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Automatic detection</span> — Watches file target dependencies</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Custom patterns</span> — <code class="text-jake">@watch</code> directive for tasks</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Conditional logic</span> — <code class="text-jake">is_watching()</code> for dev-only behavior</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="space-y-4">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden glow-sm">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Jakefile</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={codeExample}></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">How It Works</h2>
+      <p class="text-text-secondary text-center mb-12 max-w-2xl mx-auto">
+        Jake watches your source files and rebuilds when they change.
+      </p>
+
+      <div class="grid lg:grid-cols-2 gap-8 items-start">
+        <div class="space-y-4">
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-full bg-jake/10 text-jake flex items-center justify-center font-semibold">1</span>
+              <h3 class="font-semibold">Determine Watch Patterns</h3>
+            </div>
+            <p class="text-text-secondary text-sm">
+              Jake collects patterns from file target dependencies and <code class="text-jake">@watch</code> directives.
+            </p>
+          </div>
+
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-full bg-jake/10 text-jake flex items-center justify-center font-semibold">2</span>
+              <h3 class="font-semibold">Monitor File System</h3>
+            </div>
+            <p class="text-text-secondary text-sm">
+              Uses FSEvents (macOS) or inotify (Linux) for efficient file watching.
+            </p>
+          </div>
+
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-full bg-jake/10 text-jake flex items-center justify-center font-semibold">3</span>
+              <h3 class="font-semibold">Trigger Rebuild</h3>
+            </div>
+            <p class="text-text-secondary text-sm">
+              When a watched file changes, Jake re-runs the task. With <code class="text-jake">-v</code>, it shows which file triggered it.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+            <Terminal size={16} class="text-text-muted" />
+            <span class="text-xs text-text-muted font-mono">Terminal</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={outputExample}></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Conditional Watch Behavior -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Conditional Watch Behavior</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Use <code class="text-jake">is_watching()</code> to skip expensive operations during development.
+      </p>
+
+      <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+        <div class="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+          <div class="p-6">
+            <div class="flex items-center gap-2 mb-4">
+              <Eye size={20} class="text-jake" />
+              <h3 class="font-semibold">In Watch Mode</h3>
+            </div>
+            <ul class="space-y-2 text-sm text-text-secondary">
+              <li class="flex items-start gap-2">
+                <span class="text-green-500">✓</span>
+                <span>Quick incremental builds</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-text-muted">⊘</span>
+                <span>Skip linting</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-text-muted">⊘</span>
+                <span>Skip type checking</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-text-muted">⊘</span>
+                <span>Skip minification</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="p-6">
+            <div class="flex items-center gap-2 mb-4">
+              <Terminal size={20} class="text-text-secondary" />
+              <h3 class="font-semibold">Normal Mode / CI</h3>
+            </div>
+            <ul class="space-y-2 text-sm text-text-secondary">
+              <li class="flex items-start gap-2">
+                <span class="text-green-500">✓</span>
+                <span>Full production build</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-green-500">✓</span>
+                <span>Run linting</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-green-500">✓</span>
+                <span>Run type checking</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-green-500">✓</span>
+                <span>Minify output</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Use Cases -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Use Cases</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Watch mode for every development workflow.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        {useCases.map((useCase) => (
+          <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-border">
+              <h3 class="font-semibold">{useCase.title}</h3>
+              <p class="text-sm text-text-muted mt-1">{useCase.description}</p>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={useCase.code}></code></pre>
+            <div class="px-5 pb-4">
+              <code class="text-xs text-jake bg-jake/10 px-2 py-1 rounded">{useCase.usage}</code>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Commands -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-3xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Usage</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Common watch mode commands.
+      </p>
+
+      <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+        <div class="divide-y divide-border">
+          {commands.map((item) => (
+            <div class="flex items-center justify-between px-6 py-4">
+              <code class="text-jake font-mono">{item.cmd}</code>
+              <span class="text-text-muted text-sm">{item.desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- vs Make/Just -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">vs Make & Just</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Neither Make nor Just has built-in watch mode. You need external tools.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-text-secondary">Without Jake</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto text-text-muted"><code># Need external tools
+fswatch -o src/ | xargs -n1 make build
+
+# Or install watchexec
+watchexec -e ts just build
+
+# Or nodemon
+nodemon --watch src -e ts --exec "just build"</code></pre>
+        </div>
+
+        <div class="bg-bg-card border border-jake/30 rounded-xl overflow-hidden glow-sm">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-jake">With Jake</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code><span class="text-text-muted">$</span> <span class="text-jake">jake -w build</span>
+
+<span class="text-syntax-comment"># That's it. Built-in.</span>
+<span class="text-syntax-comment"># No extra tools needed.</span></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-4">Try Watch Mode</h2>
+      <p class="text-text-secondary text-lg mb-8">Faster iteration, built into your build tool.</p>
+
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="/docs/watch-mode" class="inline-flex items-center gap-2 bg-jake hover:bg-jake-dark text-white px-6 py-3 rounded-lg font-medium transition-all hover:scale-105">
+          Read the Docs
+          <ArrowRight size={18} />
+        </a>
+        <a href="/features" class="inline-flex items-center gap-2 border border-border hover:border-jake/50 px-6 py-3 rounded-lg font-medium transition-colors">
+          All Features
+          <ArrowLeft size={18} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

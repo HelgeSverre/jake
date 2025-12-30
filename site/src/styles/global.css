@@ -42,7 +42,7 @@ body {
 
 /* Code block base */
 pre, code {
-  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+  font-family: 'Fira Code', 'SF Mono', Consolas, monospace;
 }
 
 /* Gradient text utility */
@@ -109,9 +109,25 @@ pre, code {
 .border-border { border-color: var(--border-color); }
 .border-border-light { border-color: var(--border-light); }
 
-/* Divide utilities */
-.divide-border > :not([hidden]) ~ :not([hidden]) {
+/* Divide utilities - Tailwind v4 compatible */
+.divide-border > * + * {
+  --tw-divide-opacity: 1;
   border-color: var(--border-color);
+}
+.divide-border > :not([hidden]) ~ :not([hidden]) {
+  --tw-divide-opacity: 1;
+  border-color: var(--border-color);
+}
+.divide-x.divide-border > * + *,
+.divide-y.divide-border > * + * {
+  border-color: var(--border-color);
+}
+/* Table divide support */
+tbody.divide-y.divide-border > tr + tr {
+  border-top-color: var(--border-color);
+}
+tbody.divide-y.divide-border > tr:not(:last-child) {
+  border-bottom-color: var(--border-color);
 }
 
 /* Syntax highlighting classes */

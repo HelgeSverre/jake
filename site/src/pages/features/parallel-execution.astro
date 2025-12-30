@@ -1,0 +1,307 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { Zap, FileCode, Terminal, CheckCircle, ArrowRight, ArrowLeft } from 'lucide-astro';
+
+const codeExample = `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">all</span>: [frontend, backend, docs]
+    echo <span class="text-syntax-string">"All packages built!"</span>
+
+<span class="text-syntax-comment"># These run in parallel - no dependencies between them</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">frontend</span>:
+    npm --prefix frontend build
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">backend</span>:
+    cargo build --release
+
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">docs</span>:
+    mkdocs build
+
+<span class="text-syntax-comment"># Deploy waits for frontend and backend</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">deploy</span>: [frontend, backend]
+    ./deploy.sh`;
+
+const outputExample = `<span class="text-text-muted">$</span> jake -j4 all
+
+<span class="text-jake">→</span> frontend <span class="text-text-muted">│</span> <span class="text-jake">→</span> backend <span class="text-text-muted">│</span> <span class="text-jake">→</span> docs
+<span class="text-green-500">✓</span> docs <span class="text-text-muted">(1.2s)</span>
+<span class="text-green-500">✓</span> frontend <span class="text-text-muted">(2.8s)</span>
+<span class="text-green-500">✓</span> backend <span class="text-text-muted">(3.1s)</span>
+
+<span class="text-jake">→</span> all
+  echo "All packages built!"
+<span class="text-green-500">✓</span> all <span class="text-text-muted">(3.1s total)</span>`;
+
+const sequentialDiagram = `build-frontend    ████████████████  (10s)
+build-backend                       ████████████████  (10s)
+build-docs                                            ████████  (5s)
+                  ─────────────────────────────────────────────────
+                                                           Total: 25s`;
+
+const parallelDiagram = `build-frontend    ████████████████  (10s)
+build-backend     ████████████████  (10s)
+build-docs        ████████          (5s)
+                  ─────────────────────────────────────────────────
+                                                           Total: 10s`;
+
+const useCases = [
+  {
+    title: 'CI/CD Pipelines',
+    code: `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">ci</span>: [lint, test, build, security-scan]
+    echo <span class="text-syntax-string">"CI complete"</span>`,
+    description: 'Run lint, test, build, and security checks in parallel.',
+  },
+  {
+    title: 'Cross-Platform Builds',
+    code: `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">release</span>: [build-linux, build-macos, build-windows]
+    echo <span class="text-syntax-string">"All platforms built"</span>`,
+    description: 'Build for multiple platforms simultaneously.',
+  },
+  {
+    title: 'Monorepo Packages',
+    code: `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">build</span>: [pkg-web, pkg-api, pkg-mobile, pkg-shared]
+    echo <span class="text-syntax-string">"All packages built"</span>`,
+    description: 'Build multiple packages in a monorepo at once.',
+  },
+  {
+    title: 'Asset Processing',
+    code: `<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">assets</span>: [optimize-images, compile-sass, bundle-js]
+    echo <span class="text-syntax-string">"Assets ready"</span>`,
+    description: 'Process images, CSS, and JS in parallel.',
+  },
+];
+---
+
+<BaseLayout title="Parallel Execution - Jake">
+  <!-- Hero -->
+  <section class="relative pt-32 pb-16 bg-grid bg-radial overflow-hidden">
+    <div class="max-w-6xl mx-auto px-6">
+      <a href="/features" class="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors mb-8">
+        <ArrowLeft size={16} />
+        All Features
+      </a>
+
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <div class="space-y-6">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <Zap size={14} />
+            Build Faster
+          </div>
+
+          <h1 class="text-5xl font-bold">
+            <span class="text-gradient">Parallel Execution</span>
+          </h1>
+
+          <p class="text-xl text-text-secondary leading-relaxed">
+            Run independent tasks simultaneously. Jake analyzes your dependency graph
+            and parallelizes safely—no race conditions, no configuration needed.
+          </p>
+
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Automatic analysis</span> — Jake finds safe parallelization points</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Configurable workers</span> — <code class="text-jake">-j4</code> or <code class="text-jake">-j</code> for CPU count</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Safe execution</span> — Dependencies always respected</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="space-y-4">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden glow-sm">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Jakefile</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={codeExample}></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- The Difference -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">The Difference</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Same tasks, dramatically different total time.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-8">
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="text-text-muted font-mono text-sm">Sequential</span>
+          </div>
+          <pre class="text-xs font-mono text-text-secondary leading-relaxed whitespace-pre">{sequentialDiagram}</pre>
+        </div>
+
+        <div class="bg-bg-card border border-jake/30 rounded-xl p-6 glow-sm">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="text-jake font-mono text-sm">Parallel with -j</span>
+          </div>
+          <pre class="text-xs font-mono text-text-secondary leading-relaxed whitespace-pre">{parallelDiagram}</pre>
+        </div>
+      </div>
+
+      <div class="mt-8 text-center">
+        <span class="text-4xl font-bold text-jake">60%</span>
+        <span class="text-xl text-text-secondary ml-2">faster</span>
+        <p class="text-text-muted mt-2">Same work, less time.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">How It Works</h2>
+      <p class="text-text-secondary text-center mb-12 max-w-2xl mx-auto">
+        Jake builds a dependency graph and identifies tasks that can run concurrently.
+      </p>
+
+      <div class="grid lg:grid-cols-2 gap-8 items-center">
+        <div class="space-y-4">
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-full bg-jake/10 text-jake flex items-center justify-center font-semibold">1</span>
+              <h3 class="font-semibold">Analyze Dependencies</h3>
+            </div>
+            <p class="text-text-secondary text-sm">
+              Jake reads your Jakefile and builds a graph of which tasks depend on which.
+            </p>
+          </div>
+
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-full bg-jake/10 text-jake flex items-center justify-center font-semibold">2</span>
+              <h3 class="font-semibold">Find Parallel Groups</h3>
+            </div>
+            <p class="text-text-secondary text-sm">
+              Tasks with no dependencies between them are grouped for parallel execution.
+            </p>
+          </div>
+
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-full bg-jake/10 text-jake flex items-center justify-center font-semibold">3</span>
+              <h3 class="font-semibold">Execute Safely</h3>
+            </div>
+            <p class="text-text-secondary text-sm">
+              Independent tasks run simultaneously. Dependent tasks wait for their dependencies.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-tertiary">
+            <Terminal size={16} class="text-text-muted" />
+            <span class="text-xs text-text-muted font-mono">Terminal</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={outputExample}></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Use Cases -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Use Cases</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Parallel execution shines in these scenarios.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        {useCases.map((useCase) => (
+          <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-border">
+              <h3 class="font-semibold">{useCase.title}</h3>
+              <p class="text-sm text-text-muted mt-1">{useCase.description}</p>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={useCase.code}></code></pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- vs Just -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">vs Just</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Just runs tasks sequentially. Jake can parallelize them.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-8">
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <span class="font-mono text-sm text-text-secondary">Just</span>
+            <span class="text-xs px-2 py-1 rounded bg-text-muted/10 text-text-muted">Sequential only</span>
+          </div>
+          <pre class="text-sm font-mono text-text-muted">just frontend backend docs
+# Runs one after another
+# Total: 25s</pre>
+        </div>
+
+        <div class="bg-bg-card border border-jake/30 rounded-xl p-6 glow-sm">
+          <div class="flex items-center justify-between mb-4">
+            <span class="font-mono text-sm text-jake">Jake</span>
+            <span class="text-xs px-2 py-1 rounded bg-jake/10 text-jake font-medium">Parallel</span>
+          </div>
+          <pre class="text-sm font-mono text-text-primary">jake -j frontend backend docs
+# Runs simultaneously
+# Total: 10s</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Usage -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-8">Usage</h2>
+
+      <div class="bg-bg-code border border-border rounded-xl p-6 text-left mb-8">
+        <div class="space-y-4 font-mono text-sm">
+          <div>
+            <span class="text-text-muted">$</span>
+            <span class="text-jake"> jake -j all</span>
+            <span class="text-text-muted ml-4"># Use all CPU cores</span>
+          </div>
+          <div>
+            <span class="text-text-muted">$</span>
+            <span class="text-jake"> jake -j4 all</span>
+            <span class="text-text-muted ml-4"># Use 4 workers</span>
+          </div>
+          <div>
+            <span class="text-text-muted">$</span>
+            <span class="text-jake"> jake -j -v all</span>
+            <span class="text-text-muted ml-4"># Parallel + verbose</span>
+          </div>
+          <div>
+            <span class="text-text-muted">$</span>
+            <span class="text-jake"> jake -j -w build</span>
+            <span class="text-text-muted ml-4"># Parallel + watch mode</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="/docs/quick-start" class="inline-flex items-center gap-2 bg-jake hover:bg-jake-dark text-white px-6 py-3 rounded-lg font-medium transition-all hover:scale-105">
+          Read the Docs
+          <ArrowRight size={18} />
+        </a>
+        <a href="/features/hooks" class="inline-flex items-center gap-2 border border-border hover:border-jake/50 px-6 py-3 rounded-lg font-medium transition-colors">
+          Next: Hooks
+          <ArrowRight size={18} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

@@ -1,0 +1,205 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { Package, Zap, Anchor, FolderInput, RefreshCw, ArrowRight } from 'lucide-astro';
+
+const features = [
+  {
+    icon: Package,
+    slug: 'file-targets',
+    title: 'File Targets',
+    tagline: 'Skip unnecessary rebuilds',
+    description: 'Track file modifications and only rebuild when sources change. Chain builds together for multi-stage pipelines that skip work automatically.',
+    benefits: ['Glob patterns like src/**/*.ts', 'Chained file dependencies', 'Automatic up-to-date detection'],
+  },
+  {
+    icon: Zap,
+    slug: 'parallel-execution',
+    title: 'Parallel Execution',
+    tagline: 'Build faster with -j',
+    description: 'Run independent tasks simultaneously. Jake analyzes your dependency graph and parallelizes safely—no race conditions.',
+    benefits: ['Automatic dependency analysis', 'Configurable worker count', 'Safe parallel builds'],
+  },
+  {
+    icon: Anchor,
+    slug: 'hooks',
+    title: 'Hooks',
+    tagline: 'Setup and cleanup, automated',
+    description: 'Pre/post hooks run before and after tasks. Post-hooks always run—even on failure—perfect for cleanup.',
+    benefits: ['Global and per-task hooks', 'Error hooks for notifications', 'Guaranteed cleanup'],
+  },
+  {
+    icon: FolderInput,
+    slug: 'imports',
+    title: 'Imports & Modules',
+    tagline: 'Organize at scale',
+    description: 'Split your Jakefile across multiple files with namespaced imports. Essential for monorepos and team collaboration.',
+    benefits: ['Namespaced imports', 'Scoped variables', 'Monorepo patterns'],
+  },
+  {
+    icon: RefreshCw,
+    slug: 'watch-mode',
+    title: 'Watch Mode',
+    tagline: 'Iterate faster',
+    description: 'Automatically re-run tasks when files change. Built-in file watching with conditional behavior during development.',
+    benefits: ['Automatic file detection', 'Custom watch patterns', 'Conditional watch logic'],
+  },
+];
+---
+
+<BaseLayout title="Features - Jake">
+  <!-- Hero -->
+  <section class="relative pt-32 pb-20 bg-grid bg-radial overflow-hidden">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-bg-secondary text-sm text-text-secondary mb-8">
+          <span class="w-2 h-2 rounded-full bg-jake animate-pulse"></span>
+          The best of Make and Just, combined
+        </div>
+
+        <h1 class="text-5xl lg:text-6xl font-bold mb-6">
+          Powerful <span class="text-gradient">features</span><br/>for modern builds
+        </h1>
+
+        <p class="text-xl text-text-secondary leading-relaxed">
+          Jake combines Make's file dependency tracking with Just's clean syntax,
+          plus unique capabilities you won't find anywhere else.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Comparison Table -->
+  <section class="py-16 border-t border-border">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-border">
+          <h2 class="text-lg font-semibold">Feature Comparison</h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-border bg-bg-secondary">
+                <th class="text-left px-6 py-3 font-medium text-text-secondary">Feature</th>
+                <th class="text-center px-6 py-3 font-medium text-text-secondary">Make</th>
+                <th class="text-center px-6 py-3 font-medium text-text-secondary">Just</th>
+                <th class="text-center px-6 py-3 font-medium text-jake">Jake</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              <tr>
+                <td class="px-6 py-3">File-based dependencies</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3">Clean, readable syntax</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3">Parallel execution</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3">Glob patterns</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3">Import system</td>
+                <td class="px-6 py-3 text-center text-text-muted">Limited</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3">Pre/post hooks</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3">Watch mode</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3">.env loading</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature Cards -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center mb-16">
+        <h2 class="text-3xl font-bold mb-4">Explore Features</h2>
+        <p class="text-text-secondary text-lg">Deep dive into what makes Jake different</p>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {features.map((feature) => (
+          <a href={`/features/${feature.slug}`} class="group bg-bg-card border border-border rounded-xl p-6 hover-lift transition-all hover:border-jake/30">
+            <div class="mb-4 text-jake">
+              <feature.icon size={32} strokeWidth={1.5} />
+            </div>
+            <h3 class="text-xl font-semibold mb-1 group-hover:text-jake transition-colors">{feature.title}</h3>
+            <p class="text-sm text-jake mb-3">{feature.tagline}</p>
+            <p class="text-text-secondary text-sm leading-relaxed mb-4">{feature.description}</p>
+            <ul class="space-y-1 mb-4">
+              {feature.benefits.map((benefit) => (
+                <li class="text-sm text-text-muted flex items-center gap-2">
+                  <span class="w-1 h-1 rounded-full bg-jake"></span>
+                  {benefit}
+                </li>
+              ))}
+            </ul>
+            <div class="flex items-center gap-2 text-jake text-sm font-medium group-hover:gap-3 transition-all">
+              Learn more
+              <ArrowRight size={16} />
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-4">Ready to try Jake?</h2>
+      <p class="text-text-secondary text-lg mb-8">Get started in seconds with a single command.</p>
+
+      <div class="bg-bg-code border border-border rounded-xl p-6 mb-8 max-w-xl mx-auto">
+        <code class="text-lg">
+          <span class="text-text-muted">$</span>
+          <span class="text-text-secondary"> curl -fsSL</span>
+          <span class="text-jake"> jakefile.dev/install.sh</span>
+          <span class="text-text-secondary"> | sh</span>
+        </code>
+      </div>
+
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="/docs/introduction" class="inline-flex items-center gap-2 bg-jake hover:bg-jake-dark text-white px-6 py-3 rounded-lg font-medium transition-all hover:scale-105">
+          Read the Docs
+          <ArrowRight size={18} />
+        </a>
+        <a href="https://github.com/HelgeSverre/jake" class="inline-flex items-center gap-2 border border-border hover:border-jake/50 px-6 py-3 rounded-lg font-medium transition-colors">
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
