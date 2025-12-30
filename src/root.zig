@@ -1,6 +1,3 @@
-// Jake - A modern command runner with dependency tracking
-// The best of Make and Just combined
-
 const std = @import("std");
 
 pub const lexer = @import("lexer.zig");
