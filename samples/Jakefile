@@ -3,63 +3,56 @@
 
 jake_bin = "../zig-out/bin/jake"
 
-@pre echo "=========================================="
-@pre echo "       JAKE E2E TEST SUITE"
-@pre echo "=========================================="
-@post echo "=========================================="
-
 @default
 task test-all: [test-basics, test-parallel, test-imports, test-hooks, test-files, test-env, test-conditionals, test-full]
     echo ""
-    echo "ALL E2E TESTS PASSED!"
+    echo "All sample tests passed!"
 
-task test-basics:
-    @pre echo ""
-    @pre echo "[TEST] 01-basics: Variables, dependencies, parameters"
-    cd 01-basics && ../../zig-out/bin/jake all 2>&1 | grep -E "Hello, World|Building|Testing after build|All done"
-    @post echo "[PASS] 01-basics"
+@quiet
+task _header:
+    echo ""
+    echo "Jake Sample Tests"
+    echo ""
 
+@quiet
+task test-basics: [_header]
+    cd 01-basics && ../../zig-out/bin/jake all 2>&1 | grep -qE "Hello, World|Building|Testing after build|All done"
+    echo "  Variables and dependencies ............................ PASS"
+
+@quiet
 task test-parallel:
-    @pre echo ""
-    @pre echo "[TEST] 02-parallel: Parallel execution with -j4"
-    cd 02-parallel && ../../zig-out/bin/jake -j4 all 2>&1 | grep -E "Compiling|done|complete"
-    @post echo "[PASS] 02-parallel"
+    cd 02-parallel && ../../zig-out/bin/jake -j4 all 2>&1 | grep -qE "Compiling|done|complete"
+    echo "  Parallel execution (-j4) .............................. PASS"
 
+@quiet
 task test-imports:
-    @pre echo ""
-    @pre echo "[TEST] 03-imports: Import system with prefixes"
-    cd 03-imports && ../../zig-out/bin/jake all 2>&1 | grep -E "Compiling project|Deploying to production|Build and deploy"
-    @post echo "[PASS] 03-imports"
+    cd 03-imports && ../../zig-out/bin/jake all 2>&1 | grep -qE "Compiling project|Deploying to production|Build and deploy"
+    echo "  Import system with prefixes ........................... PASS"
 
+@quiet
 task test-hooks:
-    @pre echo ""
-    @pre echo "[TEST] 04-hooks: Global and recipe-level hooks"
-    cd 04-hooks && ../../zig-out/bin/jake deploy 2>&1 | grep -E "GLOBAL PRE|RECIPE PRE|Building|Deploying|RECIPE POST|GLOBAL POST"
-    @post echo "[PASS] 04-hooks"
+    cd 04-hooks && ../../zig-out/bin/jake deploy 2>&1 | grep -qE "GLOBAL PRE|RECIPE PRE|Building|Deploying|RECIPE POST|GLOBAL POST"
+    echo "  Global and recipe-level hooks ......................... PASS"
 
+@quiet
 task test-files:
-    @pre echo ""
-    @pre echo "[TEST] 05-file-targets: File targets with globs"
-    cd 05-file-targets && rm -rf dist && ../../zig-out/bin/jake build 2>&1 | grep -E "Bundling|Bundle created|Minifying|Build complete"
-    @post echo "[PASS] 05-file-targets"
+    cd 05-file-targets && rm -rf dist && ../../zig-out/bin/jake build 2>&1 | grep -qE "Bundling|Bundle created|Minifying|Build complete"
+    echo "  File targets with globs ............................... PASS"
 
+@quiet
 task test-env:
-    @pre echo ""
-    @pre echo "[TEST] 06-environment: Environment variables"
-    cd 06-environment && ../../zig-out/bin/jake show-env 2>&1 | grep -E "API_URL|DB_HOST|BUILD_MODE"
-    @post echo "[PASS] 06-environment"
+    cd 06-environment && ../../zig-out/bin/jake show-env 2>&1 | grep -qE "API_URL|DB_HOST|BUILD_MODE"
+    echo "  Environment variables ................................. PASS"
 
+@quiet
 task test-conditionals:
-    @pre echo ""
-    @pre echo "[TEST] 07-conditionals: Conditional logic"
-    cd 07-conditionals && ../../zig-out/bin/jake install 2>&1 | grep -E "Starting installation|Installing|complete"
-    @post echo "[PASS] 07-conditionals"
+    cd 07-conditionals && ../../zig-out/bin/jake install 2>&1 | grep -qE "Starting installation|Installing|complete"
+    echo "  Conditional logic ..................................... PASS"
 
+@quiet
 task test-full:
-    @pre echo ""
-    @pre echo "[TEST] 08-full-project: Full integration test"
-    cd 08-full-project && rm -rf dist && ../../zig-out/bin/jake build 2>&1 | grep -E "JAKE BUILD SYSTEM|Compiling|Bundle|Build v1.0.0|BUILD COMPLETE"
-    @post echo "[PASS] 08-full-project"
+    cd 08-full-project && rm -rf dist && ../../zig-out/bin/jake build 2>&1 | grep -qE "JAKE BUILD SYSTEM|Compiling|Bundle|Build v1.0.0|BUILD COMPLETE"
+    echo "  Full integration test ................................. PASS"
 
 # Individual test runners for debugging
 task run-basics:

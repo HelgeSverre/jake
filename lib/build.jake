@@ -61,12 +61,15 @@ task dev:
     zig build
 
 @group test
-@desc "Run end-to-end tests"
+@desc "Run sample-based integration tests"
 task e2e: [build-release]
-    @pre echo "Running E2E tests..."
     @cd samples
     ../zig-out/bin/jake test-all
-    @post echo "E2E tests passed!"
+
+@group test
+@desc "Run comprehensive e2e test suite"
+task e2e-full: [build-release]
+    bash tests/e2e_test.sh
 
 @group install
 @desc "Install jake to ~/.local/bin"
