@@ -507,6 +507,26 @@ test "printHelp generates correct output" {
     try expect(std.mem.indexOf(u8, output, "FILE") != null);
 }
 
+test "combined short flags -vn" {
+    const args = try parse(testing.allocator, &.{ "jake", "-vn", "build" });
+    try expect(args.verbose);
+    try expect(args.dry_run);
+    try expectEqualStrings("build", args.recipe.?);
+}
+
+test "combined short flags -lvy" {
+    const args = try parse(testing.allocator, &.{ "jake", "-lvy" });
+    try expect(args.list);
+    try expect(args.verbose);
+    try expect(args.yes);
+}
+
+test "combined flags with value flag errors" {
+    // -vf should fail because -f takes a value and can't be combined
+    const result = parse(testing.allocator, &.{ "jake", "-vf" });
+    try expectError(error.UnknownFlag, result);
+}
+
 test "parse --short flag" {
     const args = try parse(testing.allocator, &.{ "jake", "--short" });
     try expect(args.short == true);
