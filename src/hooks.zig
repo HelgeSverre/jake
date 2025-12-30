@@ -368,3 +368,76 @@ test "hook context with error message" {
     try std.testing.expect(!context.success);
     try std.testing.expectEqualStrings("CommandFailed", context.error_message.?);
 }
+
+test "hook runner handles empty hook list" {
+    var runner = HookRunner.init(std.testing.allocator);
+    defer runner.deinit();
+
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const context = HookContext{
+        .recipe_name = "build",
+        .success = true,
+        .error_message = null,
+        .variables = &variables,
+    };
+
+    // Running with empty hooks should not crash
+    runner.runHooks(.pre, context) catch {};
+}
+
+test "hook runner handles null recipe name in context" {
+    var runner = HookRunner.init(std.testing.allocator);
+    defer runner.deinit();
+
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // Context with null recipe name
+    const context = HookContext{
+        .recipe_name = "",
+        .success = true,
+        .error_message = null,
+        .variables = &variables,
+    };
+
+    // Should not crash with empty recipe name
+    runner.runHooks(.pre, context) catch {};
+}
+
+test "shouldRunHook handles empty recipe name" {
+    const global_hook = Hook{
+        .command = "echo global",
+        .kind = .pre,
+        .recipe_name = null, // Global hook
+    };
+
+    const targeted_hook = Hook{
+        .command = "echo targeted",
+        .kind = .pre,
+        .recipe_name = "specific",
+    };
+
+    // Global hook should run for empty recipe name
+    try std.testing.expect(HookRunner.shouldRunHook(global_hook, ""));
+
+    // Targeted hook should not run for empty recipe name
+    try std.testing.expect(!HookRunner.shouldRunHook(targeted_hook, ""));
+}
+
+test "hook variable expansion with special characters" {
+    const allocator = std.testing.allocator;
+
+    var variables = std.StringHashMap([]const u8).init(allocator);
+    defer variables.deinit();
+
+    try variables.put("path", "/some/path with spaces");
+    try variables.put("msg", "hello \"world\"");
+
+    const command = "echo {{path}} {{msg}}";
+    const expanded = try HookRunner.expandHookVariables(allocator, command, &variables);
+    defer allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("echo /some/path with spaces hello \"world\"", expanded);
+}

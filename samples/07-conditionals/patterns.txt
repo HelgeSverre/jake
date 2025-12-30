@@ -1,3 +1,0 @@
-Starting installation
-Installing standard dependencies
-Installation complete

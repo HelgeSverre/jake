@@ -1,8 +1,0 @@
-\[GLOBAL PRE\] Starting jake
-\[RECIPE PRE\] Preparing build
-Building\.\.\.
-\[RECIPE POST\] Build cleanup
-\[RECIPE PRE\] Preparing deploy
-Deploying\.\.\.
-\[RECIPE POST\] Deploy notification
-\[GLOBAL POST\] Jake finished

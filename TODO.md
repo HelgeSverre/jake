@@ -78,7 +78,7 @@
 | root.zig | 1 | Minimal |
 | **TOTAL** | **439** | |
 
-**E2E Tests:** `tests/e2e_test.sh`
+**E2E Tests:** `jake e2e` (tests/e2e/Jakefile)
 
 ---
 
@@ -457,7 +457,191 @@ task docker:build:
 3. Container Execution (reproducible builds)
 4. Workspace Support (most complex)
 
-5. **CLI Commands**
+---
+
+#### 5. Module-Level @group (Design Decision Pending)
+
+**Problem**: In module files like `lib/web.jake`, every task repeats the same `@group` directive:
+
+```jake
+# Current: repetitive
+@group web
+@desc "Start website dev server"
+task dev:
+    npm run dev
+
+@group web
+@desc "Build website for production"
+task build:
+    npm run build
+
+@group web
+@desc "Deploy website to production"
+task deploy:
+    vc --prod --yes
+```
+
+**Goal**: Allow setting a default group for all recipes in a module file.
+
+---
+
+**Option A: Positional @group (Recommended)**
+
+```jake
+# At the very top, before any recipes - becomes file default
+@group "web"
+
+@desc "Start website dev server"
+task dev:
+    npm run dev
+
+@desc "Build website for production"
+task build:
+    npm run build
+
+# Per-recipe @group still works and overrides the default
+@group "deploy"
+task deploy:
+    vc --prod --yes
+```
+
+| Pros | Cons |
+|------|------|
+| Zero new syntax - reuses existing `@group` | Position-dependent semantics |
+| Intuitive placement (top of file = file-wide) | Same syntax, different meaning based on location |
+| Minimal parser changes (~10 lines) | Could confuse users initially |
+| Works for both imported and standalone modules | |
+
+**Implementation**:
+- Add `module_default_group: ?[]const u8` to Parser struct
+- Track `has_seen_recipe: bool`
+- When parsing @group before first recipe, set as module default
+- In recipe creation: `.group = self.consumePendingGroup() orelse self.module_default_group`
+
+---
+
+**Option B: Inherit from Import Prefix**
+
+```jake
+# In main Jakefile - group is derived from namespace
+@import "lib/web.jake" as web   # All recipes get group "web" automatically
+```
+
+| Pros | Cons |
+|------|------|
+| Zero changes to module files | Less control for module authors |
+| Namespace and group naturally align | Doesn't help standalone modules |
+| Flexible - importers control grouping | Group tied to import name |
+
+**Implementation**:
+- In `import.zig`: if `recipe.group` is null and prefix exists, set `group = prefix`
+
+---
+
+**Option C: Explicit @default Directive**
+
+```jake
+@default group: "web"
+
+task dev:
+    npm run dev
+```
+
+| Pros | Cons |
+|------|------|
+| Clear intent - explicitly about defaults | New keyword to learn |
+| Extensible to other attributes (`quiet`, `shell`) | More parser work (~30 lines) |
+| No position ambiguity | Heavier syntax for simple need |
+
+---
+
+**Option D: Implicit from Filename**
+
+```
+lib/web.jake      → group "web" (auto-derived)
+lib/docker.jake   → group "docker"
+```
+
+| Pros | Cons |
+|------|------|
+| Zero syntax | Magic behavior, less explicit |
+| Encourages good file naming | Filename might not match desired group |
+| Automatic organization | Main Jakefile wouldn't have natural group |
+
+---
+
+**Recommendation**: **Option A (Positional @group)** or **Option A + B combined**
+
+Option A because:
+1. Module authors explicitly declare intent
+2. Reuses existing syntax (nothing new to learn)
+3. Minimal parser changes
+4. Works for both imported and standalone modules
+
+Optionally combine with Option B as automatic fallback for imports.
+
+---
+
+**Test Cases to Add (parser.zig)**:
+
+```zig
+// Module-level @group applies to all recipes
+test "@group at top of file sets default for all recipes" {
+    // @group "build"
+    // task compile: ...
+    // task link: ...
+    // Both should have group = "build"
+}
+
+test "@group at top with per-recipe override" {
+    // @group "build"
+    // task compile: ...      <- group = "build"
+    // @group "test"
+    // task test: ...         <- group = "test" (override)
+}
+
+test "module @group with no recipes is valid" {
+    // @group "utils"
+    // (empty file or only variables)
+}
+
+test "module @group followed by import doesn't affect imported recipes" {
+    // @group "local"
+    // @import "other.jake"   <- imported recipes keep their own groups
+}
+
+test "@group after first recipe is per-recipe not module-level" {
+    // task first: ...        <- group = null
+    // @group "late"
+    // task second: ...       <- group = "late" (per-recipe, not module)
+}
+```
+
+**Test Cases to Add (import.zig)** - if Option B implemented:
+
+```zig
+test "imported recipes inherit group from prefix" {
+    // @import "tools.jake" as build
+    // recipes from tools.jake get group = "build" if they have no group
+}
+
+test "imported recipes with explicit group keep their group" {
+    // @import "tools.jake" as build
+    // if tools.jake has @group "custom", that takes precedence
+}
+```
+
+**Test Cases to Add (executor.zig)**:
+
+```zig
+test "list command groups recipes by module-level group" {
+    // Verify `jake --list` shows grouped output correctly
+}
+```
+
+---
+
+6. **CLI Commands**
    - [ ] `jake init` - Scaffold Jakefile from templates
      - [ ] Store templates in `templates/*.jake`, compile into binary
      - [ ] Auto-detect project type (Node, Go, Rust, Python, etc.)
@@ -665,7 +849,7 @@ src/
 
 ## Next Steps
 
-All TDD implementation steps are complete. Run `zig build test` for unit tests and `bash tests/e2e_test.sh` for E2E tests.
+All TDD implementation steps are complete. Run `zig build test` for unit tests and `jake e2e` for E2E tests.
 
 **Cleanup tasks completed:**
 - ✅ Added `--yes`/`-y` flag to main.zig

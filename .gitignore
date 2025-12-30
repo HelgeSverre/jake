@@ -24,8 +24,8 @@ zig-cache/
 Thumbs.db
 
 # Test artifacts
-samples/*/dist/
 test_*
+tests/e2e/output.txt
 
 # Docs
 docs/

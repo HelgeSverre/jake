@@ -1,0 +1,120 @@
+name: Performance
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.0
+
+      - name: Build Benchmarks
+        run: zig build bench-build -Doptimize=ReleaseFast
+
+      - name: Run Benchmarks
+        run: |
+          ./zig-out/bin/jake-bench 2>&1 | tee benchmark-output.txt
+          echo "Benchmark run complete"
+
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-output.txt
+
+  fuzz:
+    name: Fuzz Testing
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.0
+
+      - name: Build Fuzzers
+        run: |
+          zig build fuzz-parse -Doptimize=ReleaseSafe
+          zig build fuzz-lexer -Doptimize=ReleaseSafe
+          zig build fuzz-executor -Doptimize=ReleaseSafe
+          zig build fuzz-glob -Doptimize=ReleaseSafe
+
+      - name: Quick Fuzz Run
+        run: |
+          mkdir -p corpus findings
+          # Seed corpus with existing Jakefiles
+          cp Jakefile corpus/main.jake 2>/dev/null || true
+          find samples -name "*.jake" -type f -exec cp {} corpus/ \; 2>/dev/null || true
+          # Run quick fuzz (100 iterations for CI)
+          ./scripts/dumb-fuzz.sh 100
+
+      - name: Check for Crashes
+        run: |
+          if [ -d findings/crashes ] && [ "$(ls -A findings/crashes 2>/dev/null)" ]; then
+            echo "Fuzzer found crashes!"
+            ls -la findings/crashes/
+            exit 1
+          else
+            echo "No crashes found"
+          fi
+
+      - name: Upload Findings
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-findings
+          path: findings/
+
+  memory-check:
+    name: Memory Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.0
+
+      - name: Install Valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - name: Build with Debug Info
+        run: zig build -Doptimize=ReleaseSafe
+
+      - name: Check for Memory Leaks
+        run: |
+          valgrind --leak-check=full --error-exitcode=1 \
+            ./zig-out/bin/jake -l 2>&1 | tee valgrind-output.txt || true
+          # Check if there are definitely lost bytes
+          if grep -q "definitely lost: [1-9]" valgrind-output.txt; then
+            echo "Memory leaks detected!"
+            cat valgrind-output.txt
+            exit 1
+          fi
+          echo "No significant memory leaks detected"
+
+      - name: Upload Valgrind Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: valgrind-report
+          path: valgrind-output.txt

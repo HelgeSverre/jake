@@ -1534,7 +1534,7 @@ Create a `Jakefile` in current directory, or use `-f` to specify path.
 ## Getting Help
 
 - **GitHub Issues**: [github.com/HelgeSverre/jake/issues](https://github.com/HelgeSverre/jake/issues)
-- **Examples**: See the `samples/` directory
+- **Examples**: See the `tests/e2e/fixtures/` directory
 
 ---
 

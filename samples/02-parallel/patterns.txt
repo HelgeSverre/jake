@@ -1,9 +1,0 @@
-Compiling frontend
-Compiling backend
-Compiling worker
-Compiling CLI
-Frontend done
-Backend done
-Worker done
-CLI done
-All compilations complete

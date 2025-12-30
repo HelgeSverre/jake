@@ -244,7 +244,7 @@ Did you mean: build?
 ## Documentation
 
 - **[User Guide](GUIDE.md)** - Complete reference
-- **[Examples](samples/)** - Sample Jakefiles
+- **[E2E Tests](tests/e2e/)** - Example Jakefiles and test fixtures
 
 ## Contributing
 

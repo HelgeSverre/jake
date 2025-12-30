@@ -1411,3 +1411,86 @@ test "parallel executor recipe-level @needs with hint and task reference" {
     const result = exec.execute();
     try std.testing.expectError(executor_mod.ExecuteError.CommandFailed, result);
 }
+
+test "parallel executor handles empty dependency graph" {
+    const source =
+        \\task standalone:
+        \\    echo "no deps"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
+    defer exec.deinit();
+
+    try exec.buildGraph("standalone");
+
+    // Single node, no deps - should work fine
+    const stats = exec.getParallelismStats();
+    try std.testing.expectEqual(@as(usize, 1), stats.total_recipes);
+}
+
+test "parallel executor handles large thread count gracefully" {
+    const source =
+        \\task a:
+        \\    echo "a"
+        \\task b:
+        \\    echo "b"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    // Request way more threads than needed
+    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 100);
+    defer exec.deinit();
+
+    try exec.buildGraph("a");
+
+    // Should not crash with more threads than recipes
+    const stats = exec.getParallelismStats();
+    try std.testing.expectEqual(@as(usize, 1), stats.total_recipes);
+}
+
+test "parallel executor handles zero thread count" {
+    const source =
+        \\task a:
+        \\    echo "a"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    // Zero threads should use 1 as minimum
+    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 0);
+    defer exec.deinit();
+
+    try exec.buildGraph("a");
+
+    // Should handle gracefully
+    const stats = exec.getParallelismStats();
+    try std.testing.expectEqual(@as(usize, 1), stats.total_recipes);
+}
+
+test "parallel executor detectCycle returns false for acyclic graph" {
+    const source =
+        \\task a:
+        \\    echo "a"
+        \\task b: [a]
+        \\    echo "b"
+        \\task c: [b]
+        \\    echo "c"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+
+    try exec.buildGraph("c");
+
+    // No cycle in a -> b -> c
+    try std.testing.expect(!exec.detectCycle());
+}

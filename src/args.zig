@@ -25,21 +25,22 @@ pub const Flag = struct {
 };
 
 // Jake's flag definitions - single source of truth
+// Order doesn't matter - setFlag uses name-based matching
 pub const flags = [_]Flag{
-    .{ .short = 'h', .long = "help", .desc = "Show this help message" }, // 0
-    .{ .short = 'V', .long = "version", .desc = "Show version" }, // 1
-    .{ .short = 'l', .long = "list", .desc = "List available recipes" }, // 2
-    .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing" }, // 3
-    .{ .short = 'v', .long = "verbose", .desc = "Show verbose output" }, // 4
-    .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts" }, // 5
-    .{ .short = 'f', .long = "jakefile", .desc = "Use specified Jakefile", .takes_value = .required, .value_name = "FILE" }, // 6
-    .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN" }, // 7
-    .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel (default: CPU count)", .takes_value = .optional, .value_name = "N" }, // 8
-    .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)" }, // 9
-    .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE" }, // 10
-    .{ .short = null, .long = "summary", .desc = "Print recipe names (space-separated, for scripts)" }, // 11
-    .{ .short = null, .long = "completions", .desc = "Print shell completion script", .takes_value = .optional, .value_name = "SHELL" }, // 12
-    .{ .short = null, .long = "install", .desc = "Install completions to user directory" }, // 13
+    .{ .short = 'h', .long = "help", .desc = "Show this help message" },
+    .{ .short = 'V', .long = "version", .desc = "Show version" },
+    .{ .short = 'l', .long = "list", .desc = "List available recipes" },
+    .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing" },
+    .{ .short = 'v', .long = "verbose", .desc = "Show verbose output" },
+    .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts" },
+    .{ .short = 'f', .long = "jakefile", .desc = "Use specified Jakefile", .takes_value = .required, .value_name = "FILE" },
+    .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN" },
+    .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel (default: CPU count)", .takes_value = .optional, .value_name = "N" },
+    .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)" },
+    .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE" },
+    .{ .short = null, .long = "summary", .desc = "Print recipe names (space-separated, for scripts)" },
+    .{ .short = null, .long = "completions", .desc = "Print shell completion script", .takes_value = .optional, .value_name = "SHELL" },
+    .{ .short = null, .long = "install", .desc = "Install completions to user directory" },
 };
 
 pub const Args = struct {

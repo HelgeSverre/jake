@@ -16,7 +16,7 @@ zig build run                        # Build and run
 
 # Tests
 zig build test                       # Unit tests
-bash tests/e2e_test.sh               # E2E tests
+jake e2e                             # E2E tests (jake testing jake)
 
 # Formatting
 zig fmt src/                         # Format source files

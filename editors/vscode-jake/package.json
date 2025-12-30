@@ -1,0 +1,54 @@
+{
+  "name": "jake-lang",
+  "displayName": "Jake",
+  "description": "Syntax highlighting for Jake task runner files",
+  "version": "0.1.0",
+  "publisher": "jake-lang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/helgeblod/jake"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "jake",
+    "jakefile",
+    "task runner",
+    "build tool",
+    "make"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "jake",
+        "aliases": [
+          "Jake",
+          "Jakefile"
+        ],
+        "extensions": [
+          ".jake"
+        ],
+        "filenames": [
+          "Jakefile"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/icon.png",
+          "dark": "./images/icon.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "jake",
+        "scopeName": "source.jake",
+        "path": "./syntaxes/jake.tmLanguage.json"
+      }
+    ]
+  }
+}

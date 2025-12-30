@@ -1,3 +1,0 @@
-Compiling project
-Deploying to production
-Build and deploy complete

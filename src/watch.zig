@@ -529,3 +529,64 @@ test "watcher extracts multiple @watch patterns" {
     try std.testing.expectEqualStrings("src/*.zig", watcher.watch_patterns.items[0]);
     try std.testing.expectEqualStrings("test/*.zig", watcher.watch_patterns.items[1]);
 }
+
+test "watcher handles non-existent recipe gracefully" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    // Try to add deps for a non-existent recipe - should not crash
+    watcher.addRecipeDeps("nonexistent") catch {};
+
+    // No patterns should have been added
+    try std.testing.expectEqual(@as(usize, 0), watcher.watch_patterns.items.len);
+}
+
+test "watcher handles empty @watch pattern" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    @watch
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addRecipeDeps("build");
+
+    // Empty @watch should not add any patterns
+    try std.testing.expectEqual(@as(usize, 0), watcher.watch_patterns.items.len);
+}
+
+test "watcher handles recipe with no commands" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task empty:
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addRecipeDeps("empty");
+
+    // No patterns from empty recipe
+    try std.testing.expectEqual(@as(usize, 0), watcher.watch_patterns.items.len);
+}

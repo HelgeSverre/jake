@@ -4,18 +4,12 @@
 # Build: docker build -t jake-completions-test -f tests/Dockerfile.completions .
 # Run:   docker run --rm jake-completions-test
 
-FROM debian:bookworm-slim
-
-# Install shells and dependencies
-RUN apt-get update && apt-get install -y \
-    bash \
-    zsh \
-    fish \
-    curl \
-    xz-utils \
-    && rm -rf /var/lib/apt/lists/*
+FROM debian:bookworm-slim AS builder
 
 # Install Zig (for building jake)
+RUN apt-get update && apt-get install -y curl xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN curl -L https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ -C /opt \
     && ln -s /opt/zig-linux-x86_64-0.14.0/zig /usr/local/bin/zig
 
@@ -28,13 +22,28 @@ COPY . .
 # Build jake
 RUN zig build -Doptimize=ReleaseFast
 
+# ============================================================================
+# Test stage
+# ============================================================================
+FROM debian:bookworm-slim
+
+# Install shells
+RUN apt-get update && apt-get install -y \
+    bash \
+    zsh \
+    fish \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the built binary from builder stage
+COPY --from=builder /jake/zig-out/bin/jake /usr/local/bin/jake
+
 # Create test user (some shells behave differently as root)
 RUN useradd -m testuser
 USER testuser
 WORKDIR /home/testuser
 
-# Copy the built binary
-COPY --from=0 /jake/zig-out/bin/jake /usr/local/bin/jake
+# Create a simple Jakefile for testing
+RUN echo 'task hello:\n    echo "Hello from jake!"\n\ntask build:\n    echo "Building..."\n\ntask test:\n    echo "Testing..."\n' > /home/testuser/Jakefile
 
 # Create test script
 RUN echo '#!/bin/bash\n\
@@ -57,14 +66,14 @@ echo ""\n\
 echo "--- Testing Zsh Completions ---"\n\
 mkdir -p ~/.zsh/completions\n\
 jake --completions zsh > ~/.zsh/completions/_jake\n\
-zsh -c "fpath=(~/.zsh/completions \$fpath); autoload -Uz compinit; compinit -u; type _jake" 2>&1 | grep -q "_jake is" && echo "PASS: zsh completions load"\n\
+zsh -c "fpath=(~/.zsh/completions \\$fpath); autoload -Uz compinit; compinit -u; type _jake" 2>&1 | grep -q "_jake is" && echo "PASS: zsh completions load"\n\
 echo ""\n\
 \n\
 # Test fish completions\n\
 echo "--- Testing Fish Completions ---"\n\
 mkdir -p ~/.config/fish/completions\n\
 jake --completions fish > ~/.config/fish/completions/jake.fish\n\
-fish -c "functions __jake_recipes" && echo "PASS: fish completions load"\n\
+fish -c "source ~/.config/fish/completions/jake.fish; functions __jake_recipes" && echo "PASS: fish completions load"\n\
 echo ""\n\
 \n\
 # Test install command\n\
@@ -76,9 +85,6 @@ echo ""\n\
 \n\
 echo "=== All Docker completion tests passed! ==="\n\
 ' > /home/testuser/test_completions.sh && chmod +x /home/testuser/test_completions.sh
-
-# Create a simple Jakefile for testing
-RUN echo 'task hello:\n    echo "Hello from jake!"\n\ntask build:\n    echo "Building..."\n\ntask test:\n    echo "Testing..."\n' > /home/testuser/Jakefile
 
 # Run tests
 CMD ["/home/testuser/test_completions.sh"]

@@ -647,3 +647,91 @@ test "import resolution cleans up all memory" {
     try std.testing.expect(found_lib_helper);
     try std.testing.expect(found_lib_util);
 }
+
+test "import detects direct circular dependency" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Write file A that imports file B
+    const file_a = "@import \"b.jake\"\n\ntask a:\n    echo \"a\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "a.jake", .data = file_a });
+
+    // Write file B that imports file A (circular!)
+    const file_b = "@import \"a.jake\"\n\ntask b:\n    echo \"b\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "b.jake", .data = file_b });
+
+    // Get the full path
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const a_path = try tmp_dir.dir.realpath("a.jake", &path_buf);
+
+    // Read and parse file A
+    const source = try tmp_dir.dir.readFileAlloc(allocator, "a.jake", 1024 * 1024);
+    defer allocator.free(source);
+
+    var lex = Lexer.init(source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    // Attempt to resolve imports - should detect circular dependency
+    const result = resolveImports(allocator, &jakefile, a_path);
+    try std.testing.expectError(ImportError.CircularImport, result);
+}
+
+test "import detects indirect circular dependency" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // A -> B -> C -> A (indirect cycle)
+    const file_a = "@import \"b.jake\"\n\ntask a:\n    echo \"a\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "a.jake", .data = file_a });
+
+    const file_b = "@import \"c.jake\"\n\ntask b:\n    echo \"b\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "b.jake", .data = file_b });
+
+    const file_c = "@import \"a.jake\"\n\ntask c:\n    echo \"c\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "c.jake", .data = file_c });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const a_path = try tmp_dir.dir.realpath("a.jake", &path_buf);
+
+    const source = try tmp_dir.dir.readFileAlloc(allocator, "a.jake", 1024 * 1024);
+    defer allocator.free(source);
+
+    var lex = Lexer.init(source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    const result = resolveImports(allocator, &jakefile, a_path);
+    try std.testing.expectError(ImportError.CircularImport, result);
+}
+
+test "import handles missing file gracefully" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // File that imports a non-existent file
+    const file_a = "@import \"nonexistent.jake\"\n\ntask a:\n    echo \"a\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "a.jake", .data = file_a });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const a_path = try tmp_dir.dir.realpath("a.jake", &path_buf);
+
+    const source = try tmp_dir.dir.readFileAlloc(allocator, "a.jake", 1024 * 1024);
+    defer allocator.free(source);
+
+    var lex = Lexer.init(source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    const result = resolveImports(allocator, &jakefile, a_path);
+    try std.testing.expectError(ImportError.FileNotFound, result);
+}

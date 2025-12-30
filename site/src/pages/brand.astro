@@ -1,0 +1,1007 @@
+---
+import '../styles/global.css';
+
+// Chosen brand elements
+const logo = "{j}";
+
+// Font options (chosen: System Mono or Fira Code)
+const fontFamilies = [
+  { name: 'System Mono (Menlo)', family: 'ui-monospace, Menlo, Monaco, monospace' },
+  { name: 'Fira Code', family: '"Fira Code", monospace' },
+];
+
+// All colors for comparison (48px side-by-side)
+const allColors = [
+  // Reds
+  { name: 'Rose 400', hex: '#fb7185', group: 'red' },
+  { name: 'Rose 500 (chosen)', hex: '#f43f5e', group: 'red', chosen: true },
+  { name: 'Rose 600', hex: '#e11d48', group: 'red' },
+  { name: 'Rose 700', hex: '#be123c', group: 'red' },
+  { name: 'Red 400', hex: '#f87171', group: 'red' },
+  { name: 'Red 500', hex: '#ef4444', group: 'red' },
+  { name: 'Red 600', hex: '#dc2626', group: 'red' },
+  { name: 'Crimson', hex: '#dc143c', group: 'red' },
+  { name: 'Fire Brick', hex: '#b22222', group: 'red' },
+  { name: 'Coral', hex: '#ff6b6b', group: 'red' },
+  // Oranges
+  { name: 'Orange 400', hex: '#fb923c', group: 'orange' },
+  { name: 'Orange 500', hex: '#f97316', group: 'orange' },
+  { name: 'Amber 500', hex: '#f59e0b', group: 'orange' },
+  { name: 'Zig Orange', hex: '#f7a41d', group: 'orange' },
+  // Pinks
+  { name: 'Pink 400', hex: '#f472b6', group: 'pink' },
+  { name: 'Pink 500', hex: '#ec4899', group: 'pink' },
+  { name: 'Fuchsia 500', hex: '#d946ef', group: 'pink' },
+  { name: 'Hot Pink', hex: '#ff69b4', group: 'pink' },
+  // Purples & Blues
+  { name: 'Purple 500', hex: '#a855f7', group: 'purple' },
+  { name: 'Violet 500', hex: '#8b5cf6', group: 'purple' },
+  { name: 'Indigo 500', hex: '#6366f1', group: 'purple' },
+  { name: 'Blue 500', hex: '#3b82f6', group: 'blue' },
+  { name: 'Sky 500', hex: '#0ea5e9', group: 'blue' },
+  { name: 'Cyan 500', hex: '#06b6d4', group: 'blue' },
+  // Greens
+  { name: 'Emerald 500', hex: '#10b981', group: 'green' },
+  { name: 'Green 500', hex: '#22c55e', group: 'green' },
+  { name: 'Lime 500', hex: '#84cc16', group: 'green' },
+];
+
+const sizes = [16, 24, 32, 48, 64, 96];
+---
+
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jake Brand Guide</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body class="bg-bg-primary text-text-primary antialiased p-8">
+  <div class="max-w-7xl mx-auto">
+    <h1 class="text-4xl font-bold mb-2">Jake Brand Guide</h1>
+    <p class="text-text-secondary mb-12">Official brand assets and guidelines</p>
+
+    <!-- ============================================================== -->
+    <!-- CHOSEN BRAND -->
+    <!-- ============================================================== -->
+
+    <section class="mb-16 p-8 bg-bg-card border border-jake/30 rounded-2xl">
+      <h2 class="text-2xl font-semibold mb-8 text-jake">Chosen Brand</h2>
+      <div class="grid md:grid-cols-3 gap-8">
+        <!-- Logo -->
+        <div class="text-center">
+          <div class="w-24 h-24 bg-jake text-white flex items-center justify-center rounded-2xl font-mono font-bold text-4xl mx-auto mb-4" style="font-family: 'Fira Code', ui-monospace, monospace;">{logo}</div>
+          <div class="text-lg font-semibold mb-1">Logo</div>
+          <div class="text-text-muted font-mono">{logo}</div>
+        </div>
+        <!-- Color -->
+        <div class="text-center">
+          <div class="w-24 h-24 rounded-2xl mx-auto mb-4" style="background-color: #f43f5e;"></div>
+          <div class="text-lg font-semibold mb-1">Primary Color</div>
+          <div class="text-text-muted font-mono">#F43F5E</div>
+          <div class="text-text-muted text-sm">Jake Rose</div>
+        </div>
+        <!-- Font -->
+        <div class="text-center">
+          <div class="w-24 h-24 bg-bg-tertiary border border-border rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <span class="text-4xl text-jake font-semibold" style="font-family: 'Fira Code', monospace;">{logo}</span>
+          </div>
+          <div class="text-lg font-semibold mb-1">Font Family</div>
+          <div class="text-text-muted font-mono text-sm">Fira Code / System Mono</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- LOGO VARIATIONS -->
+    <!-- ============================================================== -->
+
+    <!-- Font Comparison -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Font Comparison</h2>
+      <div class="grid grid-cols-2 gap-6">
+        {fontFamilies.map((font) => (
+          <div class="bg-bg-card border border-border rounded-xl p-6 text-center hover-lift">
+            <div class="w-12 h-12 bg-jake text-white flex items-center justify-center rounded-lg font-semibold text-xl mx-auto mb-4" style={`font-family: ${font.family};`}>{logo}</div>
+            <div class="text-lg font-semibold mb-1">{font.name}</div>
+            <div class="text-text-muted text-xs font-mono">{font.family}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Container Shapes -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Container Shapes</h2>
+      <div class="grid grid-cols-3 md:grid-cols-6 lg:grid-cols-9 gap-4">
+        <div class="text-center hover-lift">
+          <div class="inline-block text-4xl font-mono text-jake font-semibold mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-text-muted">Plain</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-text-muted">Square</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-text-muted">Slight round</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-lg mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-text-muted">Rounded</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-xl mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-text-muted">More rounded</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-2xl mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-text-muted">Very rounded</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-full mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-text-muted">Circle</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 border-2 border-jake text-jake text-2xl font-mono font-semibold rounded-xl mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-text-muted">Outline</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 border-2 border-jake text-jake text-2xl font-mono font-semibold rounded-full mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-text-muted">Circle outline</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sizes -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Sizes</h2>
+      <div class="flex flex-wrap items-end gap-6">
+        {sizes.map((size) => (
+          <div class="text-center hover-lift">
+            <div class="bg-jake text-white flex items-center justify-center font-mono font-semibold mb-2" style={`width: ${size}px; height: ${size}px; font-size: ${size * 0.5}px; border-radius: ${size * 0.15}px; font-family: 'Fira Code', monospace;`}>{logo}</div>
+            <div class="text-xs text-text-muted">{size}px</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- COLOR COMPARISON -->
+    <!-- ============================================================== -->
+
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Color Comparison</h2>
+      <p class="text-text-secondary mb-6">All colors at 48px for side-by-side comparison</p>
+      <div class="flex flex-wrap gap-4">
+        {allColors.map((c) => (
+          <div class={`text-center hover-lift ${c.chosen ? 'ring-2 ring-white ring-offset-2 ring-offset-bg-primary rounded-xl' : ''}`}>
+            <div
+              class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-mono font-semibold mb-2"
+              style={`background-color: ${c.hex}; font-family: 'Fira Code', monospace;`}
+            >{logo}</div>
+            <div class="text-xs text-text-muted max-w-[60px] truncate" title={c.name}>{c.name}</div>
+            <div class="text-xs text-text-muted font-mono">{c.hex}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- WORDMARK & CONTEXT -->
+    <!-- ============================================================== -->
+
+    <!-- With Wordmark -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">With Wordmark</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="bg-bg-card border border-border rounded-xl p-6 hover-lift">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl font-mono text-jake font-semibold" style="font-family: 'Fira Code', monospace;">{logo}</span>
+            <span class="text-2xl font-semibold">jake</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">Horizontal</div>
+        </div>
+        <div class="bg-bg-card border border-border rounded-xl p-6 hover-lift">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-jake text-white flex items-center justify-center rounded-lg font-mono font-semibold" style="font-family: 'Fira Code', monospace;">{logo}</div>
+            <span class="text-2xl font-semibold">jake</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">With box</div>
+        </div>
+        <div class="bg-bg-card border border-border rounded-xl p-6 hover-lift">
+          <div class="flex items-center gap-2">
+            <div class="w-10 h-10 bg-jake text-white flex items-center justify-center rounded-full font-mono font-semibold text-sm" style="font-family: 'Fira Code', monospace;">{logo}</div>
+            <span class="text-2xl font-semibold">jake</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">With circle</div>
+        </div>
+        <div class="bg-bg-card border border-border rounded-xl p-6 text-center hover-lift">
+          <div class="text-4xl font-mono text-jake font-semibold" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xl font-semibold mt-1">jake</div>
+          <div class="text-xs text-text-muted mt-2">Stacked</div>
+        </div>
+        <div class="bg-white border border-gray-200 rounded-xl p-6 hover-lift">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl font-mono font-semibold" style="color: #f43f5e; font-family: 'Fira Code', monospace;">{logo}</span>
+            <span class="text-2xl font-semibold text-gray-900">jake</span>
+          </div>
+          <div class="text-xs text-gray-500 mt-2">Light mode</div>
+        </div>
+        <div class="bg-bg-card border border-border rounded-xl p-6 hover-lift">
+          <div class="inline-flex items-center gap-2 bg-jake/10 border border-jake/30 px-3 py-1.5 rounded-full">
+            <span class="font-mono text-jake font-semibold" style="font-family: 'Fira Code', monospace;">{logo}</span>
+            <span class="text-sm font-medium text-jake">jake</span>
+          </div>
+          <div class="text-xs text-text-muted mt-3">Badge</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- On Different Backgrounds -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Background Contexts</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="p-6 rounded-xl text-center" style="background: #000000;">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-gray-400">Pure black</div>
+        </div>
+        <div class="p-6 rounded-xl text-center" style="background: #0a0a0a;">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-gray-400">Near black</div>
+        </div>
+        <div class="p-6 rounded-xl text-center" style="background: #1a1a1a;">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-gray-400">Dark gray</div>
+        </div>
+        <div class="p-6 rounded-xl text-center" style="background: #27272a;">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-gray-400">Zinc 800</div>
+        </div>
+        <div class="p-6 rounded-xl text-center border" style="background: #f4f4f5;">
+          <div class="text-3xl font-mono font-semibold mb-2" style="color: #f43f5e; font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-gray-500">Light zinc</div>
+        </div>
+        <div class="p-6 rounded-xl text-center border" style="background: #fafafa;">
+          <div class="text-3xl font-mono font-semibold mb-2" style="color: #f43f5e; font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-gray-500">Near white</div>
+        </div>
+        <div class="p-6 rounded-xl text-center border" style="background: #ffffff;">
+          <div class="text-3xl font-mono font-semibold mb-2" style="color: #f43f5e; font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-gray-500">Pure white</div>
+        </div>
+        <div class="p-6 rounded-xl text-center" style="background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="text-xs text-gray-400">Gradient dark</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Favicon Previews -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Favicon Sizes</h2>
+      <div class="flex items-end gap-8">
+        <div class="text-center">
+          <div class="w-4 h-4 bg-jake rounded flex items-center justify-center">
+            <span class="text-white text-[6px] font-mono font-bold" style="font-family: 'Fira Code', monospace;">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">16px</div>
+        </div>
+        <div class="text-center">
+          <div class="w-8 h-8 bg-jake rounded-md flex items-center justify-center">
+            <span class="text-white text-xs font-mono font-bold" style="font-family: 'Fira Code', monospace;">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">32px</div>
+        </div>
+        <div class="text-center">
+          <div class="w-12 h-12 bg-jake rounded-lg flex items-center justify-center">
+            <span class="text-white text-base font-mono font-bold" style="font-family: 'Fira Code', monospace;">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">48px</div>
+        </div>
+        <div class="text-center">
+          <div class="w-16 h-16 bg-jake rounded-xl flex items-center justify-center">
+            <span class="text-white text-xl font-mono font-bold" style="font-family: 'Fira Code', monospace;">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">64px</div>
+        </div>
+        <div class="text-center">
+          <div class="w-24 h-24 bg-jake rounded-2xl flex items-center justify-center">
+            <span class="text-white text-3xl font-mono font-bold" style="font-family: 'Fira Code', monospace;">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">96px</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Browser Tab Preview -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Browser Tab Preview</h2>
+      <div class="bg-bg-secondary rounded-t-xl border border-border overflow-hidden max-w-2xl">
+        <div class="flex items-center gap-2 px-4 py-2 bg-bg-tertiary border-b border-border">
+          <div class="flex gap-1.5">
+            <div class="w-3 h-3 rounded-full bg-red-500/60"></div>
+            <div class="w-3 h-3 rounded-full bg-yellow-500/60"></div>
+            <div class="w-3 h-3 rounded-full bg-green-500/60"></div>
+          </div>
+          <div class="flex-1 flex items-center gap-2 ml-4">
+            <div class="flex items-center gap-2 bg-bg-secondary px-3 py-1.5 rounded-md text-sm">
+              <div class="w-4 h-4 bg-jake rounded flex items-center justify-center">
+                <span class="text-white text-[6px] font-mono font-bold" style="font-family: 'Fira Code', monospace;">{logo}</span>
+              </div>
+              <span class="text-text-secondary">Jake - Modern Command Running</span>
+              <span class="text-text-muted">x</span>
+            </div>
+            <div class="flex items-center gap-2 bg-bg-tertiary px-3 py-1.5 rounded-md text-sm text-text-muted">
+              <div class="w-4 h-4 bg-gray-600 rounded"></div>
+              <span>New Tab</span>
+            </div>
+          </div>
+        </div>
+        <div class="h-32 flex items-center justify-center text-text-muted">
+          Page content preview...
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- BADGES (Shield.io) -->
+    <!-- ============================================================== -->
+
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">GitHub Badges</h2>
+      <p class="text-text-secondary mb-8">Shield.io badges for README files and documentation. Click to copy markdown.</p>
+
+      <!-- Minimal Badges -->
+      <div class="mb-10">
+        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Minimal</h3>
+        <div class="flex flex-wrap gap-4 mb-4">
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-F43F5E?style=flat-square)')">
+            <img src="https://img.shields.io/badge/jake-F43F5E?style=flat-square" alt="jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-000000?style=flat-square)')">
+            <img src="https://img.shields.io/badge/jake-000000?style=flat-square" alt="jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-555555?style=flat-square)')">
+            <img src="https://img.shields.io/badge/jake-555555?style=flat-square" alt="jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- "Built with" Badges -->
+      <div class="mb-10">
+        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Built with jake</h3>
+        <div class="flex flex-wrap gap-4 mb-4">
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square)')">
+            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square" alt="Built with jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=for-the-badge)')">
+            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=for-the-badge" alt="Built with jake" class="h-7" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Built with jake](https://img.shields.io/badge/Built_with-jake-000000?style=flat-square)')">
+            <img src="https://img.shields.io/badge/Built_with-jake-000000?style=flat-square" alt="Built with jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- "Powered by" Badges -->
+      <div class="mb-10">
+        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Powered by jake</h3>
+        <div class="flex flex-wrap gap-4 mb-4">
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Powered by jake](https://img.shields.io/badge/Powered_by-jake-F43F5E?style=flat-square)')">
+            <img src="https://img.shields.io/badge/Powered_by-jake-F43F5E?style=flat-square" alt="Powered by jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Powered by jake](https://img.shields.io/badge/Powered_by-jake-F43F5E?style=for-the-badge)')">
+            <img src="https://img.shields.io/badge/Powered_by-jake-F43F5E?style=for-the-badge" alt="Powered by jake" class="h-7" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Powered by jake](https://img.shields.io/badge/Powered_by-jake-555555?style=flat-square)')">
+            <img src="https://img.shields.io/badge/Powered_by-jake-555555?style=flat-square" alt="Powered by jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- "Made with" Badges -->
+      <div class="mb-10">
+        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Made with jake</h3>
+        <div class="flex flex-wrap gap-4 mb-4">
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Made with jake](https://img.shields.io/badge/Made_with-jake-F43F5E?style=flat-square)')">
+            <img src="https://img.shields.io/badge/Made_with-jake-F43F5E?style=flat-square" alt="Made with jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Made with jake](https://img.shields.io/badge/Made_with-jake-F43F5E?style=for-the-badge)')">
+            <img src="https://img.shields.io/badge/Made_with-jake-F43F5E?style=for-the-badge" alt="Made with jake" class="h-7" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Made with jake](https://img.shields.io/badge/Made_with-jake-0a0a0a?style=flat-square)')">
+            <img src="https://img.shields.io/badge/Made_with-jake-0a0a0a?style=flat-square" alt="Made with jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- "Automated with" Badges -->
+      <div class="mb-10">
+        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Automated with jake</h3>
+        <div class="flex flex-wrap gap-4 mb-4">
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Automated with jake](https://img.shields.io/badge/Automated_with-jake-F43F5E?style=flat-square)')">
+            <img src="https://img.shields.io/badge/Automated_with-jake-F43F5E?style=flat-square" alt="Automated with jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Automated with jake](https://img.shields.io/badge/Automated_with-jake-F43F5E?style=for-the-badge)')">
+            <img src="https://img.shields.io/badge/Automated_with-jake-F43F5E?style=for-the-badge" alt="Automated with jake" class="h-7" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Automated with jake](https://img.shields.io/badge/Automated_with-jake-555555?style=flat-square)')">
+            <img src="https://img.shields.io/badge/Automated_with-jake-555555?style=flat-square" alt="Automated with jake" class="h-5" />
+            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Style Variations -->
+      <div class="mb-10">
+        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Badge Styles</h3>
+        <div class="flex flex-wrap gap-4 mb-4">
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift">
+            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat" alt="flat" class="h-5 mb-2" />
+            <div class="text-xs text-text-muted">flat</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift">
+            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square" alt="flat-square" class="h-5 mb-2" />
+            <div class="text-xs text-text-muted">flat-square</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift">
+            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=plastic" alt="plastic" class="h-5 mb-2" />
+            <div class="text-xs text-text-muted">plastic</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift">
+            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=for-the-badge" alt="for-the-badge" class="h-7 mb-2" />
+            <div class="text-xs text-text-muted">for-the-badge</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Color Combinations -->
+      <div class="mb-10">
+        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Color Combinations</h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-F43F5E?style=for-the-badge)')">
+            <img src="https://img.shields.io/badge/jake-F43F5E?style=for-the-badge" alt="Rose" class="h-7 mx-auto mb-2" />
+            <div class="text-xs text-text-muted">Rose</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-000000?style=for-the-badge)')">
+            <img src="https://img.shields.io/badge/jake-000000?style=for-the-badge" alt="Black" class="h-7 mx-auto mb-2" />
+            <div class="text-xs text-text-muted">Black</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-0a0a0a?style=for-the-badge)')">
+            <img src="https://img.shields.io/badge/jake-0a0a0a?style=for-the-badge" alt="Dark" class="h-7 mx-auto mb-2" />
+            <div class="text-xs text-text-muted">Dark</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-555555?style=for-the-badge)')">
+            <img src="https://img.shields.io/badge/jake-555555?style=for-the-badge" alt="Gray" class="h-7 mx-auto mb-2" />
+            <div class="text-xs text-text-muted">Gray</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-white?style=for-the-badge&color=white&labelColor=F43F5E)')">
+            <img src="https://img.shields.io/badge/jake-white?style=for-the-badge&color=white&labelColor=F43F5E" alt="White/Rose" class="h-7 mx-auto mb-2" />
+            <div class="text-xs text-text-muted">White/Rose</div>
+          </div>
+          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-F43F5E?style=for-the-badge&labelColor=000000)')">
+            <img src="https://img.shields.io/badge/jake-F43F5E?style=for-the-badge&labelColor=000000" alt="Black/Rose" class="h-7 mx-auto mb-2" />
+            <div class="text-xs text-text-muted">Black/Rose</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Markdown Reference -->
+      <div class="bg-bg-code border border-border rounded-xl p-6">
+        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Markdown Reference</h3>
+        <pre class="text-sm font-mono text-text-secondary overflow-x-auto"><code class="text-text-primary"># Minimal
+![jake](https://img.shields.io/badge/jake-F43F5E?style=flat-square)
+
+# Built with
+![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square)
+
+# For-the-badge style
+![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=for-the-badge)
+
+# With link
+[![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square)](https://jakefile.dev)</code></pre>
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- CLI OUTPUT BRANDING -->
+    <!-- ============================================================== -->
+
+    <div class="my-24 border-t border-jake/30 pt-24">
+      <h1 class="text-4xl font-bold mb-2">CLI Output Branding</h1>
+      <p class="text-text-secondary mb-12">Terminal output design for consistent brand experience</p>
+    </div>
+
+    <!-- CLI Color Palette -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">CLI Color Palette</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <div class="text-center">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-sm font-mono font-semibold" style="background-color: #f43f5e;">jake</div>
+          <div class="text-xs text-text-muted mt-2">Jake Rose</div>
+          <div class="text-xs text-text-muted font-mono">#f43f5e</div>
+          <div class="text-xs text-text-secondary mt-1">Task names, branding</div>
+        </div>
+        <div class="text-center">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-sm font-mono font-semibold" style="background-color: #22c55e;">✓</div>
+          <div class="text-xs text-text-muted mt-2">Success</div>
+          <div class="text-xs text-text-muted font-mono">#22c55e</div>
+          <div class="text-xs text-text-secondary mt-1">Checkmarks, done</div>
+        </div>
+        <div class="text-center">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-sm font-mono font-semibold" style="background-color: #ef4444;">✗</div>
+          <div class="text-xs text-text-muted mt-2">Error</div>
+          <div class="text-xs text-text-muted font-mono">#ef4444</div>
+          <div class="text-xs text-text-secondary mt-1">Failures, errors</div>
+        </div>
+        <div class="text-center">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-black text-sm font-mono font-semibold" style="background-color: #eab308;">~</div>
+          <div class="text-xs text-text-muted mt-2">Warning</div>
+          <div class="text-xs text-text-muted font-mono">#eab308</div>
+          <div class="text-xs text-text-secondary mt-1">Warnings, skipped</div>
+        </div>
+        <div class="text-center">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-sm font-mono font-semibold" style="background-color: #60a5fa;">→</div>
+          <div class="text-xs text-text-muted mt-2">Info Blue</div>
+          <div class="text-xs text-text-muted font-mono">#60a5fa</div>
+          <div class="text-xs text-text-secondary mt-1">Arrows, variables</div>
+        </div>
+        <div class="text-center">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-sm font-mono font-semibold" style="background-color: #71717a;">$</div>
+          <div class="text-xs text-text-muted mt-2">Muted</div>
+          <div class="text-xs text-text-muted font-mono">#71717a</div>
+          <div class="text-xs text-text-secondary mt-1">Comments, secondary</div>
+        </div>
+        <div class="text-center">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-black text-sm font-mono font-semibold" style="background-color: #fafafa;">text</div>
+          <div class="text-xs text-text-muted mt-2">Primary</div>
+          <div class="text-xs text-text-muted font-mono">#fafafa</div>
+          <div class="text-xs text-text-secondary mt-1">Main text output</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Task Execution Output -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Task Execution Output</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Style A: Arrow prefix -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style A: Arrow prefix</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake build
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">build</span>
+  cargo build --release
+<span style="color: #22c55e;">✓</span> <span style="color: #22c55e;">build</span> <span class="text-text-muted">(2.4s)</span></pre>
+        </div>
+
+        <!-- Style B: Bracket prefix -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style B: Bracket prefix</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake build
+<span class="text-text-muted">[</span><span style="color: #f43f5e;">build</span><span class="text-text-muted">]</span> cargo build --release
+<span class="text-text-muted">[</span><span style="color: #22c55e;">done</span><span class="text-text-muted">]</span> build <span class="text-text-muted">(2.4s)</span></pre>
+        </div>
+
+        <!-- Style C: Double arrow -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style C: Double arrow</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake build
+<span style="color: #f43f5e;">»</span> <span style="color: #f43f5e;">build</span>
+  cargo build --release
+<span style="color: #22c55e;">✓</span> build <span class="text-text-muted">2.4s</span></pre>
+        </div>
+
+        <!-- Style D: Minimal -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style D: Minimal</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake build
+<span style="color: #f43f5e;">build:</span>
+  cargo build --release
+  <span style="color: #22c55e;">done</span> <span class="text-text-muted">(2.4s)</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Multi-task Parallel Output -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Parallel Execution Output</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Style A: Side by side indicators -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style A: Parallel indicators</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -j4 all
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">frontend</span> <span class="text-text-muted">│</span> <span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">backend</span> <span class="text-text-muted">│</span> <span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">docs</span>
+<span style="color: #22c55e;">✓</span> docs <span class="text-text-muted">(1.2s)</span>
+<span style="color: #22c55e;">✓</span> frontend <span class="text-text-muted">(2.8s)</span>
+<span style="color: #22c55e;">✓</span> backend <span class="text-text-muted">(3.1s)</span>
+<span style="color: #22c55e;">✓</span> all <span class="text-text-muted">(3.1s total)</span></pre>
+        </div>
+
+        <!-- Style B: Progress bars -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style B: With progress</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -j4 all
+<span style="color: #f43f5e;">⠋</span> frontend  <span style="color: #f43f5e;">⠋</span> backend  <span style="color: #f43f5e;">⠋</span> docs
+<span style="color: #22c55e;">✓</span> docs      <span style="color: #f43f5e;">⠙</span> frontend <span style="color: #f43f5e;">⠙</span> backend
+<span style="color: #22c55e;">✓</span> docs      <span style="color: #22c55e;">✓</span> frontend <span style="color: #f43f5e;">⠹</span> backend
+<span style="color: #22c55e;">✓</span> docs      <span style="color: #22c55e;">✓</span> frontend <span style="color: #22c55e;">✓</span> backend
+<span style="color: #22c55e;">✓</span> <span style="color: #22c55e;">all</span> <span class="text-text-muted">(3.1s)</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- List Output -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">List Output (jake -l)</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Style A: Grouped with badges -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style A: Grouped with type badges</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -l
+
+<span style="color: #f43f5e;">build</span>
+  <span style="color: #f43f5e;">build</span>       <span class="text-text-muted">[task]</span>  Build the application
+  <span style="color: #f43f5e;">dist/app.js</span> <span class="text-text-muted">[file]</span>  Bundle JavaScript
+  <span style="color: #f43f5e;">clean</span>       <span class="text-text-muted">[task]</span>  Remove build artifacts
+
+<span style="color: #f43f5e;">test</span>
+  <span style="color: #f43f5e;">test</span>        <span class="text-text-muted">[task]</span>  Run all tests
+  <span style="color: #f43f5e;">test-unit</span>   <span class="text-text-muted">[task]</span>  Run unit tests only
+
+<span class="text-text-muted">5 recipes available</span></pre>
+        </div>
+
+        <!-- Style B: Compact table -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style B: Compact table</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -l
+
+<span class="text-text-secondary">RECIPE</span>        <span class="text-text-secondary">TYPE</span>  <span class="text-text-secondary">DESCRIPTION</span>
+<span style="color: #f43f5e;">build</span>         task  Build the application
+<span style="color: #f43f5e;">dist/app.js</span>   file  Bundle JavaScript
+<span style="color: #f43f5e;">clean</span>         task  Remove build artifacts
+<span style="color: #f43f5e;">test</span>          task  Run all tests
+<span style="color: #f43f5e;">deploy</span>        task  Deploy to production</pre>
+        </div>
+
+        <!-- Style C: Tree view -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style C: Tree with deps</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -l
+
+<span style="color: #f43f5e;">build</span> <span class="text-text-muted">- Build the application</span>
+<span style="color: #f43f5e;">test</span> <span class="text-text-muted">- Run all tests</span>
+  <span class="text-text-muted">└─ depends on:</span> <span style="color: #60a5fa;">build</span>
+<span style="color: #f43f5e;">deploy</span> <span class="text-text-muted">- Deploy to production</span>
+  <span class="text-text-muted">└─ depends on:</span> <span style="color: #60a5fa;">build</span>, <span style="color: #60a5fa;">test</span>
+<span style="color: #f43f5e;">clean</span> <span class="text-text-muted">- Remove build artifacts</span></pre>
+        </div>
+
+        <!-- Style D: Minimal -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style D: Minimal list</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -l
+
+<span style="color: #f43f5e;">build</span>        Build the application
+<span style="color: #f43f5e;">test</span>         Run all tests
+<span style="color: #f43f5e;">deploy</span>       Deploy to production
+<span style="color: #f43f5e;">clean</span>        Remove build artifacts
+<span style="color: #f43f5e;">dist/app.js</span>  <span class="text-text-muted">(file target)</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Error Messages -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Error Messages</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Recipe not found -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Recipe not found (with suggestion)</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake buidl
+<span style="color: #ef4444;">error:</span> Recipe '<span style="color: #f43f5e;">buidl</span>' not found
+
+<span class="text-text-secondary">Did you mean:</span> <span style="color: #f43f5e;">build</span>?
+
+<span class="text-text-muted">Run 'jake -l' to see available recipes.</span></pre>
+        </div>
+
+        <!-- Command failed -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Command failed</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake test
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">test</span>
+  npm test
+<span style="color: #ef4444;">✗</span> <span style="color: #ef4444;">test</span> <span class="text-text-muted">(failed)</span>
+
+<span style="color: #ef4444;">error:</span> Command exited with code <span style="color: #f43f5e;">1</span>
+  <span class="text-text-muted">at</span> Jakefile:12
+  <span class="text-text-muted">in</span> task <span style="color: #f43f5e;">test</span></pre>
+        </div>
+
+        <!-- Missing dependency -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Missing @needs dependency</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake deploy
+<span style="color: #ef4444;">error:</span> Required command not found: <span style="color: #f43f5e;">helm</span>
+
+<span style="color: #60a5fa;">hint:</span> Install with: brew install helm
+<span class="text-text-muted">      or run: jake toolchain.install</span></pre>
+        </div>
+
+        <!-- Missing env var -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Missing @require env var</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake deploy
+<span style="color: #ef4444;">error:</span> Required environment variable not set
+
+  <span style="color: #f43f5e;">AWS_ACCESS_KEY_ID</span>       <span style="color: #ef4444;">✗</span> missing
+  <span style="color: #f43f5e;">AWS_SECRET_ACCESS_KEY</span>   <span style="color: #ef4444;">✗</span> missing
+
+<span class="text-text-muted">Set these variables or add them to .env</span></pre>
+        </div>
+
+        <!-- Parse error -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Syntax error</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake build
+<span style="color: #ef4444;">error:</span> Parse error in Jakefile
+
+  <span style="color: #60a5fa;">8</span> │ task build
+  <span style="color: #ef4444;">9</span> │     echo "missing colon"
+    │ <span style="color: #ef4444;">^^^^</span> expected ':' after task name
+
+<span class="text-text-muted">Fix the syntax error and try again.</span></pre>
+        </div>
+
+        <!-- Cyclic dependency -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Cyclic dependency</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake build
+<span style="color: #ef4444;">error:</span> Cyclic dependency detected
+
+  <span style="color: #f43f5e;">build</span> → <span style="color: #f43f5e;">test</span> → <span style="color: #f43f5e;">build</span>
+  <span style="color: #ef4444;">^^^^^^^^^^^^^^^^^^^^^^^</span>
+
+<span class="text-text-muted">Remove circular dependencies.</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Watch Mode Output -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Watch Mode Output</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Style A: Emoji indicator -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style A: Emoji indicator</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -w build
+<span style="color: #60a5fa;">👀</span> Watching <span class="text-text-secondary">src/**/*.ts</span>
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">build</span>
+  npm run build
+<span style="color: #22c55e;">✓</span> build <span class="text-text-muted">(0.82s)</span>
+
+<span style="color: #eab308;">Changed:</span> src/index.ts
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">build</span>
+  npm run build
+<span style="color: #22c55e;">✓</span> build <span class="text-text-muted">(0.34s)</span>
+
+<span class="text-text-muted">Press Ctrl+C to stop watching</span></pre>
+        </div>
+
+        <!-- Style B: Text indicator -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style B: Text indicator</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -w build
+<span style="color: #60a5fa;">[watch]</span> Monitoring <span class="text-text-secondary">src/**/*.ts</span>
+<span style="color: #f43f5e;">[build]</span> npm run build
+<span style="color: #22c55e;">[done]</span>  0.82s
+
+<span style="color: #eab308;">[change]</span> src/index.ts
+<span style="color: #f43f5e;">[build]</span> npm run build
+<span style="color: #22c55e;">[done]</span>  0.34s
+
+<span class="text-text-muted">[watch] Press q to quit</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dry Run Output -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Dry Run Output (jake -n)</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Style A: Would run prefix -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style A: Would run prefix</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -n deploy
+<span style="color: #60a5fa;">[dry-run]</span> Would execute:
+
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">build</span>
+  <span class="text-text-muted">would run:</span> cargo build --release
+
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">test</span>
+  <span class="text-text-muted">would run:</span> cargo test
+
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">deploy</span>
+  <span class="text-text-muted">would run:</span> ./deploy.sh production
+
+<span class="text-text-muted">3 tasks would run (not executed)</span></pre>
+        </div>
+
+        <!-- Style B: Strikethrough style -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style B: Ghost commands</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -n deploy
+
+<span style="color: #f43f5e;">build</span> <span class="text-text-muted">(dry-run)</span>
+  <span class="text-text-muted">$ cargo build --release</span>
+
+<span style="color: #f43f5e;">test</span> <span class="text-text-muted">(dry-run)</span>
+  <span class="text-text-muted">$ cargo test</span>
+
+<span style="color: #f43f5e;">deploy</span> <span class="text-text-muted">(dry-run)</span>
+  <span class="text-text-muted">$ ./deploy.sh production</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recipe Inspection -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Recipe Inspection (jake -s)</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Style A: Structured -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style A: Structured metadata</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -s deploy
+
+<span style="color: #f43f5e;">Recipe:</span> deploy
+<span class="text-text-secondary">Type:</span>    task
+<span class="text-text-secondary">Group:</span>   production
+<span class="text-text-secondary">Desc:</span>    Deploy to production servers
+<span class="text-text-secondary">Default:</span> no
+
+<span class="text-text-secondary">Dependencies:</span>
+  <span style="color: #60a5fa;">build</span>, <span style="color: #60a5fa;">test</span>
+
+<span class="text-text-secondary">Parameters:</span>
+  <span style="color: #f43f5e;">env</span> <span class="text-text-muted">(default: "staging")</span>
+  <span style="color: #f43f5e;">force</span> <span class="text-text-muted">(required)</span>
+
+<span class="text-text-secondary">Validation:</span>
+  <span style="color: #22c55e;">@needs</span> kubectl, docker, helm
+  <span style="color: #22c55e;">@require</span> AWS_ACCESS_KEY_ID
+
+<span class="text-text-secondary">Commands:</span>
+  @confirm "Deploy to production?"
+  ./scripts/deploy.sh $env</pre>
+        </div>
+
+        <!-- Style B: Compact -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style B: Compact view</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake -s deploy
+
+<span style="color: #f43f5e;">deploy</span> <span class="text-text-muted">[task]</span> <span class="text-text-secondary">production</span>
+<span class="text-text-muted">│</span> Deploy to production servers
+<span class="text-text-muted">│</span>
+<span class="text-text-muted">├─</span> <span class="text-text-secondary">deps:</span>    build → test
+<span class="text-text-muted">├─</span> <span class="text-text-secondary">params:</span>  env=<span class="text-text-muted">"staging"</span>, force
+<span class="text-text-muted">├─</span> <span class="text-text-secondary">needs:</span>   kubectl, docker, helm
+<span class="text-text-muted">└─</span> <span class="text-text-secondary">require:</span> AWS_ACCESS_KEY_ID
+
+<span class="text-text-muted">commands:</span>
+  @confirm "Deploy to production?"
+  ./scripts/deploy.sh $env</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- File Target Status -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">File Target Status</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Needs rebuild -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Needs rebuild</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake dist/bundle.js
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">dist/bundle.js</span> <span class="text-text-muted">(out of date)</span>
+  <span class="text-text-muted">changed:</span> src/index.ts <span class="text-text-muted">(2m ago)</span>
+  <span class="text-text-muted">changed:</span> src/utils.ts <span class="text-text-muted">(5m ago)</span>
+  esbuild src/index.ts --bundle
+<span style="color: #22c55e;">✓</span> dist/bundle.js <span class="text-text-muted">(0.42s)</span></pre>
+        </div>
+
+        <!-- Up to date -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Up to date</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake dist/bundle.js
+<span class="text-text-muted">⊘</span> <span class="text-text-muted">dist/bundle.js</span> <span class="text-text-muted">(up to date)</span>
+  <span class="text-text-muted">last built: 2m ago</span>
+  <span class="text-text-muted">no sources changed</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Confirmation Prompts -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Confirmation Prompts</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Style A -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style A: Y/n prompt</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake deploy
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">deploy</span>
+
+<span style="color: #eab308;">?</span> Deploy to production? <span class="text-text-muted">[Y/n]</span> <span class="animate-pulse">█</span></pre>
+        </div>
+
+        <!-- Style B -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">Style B: Arrow select</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake deploy
+<span style="color: #f43f5e;">→</span> <span style="color: #f43f5e;">deploy</span>
+
+<span style="color: #eab308;">?</span> Deploy to production?
+  <span style="color: #f43f5e;">❯</span> <span style="color: #22c55e;">Yes, deploy</span>
+    <span class="text-text-muted">No, cancel</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Version & Help -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Version & Branding</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Version output -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">jake --version</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake --version
+<span style="color: #f43f5e;">{logo}</span> jake <span class="text-text-secondary">0.2.0</span>
+<span class="text-text-muted">A modern command runner with dependency tracking</span></pre>
+        </div>
+
+        <!-- Help header -->
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-2 border-b border-border bg-bg-secondary text-xs text-text-muted">jake --help (header)</div>
+          <pre class="p-4 text-sm font-mono leading-relaxed"><span class="text-text-muted">$</span> jake --help
+
+<span style="color: #f43f5e;">{logo}</span> <span class="font-bold">jake</span> - Modern command running
+<span class="text-text-muted">The best of Make and Just, combined.</span>
+
+<span class="text-text-secondary">USAGE:</span>
+  jake <span class="text-text-muted">[OPTIONS]</span> <span class="text-text-muted">[RECIPE]</span> <span class="text-text-muted">[ARGS...]</span>
+
+<span class="text-text-secondary">OPTIONS:</span>
+  <span style="color: #f43f5e;">-l</span>, <span style="color: #f43f5e;">--list</span>      List available recipes
+  <span style="color: #f43f5e;">-n</span>, <span style="color: #f43f5e;">--dry-run</span>   Show what would run
+  <span style="color: #f43f5e;">-w</span>, <span style="color: #f43f5e;">--watch</span>     Watch and re-run
+  <span style="color: #f43f5e;">-j</span>, <span style="color: #f43f5e;">--jobs</span> <span class="text-text-muted">N</span>    Parallel jobs</pre>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-center text-text-muted text-sm py-8 border-t border-border">
+      <a href="/" class="text-jake hover:underline">Back to Home</a>
+    </footer>
+  </div>
+</body>
+</html>

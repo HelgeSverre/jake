@@ -202,6 +202,109 @@ pub fn build(b: *std.Build) void {
     const fuzz_parse_step = b.step("fuzz-parse", "Build parser fuzzing target");
     fuzz_parse_step.dependOn(&install_fuzz_parse.step);
 
+    // Lexer fuzzer
+    const fuzz_lexer_exe = b.addExecutable(.{
+        .name = "jake-fuzz-lexer",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/fuzz_lexer.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "jake", .module = mod },
+            },
+        }),
+    });
+    fuzz_lexer_exe.root_module.fuzz = true;
+    const install_fuzz_lexer = b.addInstallArtifact(fuzz_lexer_exe, .{});
+    const fuzz_lexer_step = b.step("fuzz-lexer", "Build lexer fuzzing target");
+    fuzz_lexer_step.dependOn(&install_fuzz_lexer.step);
+
+    // Executor fuzzer
+    const fuzz_executor_exe = b.addExecutable(.{
+        .name = "jake-fuzz-executor",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/fuzz_executor.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "jake", .module = mod },
+            },
+        }),
+    });
+    fuzz_executor_exe.root_module.fuzz = true;
+    const install_fuzz_executor = b.addInstallArtifact(fuzz_executor_exe, .{});
+    const fuzz_executor_step = b.step("fuzz-executor", "Build executor fuzzing target");
+    fuzz_executor_step.dependOn(&install_fuzz_executor.step);
+
+    // Glob fuzzer
+    const fuzz_glob_exe = b.addExecutable(.{
+        .name = "jake-fuzz-glob",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/fuzz_glob.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "jake", .module = mod },
+            },
+        }),
+    });
+    fuzz_glob_exe.root_module.fuzz = true;
+    const install_fuzz_glob = b.addInstallArtifact(fuzz_glob_exe, .{});
+    const fuzz_glob_step = b.step("fuzz-glob", "Build glob fuzzing target");
+    fuzz_glob_step.dependOn(&install_fuzz_glob.step);
+
+    // ---------------------------------------------------------------------
+    // Benchmarks (using std.time.Timer)
+    // ---------------------------------------------------------------------
+
+    const bench_exe = b.addExecutable(.{
+        .name = "jake-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/bench/main.zig"),
+            .target = target,
+            .optimize = .ReleaseFast, // Always optimized for benchmarks
+            .imports = &.{
+                .{ .name = "jake", .module = mod },
+            },
+        }),
+    });
+
+    const run_bench = b.addRunArtifact(bench_exe);
+    const bench_step = b.step("bench", "Run internal benchmarks");
+    bench_step.dependOn(&run_bench.step);
+
+    // Install benchmark binary for manual runs
+    const install_bench = b.addInstallArtifact(bench_exe, .{});
+    const bench_build_step = b.step("bench-build", "Build benchmark binary");
+    bench_build_step.dependOn(&install_bench.step);
+
+    // ---------------------------------------------------------------------
+    // Tracy profiler (optional, lazy dependency)
+    // ---------------------------------------------------------------------
+    // Note: Tracy integration requires a compatible zig-tracy package.
+    // The current SpexGuy/Zig-Tracy doesn't follow the new Zig 0.15 package format.
+    // To enable Tracy, you'll need to:
+    // 1. Find or create a Zig 0.15-compatible Tracy binding
+    // 2. Update build.zig.zon with the correct URL/hash
+    // 3. Uncomment and update the module import below
+
+    const tracy_enabled = b.option(bool, "tracy", "Enable Tracy profiler instrumentation") orelse false;
+
+    // Add Tracy-related build options to the main module
+    const tracy_options = b.addOptions();
+    tracy_options.addOption(bool, "tracy_enabled", tracy_enabled);
+
+    // Add tracy_options to the jake module so tracy.zig can access it
+    mod.addOptions("tracy_options", tracy_options);
+
+    if (tracy_enabled) {
+        // Tracy integration is currently disabled - the available zig-tracy packages
+        // don't follow the Zig 0.15 package format with proper module exports.
+        // The tracy.zig wrapper is ready - just need a compatible Tracy binding.
+        std.debug.print("Warning: Tracy profiler requested but not available.\n", .{});
+        std.debug.print("         See build.zig for instructions on enabling Tracy.\n", .{});
+    }
+
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
     // The Zig build system is entirely implemented in userland, which means

@@ -4,6 +4,7 @@
 @import "lib/build.jake"
 @import "lib/release.jake" as release
 @import "lib/web.jake" as web
+@import "lib/perf.jake" as perf
 
 @dotenv
 
@@ -69,7 +70,7 @@ task fuzz-afl:
     zig build fuzz-parse -Doptimize=ReleaseSafe
     mkdir -p corpus findings
     cp Jakefile corpus/main.jake 2>/dev/null || true
-    find samples -name "*.jake" -type f -exec cp {} corpus/ \; 2>/dev/null || true
+    find tests/e2e/fixtures -name "*.jake" -type f -exec cp {} corpus/ \; 2>/dev/null || true
     AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 afl-fuzz -n -i corpus -o findings -- ./zig-out/bin/jake-fuzz-parse @@
 
 @group dev
@@ -283,41 +284,6 @@ task package-install-test:
 @group packaging
 task package-all: [package-binaries, package-docker, package-checksums]
     @post echo "All packages built! See dist/ directory."
-
-# ============================================================================
-# Samples & Examples
-# ============================================================================
-
-@group samples
-@desc "Run a specific sample (usage: jake run-sample 01-basics)"
-task run-sample:
-    @if exists(samples/{{$1}}/Jakefile)
-        @cd samples/{{$1}}
-        ../../zig-out/bin/jake
-    @else
-        echo "Sample not found: {{$1}}"
-        echo "Available samples:"
-        ls -1 samples/
-    @end
-
-@group samples
-@desc "Validate all sample Jakefiles parse correctly"
-task samples-validate: [build-release]
-    @pre echo "Validating all sample Jakefiles..."
-    @each 01-basics 02-parallel 03-conditions 04-functions
-        echo "Checking samples/{{item}}..."
-        ./zig-out/bin/jake -f samples/{{item}}/Jakefile -n || true
-    @end
-    @post echo "Sample validation complete!"
-
-@group samples
-@desc "List all sample projects with descriptions"
-task samples-list:
-    echo "Available samples:"
-    echo "  01-basics     - Basic task definitions and dependencies"
-    echo "  02-parallel   - Parallel task execution"
-    echo "  03-conditions - Conditional logic with @if/@else"
-    echo "  04-functions  - Built-in functions demo"
 
 # ============================================================================
 # Code Statistics

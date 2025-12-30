@@ -34,7 +34,7 @@ jake/
 │   ├── env.zig           # Environment handling
 │   ├── conditions.zig    # Conditional logic
 │   └── hooks.zig         # Pre/post hooks
-├── samples/              # E2E test samples
+├── tests/e2e/            # E2E tests (jake testing jake)
 ├── GUIDE.md             # User documentation
 └── README.md            # Project overview
 ```
@@ -46,7 +46,7 @@ jake/
 zig build test
 
 # E2E tests
-cd samples && ../zig-out/bin/jake test-all
+jake e2e
 ```
 
 ## Code Style

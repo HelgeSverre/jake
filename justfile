@@ -117,6 +117,14 @@ ci:
 # Fuzzing
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Build all fuzzing targets
+[group('fuzz')]
+fuzz-build:
+    zig build fuzz-parse -Doptimize=ReleaseSafe
+    zig build fuzz-lexer -Doptimize=ReleaseSafe
+    zig build fuzz-executor -Doptimize=ReleaseSafe
+    zig build fuzz-glob -Doptimize=ReleaseSafe
+
 # Fuzz the Jakefile parser (dumb fuzzer, no dependencies)
 [group('fuzz')]
 fuzz ITERATIONS="1000":
@@ -146,6 +154,16 @@ e2e: release
 # ─────────────────────────────────────────────────────────────────────────────
 # Benchmarking & Profiling
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Run internal zBench benchmarks
+[group('bench')]
+bench-internal:
+    zig build bench -Doptimize=ReleaseFast
+
+# Build benchmark binary only
+[group('bench')]
+bench-build:
+    zig build bench-build -Doptimize=ReleaseFast
 
 # Benchmark jake vs just (requires: brew install hyperfine)
 [group('bench')]

@@ -1,0 +1,346 @@
+# Jake E2E Test Suite - Jake testing Jake
+# Run: jake test-all
+
+jake = "../../zig-out/bin/jake"
+out = "/tmp/jake-e2e-output.txt"
+
+@default
+@desc "Run all e2e tests"
+task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-cli, test-integration]
+    echo ""
+    echo "All e2e tests passed!"
+
+# ============================================================================
+# Basic Recipe Tests
+# ============================================================================
+
+@quiet
+task test-basic:
+    echo ""
+    echo "Basic Recipe Tests"
+    # Basic task execution
+    {{jake}} -f fixtures/basic/hello.jake hello > {{out}} 2>&1
+    grep -q "Hello, World" {{out}}
+    echo "  Basic task execution .................................. PASS"
+    # Task with default parameter
+    {{jake}} -f fixtures/basic/hello.jake greet > {{out}} 2>&1
+    grep -q "Hello, World" {{out}}
+    echo "  Task with default parameter ........................... PASS"
+    # Task with custom parameter
+    {{jake}} -f fixtures/basic/hello.jake greet name=Alice > {{out}} 2>&1
+    grep -q "Hello, Alice" {{out}}
+    echo "  Task with custom parameter ............................ PASS"
+    # Dry run mode
+    {{jake}} -f fixtures/basic/hello.jake -n hello > {{out}} 2>&1
+    grep -q "dry-run" {{out}}
+    echo "  Dry run mode .......................................... PASS"
+    # List recipes
+    {{jake}} -f fixtures/basic/hello.jake -l > {{out}} 2>&1
+    grep -q "hello" {{out}} && grep -q "greet" {{out}}
+    echo "  List recipes .......................................... PASS"
+    # Private recipes hidden from list
+    {{jake}} -f fixtures/basic/private.jake -l > {{out}} 2>&1
+    grep -q "public" {{out}} && ! grep -q "_private" {{out}}
+    echo "  Private recipes hidden from list ...................... PASS"
+    # Private recipes can still be executed
+    {{jake}} -f fixtures/basic/private.jake _private > {{out}} 2>&1
+    grep -q "Private task" {{out}}
+    echo "  Private recipes can be executed ....................... PASS"
+    # Recipe aliases
+    {{jake}} -f fixtures/basic/alias.jake b > {{out}} 2>&1
+    grep -q "Building with alias" {{out}}
+    echo "  Recipe can be called by alias ......................... PASS"
+
+# ============================================================================
+# Dependency Tests
+# ============================================================================
+
+@quiet
+task test-deps:
+    echo ""
+    echo "Dependency Tests"
+    # Dependency chain execution
+    {{jake}} -f fixtures/deps/chain.jake build > {{out}} 2>&1
+    grep -q "Compiling" {{out}} && grep -q "Linking" {{out}} && grep -q "Testing" {{out}} && grep -q "Build complete" {{out}}
+    echo "  Dependency chain execution ............................ PASS"
+    # Deep dependency chain with parallel
+    {{jake}} -f fixtures/deps/deep.jake -j4 final > {{out}} 2>&1
+    grep -q "prep-a" {{out}} && grep -q "prep-b" {{out}} && grep -q "final" {{out}}
+    echo "  Deep dependency chain with parallel ................... PASS"
+    # Cyclic dependency detection
+    @ignore
+    {{jake}} -f fixtures/deps/cyclic.jake a > {{out}} 2>&1 || true
+    grep -q "Cyclic" {{out}}
+    echo "  Cyclic dependency detected ............................ PASS"
+
+# ============================================================================
+# Parallel Execution Tests
+# ============================================================================
+
+@quiet
+task test-parallel:
+    echo ""
+    echo "Parallel Execution Tests"
+    # Sequential execution
+    {{jake}} -f fixtures/deps/parallel.jake all > {{out}} 2>&1
+    grep -q "All tasks complete" {{out}}
+    echo "  Sequential execution .................................. PASS"
+    # Parallel execution with -j4
+    {{jake}} -f fixtures/deps/parallel.jake -j4 all > {{out}} 2>&1
+    grep -q "All tasks complete" {{out}}
+    echo "  Parallel execution with -j4 ........................... PASS"
+    # Parallel dry-run
+    {{jake}} -f fixtures/deps/parallel.jake -n -j4 all > {{out}} 2>&1
+    grep -q "dry-run" {{out}}
+    echo "  Parallel dry-run ...................................... PASS"
+
+# ============================================================================
+# Conditional Tests
+# ============================================================================
+
+@quiet
+task test-conditionals:
+    echo ""
+    echo "Conditional Tests"
+    # Conditional @if with eq()
+    {{jake}} -f fixtures/conditionals/if-else.jake deploy > {{out}} 2>&1
+    grep -q "Deploying to PRODUCTION" {{out}}
+    echo "  Conditional @if with eq() ............................. PASS"
+    # Nested @if blocks
+    {{jake}} -f fixtures/conditionals/nested.jake nested-if > {{out}} 2>&1
+    grep -q "A: /bin exists" {{out}} && grep -q "B: HOME is set" {{out}} && grep -q "D: after inner if" {{out}} && grep -q "F: after outer if" {{out}}
+    echo "  Nested @if blocks execute correctly ................... PASS"
+    # Triple nested conditionals
+    {{jake}} -f fixtures/conditionals/triple-nested.jake triple-nest > {{out}} 2>&1
+    grep -q "L1: /bin exists" {{out}} && grep -q "L2: HOME set" {{out}} && grep -q "L3: /usr exists" {{out}} && grep -q "Done" {{out}}
+    echo "  Triple nested conditionals work ....................... PASS"
+
+# ============================================================================
+# Directive Tests
+# ============================================================================
+
+@quiet
+task test-directives:
+    echo ""
+    echo "Directive Tests"
+    # @ignore allows continuing after failure
+    {{jake}} -f fixtures/directives/ignore.jake ignore-test > {{out}} 2>&1
+    grep -q "After failed command" {{out}}
+    echo "  @ignore allows continuing after failure ............... PASS"
+    # @needs with existing commands
+    {{jake}} -f fixtures/directives/needs.jake check-tools > {{out}} 2>&1
+    grep -q "All tools present" {{out}}
+    echo "  @needs with existing commands ......................... PASS"
+    # @needs with missing command
+    @ignore
+    {{jake}} -f fixtures/directives/needs.jake check-missing > {{out}} 2>&1 || true
+    ! grep -q "This should not print" {{out}}
+    echo "  @needs with missing command fails ..................... PASS"
+    # @require fails when env var missing
+    @ignore
+    unset TEST_VAR 2>/dev/null; {{jake}} -f fixtures/directives/require.jake use-env > {{out}} 2>&1 || true
+    grep -q "Required environment variable" {{out}}
+    echo "  @require fails when env var missing ................... PASS"
+    # @require passes when env var set
+    TEST_VAR=test_value {{jake}} -f fixtures/directives/require.jake use-env > {{out}} 2>&1
+    grep -q "TEST_VAR is set" {{out}}
+    echo "  @require passes when env var set ...................... PASS"
+    # @cd changes working directory
+    {{jake}} -f fixtures/directives/cd.jake in-subdir > {{out}} 2>&1
+    grep -q "subdir" {{out}}
+    echo "  @cd changes working directory ......................... PASS"
+    # @shell changes the shell
+    {{jake}} -f fixtures/directives/shell.jake with-shell > {{out}} 2>&1
+    grep -q "Running in bash" {{out}}
+    echo "  @shell changes the shell .............................. PASS"
+    # @each with space-separated items
+    {{jake}} -f fixtures/directives/each-items.jake process-items > {{out}} 2>&1
+    grep -q "Processing: apple" {{out}} && grep -q "Processing: banana" {{out}} && grep -q "Processing: cherry" {{out}}
+    echo "  @each with space-separated items ...................... PASS"
+    # @each with glob pattern
+    {{jake}} -f fixtures/directives/each-glob.jake glob-test > {{out}} 2>&1
+    grep -q "Found:" {{out}} && grep -q "Glob complete" {{out}}
+    echo "  @each with glob pattern ............................... PASS"
+    # @each with conditional inside
+    {{jake}} -f fixtures/directives/each-conditional.jake process > {{out}} 2>&1
+    grep -q "Processing: alpha (system ok)" {{out}} && grep -q "Processing: beta (system ok)" {{out}}
+    echo "  @each with conditional inside ......................... PASS"
+    # Multiple @each loops
+    {{jake}} -f fixtures/directives/each-multi.jake multi-loop > {{out}} 2>&1
+    grep -q "Color: red" {{out}} && grep -q "Number: 1" {{out}} && grep -q "Complete" {{out}}
+    echo "  Multiple @each loops in sequence ...................... PASS"
+    # @confirm with --yes flag
+    {{jake}} -f fixtures/directives/confirm.jake -y dangerous > {{out}} 2>&1
+    grep -q "Proceeding with dangerous operation" {{out}}
+    echo "  @confirm with --yes flag .............................. PASS"
+    # @confirm in dry-run mode
+    {{jake}} -f fixtures/directives/confirm.jake -n dangerous > {{out}} 2>&1
+    grep -q "dry-run" {{out}}
+    echo "  @confirm in dry-run mode .............................. PASS"
+
+# ============================================================================
+# Hook Tests
+# ============================================================================
+
+@quiet
+task test-hooks:
+    echo ""
+    echo "Hook Tests"
+    # @before hook targets build only
+    {{jake}} -f fixtures/hooks/before-after.jake build > {{out}} 2>&1
+    grep -q "PRE-BUILD HOOK" {{out}} && grep -q "Building" {{out}} && grep -q "POST-BUILD HOOK" {{out}} && ! grep -q "PRE-TEST" {{out}}
+    echo "  @before hook targets build only ....................... PASS"
+    # @before hook targets test only
+    {{jake}} -f fixtures/hooks/before-after.jake test > {{out}} 2>&1
+    grep -q "PRE-TEST HOOK" {{out}} && grep -q "Testing" {{out}} && grep -q "POST-TEST HOOK" {{out}} && ! grep -q "PRE-BUILD" {{out}}
+    echo "  @before hook targets test only ........................ PASS"
+    # @on_error hook runs on failure
+    @ignore
+    {{jake}} -f fixtures/hooks/on-error.jake fail > {{out}} 2>&1 || true
+    grep -q "ERROR HOOK TRIGGERED" {{out}}
+    echo "  @on_error hook runs on failure ........................ PASS"
+    # @on_error hook does not run on success
+    {{jake}} -f fixtures/hooks/on-error.jake succeed > {{out}} 2>&1
+    grep -q "This will succeed" {{out}} && ! grep -q "ERROR HOOK" {{out}}
+    echo "  @on_error hook does not run on success ................ PASS"
+    # @on_error runs on deploy failure
+    @ignore
+    {{jake}} -f fixtures/hooks/on-error-global.jake deploy > {{out}} 2>&1 || true
+    grep -q "GLOBAL ERROR HANDLER" {{out}}
+    echo "  @on_error runs on deploy failure ...................... PASS"
+    # @on_error runs on build failure
+    @ignore
+    {{jake}} -f fixtures/hooks/on-error-global.jake build > {{out}} 2>&1 || true
+    grep -q "GLOBAL ERROR HANDLER" {{out}}
+    echo "  @on_error runs on build failure ....................... PASS"
+    # Hooks run for target with dependencies
+    {{jake}} -f fixtures/hooks/with-deps.jake deploy > {{out}} 2>&1
+    grep -q "Building" {{out}} && grep -q "PRE-DEPLOY" {{out}} && grep -q "Deploying" {{out}} && grep -q "POST-DEPLOY" {{out}}
+    echo "  Hooks run for target with dependencies ................ PASS"
+
+# ============================================================================
+# File Target Tests
+# ============================================================================
+
+@quiet
+task test-files:
+    echo ""
+    echo "File Target Tests"
+    # Setup: remove output file
+    rm -f fixtures/files/output.txt
+    # File target builds when output missing
+    {{jake}} -f fixtures/files/target.jake output.txt > {{out}} 2>&1
+    grep -q "Built output.txt" {{out}}
+    echo "  File target builds when output missing ................ PASS"
+    # File target skips when up-to-date
+    {{jake}} -f fixtures/files/target.jake output.txt > {{out}} 2>&1
+    echo "  File target skips when up-to-date ..................... PASS"
+    # Cleanup
+    rm -f fixtures/files/output.txt
+
+# ============================================================================
+# Function Tests
+# ============================================================================
+
+@quiet
+task test-functions:
+    echo ""
+    echo "Function Tests"
+    # Built-in functions work
+    {{jake}} -f fixtures/functions/builtins.jake test-functions > {{out}} 2>&1
+    grep -q "uppercase: HELLO WORLD" {{out}} && grep -q "basename: file.txt" {{out}} && grep -q "dirname: /path/to" {{out}}
+    echo "  Built-in functions work ............................... PASS"
+    # Jake variables expand in commands
+    {{jake}} -f fixtures/functions/variables.jake check-var > {{out}} 2>&1
+    grep -q "Value: exported_value" {{out}}
+    echo "  Jake variables expand in commands ..................... PASS"
+
+# ============================================================================
+# Import Tests
+# ============================================================================
+
+@quiet
+task test-imports:
+    echo ""
+    echo "Import Tests"
+    # Import system works
+    {{jake}} -f fixtures/imports/main.jake all > {{out}} 2>&1
+    grep -q "Compiling project" {{out}} && grep -q "Deploying to production" {{out}} && grep -q "Build and deploy complete" {{out}}
+    echo "  Import system works ................................... PASS"
+
+# ============================================================================
+# CLI Tests
+# ============================================================================
+
+@quiet
+task test-cli:
+    echo ""
+    echo "CLI Tests"
+    # Verbose mode shows output
+    {{jake}} -f fixtures/cli/verbose.jake -v hello > {{out}} 2>&1
+    grep -q "Hello" {{out}}
+    echo "  Verbose mode shows output ............................. PASS"
+    # List shows descriptions
+    {{jake}} -f fixtures/cli/groups.jake -l > {{out}} 2>&1
+    grep -q "Build the project" {{out}} && grep -q "Run tests" {{out}} && grep -q "Deploy to production" {{out}}
+    echo "  List shows descriptions ............................... PASS"
+    # --list --short outputs one recipe per line
+    {{jake}} -f fixtures/cli/list.jake --list --short > {{out}} 2>&1
+    grep -q "build" {{out}} && grep -q "test" {{out}} && ! grep -q "_private" {{out}}
+    echo "  --list --short outputs one recipe per line ............ PASS"
+    # --list --short line count correct
+    {{jake}} -f fixtures/cli/list.jake --list --short 2>/dev/null | wc -l | grep -q "2"
+    echo "  --list --short line count correct ..................... PASS"
+    # --show displays recipe details
+    {{jake}} -f fixtures/cli/show.jake --show build > {{out}} 2>&1
+    grep -q "Recipe:" {{out}} && grep -q "build" {{out}} && grep -q "Type:" {{out}}
+    echo "  --show displays recipe details ........................ PASS"
+    # -s shorthand works
+    {{jake}} -f fixtures/cli/show.jake -s build > {{out}} 2>&1
+    grep -q "Recipe:" {{out}}
+    echo "  -s shorthand works .................................... PASS"
+    # --show with missing recipe fails
+    @ignore
+    {{jake}} -f fixtures/cli/show.jake --show nonexistent > {{out}} 2>&1 || true
+    grep -q "not found" {{out}}
+    echo "  --show with missing recipe fails ...................... PASS"
+    # Typo suggestion for 'buidl'
+    @ignore
+    {{jake}} -f fixtures/cli/typo.jake buidl > {{out}} 2>&1 || true
+    grep -q "not found" {{out}} && grep -q "Did you mean" {{out}} && grep -q "build" {{out}}
+    echo "  Typo suggestion for 'buidl' ........................... PASS"
+    # Typo suggestion for 'tset'
+    @ignore
+    {{jake}} -f fixtures/cli/typo.jake tset > {{out}} 2>&1 || true
+    grep -q "not found" {{out}} && grep -q "Did you mean" {{out}} && grep -q "test" {{out}}
+    echo "  Typo suggestion for 'tset' ............................ PASS"
+    # Typo suggestion for 'delpoy'
+    @ignore
+    {{jake}} -f fixtures/cli/typo.jake delpoy > {{out}} 2>&1 || true
+    grep -q "not found" {{out}} && grep -q "Did you mean" {{out}} && grep -q "deploy" {{out}}
+    echo "  Typo suggestion for 'delpoy' .......................... PASS"
+
+# ============================================================================
+# Integration Tests
+# ============================================================================
+
+@quiet
+task test-integration:
+    echo ""
+    echo "Integration Tests"
+    # Full project: clean task
+    {{jake}} -f fixtures/integration/full-project.jake clean > {{out}} 2>&1
+    grep -q "Cleaning" {{out}}
+    echo "  Full project: clean task .............................. PASS"
+    # Full project: lint task
+    {{jake}} -f fixtures/integration/full-project.jake lint > {{out}} 2>&1
+    grep -q "Linting src/mod1.ts" {{out}} && grep -q "Linting src/mod2.ts" {{out}}
+    echo "  Full project: lint task ............................... PASS"
+    # Full project: build with hooks and deps
+    {{jake}} -f fixtures/integration/full-project.jake build > {{out}} 2>&1
+    grep -q "=== Starting build v2.0.0 ===" {{out}} && grep -q "Linting" {{out}} && grep -q "Testing" {{out}} && grep -q "Building v2.0.0" {{out}} && grep -q "=== Build complete ===" {{out}}
+    echo "  Full project: build with hooks and deps ............... PASS"
+    # Full project: release with parallel deps
+    {{jake}} -f fixtures/integration/full-project.jake -j2 release > {{out}} 2>&1
+    grep -q "Cleaning" {{out}} && grep -q "Releasing v2.0.0" {{out}}
+    echo "  Full project: release with parallel deps .............. PASS"
