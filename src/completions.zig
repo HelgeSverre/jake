@@ -524,17 +524,19 @@ pub fn generateZsh(writer: anytype) !void {
     );
 
     // Add all flags from args.zig with descriptions
+    // Zsh _arguments syntax: '(-x --long)'{-x,--long}'[desc]' where the brace
+    // expansion is OUTSIDE quotes so zsh expands it to two option specs
     for (args_mod.flags) |flag| {
         if (flag.short) |s| {
             switch (flag.takes_value) {
-                .none => try writer.print("        '(-{c} --{s})'{{{c},--{s}}}'[{s}]' \\\n", .{ s, flag.long, s, flag.long, flag.desc }),
+                .none => try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{s}]' \\\n", .{ s, flag.long, s, flag.long, flag.desc }),
                 .required => {
                     const value_name = flag.value_name orelse "VALUE";
-                    try writer.print("        '(-{c} --{s})'{{{c},--{s}}}'[{s}]:{s}:->value' \\\n", .{ s, flag.long, s, flag.long, flag.desc, value_name });
+                    try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{s}]:{s}:->value' \\\n", .{ s, flag.long, s, flag.long, flag.desc, value_name });
                 },
                 .optional => {
                     const value_name = flag.value_name orelse "VALUE";
-                    try writer.print("        '(-{c} --{s})'{{{c},--{s}}}'[{s}]::{s}:->value' \\\n", .{ s, flag.long, s, flag.long, flag.desc, value_name });
+                    try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{s}]::{s}:->value' \\\n", .{ s, flag.long, s, flag.long, flag.desc, value_name });
                 },
             }
         } else {
@@ -559,7 +561,8 @@ pub fn generateZsh(writer: anytype) !void {
         \\    case $state in
         \\        recipes)
         \\            local jakefile="${opt_args[-f]:-${opt_args[--jakefile]:-Jakefile}}"
-        \\            local recipes=(${(f)"$(jake -f "$jakefile" --summary 2>/dev/null)"})
+        \\            local -a recipes
+        \\            recipes=(${=$(jake -f "$jakefile" --summary 2>/dev/null)})
         \\            _describe -t recipes 'recipe' recipes
         \\            ;;
         \\        value)
@@ -569,7 +572,8 @@ pub fn generateZsh(writer: anytype) !void {
         \\                    ;;
         \\                -s|--show)
         \\                    local jakefile="${opt_args[-f]:-${opt_args[--jakefile]:-Jakefile}}"
-        \\                    local recipes=(${(f)"$(jake -f "$jakefile" --summary 2>/dev/null)"})
+        \\                    local -a recipes
+        \\                    recipes=(${=$(jake -f "$jakefile" --summary 2>/dev/null)})
         \\                    _describe -t recipes 'recipe' recipes
         \\                    ;;
         \\                --completions)
@@ -704,6 +708,16 @@ test "generateZsh produces valid script" {
     try testing.expect(std.mem.indexOf(u8, output, "#compdef jake") != null);
     try testing.expect(std.mem.indexOf(u8, output, "_jake()") != null);
     try testing.expect(std.mem.indexOf(u8, output, "--summary") != null);
+}
+
+test "generateZsh uses correct brace expansion syntax" {
+    var buf: [8192]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    try generateZsh(stream.writer());
+    const output = stream.getWritten();
+
+    // Brace expansion must be outside quotes: '(-h --help)'{-h,--help}'[desc]'
+    try testing.expect(std.mem.indexOf(u8, output, "'{-h,--help}'") != null);
 }
 
 test "generateFish produces valid script" {
