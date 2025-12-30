@@ -1,185 +1,120 @@
 # Fuzzing Jake
 
-This repo includes a small fuzz harness for hardening Jake's **lexer/parser** without executing any recipe commands.
+Jake uses Zig's built-in coverage-guided fuzzing for testing the lexer, parser, and other components.
 
-The harness lives at `src/fuzz_parse.zig` and is intended to be driven by a fuzzer while compiled with Zig's `-ffuzz` instrumentation.
+## Quick Start
 
-## Goals
+```bash
+# Run fuzz tests with coverage guidance
+zig build fuzz --fuzz
 
-- Shake out parser crashes, panics, OOM handling bugs
-- Catch memory safety issues early (use Zig safety + sanitizers)
-- Build a small, reusable corpus of "interesting" Jakefile inputs
+# Or use the jake task (opens web UI on port 8080)
+jake fuzz
+```
+
+The fuzzer will run indefinitely, exploring code paths and looking for crashes. Press `Ctrl+C` to stop.
+
+## How It Works
+
+Zig's integrated fuzzer provides:
+
+- **Coverage-guided mutations** - Keeps inputs that reach new code paths
+- **Automatic corpus management** - No manual seed files needed
+- **Web interface** - Visualize which code paths have been tested
+- **LLVM instrumentation** - Uses the same tech as libFuzzer/AFL++
+
+This is much more effective than "dumb" random fuzzing because the fuzzer learns which inputs are interesting.
+
+## Fuzz Targets
+
+Fuzz tests are embedded in the source files using `std.testing.fuzzInput`:
+
+| Component | File | What it tests |
+|-----------|------|---------------|
+| Lexer | `src/lexer.zig` | Token parsing from arbitrary input |
+| Parser | `src/parser.zig` | AST construction from fuzzed source |
+| Glob | `src/glob.zig` | Pattern matching and parsing |
+| Functions | `src/functions.zig` | Built-in function evaluation |
+| Conditions | `src/conditions.zig` | @if/@elif condition evaluation |
+
+## Web Interface
+
+The `--fuzz` flag automatically enables a web interface. View coverage in real-time:
+
+```bash
+zig build fuzz --fuzz
+# Web UI starts automatically - check terminal for URL (e.g., http://[::1]:58415/)
+```
+
+Open the URL shown in the terminal in your browser. The interface shows:
+- Source code with coverage markers (red = not hit, green = hit)
+- Live-updating statistics
+- Which code paths the fuzzer has explored
+
+## What Gets Tested
+
+**Covered:**
+- Lexer tokenization (all token types, edge cases)
+- Parser AST construction and error handling
+- Glob pattern matching logic
+- Built-in function parsing and evaluation
+- Condition expression evaluation
+
+**Not covered (by design):**
+- Recipe execution (would run shell commands)
+- File I/O operations
+- Network operations
+
+## Interpreting Results
+
+- **No output** = Tests passing, fuzzer is exploring
+- **Crash/panic** = Bug found - investigate the failing input
+- **Memory leak** = Zig's allocator will report on exit
+
+When a crash is found:
+
+1. The fuzzer will print the failing input
+2. Re-run with that specific input to reproduce
+3. Debug using `zig build test` with the failing case
+
+## Adding New Fuzz Targets
+
+To fuzz a new component, add a test using `std.testing.fuzz`:
+
+```zig
+test "fuzz my_function" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            // Call the function with fuzzed input
+            // Errors are expected - just don't crash
+            my_function(input) catch {};
+        }
+    }.testOne, .{});
+}
+```
+
+The API takes:
+- A context value (use `{}` for no context)
+- A test function that receives the context and fuzz input bytes
+- Options (use `.{}` for defaults)
+
+Guidelines:
+- Use `catch {}` or `catch return` for expected errors
+- Only crashes/panics indicate bugs
+- Avoid side effects (file I/O, network, shell commands)
+- Use `std.testing.allocator` for leak detection
+
+## Memory Leak Detection
+
+Zig's `GeneralPurposeAllocator` reports leaks automatically. If you see:
+
+```
+error(gpa): memory address 0x... leaked
+```
+
+That indicates an allocation that was never freed - a real bug to fix.
 
 ## Requirements
 
-- Zig `0.15.x` (this repo currently builds with `0.15.2`)
-- Optional (for advanced fuzzing):
-  - AFL++: `brew install afl++` (macOS) or https://github.com/AFLplusplus/AFLplusplus
-  - honggfuzz: https://github.com/google/honggfuzz (Linux only)
-
-## Build the fuzz target
-
-Preferred (via `build.zig`):
-
-```sh
-zig build fuzz-parse -Doptimize=ReleaseSafe
-```
-
-Manual (no build step):
-
-```sh
-zig build-exe -OReleaseSafe -ffuzz \
-  --dep jake \
-  -Mroot=src/fuzz_parse.zig \
-  -Mjake=src/root.zig \
-  -femit-bin=zig-out/bin/jake-fuzz-parse
-```
-
-Notes:
-
-- `-ffuzz` enables fuzzing-oriented instrumentation.
-- `-OReleaseSafe` keeps Zig safety checks (recommended for fuzzing).
-
-## Sanity run (no fuzzer)
-
-Run it on an existing Jakefile:
-
-```sh
-./zig-out/bin/jake-fuzz-parse Jakefile
-```
-
-Or via stdin:
-
-```sh
-./zig-out/bin/jake-fuzz-parse < Jakefile
-```
-
-Expected behavior:
-
-- Exit code `0` for inputs that successfully parse.
-- Exit code `0` for inputs that fail parsing (the harness treats parse errors as non-crashes and returns).
-- Any crash/panic/assert is a bug worth investigating.
-
-## Quick start (no external fuzzer needed)
-
-The repo includes a simple "dumb fuzzer" script that works on any system:
-
-```sh
-# Run 1000 iterations (default)
-just fuzz
-
-# Or with jake
-./zig-out/bin/jake fuzz
-
-# Or directly with custom iteration count
-./scripts/dumb-fuzz.sh 5000
-```
-
-This mutates corpus files randomly and looks for crashes. No external tools required.
-
-## Run with AFL++ (more thorough than dumb fuzzer)
-
-AFL++ is available on macOS via Homebrew:
-
-```sh
-brew install afl++
-```
-
-Then run:
-
-```sh
-just fuzz-afl
-# or
-./zig-out/bin/jake fuzz-afl
-```
-
-**Note:** We run AFL++ in "dumb mode" (`-n` flag) because Zig's `-ffuzz` instrumentation is not compatible with AFL++'s coverage format. This means AFL++ won't get coverage feedback, but it still provides:
-
-- Better mutation strategies than our shell script
-- Proper crash detection and minimization
-- Hang detection
-- Parallel fuzzing support
-
-For full coverage-guided fuzzing, you would need to compile with `afl-clang-fast` which requires a C wrapper - not practical for a Zig project.
-
-Manual setup:
-
-```sh
-mkdir -p corpus findings
-cp Jakefile corpus/
-find samples -name "Jakefile" -exec cp {} corpus/ \;
-find samples -name "*.jake" -exec cp {} corpus/ \;
-AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 \
-  afl-fuzz -n -i corpus -o findings -- ./zig-out/bin/jake-fuzz-parse @@
-```
-
-Where `@@` is AFL++ placeholder for the current mutated input file.
-
-## Run with honggfuzz (Linux only)
-
-honggfuzz is not available via Homebrew on macOS, but works well on Linux:
-
-```sh
-honggfuzz -i corpus -o findings -- ./zig-out/bin/jake-fuzz-parse ___FILE___
-```
-
-## Triage workflow
-
-When a fuzzer reports a crash:
-
-1) Re-run the harness on the crashing input:
-
-```sh
-./zig-out/bin/jake-fuzz-parse findings/crashes/<file>
-```
-
-2) Rebuild with extra diagnostics (optional):
-
-- Add more debug info: `-ODebug`
-- Increase reference traces: `-freference-trace=20`
-
-3) Reduce the crashing input:
-
-Most fuzzers do this automatically (minimization). If not, manually delete chunks until the minimal reproducer remains.
-
-## What this fuzz target covers (and does not)
-
-Covers:
-
-- Lexer/tokenization paths
-- Parser/AST construction
-- AST deinit paths (important for leak detection)
-
-Does not cover:
-
-- Recipe execution / shell commands
-- Import resolution
-- Watch mode
-
-Those can be fuzzed too, but should be done with separate harnesses that sandbox I/O and avoid executing arbitrary commands.
-
-## Suggested next fuzz targets
-
-If you want to expand fuzzing beyond parsing, good next steps are:
-
-- Import resolution:
-  - feed a temp directory with multiple Jakefiles
-  - fuzz `@import` graphs for recursion/cycle edge cases
-
-- Variable expansion engine:
-  - fuzz strings containing `{{var}}` and built-in function calls
-
-- Glob expansion:
-  - fuzz patterns passed into `glob.expandGlob` with a controlled temp filesystem tree
-
-## Memory leak checks
-
-Zig's `GeneralPurposeAllocator` can report leaks on process exit.
-
-A regression we recently fixed was a leak in parallel execution variable expansion. A quick check is:
-
-```sh
-./zig-out/bin/jake -j4 -n all
-```
-
-If you see `error(gpa): ... leaked`, that is a real allocation that was not freed.
+- Zig 0.15.2 or later (has integrated fuzzing support)
+- No external tools needed (AFL++, honggfuzz, etc. are not required)

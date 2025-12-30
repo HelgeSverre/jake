@@ -187,6 +187,28 @@ echo $1 $2 $@
 
 **Scope Name:** `variable.language.positional.jake`
 
+### 5.5 Variable Precedence
+
+When the same variable name is defined in multiple places, the following precedence applies (highest to lowest):
+
+1. **Recipe parameters** (passed via CLI: `jake build env=prod`)
+2. **Environment variables** (loaded via `@dotenv` or from shell)
+3. **Jakefile variables** (defined with `=` assignment)
+
+This means `@dotenv` should appear **before** variable assignments to allow `.env` files to override defaults:
+
+```jake
+@dotenv                    # Load .env first
+PORT = "3000"              # Default value (overridden by .env if PORT is set there)
+
+task serve:
+    echo "Running on port {{PORT}}"
+```
+
+With `.env` containing `PORT=8080`, the task outputs: `Running on port 8080`
+
+Without `.env` or if `PORT` is not set, it uses the default: `Running on port 3000`
+
 ---
 
 ### 6. Directives
@@ -199,7 +221,7 @@ Appear at the top level of a Jakefile (not indented).
 
 | Directive | Purpose | Example |
 |-----------|---------|---------|
-| `@import` | Import another Jakefile | `@import "lib/ci.jake" as ci` |
+| `@import` | Import another Jakefile | `@import "jake/ci.jake" as ci` |
 | `@dotenv` | Load environment file | `@dotenv .env.local` |
 | `@require` | Require environment variables | `@require NODE_ENV API_KEY` |
 | `@export` | Export variable to environment | `@export PATH = $PATH:./bin` |
@@ -270,9 +292,17 @@ Used in `@if` and `@elif` directives.
 | `exists(path)` | Check if file/dir exists | `@if exists(Cargo.toml)` |
 | `eq(a, b)` | String equality | `@if eq({{mode}}, "release")` |
 | `neq(a, b)` | String inequality | `@if neq({{OS}}, "windows")` |
+| `command(name)` | Check if command exists in PATH | `@if command(docker)` |
 | `is_watching()` | Check if in watch mode | `@if is_watching()` |
 | `is_dry_run()` | Check if in dry-run mode | `@if is_dry_run()` |
 | `is_verbose()` | Check if verbose mode | `@if is_verbose()` |
+| `is_platform(name)` | Check OS by name | `@if is_platform(freebsd)` |
+| `is_macos()` | Check if running on macOS | `@if is_macos()` |
+| `is_linux()` | Check if running on Linux | `@if is_linux()` |
+| `is_windows()` | Check if running on Windows | `@if is_windows()` |
+| `is_unix()` | Check if running on Unix-like OS | `@if is_unix()` |
+
+**Platform names for `is_platform()`:** `linux`, `macos`, `windows`, `freebsd`, `openbsd`, `netbsd`, `dragonfly`
 
 **Scope Name:** `support.function.condition.jake`
 

@@ -82,7 +82,7 @@ sudo mv jake /usr/local/bin/
 
 ### From Source
 
-Requires [Zig](https://ziglang.org/) 0.14 or later:
+Requires [Zig](https://ziglang.org/) 0.15.2 or later:
 
 ```bash
 git clone https://github.com/HelgeSverre/jake.git
@@ -95,7 +95,7 @@ cp zig-out/bin/jake ~/.local/bin/
 
 ```bash
 $ jake --version
-jake 0.2.0
+jake 0.3.0
 ```
 
 ---
@@ -1667,7 +1667,41 @@ task install:
     @end
 ```
 
-### Pattern 2: Cache-Based Optimization
+### Pattern 2: Tool Availability Checks
+
+Use `command()` to check if tools are installed before using them:
+
+```jake
+task containerize:
+    @description "Build container image"
+    @if command(docker)
+        docker build -t myapp .
+    @elif command(podman)
+        podman build -t myapp .
+    @else
+        echo "Error: No container runtime found (docker or podman required)"
+        exit 1
+    @end
+
+task deploy:
+    @description "Deploy to Kubernetes"
+    @if command(kubectl)
+        kubectl apply -f k8s/
+    @else
+        echo "kubectl not found - install it first"
+        exit 1
+    @end
+
+task format:
+    @description "Format code with available formatter"
+    @if command(prettier)
+        prettier --write "src/**/*.{js,ts,json}"
+    @elif command(deno)
+        deno fmt src/
+    @end
+```
+
+### Pattern 3: Cache-Based Optimization
 
 Skip expensive operations when inputs haven't changed:
 
@@ -1684,7 +1718,7 @@ task lint:
     npx eslint src/
 ```
 
-### Pattern 3: Iterating Over Files
+### Pattern 4: Iterating Over Files
 
 Process multiple items with `@each`:
 
@@ -1710,7 +1744,7 @@ task check-configs:
         node scripts/validate-config.js {{item}}
 ```
 
-### Pattern 4: Error Recovery with Hooks
+### Pattern 5: Error Recovery with Hooks
 
 ```jake
 @on_error echo "Build failed! Check logs above."
@@ -1730,7 +1764,7 @@ task rollback:
     ./scripts/rollback.sh
 ```
 
-### Pattern 5: Environment-Aware Builds
+### Pattern 6: Environment-Aware Builds
 
 ```jake
 @dotenv
@@ -1764,7 +1798,7 @@ task deploy:
     @end
 ```
 
-### Pattern 6: Private Helper Tasks
+### Pattern 7: Private Helper Tasks
 
 Use underscore prefix to hide implementation details:
 
@@ -1785,7 +1819,7 @@ task _bundle:
     esbuild dist/index.js --bundle --outfile=dist/bundle.js
 ```
 
-### Pattern 7: Aliases for Convenience
+### Pattern 8: Aliases for Convenience
 
 ```jake
 # Full name with short aliases
@@ -2160,6 +2194,7 @@ task example:
 ```jake
 env(VAR)                         # True if VAR is set
 exists(path)                     # True if path exists
+command(name)                    # True if command exists in PATH
 eq(a, b)                         # True if a equals b
 neq(a, b)                        # True if a not equals b
 ```
@@ -2248,4 +2283,4 @@ Start with a simple `Jakefile`, grow it as your project grows, and never fight y
 
 ---
 
-*Jake v0.2.0 - MIT License*
+*Jake v0.3.0 - MIT License*
