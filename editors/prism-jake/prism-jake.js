@@ -11,6 +11,11 @@
  */
 
 (function (Prism) {
+  if (typeof Prism === 'undefined') {
+    console.warn('Prism not loaded - Jake grammar not registered');
+    return;
+  }
+
   Prism.languages.jake = {
     'comment': {
       pattern: /#.*/,

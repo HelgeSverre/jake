@@ -409,7 +409,6 @@ task status:
 @group editors
 @desc "Open syntax highlighter test page in browser (serves on port 3333)"
 task syntax-test:
-    @needs npx
     @cd editors
-        (sleep 1 && {{launch()}} http://localhost:3333/syntax-test.html) &
-        npx serve -p 3333
+        (sleep 1 && {{launch(http://localhost:3333/syntax-test.html)}}) &
+        python3 -m http.server 3333
