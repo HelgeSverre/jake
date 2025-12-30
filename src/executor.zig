@@ -2250,15 +2250,133 @@ test "no hidden recipes when none start with underscore" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    // Count hidden recipes manually
+    // Count hidden recipes using isPrivateRecipe
     var hidden_count: usize = 0;
-    for (jakefile.recipes) |recipe| {
-        if (recipe.name.len > 0 and recipe.name[0] == '_') {
+    for (jakefile.recipes) |*recipe| {
+        if (Executor.isPrivateRecipe(recipe)) {
             hidden_count += 1;
         }
     }
 
     try std.testing.expectEqual(@as(usize, 0), hidden_count);
+}
+
+test "countHiddenRecipes includes imported private recipes via origin" {
+    // This tests that private recipe counting works correctly for imported recipes
+    // where the name is "lib._helper" but origin.original_name is "_helper"
+    var recipes = [_]Recipe{
+        .{
+            .name = "main",
+            .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
+            .origin = null,
+            .kind = .task,
+            .dependencies = &.{},
+            .file_deps = &.{},
+            .output = null,
+            .params = &.{},
+            .commands = &.{},
+            .pre_hooks = &.{},
+            .post_hooks = &.{},
+            .doc_comment = null,
+            .is_default = false,
+            .aliases = &.{},
+            .group = null,
+            .description = null,
+            .shell = null,
+            .working_dir = null,
+            .only_os = &.{},
+            .quiet = false,
+            .needs = &.{},
+        },
+        .{
+            .name = "lib.build", // Public imported recipe
+            .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
+            .origin = .{
+                .original_name = "build",
+                .import_prefix = "lib",
+                .source_file = "lib.jake",
+            },
+            .kind = .task,
+            .dependencies = &.{},
+            .file_deps = &.{},
+            .output = null,
+            .params = &.{},
+            .commands = &.{},
+            .pre_hooks = &.{},
+            .post_hooks = &.{},
+            .doc_comment = null,
+            .is_default = false,
+            .aliases = &.{},
+            .group = null,
+            .description = null,
+            .shell = null,
+            .working_dir = null,
+            .only_os = &.{},
+            .quiet = false,
+            .needs = &.{},
+        },
+        .{
+            .name = "lib._helper", // Private imported recipe - should be counted!
+            .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
+            .origin = .{
+                .original_name = "_helper",
+                .import_prefix = "lib",
+                .source_file = "lib.jake",
+            },
+            .kind = .task,
+            .dependencies = &.{},
+            .file_deps = &.{},
+            .output = null,
+            .params = &.{},
+            .commands = &.{},
+            .pre_hooks = &.{},
+            .post_hooks = &.{},
+            .doc_comment = null,
+            .is_default = false,
+            .aliases = &.{},
+            .group = null,
+            .description = null,
+            .shell = null,
+            .working_dir = null,
+            .only_os = &.{},
+            .quiet = false,
+            .needs = &.{},
+        },
+        .{
+            .name = "_local_private", // Direct private recipe - should be counted!
+            .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
+            .origin = null,
+            .kind = .task,
+            .dependencies = &.{},
+            .file_deps = &.{},
+            .output = null,
+            .params = &.{},
+            .commands = &.{},
+            .pre_hooks = &.{},
+            .post_hooks = &.{},
+            .doc_comment = null,
+            .is_default = false,
+            .aliases = &.{},
+            .group = null,
+            .description = null,
+            .shell = null,
+            .working_dir = null,
+            .only_os = &.{},
+            .quiet = false,
+            .needs = &.{},
+        },
+    };
+
+    // Count using isPrivateRecipe (same logic as listRecipes)
+    var hidden_count: usize = 0;
+    for (&recipes) |*recipe| {
+        if (Executor.isPrivateRecipe(recipe)) {
+            hidden_count += 1;
+        }
+    }
+
+    // Should count 2 private recipes: lib._helper and _local_private
+    try std.testing.expectEqual(@as(usize, 2), hidden_count);
 }
 
 test "isPrivateRecipe detects private via origin.original_name" {
@@ -3741,6 +3859,7 @@ test "parseCachePatterns parses space-separated patterns" {
         .imports = &.{},
         .global_pre_hooks = &.{},
         .global_post_hooks = &.{},
+        .global_on_error_hooks = &.{},
         .source = "",
     };
 
@@ -3840,6 +3959,7 @@ test "parseCachePatterns works for watch patterns" {
         .imports = &.{},
         .global_pre_hooks = &.{},
         .global_post_hooks = &.{},
+        .global_on_error_hooks = &.{},
         .source = "",
     };
 
@@ -5047,8 +5167,8 @@ test "@cd directive is parsed and stored" {
     defer jakefile.deinit(std.testing.allocator);
 
     // Verify the recipe has a cd directive
-    const recipe = jakefile.recipes.get("test").?;
-    try std.testing.expectEqualStrings("/tmp", recipe.cd_dir.?);
+    const recipe = jakefile.getRecipe("test").?;
+    try std.testing.expectEqualStrings("/tmp", recipe.working_dir.?);
 }
 
 test "@cd directive works in dry run" {
@@ -5086,7 +5206,7 @@ test "@shell directive is parsed and stored" {
     defer jakefile.deinit(std.testing.allocator);
 
     // Verify the recipe has a shell directive
-    const recipe = jakefile.recipes.get("test").?;
+    const recipe = jakefile.getRecipe("test").?;
     try std.testing.expectEqualStrings("/bin/bash", recipe.shell.?);
 }
 
@@ -5124,8 +5244,8 @@ test "@cd and @shell combined" {
     defer executor.deinit();
     executor.dry_run = true;
 
-    const recipe = jakefile.recipes.get("test").?;
-    try std.testing.expectEqualStrings("/tmp", recipe.cd_dir.?);
+    const recipe = jakefile.getRecipe("test").?;
+    try std.testing.expectEqualStrings("/tmp", recipe.working_dir.?);
     try std.testing.expectEqualStrings("/bin/sh", recipe.shell.?);
 
     try executor.execute("test");
