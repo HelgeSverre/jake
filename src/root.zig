@@ -14,6 +14,7 @@ pub const env = @import("env.zig");
 pub const import_mod = @import("import.zig");
 pub const functions = @import("functions.zig");
 pub const compat = @import("compat.zig");
+pub const suggest = @import("suggest.zig");
 
 pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;

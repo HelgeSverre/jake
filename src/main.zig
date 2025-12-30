@@ -17,6 +17,22 @@ fn getStderr() std.fs.File {
     return compat.getStdErr();
 }
 
+/// Writer wrapper compatible with Zig 0.15's File.writer() API change
+/// Provides writeAll and print methods for args.zig functions
+const FileWriter = struct {
+    file: std.fs.File,
+
+    pub fn writeAll(self: FileWriter, bytes: []const u8) !void {
+        try self.file.writeAll(bytes);
+    }
+
+    pub fn print(self: FileWriter, comptime fmt: []const u8, args: anytype) !void {
+        var buf: [1024]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
+        try self.file.writeAll(msg);
+    }
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -28,7 +44,8 @@ pub fn main() !void {
     // Parse arguments using args module
     var args = args_mod.parse(allocator, raw_args) catch |err| {
         const err_arg = if (raw_args.len > 1) raw_args[1] else "";
-        args_mod.printError(getStderr().writer(), err, err_arg);
+        const stderr_writer = FileWriter{ .file = getStderr() };
+        args_mod.printError(stderr_writer, err, err_arg);
         std.process.exit(1);
     };
     defer args.deinit(allocator);
@@ -47,7 +64,8 @@ pub fn main() !void {
     }
 
     if (args.help) {
-        args_mod.printHelp(getStdout().writer());
+        const stdout_writer = FileWriter{ .file = getStdout() };
+        args_mod.printHelp(stdout_writer);
         return;
     }
 
@@ -84,7 +102,15 @@ pub fn main() !void {
 
     // List recipes or run default if no recipe specified
     if (args.list or (args.recipe == null and raw_args.len == 1)) {
-        executor.listRecipes();
+        executor.listRecipes(args.short);
+        return;
+    }
+
+    // Show detailed recipe information
+    if (args.show) |recipe_name| {
+        if (!executor.showRecipe(recipe_name)) {
+            std.process.exit(1);
+        }
         return;
     }
 
@@ -127,13 +153,41 @@ pub fn main() !void {
     executor.execute(target) catch |err| {
         const stderr = getStderr();
         var buf: [512]u8 = undefined;
-        const msg = switch (err) {
-            error.RecipeNotFound => std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' not found\nRun 'jake --list' to see available recipes.\n", .{target}) catch "error\n",
-            error.CyclicDependency => std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Cyclic dependency detected in '{s}'\n", .{target}) catch "error\n",
-            error.CommandFailed => std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' failed\n", .{target}) catch "error\n",
-            else => std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m {s}\n", .{@errorName(err)}) catch "error\n",
-        };
-        stderr.writeAll(msg) catch {};
+
+        switch (err) {
+            error.RecipeNotFound => {
+                // Try to find similar recipe names
+                const suggestions = jake.suggest.findSimilarRecipes(
+                    allocator,
+                    target,
+                    jakefile_data.jakefile.recipes,
+                    3, // max distance threshold
+                ) catch &.{};
+                defer if (suggestions.len > 0) allocator.free(suggestions);
+
+                if (suggestions.len > 0) {
+                    var suggest_buf: [128]u8 = undefined;
+                    const suggest_str = jake.suggest.formatSuggestion(&suggest_buf, suggestions);
+                    const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' not found\n{s}", .{ target, suggest_str }) catch "error\n";
+                    stderr.writeAll(msg) catch {};
+                } else {
+                    const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' not found\nRun 'jake --list' to see available recipes.\n", .{target}) catch "error\n";
+                    stderr.writeAll(msg) catch {};
+                }
+            },
+            error.CyclicDependency => {
+                const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Cyclic dependency detected in '{s}'\n", .{target}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+            },
+            error.CommandFailed => {
+                const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' failed\n", .{target}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+            },
+            else => {
+                const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m {s}\n", .{@errorName(err)}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+            },
+        }
         std.process.exit(1);
     };
 }

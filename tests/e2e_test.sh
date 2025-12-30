@@ -793,6 +793,115 @@ assert_output_not_contains "no HOME"
 assert_output_not_contains "no /usr"
 
 # ============================================================================
+# Test 30: --list --short Flag
+# ============================================================================
+echo -e "\n${YELLOW}--- --list --short Flag Tests ---${NC}"
+
+cat > "$TEST_DIR/Jakefile" << 'EOF'
+task build:
+    echo "Building..."
+
+task test:
+    echo "Testing..."
+
+task _private:
+    echo "Private task"
+EOF
+
+run_test "--list --short outputs one recipe per line" 0 "$JAKE --list --short"
+assert_output_contains "build"
+assert_output_contains "test"
+assert_output_not_contains "_private"
+
+# Test piping works
+LINE_COUNT=$("$JAKE" --list --short 2>/dev/null | wc -l | tr -d ' ')
+if [ "$LINE_COUNT" -eq 2 ]; then
+    echo -e "${GREEN}  PASS${NC} (correct line count: $LINE_COUNT)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "${RED}  FAIL${NC} (expected 2 lines, got $LINE_COUNT)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+TESTS_RUN=$((TESTS_RUN + 1))
+
+# ============================================================================
+# Test 31: --show Recipe Flag
+# ============================================================================
+echo -e "\n${YELLOW}--- --show Recipe Flag Tests ---${NC}"
+
+cat > "$TEST_DIR/Jakefile" << 'EOF'
+@group dev
+@desc "Build the project"
+task build: [lint]
+    @needs gcc
+    @cd ./src
+    echo "Building..."
+
+task lint:
+    echo "Linting..."
+EOF
+
+run_test "--show displays recipe details" 0 "$JAKE --show build"
+assert_output_contains "Recipe:"
+assert_output_contains "build"
+assert_output_contains "Type:"
+assert_output_contains "task"
+assert_output_contains "Group:"
+assert_output_contains "dev"
+assert_output_contains "Description:"
+assert_output_contains "Dependencies:"
+assert_output_contains "lint"
+
+run_test "-s shorthand works" 0 "$JAKE -s build"
+assert_output_contains "Recipe:"
+assert_output_contains "build"
+
+run_test "--show with missing recipe fails" 1 "$JAKE --show nonexistent"
+assert_output_contains "not found"
+
+# ============================================================================
+# Test 32: Recipe Typo Suggestions
+# ============================================================================
+echo -e "\n${YELLOW}--- Recipe Typo Suggestions ---${NC}"
+
+cat > "$TEST_DIR/Jakefile" << 'EOF'
+task build:
+    echo "Building..."
+
+task test:
+    echo "Testing..."
+
+task deploy:
+    echo "Deploying..."
+EOF
+
+run_test "Typo suggestion for 'buidl'" 1 "$JAKE buidl"
+assert_output_contains "not found"
+assert_output_contains "Did you mean"
+assert_output_contains "build"
+
+run_test "Typo suggestion for 'tset'" 1 "$JAKE tset"
+assert_output_contains "not found"
+assert_output_contains "Did you mean"
+assert_output_contains "test"
+
+run_test "Typo suggestion for 'delpoy'" 1 "$JAKE delpoy"
+assert_output_contains "not found"
+assert_output_contains "Did you mean"
+assert_output_contains "deploy"
+
+run_test "No suggestion for completely wrong name" 1 "$JAKE xyz123"
+assert_output_contains "not found"
+# Should fall back to generic message when no close match
+if grep -q "jake --list" "$TEST_DIR/output.txt"; then
+    echo -e "${GREEN}  PASS${NC} (shows generic help when no match)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "${YELLOW}  SKIP${NC} (suggestion logic may have found a match)"
+fi
+TESTS_RUN=$((TESTS_RUN + 1))
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ""

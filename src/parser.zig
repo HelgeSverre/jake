@@ -675,7 +675,7 @@ pub const Parser = struct {
             // Check if first token looks like a recipe name (ident followed by another ident)
             if (self.current.tag == .ident) {
                 const potential_recipe = self.slice(self.current);
-                const saved_index = self.index;
+                const saved_index = self.lexer.index;
                 const saved_current = self.current;
                 self.advance();
 
@@ -685,7 +685,7 @@ pub const Parser = struct {
                     cmd_start = self.current.loc.start;
                 } else {
                     // Next token is not an ident (e.g., string, newline) - restore and treat as global
-                    self.index = saved_index;
+                    self.lexer.index = saved_index;
                     self.current = saved_current;
                 }
             }

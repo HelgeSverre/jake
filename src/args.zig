@@ -28,6 +28,8 @@ pub const flags = [_]Flag{
     .{ .short = 'f', .long = "jakefile", .desc = "Use specified Jakefile", .takes_value = .required, .value_name = "FILE" },
     .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN" },
     .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel (default: CPU count)", .takes_value = .optional, .value_name = "N" },
+    .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)" },
+    .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE" },
 };
 
 pub const Args = struct {
@@ -37,6 +39,8 @@ pub const Args = struct {
     dry_run: bool = false,
     verbose: bool = false,
     yes: bool = false,
+    short: bool = false,
+    show: ?[]const u8 = null,
     jakefile: []const u8 = "Jakefile",
     watch: ?[]const u8 = null, // Pattern if provided
     watch_enabled: bool = false, // True if -w was passed
@@ -167,6 +171,7 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                 3 => result.dry_run = true, // dry-run
                 4 => result.verbose = true, // verbose
                 5 => result.yes = true, // yes
+                9 => result.short = true, // short
                 else => {},
             }
         },
@@ -182,6 +187,7 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
 
             switch (flag_idx) {
                 6 => result.jakefile = value, // jakefile
+                10 => result.show = value, // show
                 else => {},
             }
         },
@@ -297,6 +303,8 @@ pub fn printHelp(writer: anytype) void {
         \\    jake build              Run the 'build' recipe
         \\    jake -n deploy          Dry-run the 'deploy' recipe
         \\    jake -l                 List all recipes
+        \\    jake -l --short         List recipes (one per line, for scripting)
+        \\    jake -s build           Show detailed info for 'build' recipe
         \\    jake -w build           Watch and re-run 'build' on changes
         \\    jake -w "src/**" build  Watch src/ and re-run 'build'
         \\    jake -j4 build          Run 'build' with 4 parallel jobs
@@ -489,4 +497,40 @@ test "printHelp generates correct output" {
     try expect(std.mem.indexOf(u8, output, "-h, --help") != null);
     try expect(std.mem.indexOf(u8, output, "-f, --jakefile") != null);
     try expect(std.mem.indexOf(u8, output, "FILE") != null);
+}
+
+test "parse --short flag" {
+    const args = try parse(testing.allocator, &.{ "jake", "--short" });
+    try expect(args.short == true);
+}
+
+test "parse --list --short combination" {
+    const args = try parse(testing.allocator, &.{ "jake", "--list", "--short" });
+    try expect(args.list == true);
+    try expect(args.short == true);
+}
+
+test "parse -s (show) with recipe name" {
+    const args = try parse(testing.allocator, &.{ "jake", "-s", "build" });
+    try expectEqualStrings("build", args.show.?);
+}
+
+test "parse --show with recipe name" {
+    const args = try parse(testing.allocator, &.{ "jake", "--show", "deploy" });
+    try expectEqualStrings("deploy", args.show.?);
+}
+
+test "parse --show=value format" {
+    const args = try parse(testing.allocator, &.{ "jake", "--show=test" });
+    try expectEqualStrings("test", args.show.?);
+}
+
+test "missing required value for --show" {
+    const result = parse(testing.allocator, &.{ "jake", "--show" });
+    try expectError(error.MissingValue, result);
+}
+
+test "missing required value for -s" {
+    const result = parse(testing.allocator, &.{ "jake", "-s" });
+    try expectError(error.MissingValue, result);
 }

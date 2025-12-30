@@ -1312,8 +1312,22 @@ pub const Executor = struct {
     }
 
     /// List all available recipes
-    pub fn listRecipes(self: *Executor) void {
+    pub fn listRecipes(self: *Executor, short_mode: bool) void {
         const stdout = compat.getStdOut();
+
+        // Short mode: one recipe name per line, no colors, no formatting
+        if (short_mode) {
+            for (self.jakefile.recipes) |*recipe| {
+                // Skip private recipes (names starting with '_')
+                if (recipe.name.len > 0 and recipe.name[0] == '_') {
+                    continue;
+                }
+                stdout.writeAll(recipe.name) catch {};
+                stdout.writeAll("\n") catch {};
+            }
+            return;
+        }
+
         stdout.writeAll("\x1b[1mAvailable recipes:\x1b[0m\n") catch {};
 
         var hidden_count: usize = 0;
@@ -1454,6 +1468,190 @@ pub const Executor = struct {
                 stdout.writeAll(doc_line) catch {};
             }
         }
+    }
+
+    /// Show detailed information about a specific recipe
+    pub fn showRecipe(self: *Executor, name: []const u8) bool {
+        const stdout = compat.getStdOut();
+
+        const recipe = self.jakefile.getRecipe(name) orelse {
+            const stderr = compat.getStdErr();
+            var buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' not found\n", .{name}) catch "error\n";
+            stderr.writeAll(msg) catch {};
+            return false;
+        };
+
+        // Header
+        var buf: [512]u8 = undefined;
+        stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mRecipe:\x1b[0m \x1b[36m{s}\x1b[0m\n", .{recipe.name}) catch return false) catch {};
+
+        // Type
+        const kind_str = switch (recipe.kind) {
+            .task => "task",
+            .file => "file",
+            .simple => "simple",
+        };
+        stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mType:\x1b[0m {s}\n", .{kind_str}) catch return false) catch {};
+
+        // Group (if present)
+        if (recipe.group) |group| {
+            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mGroup:\x1b[0m {s}\n", .{group}) catch return false) catch {};
+        }
+
+        // Description
+        if (recipe.description) |desc| {
+            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mDescription:\x1b[0m {s}\n", .{desc}) catch return false) catch {};
+        }
+
+        // Doc comment (if different from description)
+        if (recipe.doc_comment) |doc| {
+            const should_show = if (recipe.description) |desc| !std.mem.eql(u8, doc, desc) else true;
+            if (should_show) {
+                stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mDoc:\x1b[0m {s}\n", .{doc}) catch return false) catch {};
+            }
+        }
+
+        // Aliases
+        if (recipe.aliases.len > 0) {
+            stdout.writeAll("\x1b[1mAliases:\x1b[0m ") catch {};
+            for (recipe.aliases, 0..) |alias, i| {
+                if (i > 0) stdout.writeAll(", ") catch {};
+                stdout.writeAll(alias) catch {};
+            }
+            stdout.writeAll("\n") catch {};
+        }
+
+        // Default marker
+        if (recipe.is_default) {
+            stdout.writeAll("\x1b[1mDefault:\x1b[0m yes\n") catch {};
+        }
+
+        // Dependencies
+        if (recipe.dependencies.len > 0) {
+            stdout.writeAll("\n\x1b[1mDependencies:\x1b[0m [") catch {};
+            for (recipe.dependencies, 0..) |dep, i| {
+                if (i > 0) stdout.writeAll(", ") catch {};
+                stdout.writeAll(dep) catch {};
+            }
+            stdout.writeAll("]\n") catch {};
+        }
+
+        // File dependencies
+        if (recipe.file_deps.len > 0) {
+            stdout.writeAll("\n\x1b[1mFile dependencies:\x1b[0m\n") catch {};
+            for (recipe.file_deps) |fd| {
+                stdout.writeAll("  ") catch {};
+                stdout.writeAll(fd) catch {};
+                stdout.writeAll("\n") catch {};
+            }
+        }
+
+        // Output (for file recipes)
+        if (recipe.output) |output| {
+            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mOutput:\x1b[0m {s}\n", .{output}) catch return false) catch {};
+        }
+
+        // Parameters
+        if (recipe.params.len > 0) {
+            stdout.writeAll("\n\x1b[1mParameters:\x1b[0m\n") catch {};
+            for (recipe.params) |param| {
+                stdout.writeAll("  ") catch {};
+                stdout.writeAll(param.name) catch {};
+                if (param.default) |def| {
+                    stdout.writeAll(" (default: \"") catch {};
+                    stdout.writeAll(def) catch {};
+                    stdout.writeAll("\")") catch {};
+                } else {
+                    stdout.writeAll(" (required)") catch {};
+                }
+                stdout.writeAll("\n") catch {};
+            }
+        }
+
+        // Commands
+        if (recipe.commands.len > 0) {
+            stdout.writeAll("\n\x1b[1mCommands:\x1b[0m\n") catch {};
+            for (recipe.commands) |cmd| {
+                stdout.writeAll("  ") catch {};
+                if (cmd.directive) |dir| {
+                    stdout.writeAll("\x1b[33m@") catch {};
+                    const dir_name = switch (dir) {
+                        .cache => "cache",
+                        .needs => "needs",
+                        .confirm => "confirm",
+                        .watch => "watch",
+                        .@"if" => "if",
+                        .elif => "elif",
+                        .@"else" => "else",
+                        .end => "end",
+                        .each => "each",
+                        .ignore => "ignore",
+                    };
+                    stdout.writeAll(dir_name) catch {};
+                    stdout.writeAll("\x1b[0m ") catch {};
+                }
+                stdout.writeAll(cmd.line) catch {};
+                stdout.writeAll("\n") catch {};
+            }
+        }
+
+        // Hooks
+        if (recipe.pre_hooks.len > 0 or recipe.post_hooks.len > 0) {
+            stdout.writeAll("\n\x1b[1mHooks:\x1b[0m\n") catch {};
+            for (recipe.pre_hooks) |hook| {
+                stdout.writeAll("  \x1b[32m@pre:\x1b[0m ") catch {};
+                stdout.writeAll(hook.command) catch {};
+                stdout.writeAll("\n") catch {};
+            }
+            for (recipe.post_hooks) |hook| {
+                stdout.writeAll("  \x1b[32m@post:\x1b[0m ") catch {};
+                stdout.writeAll(hook.command) catch {};
+                stdout.writeAll("\n") catch {};
+            }
+        }
+
+        // Recipe-level @needs
+        if (recipe.needs.len > 0) {
+            stdout.writeAll("\n\x1b[1mRequirements:\x1b[0m\n") catch {};
+            for (recipe.needs) |need| {
+                stdout.writeAll("  @needs ") catch {};
+                stdout.writeAll(need.command) catch {};
+                if (need.hint) |hint| {
+                    stdout.writeAll(" \"") catch {};
+                    stdout.writeAll(hint) catch {};
+                    stdout.writeAll("\"") catch {};
+                }
+                stdout.writeAll("\n") catch {};
+            }
+        }
+
+        // Platform constraints
+        if (recipe.only_os.len > 0) {
+            stdout.writeAll("\n\x1b[1mPlatform:\x1b[0m ") catch {};
+            for (recipe.only_os, 0..) |os, i| {
+                if (i > 0) stdout.writeAll(", ") catch {};
+                stdout.writeAll(os) catch {};
+            }
+            stdout.writeAll("\n") catch {};
+        }
+
+        // Working directory
+        if (recipe.working_dir) |wd| {
+            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mWorking directory:\x1b[0m {s}\n", .{wd}) catch return false) catch {};
+        }
+
+        // Shell
+        if (recipe.shell) |shell| {
+            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mShell:\x1b[0m {s}\n", .{shell}) catch return false) catch {};
+        }
+
+        // Quiet mode
+        if (recipe.quiet) {
+            stdout.writeAll("\x1b[1mQuiet:\x1b[0m yes\n") catch {};
+        }
+
+        return true;
     }
 };
 
