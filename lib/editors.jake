@@ -159,16 +159,6 @@ task intellij-build:
     @end
 
 @group editors
-@desc "Launch IntelliJ with plugin loaded from source (fast dev mode)"
-task intellij-run:
-    @if exists(editors/intellij-jake/build.gradle.kts)
-        @cd editors/intellij-jake
-            ./gradlew runIde
-    @else
-        echo "IntelliJ plugin not yet created at editors/intellij-jake/"
-    @end
-
-@group editors
 @desc "Clean IntelliJ plugin build artifacts"
 task intellij-clean:
     @ignore
@@ -176,9 +166,40 @@ task intellij-clean:
     echo "IntelliJ plugin cleaned"
 
 @group editors
-@desc "Build and launch IntelliJ dev IDE"
-task intellij-dev: [intellij-build, intellij-run]
-    echo "IntelliJ development IDE launched"
+@desc "Build and launch JetBrains IDE (ide=idea|goland|phpstorm|pycharm|rustrover|webstorm|all)"
+task intellij-dev ide="idea": [intellij-build]
+    @if eq({{ide}}, "all")
+        echo "Launching all JetBrains IDEs..."
+        @cd editors/intellij-jake
+            ./gradlew runIde &
+            ./gradlew runIde -PalternativeIdePath="/Applications/GoLand.app" &
+            ./gradlew runIde -PalternativeIdePath="/Applications/PhpStorm.app" &
+            ./gradlew runIde -PalternativeIdePath="/Applications/PyCharm.app" &
+            ./gradlew runIde -PalternativeIdePath="/Applications/RustRover.app" &
+            ./gradlew runIde -PalternativeIdePath="/Applications/WebStorm.app" &
+            wait
+    @elif eq({{ide}}, "idea")
+        @cd editors/intellij-jake
+            ./gradlew runIde
+    @elif eq({{ide}}, "goland")
+        @cd editors/intellij-jake
+            ./gradlew runIde -PalternativeIdePath="/Applications/GoLand.app"
+    @elif eq({{ide}}, "phpstorm")
+        @cd editors/intellij-jake
+            ./gradlew runIde -PalternativeIdePath="/Applications/PhpStorm.app"
+    @elif eq({{ide}}, "pycharm")
+        @cd editors/intellij-jake
+            ./gradlew runIde -PalternativeIdePath="/Applications/PyCharm.app"
+    @elif eq({{ide}}, "rustrover")
+        @cd editors/intellij-jake
+            ./gradlew runIde -PalternativeIdePath="/Applications/RustRover.app"
+    @elif eq({{ide}}, "webstorm")
+        @cd editors/intellij-jake
+            ./gradlew runIde -PalternativeIdePath="/Applications/WebStorm.app"
+    @else
+        echo "Unknown IDE: {{ide}}"
+        echo "Valid options: idea, goland, phpstorm, pycharm, rustrover, webstorm, all"
+    @end
 
 @group editors
 @desc "Publish IntelliJ plugin to JetBrains Marketplace"
