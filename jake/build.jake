@@ -81,11 +81,7 @@ task coverage:
 @group test
 @desc "Run coverage and open report in browser"
 task coverage-open: [coverage]
-    @if is_macos()
-        open coverage-out/index.html
-    @elif is_linux()
-        xdg-open coverage-out/index.html
-    @end
+    @launch coverage-out/index.html
 
 @group test
 @desc "Show coverage summary in terminal"
