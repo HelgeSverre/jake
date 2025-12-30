@@ -1,19 +1,103 @@
 ---
 import '../styles/global.css';
 
-const logo = "{j}";
-
-const fontFamilies = [
-  { name: 'System Mono', class: 'font-mono' },
-  { name: 'JetBrains Mono', class: 'font-["JetBrains_Mono"]' },
-  { name: 'SF Mono', class: 'font-["SF_Mono",monospace]' },
-  { name: 'Fira Code', class: 'font-["Fira_Code",monospace]' },
-  { name: 'Inter', class: 'font-["Inter",sans-serif]' },
-  { name: 'System Sans', class: 'font-sans' },
-  { name: 'System Serif', class: 'font-serif' },
+const logos = [
+  "{j}",
+  "[j]",
+  "<j>",
+  "(j)",
+  "/j/",
+  "~j~",
+  "|j|",
+  "_j_",
+  "«j»",
+  "‹j›",
 ];
 
-const sizes = [16, 24, 32, 48, 64, 96, 128];
+const jVariants = [
+  { char: "j", label: "lowercase j" },
+  { char: "J", label: "uppercase J" },
+  { char: "ʝ", label: "curly-tail j" },
+  { char: "ɉ", label: "j with stroke" },
+  { char: "ǰ", label: "j with caron" },
+  { char: "ĵ", label: "j with circumflex" },
+  { char: "ɟ", label: "dotless j with stroke" },
+  { char: "ʲ", label: "superscript j" },
+  { char: "ⓙ", label: "circled j" },
+  { char: "🅹", label: "squared j" },
+  { char: "ⱼ", label: "subscript j" },
+  { char: "ʝ̊", label: "j with ring" },
+];
+
+const fontFamilies = [
+  { name: 'System Mono', family: 'ui-monospace, monospace' },
+  { name: 'JetBrains Mono', family: '"JetBrains Mono", monospace' },
+  { name: 'Fira Code', family: '"Fira Code", monospace' },
+  { name: 'SF Mono', family: '"SF Mono", Monaco, monospace' },
+  { name: 'Consolas', family: 'Consolas, monospace' },
+  { name: 'Monaco', family: 'Monaco, monospace' },
+  { name: 'IBM Plex Mono', family: '"IBM Plex Mono", monospace' },
+  { name: 'Source Code Pro', family: '"Source Code Pro", monospace' },
+  { name: 'Roboto Mono', family: '"Roboto Mono", monospace' },
+  { name: 'Ubuntu Mono', family: '"Ubuntu Mono", monospace' },
+  { name: 'Inter', family: 'Inter, sans-serif' },
+  { name: 'System Sans', family: 'system-ui, sans-serif' },
+  { name: 'Helvetica', family: 'Helvetica, Arial, sans-serif' },
+  { name: 'SF Pro', family: '-apple-system, BlinkMacSystemFont, sans-serif' },
+  { name: 'Georgia', family: 'Georgia, serif' },
+  { name: 'Times', family: '"Times New Roman", serif' },
+  { name: 'Playfair', family: '"Playfair Display", serif' },
+];
+
+const colors = {
+  reds: [
+    { name: 'Rose 400', hex: '#fb7185' },
+    { name: 'Rose 500 (current)', hex: '#f43f5e' },
+    { name: 'Rose 600', hex: '#e11d48' },
+    { name: 'Rose 700', hex: '#be123c' },
+    { name: 'Red 400', hex: '#f87171' },
+    { name: 'Red 500', hex: '#ef4444' },
+    { name: 'Red 600', hex: '#dc2626' },
+    { name: 'Crimson', hex: '#dc143c' },
+    { name: 'Fire Brick', hex: '#b22222' },
+    { name: 'Coral', hex: '#ff6b6b' },
+  ],
+  oranges: [
+    { name: 'Orange 400', hex: '#fb923c' },
+    { name: 'Orange 500', hex: '#f97316' },
+    { name: 'Amber 500', hex: '#f59e0b' },
+    { name: 'Zig Orange', hex: '#f7a41d' },
+  ],
+  pinks: [
+    { name: 'Pink 400', hex: '#f472b6' },
+    { name: 'Pink 500', hex: '#ec4899' },
+    { name: 'Fuchsia 500', hex: '#d946ef' },
+    { name: 'Hot Pink', hex: '#ff69b4' },
+  ],
+  purples: [
+    { name: 'Purple 500', hex: '#a855f7' },
+    { name: 'Violet 500', hex: '#8b5cf6' },
+    { name: 'Indigo 500', hex: '#6366f1' },
+  ],
+  blues: [
+    { name: 'Blue 500', hex: '#3b82f6' },
+    { name: 'Sky 500', hex: '#0ea5e9' },
+    { name: 'Cyan 500', hex: '#06b6d4' },
+  ],
+  greens: [
+    { name: 'Emerald 500', hex: '#10b981' },
+    { name: 'Green 500', hex: '#22c55e' },
+    { name: 'Lime 500', hex: '#84cc16' },
+  ],
+  neutrals: [
+    { name: 'White', hex: '#ffffff' },
+    { name: 'Gray 400', hex: '#9ca3af' },
+    { name: 'Gray 500', hex: '#6b7280' },
+  ],
+};
+
+const sizes = [16, 24, 32, 48, 64, 96];
+const logo = "{j}";
 ---
 
 <!DOCTYPE html>
@@ -25,23 +109,201 @@ const sizes = [16, 24, 32, 48, 64, 96, 128];
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Fira+Code:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500;600;700&family=Ubuntu+Mono:wght@400;700&display=swap" rel="stylesheet" />
 </head>
 <body class="bg-bg-primary text-text-primary antialiased p-8">
-  <div class="max-w-6xl mx-auto">
+  <div class="max-w-7xl mx-auto">
     <h1 class="text-4xl font-bold mb-2">Logo Experiments</h1>
-    <p class="text-text-secondary mb-12">Work in progress - pick the best variation</p>
+    <p class="text-text-secondary mb-12">Work in progress - exploring variations</p>
+
+    <!-- Symbol Variations -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Symbol Variations</h2>
+      <div class="grid grid-cols-5 md:grid-cols-10 gap-4">
+        {logos.map((l) => (
+          <div class="bg-bg-card border border-border rounded-xl p-4 text-center hover-lift">
+            <div class="text-3xl font-mono text-jake font-semibold mb-2">{l}</div>
+            <div class="text-xs text-text-muted font-mono">{l}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- J Character Variations -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">J Character Variations</h2>
+      <div class="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-4">
+        {jVariants.map((v) => (
+          <div class="bg-bg-card border border-border rounded-xl p-4 text-center hover-lift">
+            <div class="text-3xl font-mono text-jake font-semibold mb-2">{`{${v.char}}`}</div>
+            <div class="text-xs text-text-muted">{v.label}</div>
+          </div>
+        ))}
+      </div>
+    </section>
 
     <!-- Font Families -->
     <section class="mb-16">
       <h2 class="text-2xl font-semibold mb-6 text-jake">Font Families</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         {fontFamilies.map((font) => (
-          <div class="bg-bg-card border border-border rounded-xl p-6 text-center">
-            <div class={`text-4xl mb-3 text-jake ${font.class}`}>{logo}</div>
+          <div class="bg-bg-card border border-border rounded-xl p-4 text-center hover-lift">
+            <div class="text-3xl text-jake font-semibold mb-2" style={`font-family: ${font.family};`}>{logo}</div>
             <div class="text-xs text-text-muted">{font.name}</div>
           </div>
         ))}
+      </div>
+    </section>
+
+    <!-- Color Palette: Reds -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Red Shades</h2>
+      <div class="grid grid-cols-5 md:grid-cols-10 gap-4">
+        {colors.reds.map((c) => (
+          <div class="text-center hover-lift">
+            <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style={`background-color: ${c.hex};`}>{logo}</div>
+            <div class="text-xs text-text-muted">{c.name}</div>
+            <div class="text-xs text-text-muted font-mono">{c.hex}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Color Palette: Oranges -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6" style="color: #f97316;">Orange & Amber</h2>
+      <div class="grid grid-cols-4 md:grid-cols-4 gap-4">
+        {colors.oranges.map((c) => (
+          <div class="text-center hover-lift">
+            <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style={`background-color: ${c.hex};`}>{logo}</div>
+            <div class="text-xs text-text-muted">{c.name}</div>
+            <div class="text-xs text-text-muted font-mono">{c.hex}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Color Palette: Pinks -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6" style="color: #ec4899;">Pink & Fuchsia</h2>
+      <div class="grid grid-cols-4 md:grid-cols-4 gap-4">
+        {colors.pinks.map((c) => (
+          <div class="text-center hover-lift">
+            <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style={`background-color: ${c.hex};`}>{logo}</div>
+            <div class="text-xs text-text-muted">{c.name}</div>
+            <div class="text-xs text-text-muted font-mono">{c.hex}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Color Palette: Purples & Blues -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6" style="color: #8b5cf6;">Purple & Blue</h2>
+      <div class="grid grid-cols-3 md:grid-cols-6 gap-4">
+        {[...colors.purples, ...colors.blues].map((c) => (
+          <div class="text-center hover-lift">
+            <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style={`background-color: ${c.hex};`}>{logo}</div>
+            <div class="text-xs text-text-muted">{c.name}</div>
+            <div class="text-xs text-text-muted font-mono">{c.hex}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Color Palette: Greens -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6" style="color: #22c55e;">Greens</h2>
+      <div class="grid grid-cols-3 md:grid-cols-3 gap-4">
+        {colors.greens.map((c) => (
+          <div class="text-center hover-lift">
+            <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style={`background-color: ${c.hex};`}>{logo}</div>
+            <div class="text-xs text-text-muted">{c.name}</div>
+            <div class="text-xs text-text-muted font-mono">{c.hex}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Gradients -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Gradients</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div class="text-center hover-lift">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style="background: linear-gradient(135deg, #f43f5e 0%, #fb7185 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Rose gradient</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style="background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Dark rose</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style="background: linear-gradient(135deg, #f43f5e 0%, #f97316 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Rose to orange</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style="background: linear-gradient(135deg, #ec4899 0%, #f43f5e 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Pink to rose</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style="background: linear-gradient(135deg, #f43f5e 0%, #8b5cf6 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Rose to purple</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style="background: linear-gradient(135deg, #f97316 0%, #f7a41d 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Zig-style</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style="background: linear-gradient(180deg, #f43f5e 0%, #be123c 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Vertical dark</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="w-full aspect-square rounded-xl flex items-center justify-center text-white text-2xl font-mono font-semibold mb-2" style="background: linear-gradient(45deg, #f43f5e 0%, #fb7185 50%, #f43f5e 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Diagonal shine</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Container Shapes -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Container Shapes</h2>
+      <div class="grid grid-cols-3 md:grid-cols-6 lg:grid-cols-9 gap-4">
+        <div class="text-center hover-lift">
+          <div class="inline-block text-4xl font-mono text-jake font-semibold mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Plain</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Square</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Slight round</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-lg mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Rounded</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-xl mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">More rounded</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-2xl mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Very rounded</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-full mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Circle</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 border-2 border-jake text-jake text-2xl font-mono font-semibold rounded-xl mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Outline</div>
+        </div>
+        <div class="text-center hover-lift">
+          <div class="inline-flex items-center justify-center w-16 h-16 border-2 border-jake text-jake text-2xl font-mono font-semibold rounded-full mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Circle outline</div>
+        </div>
       </div>
     </section>
 
@@ -50,95 +312,11 @@ const sizes = [16, 24, 32, 48, 64, 96, 128];
       <h2 class="text-2xl font-semibold mb-6 text-jake">Sizes</h2>
       <div class="flex flex-wrap items-end gap-6">
         {sizes.map((size) => (
-          <div class="bg-bg-card border border-border rounded-xl p-4 text-center">
-            <div class="font-mono text-jake mb-2" style={`font-size: ${size}px; line-height: 1;`}>{logo}</div>
+          <div class="text-center hover-lift">
+            <div class="bg-jake text-white flex items-center justify-center font-mono font-semibold mb-2" style={`width: ${size}px; height: ${size}px; font-size: ${size * 0.5}px; border-radius: ${size * 0.15}px;`}>{logo}</div>
             <div class="text-xs text-text-muted">{size}px</div>
           </div>
         ))}
-      </div>
-    </section>
-
-    <!-- Container Shapes -->
-    <section class="mb-16">
-      <h2 class="text-2xl font-semibold mb-6 text-jake">Container Shapes</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
-        <!-- Plain -->
-        <div class="text-center">
-          <div class="inline-block text-4xl font-mono text-jake mb-2">{logo}</div>
-          <div class="text-xs text-text-muted">Plain</div>
-        </div>
-
-        <!-- Square -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold mb-2">{logo}</div>
-          <div class="text-xs text-text-muted">Square</div>
-        </div>
-
-        <!-- Rounded Square -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-lg mb-2">{logo}</div>
-          <div class="text-xs text-text-muted">Rounded</div>
-        </div>
-
-        <!-- More Rounded -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-2xl mb-2">{logo}</div>
-          <div class="text-xs text-text-muted">More Rounded</div>
-        </div>
-
-        <!-- Circle -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-full mb-2">{logo}</div>
-          <div class="text-xs text-text-muted">Circle</div>
-        </div>
-
-        <!-- Outline Square -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 border-2 border-jake text-jake text-2xl font-mono font-semibold rounded-lg mb-2">{logo}</div>
-          <div class="text-xs text-text-muted">Outline</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Color Variations -->
-    <section class="mb-16">
-      <h2 class="text-2xl font-semibold mb-6 text-jake">Color Variations</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
-        <!-- Solid Red -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-xl mb-2">{logo}</div>
-          <div class="text-xs text-text-muted">Solid</div>
-        </div>
-
-        <!-- Gradient -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 text-white text-2xl font-mono font-semibold rounded-xl mb-2" style="background: linear-gradient(135deg, #f43f5e 0%, #fb7185 100%);">{logo}</div>
-          <div class="text-xs text-text-muted">Gradient</div>
-        </div>
-
-        <!-- Dark Gradient -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 text-white text-2xl font-mono font-semibold rounded-xl mb-2" style="background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%);">{logo}</div>
-          <div class="text-xs text-text-muted">Dark Gradient</div>
-        </div>
-
-        <!-- White on Red -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-white text-jake text-2xl font-mono font-semibold rounded-xl mb-2">{logo}</div>
-          <div class="text-xs text-text-muted">Inverted</div>
-        </div>
-
-        <!-- Black bg -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-black text-jake text-2xl font-mono font-semibold rounded-xl mb-2 border border-border">{logo}</div>
-          <div class="text-xs text-text-muted">On Black</div>
-        </div>
-
-        <!-- Glow -->
-        <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-xl mb-2 glow">{logo}</div>
-          <div class="text-xs text-text-muted">With Glow</div>
-        </div>
       </div>
     </section>
 
@@ -146,87 +324,121 @@ const sizes = [16, 24, 32, 48, 64, 96, 128];
     <section class="mb-16">
       <h2 class="text-2xl font-semibold mb-6 text-jake">With Wordmark</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <!-- Horizontal -->
-        <div class="bg-bg-card border border-border rounded-xl p-6">
+        <div class="bg-bg-card border border-border rounded-xl p-6 hover-lift">
           <div class="flex items-center gap-3">
             <span class="text-3xl font-mono text-jake font-semibold">{logo}</span>
             <span class="text-2xl font-semibold">jake</span>
           </div>
           <div class="text-xs text-text-muted mt-2">Horizontal</div>
         </div>
-
-        <!-- Horizontal with box -->
-        <div class="bg-bg-card border border-border rounded-xl p-6">
+        <div class="bg-bg-card border border-border rounded-xl p-6 hover-lift">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 bg-jake text-white flex items-center justify-center rounded-lg font-mono font-semibold">{logo}</div>
             <span class="text-2xl font-semibold">jake</span>
           </div>
-          <div class="text-xs text-text-muted mt-2">With Box</div>
+          <div class="text-xs text-text-muted mt-2">With box</div>
         </div>
-
-        <!-- Stacked -->
-        <div class="bg-bg-card border border-border rounded-xl p-6 text-center">
+        <div class="bg-bg-card border border-border rounded-xl p-6 hover-lift">
+          <div class="flex items-center gap-2">
+            <div class="w-10 h-10 bg-jake text-white flex items-center justify-center rounded-full font-mono font-semibold text-sm">{logo}</div>
+            <span class="text-2xl font-semibold">jake</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">With circle</div>
+        </div>
+        <div class="bg-bg-card border border-border rounded-xl p-6 text-center hover-lift">
           <div class="text-4xl font-mono text-jake font-semibold">{logo}</div>
           <div class="text-xl font-semibold mt-1">jake</div>
           <div class="text-xs text-text-muted mt-2">Stacked</div>
         </div>
-
-        <!-- Light background -->
-        <div class="bg-white border border-gray-200 rounded-xl p-6">
+        <div class="bg-white border border-gray-200 rounded-xl p-6 hover-lift">
           <div class="flex items-center gap-3">
-            <span class="text-3xl font-mono text-jake font-semibold">{logo}</span>
+            <span class="text-3xl font-mono font-semibold" style="color: #f43f5e;">{logo}</span>
             <span class="text-2xl font-semibold text-gray-900">jake</span>
           </div>
-          <div class="text-xs text-gray-500 mt-2">Light Mode</div>
+          <div class="text-xs text-gray-500 mt-2">Light mode</div>
         </div>
-
-        <!-- Badge style -->
-        <div class="bg-bg-card border border-border rounded-xl p-6">
+        <div class="bg-bg-card border border-border rounded-xl p-6 hover-lift">
           <div class="inline-flex items-center gap-2 bg-jake/10 border border-jake/30 px-3 py-1.5 rounded-full">
             <span class="font-mono text-jake font-semibold">{logo}</span>
             <span class="text-sm font-medium text-jake">jake</span>
           </div>
           <div class="text-xs text-text-muted mt-3">Badge</div>
         </div>
+      </div>
+    </section>
 
-        <!-- Minimal -->
-        <div class="bg-bg-card border border-border rounded-xl p-6">
-          <div class="flex items-center gap-2">
-            <span class="text-xl font-mono text-text-muted">{logo}</span>
-            <span class="text-lg text-text-secondary">jake</span>
-          </div>
-          <div class="text-xs text-text-muted mt-2">Minimal</div>
+    <!-- On Different Backgrounds -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Background Contexts</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="p-6 rounded-xl text-center" style="background: #000000;">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2">{logo}</div>
+          <div class="text-xs text-gray-400">Pure black</div>
+        </div>
+        <div class="p-6 rounded-xl text-center" style="background: #0a0a0a;">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2">{logo}</div>
+          <div class="text-xs text-gray-400">Near black</div>
+        </div>
+        <div class="p-6 rounded-xl text-center" style="background: #1a1a1a;">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2">{logo}</div>
+          <div class="text-xs text-gray-400">Dark gray</div>
+        </div>
+        <div class="p-6 rounded-xl text-center" style="background: #27272a;">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2">{logo}</div>
+          <div class="text-xs text-gray-400">Zinc 800</div>
+        </div>
+        <div class="p-6 rounded-xl text-center border" style="background: #f4f4f5;">
+          <div class="text-3xl font-mono font-semibold mb-2" style="color: #f43f5e;">{logo}</div>
+          <div class="text-xs text-gray-500">Light zinc</div>
+        </div>
+        <div class="p-6 rounded-xl text-center border" style="background: #fafafa;">
+          <div class="text-3xl font-mono font-semibold mb-2" style="color: #f43f5e;">{logo}</div>
+          <div class="text-xs text-gray-500">Near white</div>
+        </div>
+        <div class="p-6 rounded-xl text-center border" style="background: #ffffff;">
+          <div class="text-3xl font-mono font-semibold mb-2" style="color: #f43f5e;">{logo}</div>
+          <div class="text-xs text-gray-500">Pure white</div>
+        </div>
+        <div class="p-6 rounded-xl text-center" style="background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);">
+          <div class="text-3xl font-mono font-semibold text-jake mb-2">{logo}</div>
+          <div class="text-xs text-gray-400">Gradient dark</div>
         </div>
       </div>
     </section>
 
-    <!-- Favicon Sizes -->
+    <!-- Favicon Previews -->
     <section class="mb-16">
-      <h2 class="text-2xl font-semibold mb-6 text-jake">Favicon Previews</h2>
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Favicon Sizes</h2>
       <div class="flex items-end gap-8">
         <div class="text-center">
           <div class="w-4 h-4 bg-jake rounded flex items-center justify-center">
-            <span class="text-white text-[8px] font-mono font-bold">{logo}</span>
+            <span class="text-white text-[6px] font-mono font-bold">{logo}</span>
           </div>
           <div class="text-xs text-text-muted mt-2">16px</div>
         </div>
         <div class="text-center">
           <div class="w-8 h-8 bg-jake rounded-md flex items-center justify-center">
-            <span class="text-white text-sm font-mono font-bold">{logo}</span>
+            <span class="text-white text-xs font-mono font-bold">{logo}</span>
           </div>
           <div class="text-xs text-text-muted mt-2">32px</div>
         </div>
         <div class="text-center">
           <div class="w-12 h-12 bg-jake rounded-lg flex items-center justify-center">
-            <span class="text-white text-lg font-mono font-bold">{logo}</span>
+            <span class="text-white text-base font-mono font-bold">{logo}</span>
           </div>
           <div class="text-xs text-text-muted mt-2">48px</div>
         </div>
         <div class="text-center">
           <div class="w-16 h-16 bg-jake rounded-xl flex items-center justify-center">
-            <span class="text-white text-2xl font-mono font-bold">{logo}</span>
+            <span class="text-white text-xl font-mono font-bold">{logo}</span>
           </div>
           <div class="text-xs text-text-muted mt-2">64px</div>
+        </div>
+        <div class="text-center">
+          <div class="w-24 h-24 bg-jake rounded-2xl flex items-center justify-center">
+            <span class="text-white text-3xl font-mono font-bold">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">96px</div>
         </div>
       </div>
     </section>
@@ -234,7 +446,7 @@ const sizes = [16, 24, 32, 48, 64, 96, 128];
     <!-- Browser Tab Preview -->
     <section class="mb-16">
       <h2 class="text-2xl font-semibold mb-6 text-jake">Browser Tab Preview</h2>
-      <div class="bg-bg-secondary rounded-t-xl border border-border overflow-hidden max-w-xl">
+      <div class="bg-bg-secondary rounded-t-xl border border-border overflow-hidden max-w-2xl">
         <div class="flex items-center gap-2 px-4 py-2 bg-bg-tertiary border-b border-border">
           <div class="flex gap-1.5">
             <div class="w-3 h-3 rounded-full bg-red-500/60"></div>
@@ -242,16 +454,46 @@ const sizes = [16, 24, 32, 48, 64, 96, 128];
             <div class="w-3 h-3 rounded-full bg-green-500/60"></div>
           </div>
           <div class="flex-1 flex items-center gap-2 ml-4">
-            <div class="flex items-center gap-2 bg-bg-secondary px-3 py-1 rounded-md text-sm">
+            <div class="flex items-center gap-2 bg-bg-secondary px-3 py-1.5 rounded-md text-sm">
               <div class="w-4 h-4 bg-jake rounded flex items-center justify-center">
-                <span class="text-white text-[7px] font-mono font-bold">{logo}</span>
+                <span class="text-white text-[6px] font-mono font-bold">{logo}</span>
               </div>
               <span class="text-text-secondary">Jake - Modern Command Running</span>
+              <span class="text-text-muted">x</span>
+            </div>
+            <div class="flex items-center gap-2 bg-bg-tertiary px-3 py-1.5 rounded-md text-sm text-text-muted">
+              <div class="w-4 h-4 bg-gray-600 rounded"></div>
+              <span>New Tab</span>
             </div>
           </div>
         </div>
         <div class="h-32 flex items-center justify-center text-text-muted">
-          Page content...
+          Page content preview...
+        </div>
+      </div>
+    </section>
+
+    <!-- Special Effects -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Special Effects</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-20 h-20 bg-jake text-white text-2xl font-mono font-semibold rounded-xl mb-2 glow">{logo}</div>
+          <div class="text-xs text-text-muted">Glow</div>
+        </div>
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-20 h-20 bg-jake text-white text-2xl font-mono font-semibold rounded-xl mb-2" style="box-shadow: 0 10px 30px rgba(244, 63, 94, 0.5);">{logo}</div>
+          <div class="text-xs text-text-muted">Drop shadow</div>
+        </div>
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-20 h-20 text-jake text-2xl font-mono font-semibold rounded-xl mb-2 border-2 border-jake" style="box-shadow: inset 0 0 20px rgba(244, 63, 94, 0.3);">{logo}</div>
+          <div class="text-xs text-text-muted">Inner glow</div>
+        </div>
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-20 h-20 text-2xl font-mono font-semibold rounded-xl mb-2" style="background: linear-gradient(135deg, #f43f5e 0%, #fb7185 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; border: 2px solid transparent; background-clip: padding-box; background-origin: border-box;">
+            <span style="background: linear-gradient(135deg, #f43f5e 0%, #fb7185 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted">Gradient text</div>
         </div>
       </div>
     </section>
