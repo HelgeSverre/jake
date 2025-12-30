@@ -411,5 +411,5 @@ task status:
 task syntax-test:
     @needs npx
     @cd editors
-        (sleep 1 && open http://localhost:3333/syntax-test.html) &
+        (sleep 1 && {{launch()}} http://localhost:3333/syntax-test.html) &
         npx serve -p 3333
