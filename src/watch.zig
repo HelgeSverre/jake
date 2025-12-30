@@ -99,19 +99,15 @@ pub const Watcher = struct {
         for (recipe.commands) |cmd| {
             if (cmd.directive) |directive| {
                 if (directive == .watch) {
-                    // Parse patterns from the @watch line
-                    const patterns = self.parseWatchPatterns(cmd.line);
-                    for (patterns) |pattern| {
-                        try self.addPattern(pattern);
-                    }
+                    // Parse patterns from the @watch line directly into watch_patterns
+                    try self.parseAndAddWatchPatterns(cmd.line);
                 }
             }
         }
     }
 
-    /// Parse patterns from @watch directive line (e.g., "watch src/*.zig test/*.zig")
-    fn parseWatchPatterns(self: *Watcher, line: []const u8) []const []const u8 {
-        _ = self;
+    /// Parse patterns from @watch directive line and add them directly
+    fn parseAndAddWatchPatterns(self: *Watcher, line: []const u8) !void {
         var trimmed = std.mem.trim(u8, line, " \t");
 
         // Skip the "watch" keyword
@@ -120,16 +116,12 @@ pub const Watcher = struct {
         }
 
         if (trimmed.len == 0) {
-            return &.{};
+            return;
         }
 
-        // For simplicity, just split on spaces and return the first pattern
-        // This is a simplified version - full implementation would handle multiple patterns
-        var patterns: [16][]const u8 = undefined;
-        var count: usize = 0;
-
+        // Parse and add patterns one by one
         var i: usize = 0;
-        while (i < trimmed.len and count < 16) {
+        while (i < trimmed.len) {
             // Skip separators
             while (i < trimmed.len and (trimmed[i] == ' ' or trimmed[i] == ',' or trimmed[i] == '\t')) {
                 i += 1;
@@ -143,13 +135,9 @@ pub const Watcher = struct {
             }
 
             if (i > start) {
-                patterns[count] = trimmed[start..i];
-                count += 1;
+                try self.addPattern(trimmed[start..i]);
             }
         }
-
-        // Return slice pointing to stack array - caller must use immediately
-        return patterns[0..count];
     }
 
     /// Resolve all glob patterns to actual file paths and store their mtimes
@@ -286,6 +274,16 @@ pub const Watcher = struct {
 
         self.print("\x1b[1;34m[watch]\x1b[0m Watching {d} file(s) for changes...\n", .{self.resolved_files.items.len});
 
+        // Show the patterns being watched
+        if (self.watch_patterns.items.len > 0) {
+            self.print("\x1b[1;34m[watch]\x1b[0m Patterns: ", .{});
+            for (self.watch_patterns.items, 0..) |pattern, i| {
+                if (i > 0) self.print(", ", .{});
+                self.print("{s}", .{pattern});
+            }
+            self.print("\n", .{});
+        }
+
         if (self.verbose) {
             for (self.resolved_files.items) |file| {
                 self.print("  - {s}\n", .{file});
@@ -369,7 +367,8 @@ test "watcher init" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -387,7 +386,8 @@ test "watcher add multiple patterns" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -407,7 +407,8 @@ test "watcher add recipe deps" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -427,7 +428,8 @@ test "watcher settings" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -452,7 +454,8 @@ test "watcher deinit cleans up patterns" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
 
@@ -474,7 +477,8 @@ test "watcher poll interval defaults" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -495,7 +499,8 @@ test "watcher extracts @watch patterns from recipe" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -517,7 +522,8 @@ test "watcher extracts multiple @watch patterns" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -539,7 +545,8 @@ test "watcher handles non-existent recipe gracefully" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -561,7 +568,8 @@ test "watcher handles empty @watch pattern" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -580,7 +588,8 @@ test "watcher handles recipe with no commands" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
 
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
@@ -589,4 +598,96 @@ test "watcher handles recipe with no commands" {
 
     // No patterns from empty recipe
     try std.testing.expectEqual(@as(usize, 0), watcher.watch_patterns.items.len);
+}
+
+// --- Pattern feedback tests ---
+
+test "pattern feedback - empty patterns list" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    // No patterns added - feedback should show nothing
+    try std.testing.expectEqual(@as(usize, 0), watcher.watch_patterns.items.len);
+}
+
+test "pattern feedback - single pattern" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addPattern("src/**/*.zig");
+
+    // Single pattern should be stored correctly
+    try std.testing.expectEqual(@as(usize, 1), watcher.watch_patterns.items.len);
+    try std.testing.expectEqualStrings("src/**/*.zig", watcher.watch_patterns.items[0]);
+}
+
+test "pattern feedback - multiple patterns comma-separated format" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addPattern("src/**/*.zig");
+    try watcher.addPattern("Jakefile");
+    try watcher.addPattern("lib/*.jake");
+
+    // Multiple patterns should be stored in order for comma-separated display
+    try std.testing.expectEqual(@as(usize, 3), watcher.watch_patterns.items.len);
+    try std.testing.expectEqualStrings("src/**/*.zig", watcher.watch_patterns.items[0]);
+    try std.testing.expectEqualStrings("Jakefile", watcher.watch_patterns.items[1]);
+    try std.testing.expectEqualStrings("lib/*.jake", watcher.watch_patterns.items[2]);
+}
+
+test "pattern feedback - patterns from file recipe deps" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\file dist/bundle.js: src/*.js lib/*.js
+        \\    cat src/*.js lib/*.js > dist/bundle.js
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var watcher = Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addRecipeDeps("dist/bundle.js");
+
+    // Should have both file dependency patterns
+    try std.testing.expectEqual(@as(usize, 2), watcher.watch_patterns.items.len);
+    try std.testing.expectEqualStrings("src/*.js", watcher.watch_patterns.items[0]);
+    try std.testing.expectEqualStrings("lib/*.js", watcher.watch_patterns.items[1]);
 }
