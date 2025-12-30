@@ -56,9 +56,10 @@ const badgeColorPalette = {
 };
 
 // Logo SVGs (base64 encoded)
-const badgeLogos = {
+const badgeLogos: Record<string, string> = {
   white: 'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=',
   red: 'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iI0Y0M0Y1RSI+e2p9PC90ZXh0Pjwvc3ZnPg==',
+  black: 'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iYmxhY2siPntqfTwvdGV4dD48L3N2Zz4=',
 };
 
 // Badge labels
@@ -100,25 +101,54 @@ function buildMarkdown(label: string | null, url: string) {
   return `![${alt}](${url})`;
 }
 
-// Generate minimal badges (single-color, both logo variants)
-const minimalBadges = Object.entries(badgeColorPalette).flatMap(([colorKey, color]) =>
-  Object.entries(badgeLogos).map(([logoKey, logo]) => {
-    const url = buildBadgeUrl(null, color.hex, logo);
-    return {
-      url,
-      markdown: buildMarkdown(null, url),
-      colorName: color.name,
-      logoColor: logoKey,
-      description: `${color.name} / ${logoKey} logo`,
-    };
-  })
-);
+// Helper: get valid logo colors for a background (ensures contrast)
+function getValidLogos(bgColorKey: string): string[] {
+  switch(bgColorKey) {
+    case 'white': return ['red', 'black'];      // not white
+    case 'black': return ['white', 'red'];       // not black
+    case 'dark': return ['white', 'red'];        // not black
+    case 'gray': return ['white', 'red'];        // any high contrast
+    case 'accent': return ['white', 'black'];    // not red
+    default: return ['white', 'red'];
+  }
+}
 
-// Generate single-color labeled badges
+// Define valid logo colors for each background (ensures contrast)
+const minimalBadgePairings = [
+  // White background: red or black logo (not white)
+  { bg: badgeColorPalette.white, logo: 'red' },
+  { bg: badgeColorPalette.white, logo: 'black' },
+  // Black background: white or red logo (not black)
+  { bg: badgeColorPalette.black, logo: 'white' },
+  { bg: badgeColorPalette.black, logo: 'red' },
+  // Dark background: white or red logo
+  { bg: badgeColorPalette.dark, logo: 'white' },
+  { bg: badgeColorPalette.dark, logo: 'red' },
+  // Gray background: white or red logo
+  { bg: badgeColorPalette.gray, logo: 'white' },
+  { bg: badgeColorPalette.gray, logo: 'red' },
+  // Accent (rose) background: white or black logo (not red)
+  { bg: badgeColorPalette.accent, logo: 'white' },
+  { bg: badgeColorPalette.accent, logo: 'black' },
+];
+
+// Generate minimal badges with smart pairing
+const minimalBadges = minimalBadgePairings.map(({ bg, logo }) => {
+  const url = buildBadgeUrl(null, bg.hex, badgeLogos[logo]);
+  return {
+    url,
+    markdown: buildMarkdown(null, url),
+    colorName: bg.name,
+    logoColor: logo,
+    description: `${bg.name} / ${logo} logo`,
+  };
+});
+
+// Generate single-color labeled badges (with smart logo pairing)
 const singleColorBadges = badgeLabels.flatMap(({ label, display }) =>
   Object.entries(badgeColorPalette).flatMap(([colorKey, color]) =>
-    Object.entries(badgeLogos).map(([logoKey, logo]) => {
-      const url = buildBadgeUrl(label, color.hex, logo);
+    getValidLogos(colorKey).map((logoKey) => {
+      const url = buildBadgeUrl(label, color.hex, badgeLogos[logoKey]);
       return {
         label,
         display,
@@ -131,11 +161,14 @@ const singleColorBadges = badgeLabels.flatMap(({ label, display }) =>
   )
 );
 
-// Generate two-tone labeled badges
+// Generate two-tone labeled badges (with smart logo pairing based on badge color)
 const twoToneBadges = badgeLabels.flatMap(({ label, display }) =>
-  twoToneCombos.flatMap((combo) =>
-    Object.entries(badgeLogos).map(([logoKey, logo]) => {
-      const url = buildTwoToneBadgeUrl(label, combo.labelColor.hex, combo.badgeColor.hex, logo);
+  twoToneCombos.flatMap((combo) => {
+    // Find the color key for the badge color (right side where logo appears)
+    const badgeColorKey = Object.entries(badgeColorPalette)
+      .find(([_, c]) => c.hex === combo.badgeColor.hex)?.[0] || 'gray';
+    return getValidLogos(badgeColorKey).map((logoKey) => {
+      const url = buildTwoToneBadgeUrl(label, combo.labelColor.hex, combo.badgeColor.hex, badgeLogos[logoKey]);
       return {
         label,
         display,
@@ -144,8 +177,8 @@ const twoToneBadges = badgeLabels.flatMap(({ label, display }) =>
         comboName: combo.name,
         logoColor: logoKey,
       };
-    })
-  )
+    });
+  })
 );
 ---
 
@@ -434,13 +467,13 @@ const twoToneBadges = badgeLabels.flatMap(({ label, display }) =>
       <!-- Minimal Badges -->
       <div class="mb-12">
         <h3 class="text-lg font-semibold mb-4 text-text-secondary">Minimal</h3>
-        <div class="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-3">
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
           {minimalBadges.map((badge) => (
             <div
-              class="bg-bg-card border border-border rounded-lg p-3 hover-lift cursor-pointer group text-center"
+              class="cursor-pointer group text-center p-2"
               onclick={`navigator.clipboard.writeText('${badge.markdown}')`}
             >
-              <img src={badge.url} alt="jake" class="h-5 mx-auto mb-2" />
+              <img src={badge.url} alt="jake" class="h-auto max-w-full mx-auto mb-2" />
               <div class="text-xs text-text-muted group-hover:text-jake">{badge.description}</div>
             </div>
           ))}
@@ -451,15 +484,15 @@ const twoToneBadges = badgeLabels.flatMap(({ label, display }) =>
       {badgeLabels.map(({ label, display }) => (
         <div class="mb-12">
           <h3 class="text-lg font-semibold mb-4 text-text-secondary">{display} jake</h3>
-          <div class="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-3">
+          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
             {singleColorBadges
               .filter((b) => b.label === label)
               .map((badge) => (
                 <div
-                  class="bg-bg-card border border-border rounded-lg p-3 hover-lift cursor-pointer group text-center"
+                  class="cursor-pointer group text-center p-2"
                   onclick={`navigator.clipboard.writeText('${badge.markdown}')`}
                 >
-                  <img src={badge.url} alt={`${badge.display} jake`} class="h-5 mx-auto mb-2" />
+                  <img src={badge.url} alt={`${badge.display} jake`} class="h-auto max-w-full mx-auto mb-2" />
                   <div class="text-xs text-text-muted group-hover:text-jake">{badge.colorName} / {badge.logoColor}</div>
                 </div>
               ))}
@@ -475,15 +508,15 @@ const twoToneBadges = badgeLabels.flatMap(({ label, display }) =>
         {badgeLabels.map(({ label, display }) => (
           <div class="mb-8">
             <h4 class="text-md font-medium mb-3 text-text-muted">{display} jake</h4>
-            <div class="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-9 gap-3">
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
               {twoToneBadges
                 .filter((b) => b.label === label)
                 .map((badge) => (
                   <div
-                    class="bg-bg-card border border-border rounded-lg p-3 hover-lift cursor-pointer group text-center"
+                    class="cursor-pointer group text-center p-2"
                     onclick={`navigator.clipboard.writeText('${badge.markdown}')`}
                   >
-                    <img src={badge.url} alt={`${badge.display} jake`} class="h-5 mx-auto mb-2" />
+                    <img src={badge.url} alt={`${badge.display} jake`} class="h-auto max-w-full mx-auto mb-2" />
                     <div class="text-xs text-text-muted group-hover:text-jake">{badge.comboName}</div>
                     <div class="text-xs text-text-muted">{badge.logoColor}</div>
                   </div>
