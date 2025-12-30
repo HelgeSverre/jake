@@ -179,6 +179,11 @@ task install:
     @else
         npm install
     @end
+
+task dev:
+    @if is_watching()
+        echo "Watch mode active"
+    @end
 ```
 
 ### Hooks

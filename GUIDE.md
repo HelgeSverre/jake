@@ -65,6 +65,7 @@ sudo cp zig-out/bin/jake /usr/local/bin/
 ### Pre-built Binaries
 
 Download from [GitHub Releases](https://github.com/HelgeSverre/jake/releases) for:
+
 - Linux (x86_64, aarch64)
 - macOS (x86_64, aarch64/Apple Silicon)
 - Windows (x86_64)
@@ -184,11 +185,17 @@ task test:
 
 ## Recipes
 
-Jake supports three types of recipes:
+Jake supports three types of recipes, each designed for different use cases:
+
+| Type   | Keyword | Runs When                              | Best For                         |
+|--------|---------|----------------------------------------|----------------------------------|
+| Task   | `task`  | Always                                 | Commands, scripts, development   |
+| File   | `file`  | Output missing or dependencies changed | Build artifacts, compilation     |
+| Simple | (none)  | Always                                 | Quick recipes, Make-like syntax  |
 
 ### Task Recipes
 
-Always run when invoked. Use for commands that should execute every time:
+Task recipes **always run** when invoked. Use them for commands that should execute every time, such as running tests, starting servers, or performing cleanup.
 
 ```jake
 task clean:
@@ -197,20 +204,84 @@ task clean:
 
 task test:
     npm test
+
+task dev:
+    npm run dev
+```
+
+Tasks support parameters with optional default values:
+
+```jake
+task greet name="World":
+    echo "Hello, {{name}}!"
+
+task deploy env="staging" version="latest":
+    echo "Deploying {{version}} to {{env}}"
+    ./deploy.sh {{env}} {{version}}
+```
+
+Tasks can depend on other recipes:
+
+```jake
+task build:
+    echo "Building..."
+
+task test: [build]
+    echo "Testing after build..."
+
+task deploy: [build, test]
+    echo "Deploying after build and test..."
 ```
 
 ### File Recipes
 
-Only run if the output file is missing or dependencies have changed:
+File recipes are **conditional**—they only run if the output file is missing or any dependency file has been modified. This enables incremental builds where unchanged files are skipped.
 
 ```jake
 file dist/app.js: src/index.ts
     esbuild src/index.ts --outfile=dist/app.js
 ```
 
+The recipe name is the output file path. Dependencies are listed after the colon and can include glob patterns:
+
+```jake
+# Single dependency
+file dist/styles.css: src/styles.scss
+    sass src/styles.scss dist/styles.css
+
+# Multiple dependencies
+file dist/bundle.js: src/index.ts src/utils.ts src/helpers.ts
+    esbuild src/index.ts --bundle --outfile=dist/bundle.js
+
+# Glob pattern - rebuilds if any .ts file changes
+file dist/app.js: src/**/*.ts
+    esbuild src/index.ts --bundle --outfile=dist/app.js
+```
+
+File recipes can chain together for multi-stage builds:
+
+```jake
+# Stage 1: Compile TypeScript
+file dist/compiled.js: src/**/*.ts
+    tsc --outFile dist/compiled.js
+
+# Stage 2: Minify (depends on Stage 1 output)
+file dist/app.min.js: dist/compiled.js
+    terser dist/compiled.js -o dist/app.min.js
+
+# Task to trigger the full build
+task build: [dist/app.min.js]
+    echo "Build complete!"
+```
+
+When you run `jake build`, Jake automatically:
+1. Checks if `dist/compiled.js` needs rebuilding (compares source timestamps)
+2. Checks if `dist/app.min.js` needs rebuilding
+3. Only runs the necessary stages
+
 ### Simple Recipes
 
-Shorthand for basic recipes (no `task` or `file` keyword):
+Simple recipes have no keyword—just a name followed by a colon. They **always run** like task recipes, but use a more concise Make-like syntax.
 
 ```jake
 build:
@@ -218,7 +289,39 @@ build:
 
 test: [build]
     cargo test
+
+clean:
+    rm -rf target/
 ```
+
+Simple recipes are ideal for quick, straightforward commands. However, they don't support parameters. Use `task` when you need parameters:
+
+```jake
+# Simple recipe (no parameters)
+build:
+    cargo build --release
+
+# Task recipe (with parameters)
+task build mode="debug":
+    cargo build --{{mode}}
+```
+
+### Choosing the Right Recipe Type
+
+**Use `task` when:**
+- The command should run every time (tests, dev servers, deployments)
+- You need parameters
+- You want explicit, self-documenting syntax
+
+**Use `file` when:**
+- The recipe produces an output file
+- You want incremental builds (skip if output is up-to-date)
+- Build times matter and you want to avoid unnecessary work
+
+**Use simple recipes when:**
+- You want concise, Make-like syntax
+- The recipe is straightforward with no parameters
+- You're migrating from Make and want familiar syntax
 
 ---
 
@@ -260,6 +363,7 @@ file dist/app.js: src/**/*.ts
 ```
 
 Supported patterns:
+
 - `*` - Match any characters except `/`
 - `**` - Match any characters including `/` (recursive)
 - `?` - Match single character
@@ -345,6 +449,7 @@ Access recipes as `deploy.production`, `deploy.staging`, etc.
 ### Example
 
 **scripts/docker.jake:**
+
 ```jake
 task build:
     docker build -t myapp .
@@ -354,6 +459,7 @@ task push:
 ```
 
 **Jakefile:**
+
 ```jake
 @import "scripts/docker.jake" as docker
 
@@ -376,6 +482,8 @@ Files are loaded in order; later files override earlier ones.
 
 ### Exporting Variables
 
+@todo explain why you want to do this, and where these envs are available (subprocesses only? only in the file, in module, is it available in another file if we import this file into the main jakefile? etc, add test cases if needed to cover this behavior in detail, document it explicitly.
+
 ```jake
 @export NODE_ENV=production
 @export DEBUG=false
@@ -393,7 +501,7 @@ task show:
 
 ### .env File Format
 
-```env
+```dotenv
 # Database settings
 DATABASE_URL=postgres://localhost/myapp
 DB_POOL_SIZE=10
@@ -403,6 +511,12 @@ API_KEY="abc123!@#"
 SECRET="multi
 line
 value"
+
+SECRET="does\nnot support\nescapes"  # TODO: clarify escape behavior in documentation
+
+ANOTHER_KEY=  # parsed as empty string (verify this behavior with unit test)
+ANOTHER_EMPTY_KEY="" # parsed as empty string (verify this behavior with unit test)
+
 ```
 
 ---
@@ -435,12 +549,43 @@ task deploy:
 
 ### Condition Functions
 
-| Function | Description |
-|----------|-------------|
-| `env(VAR)` | True if environment variable is set and non-empty |
-| `exists(path)` | True if file or directory exists |
-| `eq(a, b)` | True if strings are equal |
-| `neq(a, b)` | True if strings are not equal |
+| Function        | Description                                       |
+|-----------------|---------------------------------------------------|
+| `env(VAR)`      | True if environment variable is set and non-empty |
+| `exists(path)`  | True if file or directory exists                  |
+| `eq(a, b)`      | True if strings are equal                         |
+| `neq(a, b)`     | True if strings are not equal                     |
+| `is_watching()` | True if running in watch mode (`-w`)              |
+| `is_dry_run()`  | True if running in dry-run mode (`-n`)            |
+| `is_verbose()`  | True if running in verbose mode (`-v`)            |
+
+### Runtime State Conditions
+
+Check how jake was invoked to adjust recipe behavior:
+
+```jake
+task build:
+    @if is_watching()
+        echo "Watch mode: skipping expensive lint"
+    @else
+        npm run lint
+    @end
+    npm run build
+
+task deploy:
+    @if is_dry_run()
+        echo "[DRY RUN] Would deploy to production"
+    @else
+        rsync dist/ server:/var/www/
+    @end
+
+task test:
+    @if is_verbose()
+        npm test -- --verbose
+    @else
+        npm test
+    @end
+```
 
 ### Examples
 
@@ -578,6 +723,37 @@ task build:
 
 If any command is missing, Jake exits with a helpful error.
 
+#### Custom Hints
+
+Provide helpful installation instructions:
+
+```jake
+task fuzz:
+    @needs honggfuzz "https://github.com/google/honggfuzz"
+    @needs zig "Install from https://ziglang.org"
+    honggfuzz -i corpus ./fuzz-target
+```
+
+When the command is missing, Jake shows your custom hint instead of the generic message.
+
+#### Auto-Install Tasks
+
+Reference a task to run when a command is missing:
+
+```jake
+task fuzz:
+    @needs honggfuzz -> toolchain.install-honggfuzz
+    honggfuzz -i corpus ./fuzz-target
+```
+
+When `honggfuzz` is missing, Jake shows: `run: jake toolchain.install-honggfuzz`
+
+You can combine hints and task references:
+
+```jake
+@needs honggfuzz "Google fuzzer" -> toolchain.install-honggfuzz
+```
+
 ### @require - Environment Variables
 
 Validate required environment variables before running:
@@ -633,6 +809,27 @@ task build:
 ```
 
 The command only runs if any of the cached files have changed since the last run.
+
+### @watch - File Watch Patterns
+
+Mark files to watch when using `-w` flag:
+
+```jake
+task build:
+    @watch src/*.ts
+    npm run build
+```
+
+When running `jake -w build`, the watcher monitors these patterns in addition to any file dependencies. Multiple
+patterns can be specified:
+
+```jake
+task dev:
+    @watch src/**/*.ts tests/**/*.ts
+    npm run dev
+```
+
+This is useful for explicitly declaring which files should trigger a rebuild, even if they aren't direct dependencies.
 
 ### @ignore - Continue on Failure
 
@@ -768,13 +965,13 @@ task public-task: [_internal-helper]
 
 ## Positional Arguments
 
-Pass arguments directly to recipes using shell-style variables.
+Pass arguments directly to recipes using Jake's variable expansion syntax.
 
 ### Basic Usage
 
 ```jake
 task greet:
-    echo "Hello, $1!"
+    echo "Hello, {{$1}}!"
 ```
 
 ```bash
@@ -786,7 +983,7 @@ Hello, World!
 
 ```jake
 task deploy:
-    echo "Deploying $1 to $2"
+    echo "Deploying {{$1}} to {{$2}}"
 ```
 
 ```bash
@@ -794,13 +991,13 @@ $ jake deploy v1.0.0 production
 Deploying v1.0.0 to production
 ```
 
-### All Arguments ($@)
+### All Arguments ({{$@}})
 
 Access all arguments at once:
 
 ```jake
 task echo-all:
-    echo "Arguments: $@"
+    echo "Arguments: {{$@}}"
 ```
 
 ```bash
@@ -814,8 +1011,11 @@ Positional args work alongside named parameters:
 
 ```jake
 task deploy env="staging":
-    echo "Deploying to {{env}} with args: $@"
+    echo "Deploying to {{env}} with args: {{$@}}"
 ```
+
+**Note:** Positional arguments use the same `{{}}` syntax as variables. Do not include whitespace inside the braces—
+`{{$1}}` works, but `{{ $1 }}` does not.
 
 ---
 
@@ -825,21 +1025,38 @@ Use functions in variable expansion with `{{function(arg)}}` syntax.
 
 ### String Functions
 
-| Function | Description | Example |
-|----------|-------------|---------|
+| Function       | Description          | Example                          |
+|----------------|----------------------|----------------------------------|
 | `uppercase(s)` | Convert to uppercase | `{{uppercase(hello)}}` → `HELLO` |
 | `lowercase(s)` | Convert to lowercase | `{{lowercase(HELLO)}}` → `hello` |
-| `trim(s)` | Remove whitespace | `{{trim( hello )}}` → `hello` |
+| `trim(s)`      | Remove whitespace    | `{{trim( hello )}}` → `hello`    |
 
 ### Path Functions
 
-| Function | Description | Example |
-|----------|-------------|---------|
-| `dirname(p)` | Get directory part | `{{dirname(/a/b/c.txt)}}` → `/a/b` |
-| `basename(p)` | Get filename part | `{{basename(/a/b/c.txt)}}` → `c.txt` |
-| `extension(p)` | Get file extension | `{{extension(file.txt)}}` → `.txt` |
-| `without_extension(p)` | Remove extension | `{{without_extension(file.txt)}}` → `file` |
-| `absolute_path(p)` | Get absolute path | `{{absolute_path(./src)}}` → `/home/user/project/src` |
+| Function               | Description        | Example                                               |
+|------------------------|--------------------|-------------------------------------------------------|
+| `dirname(p)`           | Get directory part | `{{dirname(/a/b/c.txt)}}` → `/a/b`                    |
+| `basename(p)`          | Get filename part  | `{{basename(/a/b/c.txt)}}` → `c.txt`                  |
+| `extension(p)`         | Get file extension | `{{extension(file.txt)}}` → `.txt`                    |
+| `without_extension(p)` | Remove extension   | `{{without_extension(file.txt)}}` → `file`            |
+| `absolute_path(p)`     | Get absolute path  | `{{absolute_path(./src)}}` → `/home/user/project/src` |
+
+### System Functions
+
+| Function          | Description                        | Example                                                  |
+|-------------------|------------------------------------|----------------------------------------------------------|
+| `home()`          | Get user home directory            | `{{home()}}` → `/Users/alice`                            |
+| `local_bin(name)` | Get path to binary in ~/.local/bin | `{{local_bin("jake")}}` → `/Users/alice/.local/bin/jake` |
+| `shell_config()`  | Get current shell's config file    | `{{shell_config()}}` → `/Users/alice/.zshrc`             |
+
+The `shell_config()` function detects your shell from `$SHELL` and returns the appropriate config file:
+
+- bash → `~/.bashrc`
+- zsh → `~/.zshrc`
+- fish → `~/.config/fish/config.fish`
+- sh → `~/.profile`
+- ksh → `~/.kshrc`
+- csh/tcsh → `~/.cshrc` / `~/.tcshrc`
 
 ### Using with Variables
 
@@ -853,6 +1070,7 @@ task info:
 ```
 
 Output:
+
 ```
 Directory: src/components
 Filename: Button.tsx
@@ -1057,18 +1275,19 @@ task deploy env="staging":
 
 ### Syntax Changes
 
-| Make | Jake |
-|------|------|
-| `target: deps` | `task target: [deps]` |
-| `$(VAR)` | `{{VAR}}` |
+| Make             | Jake                       |
+|------------------|----------------------------|
+| `target: deps`   | `task target: [deps]`      |
+| `$(VAR)`         | `{{VAR}}`                  |
 | `.PHONY: target` | `task target:` (automatic) |
-| Tab indentation | 4 spaces or tab |
-| `$@` | Use explicit name |
-| `$<` | Use explicit name |
+| Tab indentation  | 4 spaces or tab            |
+| `$@`             | Use explicit name          |
+| `$<`             | Use explicit name          |
 
 ### Example Migration
 
 **Makefile:**
+
 ```make
 CC = gcc
 CFLAGS = -Wall
@@ -1088,6 +1307,7 @@ clean:
 ```
 
 **Jakefile:**
+
 ```jake
 cc = "gcc"
 cflags = "-Wall"
@@ -1115,17 +1335,18 @@ task clean:
 
 ### Syntax Comparison
 
-| Just | Jake |
-|------|------|
-| `recipe:` | `task recipe:` |
-| `{{var}}` | `{{var}}` (same!) |
-| `[group]` | Use imports |
-| `@recipe` | (not needed) |
-| `set dotenv-load` | `@dotenv` |
+| Just              | Jake              |
+|-------------------|-------------------|
+| `recipe:`         | `task recipe:`    |
+| `{{var}}`         | `{{var}}` (same!) |
+| `[group]`         | Use imports       |
+| `@recipe`         | (not needed)      |
+| `set dotenv-load` | `@dotenv`         |
 
 ### Example Migration
 
 **justfile:**
+
 ```just
 set dotenv-load
 
@@ -1148,6 +1369,7 @@ deploy-production:
 ```
 
 **Jakefile:**
+
 ```jake
 @dotenv
 
@@ -1198,6 +1420,7 @@ error: Cyclic dependency detected in 'foo'
 ```
 
 Check that recipes don't depend on each other circularly:
+
 ```jake
 # Wrong!
 task a: [b]
