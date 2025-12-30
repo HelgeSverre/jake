@@ -57,6 +57,7 @@ pub const Recipe = struct {
         end,
         each,
         ignore,
+        launch,
     };
 };
 
@@ -1098,6 +1099,7 @@ pub const Parser = struct {
                     .kw_end => .end,
                     .kw_each => .each,
                     .kw_ignore => .ignore,
+                    .kw_launch => .launch,
                     else => null, // Unknown directive
                 };
             }
