@@ -128,8 +128,11 @@ jake test               # Run tests (builds first)
 jake greet name=Alice   # Pass parameters
 jake -j4 all            # Run with 4 parallel jobs
 jake -l                 # List available tasks
+jake -l --short         # One recipe per line (for scripting)
+jake -s build           # Show detailed recipe info
 jake -n deploy          # Dry-run (show what would run)
 jake -w build           # Watch mode - rebuild on changes
+jake buidl              # Typo? Suggests: "Did you mean: build?"
 ```
 
 ## Features
@@ -218,14 +221,24 @@ jake -w "src/**" build     # Watch specific patterns
 jake [OPTIONS] [RECIPE]
 
 OPTIONS:
-    -h, --help         Show help
-    -V, --version      Show version
-    -l, --list         List recipes
-    -n, --dry-run      Print without executing
-    -v, --verbose      Verbose output
-    -f, --jakefile     Use specified Jakefile
-    -w, --watch        Watch and re-run
-    -j, --jobs N       Parallel jobs (default: CPU count)
+    -h, --help           Show help
+    -V, --version        Show version
+    -l, --list           List recipes
+        --short          Output one recipe per line (with -l)
+    -s, --show RECIPE    Show detailed recipe info
+    -n, --dry-run        Print without executing
+    -v, --verbose        Verbose output
+    -y, --yes            Auto-confirm prompts
+    -f, --jakefile FILE  Use specified Jakefile
+    -w, --watch          Watch and re-run
+    -j, --jobs N         Parallel jobs (default: CPU count)
+```
+
+**Typo suggestions**: If you mistype a recipe name, jake suggests similar recipes:
+```
+$ jake buidl
+error: Recipe 'buidl' not found
+Did you mean: build?
 ```
 
 ## Documentation

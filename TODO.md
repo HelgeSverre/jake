@@ -491,7 +491,8 @@ task docker:build:
      - Basic completion (recipe names, variable names)
 
    **Phase 2: GitHub Syntax Highlighting**
-   - [ ] Document `.gitattributes` snippet for users (`*.jake linguist-language=Jake`)
+   - [x] Add `.gitattributes` with Makefile highlighting workaround (until native support)
+   - [ ] Document `.gitattributes` snippet for users in README/docs
    - [ ] Upstream to Linguist (grammar + language definition)
      - Follow [Linguist contribution guide](https://github.com/github-linguist/linguist/blob/main/CONTRIBUTING.md)
 
@@ -719,18 +720,20 @@ None currently! All known bugs have been fixed.
 
 ### CLI Improvements
 
-1. **Recipe typo suggestions** (High Priority)
-   - [ ] Add Levenshtein distance matching for recipe names
-   - [ ] When recipe not found, suggest closest match: `Did you mean: build?`
-   - [ ] Implement in main.zig after `RecipeNotFound` error
+1. **Recipe typo suggestions** ✅ COMPLETE
+   - [x] Add Levenshtein distance matching for recipe names
+   - [x] When recipe not found, suggest closest match: `Did you mean: build?`
+   - [x] Implement in main.zig after `RecipeNotFound` error
+   - [x] Created `src/suggest.zig` with 14 unit tests
 
-2. **`jake --show <recipe>`** - Inspect recipe details
-   - [ ] Display recipe definition, dependencies, commands, metadata
-   - [ ] Useful for understanding imported recipes without reading files
+2. **`jake --show <recipe>`** ✅ COMPLETE
+   - [x] Display recipe definition, dependencies, commands, metadata
+   - [x] Shows: type, group, description, aliases, params, commands, hooks, needs, platform, shell, working_dir
+   - [x] Added `-s` shorthand
 
-3. **`--list` improvements**
-   - [ ] Add `--list --short` for one recipe name per line (pipeable)
-   - [ ] Consider tree-style output for grouped recipes
+3. **`--list` improvements** ✅ COMPLETE
+   - [x] Add `--list --short` for one recipe name per line (pipeable)
+   - [ ] Consider tree-style output for grouped recipes (future)
 
 4. **Watch mode feedback**
    - [ ] Print what patterns are being watched when entering watch mode
@@ -792,8 +795,11 @@ None currently! All known bugs have been fixed.
     - [ ] `@only-os` uses hyphen while others don't (`@dotenv`, `@require`)
     - [ ] Consider documenting rationale or adding `@onlyos` alias
 
+**Recent completions:**
+- ✅ CLI UX quick wins: `--list --short`, `--show`, typo suggestions (Levenshtein distance)
+
 **Future work:**
-1. **Short-term**: Shell completions (bash/zsh/fish) *(parallel executor and @export are now fixed)*
+1. **Short-term**: Shell completions (bash/zsh/fish)
 2. **Medium-term**: See "Future Features (Detailed Design)" section for:
    - Remote Cache Support (HTTP/S3 backends)
    - Built-in Recipes (@builtin docker/npm/git)
@@ -844,3 +850,639 @@ zig build test
 
 - **Version checking**: `@needs node>=18` to verify minimum versions.
   Would need to run `cmd --version` and parse output.
+
+---
+
+## Editor Plugin Development Reference
+
+This section documents the requirements and structure for building editor plugins/extensions for Jake syntax highlighting and language support.
+
+### 1. VS Code Extension (Highest Priority)
+
+**Official Docs**: [Syntax Highlight Guide](https://code.visualstudio.com/api/language-extensions/syntax-highlight-guide) | [Language Extensions Overview](https://code.visualstudio.com/api/language-extensions/overview)
+
+**Prerequisites**:
+- Node.js 18+
+- npm or yarn
+- `yo` and `generator-code` for scaffolding: `npm install -g yo generator-code`
+
+**Scaffolding**:
+```bash
+yo code
+# Choose "New Language Support"
+# Language id: jake
+# Language name: Jake
+# File extensions: .jake
+# Scope name: source.jake
+```
+
+**Extension Structure**:
+```
+vscode-jake/
+├── package.json              # Extension manifest
+├── language-configuration.json  # Comments, brackets, indentation
+├── syntaxes/
+│   └── jake.tmLanguage.json  # TextMate grammar (JSON format)
+├── snippets/
+│   └── jake.json             # Code snippets (optional)
+├── icons/
+│   └── jake-icon.png         # File icon (optional)
+└── README.md
+```
+
+**package.json key fields**:
+```json
+{
+  "contributes": {
+    "languages": [{
+      "id": "jake",
+      "aliases": ["Jake", "Jakefile"],
+      "extensions": [".jake"],
+      "filenames": ["Jakefile"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "jake",
+      "scopeName": "source.jake",
+      "path": "./syntaxes/jake.tmLanguage.json"
+    }]
+  }
+}
+```
+
+**language-configuration.json**:
+```json
+{
+  "comments": { "lineComment": "#" },
+  "brackets": [["{", "}"], ["[", "]"], ["(", ")"]],
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"" },
+    { "open": "'", "close": "'" }
+  ],
+  "surroundingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"" },
+    { "open": "'", "close": "'" }
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*(task|file)\\s+.*:\\s*$",
+    "decreaseIndentPattern": "^\\s*$"
+  }
+}
+```
+
+**TextMate Grammar Structure** (jake.tmLanguage.json):
+```json
+{
+  "scopeName": "source.jake",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#variables" },
+    { "include": "#recipes" },
+    { "include": "#directives" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.jake"
+    },
+    "variables": {
+      "match": "^([a-zA-Z_][a-zA-Z0-9_]*)\\s*(=|:=)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "variable.other.jake" },
+        "2": { "name": "keyword.operator.assignment.jake" },
+        "3": { "name": "string.unquoted.jake" }
+      }
+    },
+    "recipes": {
+      "begin": "^(task|file)\\s+([a-zA-Z_][a-zA-Z0-9_-]*)(.*):\\s*$",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.jake" },
+        "2": { "name": "entity.name.function.jake" },
+        "3": { "name": "variable.parameter.jake" }
+      },
+      "end": "^(?=\\S)",
+      "patterns": [{ "include": "#recipe-body" }]
+    },
+    "directives": {
+      "match": "^\\s*(@[a-zA-Z_][a-zA-Z0-9_-]*)\\b",
+      "name": "keyword.control.directive.jake"
+    }
+  }
+}
+```
+
+**Publishing**:
+```bash
+npm install -g @vscode/vsce
+vsce package          # Creates .vsix file
+vsce publish          # Publishes to VS Code Marketplace (requires PAT)
+```
+
+**Testing locally**: Press F5 in VS Code to launch Extension Development Host.
+
+---
+
+### 2. IntelliJ Platform Plugin (High Priority)
+
+**Official Docs**: [Custom Language Support Tutorial](https://plugins.jetbrains.com/docs/intellij/custom-language-support-tutorial.html) | [Custom Language Support Reference](https://plugins.jetbrains.com/docs/intellij/custom-language-support.html)
+
+**Prerequisites**:
+- IntelliJ IDEA (Community or Ultimate)
+- Java 17+ (JBR 17 recommended)
+- Gradle 8.x
+
+**Project Setup**:
+Use the IntelliJ Platform Plugin Template: https://github.com/JetBrains/intellij-platform-plugin-template
+
+Or create manually with Gradle:
+```kotlin
+// build.gradle.kts
+plugins {
+    id("java")
+    id("org.jetbrains.intellij") version "1.17.0"
+}
+
+intellij {
+    version.set("2024.1")
+    type.set("IC") // IntelliJ IDEA Community
+}
+```
+
+**Plugin Structure**:
+```
+intellij-jake/
+├── build.gradle.kts
+├── settings.gradle.kts
+├── src/main/
+│   ├── java/com/jake/intellij/
+│   │   ├── JakeLanguage.java         # Language definition
+│   │   ├── JakeFileType.java         # File type registration
+│   │   ├── JakeIcons.java            # Icons
+│   │   ├── lexer/
+│   │   │   ├── JakeLexerAdapter.java
+│   │   │   └── Jake.flex             # JFlex lexer definition
+│   │   ├── parser/
+│   │   │   ├── JakeParser.java
+│   │   │   └── Jake.bnf              # Grammar-Kit BNF grammar
+│   │   ├── psi/                      # PSI element classes
+│   │   └── highlighting/
+│   │       └── JakeSyntaxHighlighter.java
+│   └── resources/
+│       ├── META-INF/plugin.xml       # Plugin descriptor
+│       └── icons/
+│           └── jake.svg
+└── src/test/
+```
+
+**Minimum Implementation** (lexer-only highlighting):
+
+1. **JakeLanguage.java**:
+```java
+public class JakeLanguage extends Language {
+    public static final JakeLanguage INSTANCE = new JakeLanguage();
+    private JakeLanguage() { super("Jake"); }
+}
+```
+
+2. **JakeFileType.java**:
+```java
+public class JakeFileType extends LanguageFileType {
+    public static final JakeFileType INSTANCE = new JakeFileType();
+    private JakeFileType() { super(JakeLanguage.INSTANCE); }
+    @Override public String getName() { return "Jake"; }
+    @Override public String getDefaultExtension() { return "jake"; }
+    @Override public Icon getIcon() { return JakeIcons.FILE; }
+}
+```
+
+3. **plugin.xml**:
+```xml
+<idea-plugin>
+    <id>com.jake.intellij</id>
+    <name>Jake</name>
+    <vendor>Jake</vendor>
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType name="Jake" implementationClass="com.jake.intellij.JakeFileType"
+                  fieldName="INSTANCE" language="Jake" extensions="jake"/>
+        <lang.parserDefinition language="Jake"
+                  implementationClass="com.jake.intellij.parser.JakeParserDefinition"/>
+        <lang.syntaxHighlighterFactory language="Jake"
+                  implementationClass="com.jake.intellij.highlighting.JakeSyntaxHighlighterFactory"/>
+    </extensions>
+</idea-plugin>
+```
+
+**Lexer Options**:
+- **JFlex** (recommended): Write a `.flex` file, generates Java lexer
+- **Grammar-Kit**: Write `.bnf` file, generates parser + PSI classes
+
+**Publishing**: Upload to [JetBrains Marketplace](https://plugins.jetbrains.com/) via web interface or Gradle task.
+
+---
+
+### 3. Tree-sitter Grammar (Powers Zed + Neovim)
+
+**Official Docs**: [Creating Parsers](https://tree-sitter.github.io/tree-sitter/creating-parsers/) | [Grammar DSL](https://tree-sitter.github.io/tree-sitter/creating-parsers/2-the-grammar-dsl.html)
+
+**Prerequisites**:
+- Node.js 18+
+- C compiler (gcc/clang)
+- tree-sitter CLI: `npm install -g tree-sitter-cli`
+
+**Setup**:
+```bash
+mkdir tree-sitter-jake && cd tree-sitter-jake
+npm init -y
+npm install --save-dev tree-sitter-cli nan
+```
+
+**Project Structure**:
+```
+tree-sitter-jake/
+├── grammar.js                 # Grammar definition
+├── package.json
+├── binding.gyp                # Node.js native binding
+├── bindings/
+│   ├── node/                  # Node.js bindings
+│   └── rust/                  # Rust bindings (for Zed)
+├── src/                       # Generated (don't edit)
+│   ├── parser.c
+│   ├── scanner.c              # External scanner (if needed)
+│   └── tree_sitter/
+├── queries/
+│   ├── highlights.scm         # Syntax highlighting queries
+│   ├── indents.scm            # Auto-indentation
+│   ├── folds.scm              # Code folding
+│   └── locals.scm             # Local variable tracking
+└── test/corpus/               # Test cases
+    └── recipes.txt
+```
+
+**grammar.js Example**:
+```javascript
+module.exports = grammar({
+  name: 'jake',
+
+  extras: $ => [/\s/, $.comment],
+
+  rules: {
+    source_file: $ => repeat($._definition),
+
+    _definition: $ => choice(
+      $.variable_definition,
+      $.recipe
+    ),
+
+    comment: $ => /#.*/,
+
+    variable_definition: $ => seq(
+      field('name', $.identifier),
+      choice('=', ':='),
+      field('value', $.value)
+    ),
+
+    recipe: $ => seq(
+      optional(choice('task', 'file')),
+      field('name', $.identifier),
+      optional($.parameters),
+      ':',
+      optional($.dependencies),
+      $.recipe_body
+    ),
+
+    recipe_body: $ => repeat1($.command),
+
+    command: $ => seq(
+      /\t| {4}/,  // Indentation
+      choice(
+        $.directive,
+        $.shell_command
+      )
+    ),
+
+    directive: $ => seq(
+      '@',
+      $.identifier,
+      optional($.directive_args)
+    ),
+
+    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_-]*/,
+    value: $ => /.+/,
+    shell_command: $ => /.+/,
+  }
+});
+```
+
+**Generate and Test**:
+```bash
+tree-sitter generate       # Generates src/parser.c
+tree-sitter test           # Runs test corpus
+tree-sitter parse file.jake  # Parse a file
+```
+
+**Query Files** (queries/highlights.scm):
+```scheme
+(comment) @comment
+
+(variable_definition
+  name: (identifier) @variable)
+
+(recipe
+  name: (identifier) @function)
+
+(directive) @keyword
+
+["task" "file"] @keyword
+["=" ":="] @operator
+```
+
+---
+
+### 4. Zed Extension
+
+**Official Docs**: [Language Extensions](https://zed.dev/docs/extensions/languages)
+
+Zed extensions use Tree-sitter grammars compiled to WebAssembly.
+
+**Project Structure**:
+```
+zed-jake/
+├── extension.toml            # Extension manifest
+├── languages/
+│   └── jake/
+│       └── config.toml       # Language configuration
+├── grammars/
+│   └── jake.toml             # Points to tree-sitter grammar
+└── queries/jake/             # Same as tree-sitter queries
+    ├── highlights.scm
+    ├── indents.scm
+    ├── outline.scm           # For outline panel
+    └── brackets.scm
+```
+
+**extension.toml**:
+```toml
+id = "jake"
+name = "Jake"
+version = "0.1.0"
+description = "Jake task runner support"
+authors = ["Your Name <you@example.com>"]
+repository = "https://github.com/you/zed-jake"
+```
+
+**languages/jake/config.toml**:
+```toml
+name = "Jake"
+grammar = "jake"
+path_suffixes = ["jake"]
+file_types = [{ glob = "Jakefile" }]
+line_comments = ["# "]
+```
+
+**Publishing**: Submit PR to [zed-industries/extensions](https://github.com/zed-industries/extensions) as a submodule.
+
+---
+
+### 5. Neovim (nvim-treesitter)
+
+**Official Docs**: [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter)
+
+Once you have a tree-sitter grammar, add Neovim support:
+
+**Option A: Add to nvim-treesitter** (for widespread use):
+Submit PR to nvim-treesitter with parser config in `lua/nvim-treesitter/parsers.lua`.
+
+**Option B: Standalone plugin**:
+```
+nvim-jake/
+├── lua/
+│   └── nvim-jake/
+│       └── init.lua          # Parser registration
+├── queries/jake/
+│   ├── highlights.scm
+│   ├── indents.scm
+│   └── folds.scm
+├── ftdetect/
+│   └── jake.lua              # Filetype detection
+└── README.md
+```
+
+**lua/nvim-jake/init.lua**:
+```lua
+local parser_config = require("nvim-treesitter.parsers").get_parser_configs()
+parser_config.jake = {
+  install_info = {
+    url = "https://github.com/you/tree-sitter-jake",
+    files = { "src/parser.c" },
+    branch = "main",
+  },
+  filetype = "jake",
+}
+
+vim.filetype.add({
+  filename = { ["Jakefile"] = "jake" },
+  extension = { jake = "jake" },
+})
+```
+
+---
+
+### 6. Vim (Traditional)
+
+**Reference**: [Writing Vim Syntax Plugins](https://thoughtbot.com/blog/writing-vim-syntax-plugins) | [Learn Vimscript the Hard Way](https://learnvimscriptthehardway.stevelosh.com/chapters/42.html)
+
+**Project Structure**:
+```
+vim-jake/
+├── ftdetect/
+│   └── jake.vim              # Filetype detection
+├── ftplugin/
+│   └── jake.vim              # Filetype-specific settings
+├── syntax/
+│   └── jake.vim              # Syntax highlighting
+├── indent/
+│   └── jake.vim              # Indentation rules (optional)
+└── README.md
+```
+
+**ftdetect/jake.vim**:
+```vim
+autocmd BufNewFile,BufRead Jakefile setfiletype jake
+autocmd BufNewFile,BufRead *.jake setfiletype jake
+```
+
+**syntax/jake.vim**:
+```vim
+if exists("b:current_syntax")
+  finish
+endif
+
+" Comments
+syn match jakeComment "#.*$"
+
+" Keywords
+syn keyword jakeKeyword task file
+
+" Directives
+syn match jakeDirective "@[a-zA-Z_][a-zA-Z0-9_-]*"
+
+" Variables
+syn match jakeVariable "{{[^}]*}}"
+
+" Recipe names
+syn match jakeRecipe "^\s*\(task\|file\)\s\+\zs[a-zA-Z_][a-zA-Z0-9_-]*"
+
+" Linking
+hi def link jakeComment Comment
+hi def link jakeKeyword Keyword
+hi def link jakeDirective PreProc
+hi def link jakeVariable Identifier
+hi def link jakeRecipe Function
+
+let b:current_syntax = "jake"
+```
+
+**ftplugin/jake.vim**:
+```vim
+setlocal commentstring=#\ %s
+setlocal expandtab
+setlocal shiftwidth=4
+setlocal softtabstop=4
+```
+
+---
+
+### 7. Sublime Text
+
+**Official Docs**: [Syntax Definitions](https://www.sublimetext.com/docs/syntax.html)
+
+**Project Structure**:
+```
+sublime-jake/
+├── Jake.sublime-syntax
+├── Comments.tmPreferences     # Comment key bindings
+└── jake.sublime-settings      # Editor settings
+```
+
+**Jake.sublime-syntax**:
+```yaml
+%YAML 1.2
+---
+name: Jake
+file_extensions: [jake]
+first_line_match: '^#!.*\bjake\b'
+scope: source.jake
+
+contexts:
+  main:
+    - include: comments
+    - include: variables
+    - include: recipes
+    - include: directives
+
+  comments:
+    - match: '#'
+      scope: punctuation.definition.comment.jake
+      push:
+        - meta_scope: comment.line.number-sign.jake
+        - match: $\n?
+          pop: true
+
+  variables:
+    - match: '^([a-zA-Z_]\w*)\s*(=|:=)\s*'
+      captures:
+        1: variable.other.jake
+        2: keyword.operator.assignment.jake
+
+  recipes:
+    - match: '^(task|file)\s+([a-zA-Z_][\w-]*)'
+      captures:
+        1: keyword.control.jake
+        2: entity.name.function.jake
+      push: recipe_body
+
+  recipe_body:
+    - match: '^(?=\S)'
+      pop: true
+    - include: directives
+    - include: shell
+
+  directives:
+    - match: '^\s*(@[a-zA-Z_][\w-]*)'
+      scope: keyword.control.directive.jake
+
+  shell:
+    - match: '^\s+.*$'
+      scope: source.shell.embedded.jake
+```
+
+**Installation**: Place in `Packages/User/` or create a package for Package Control.
+
+---
+
+### 8. GitHub Linguist
+
+**Official Docs**: [CONTRIBUTING.md](https://github.com/github-linguist/linguist/blob/master/CONTRIBUTING.md)
+
+**Prerequisites**:
+- Docker (for grammar testing)
+- Ruby + Bundler
+- An existing TextMate-compatible grammar
+
+**Quick Win** (user-level .gitattributes):
+```gitattributes
+# In your repo's .gitattributes
+Jakefile linguist-language=Jake
+*.jake linguist-language=Jake
+```
+
+**Upstreaming to Linguist**:
+
+1. Fork github-linguist/linguist
+2. Add grammar using script:
+   ```bash
+   script/add-grammar https://github.com/you/jake-grammar
+   ```
+3. Add language to `lib/linguist/languages.yml`:
+   ```yaml
+   Jake:
+     type: programming
+     color: "#4a90d9"
+     extensions:
+       - ".jake"
+     filenames:
+       - Jakefile
+     tm_scope: source.jake
+     ace_mode: text
+     language_id: 123456789  # Unique ID
+   ```
+4. Run tests: `script/test`
+5. Submit PR
+
+**Requirements for acceptance**:
+- Language must have "minimum level of usage" (not just hobby projects)
+- Grammar must have approved open-source license
+- Grammar must pass Linguist's test suite
+
+---
+
+### Summary: Recommended Implementation Order
+
+| Phase | Editor | Effort | Reusability |
+|-------|--------|--------|-------------|
+| 1 | VS Code (TextMate) | Medium | High (GitHub, Sublime) |
+| 2 | GitHub Linguist | Low | Uses Phase 1 grammar |
+| 3 | Tree-sitter | High | High (Zed, Neovim, Helix) |
+| 4 | Zed | Low | Uses Phase 3 grammar |
+| 5 | Neovim | Low | Uses Phase 3 grammar |
+| 6 | Vim | Low | Standalone |
+| 7 | IntelliJ | High | JetBrains family only |
+| 8 | Sublime Text | Low | Can reuse TextMate or write .sublime-syntax |
+
+**Key insight**: TextMate grammar (Phase 1) unlocks VS Code + GitHub + Sublime. Tree-sitter grammar (Phase 3) unlocks Zed + Neovim + Helix + Emacs. These two grammars provide ~80% of editor coverage.

@@ -1196,6 +1196,8 @@ OPTIONS:
     -h, --help              Show help message
     -V, --version           Show version
     -l, --list              List available recipes
+        --short             Output one recipe per line (for scripting)
+    -s, --show RECIPE       Show detailed recipe information
     -n, --dry-run           Print commands without executing
     -v, --verbose           Show verbose output
     -y, --yes               Auto-confirm all @confirm prompts
@@ -1211,6 +1213,61 @@ EXAMPLES:
     jake -j4 all            Run 'all' with 4 parallel jobs
     jake -w build           Watch and rebuild
     jake -n deploy          Show what 'deploy' would do
+    jake -l --short         List recipes for piping/scripting
+    jake -s build           Show all details about 'build' recipe
+```
+
+### Typo Suggestions
+
+If you mistype a recipe name, jake suggests similar recipes using Levenshtein distance:
+
+```bash
+$ jake buidl
+error: Recipe 'buidl' not found
+Did you mean: build?
+```
+
+### Short Listing for Scripts
+
+The `--short` flag outputs one recipe name per line without colors, making it suitable for shell scripting:
+
+```bash
+# Count recipes
+jake -l --short | wc -l
+
+# Filter recipes
+jake -l --short | grep test
+
+# Run all test recipes
+for r in $(jake -l --short | grep test); do jake "$r"; done
+```
+
+### Recipe Inspection
+
+Use `--show` (or `-s`) to see complete details about a recipe:
+
+```bash
+$ jake --show deploy
+Recipe: deploy
+Type: task
+Group: production
+Description: Deploy to production servers
+Default: no
+
+Dependencies: [build, test]
+
+Parameters:
+  env (default: "staging")
+  force (required)
+
+Commands:
+  @needs kubectl docker
+  @confirm "Deploy to {{env}}?"
+  kubectl apply -f deploy.yaml
+
+Hooks:
+  @pre: echo "Starting deployment..."
+  @post: notify-slack "Deployed!"
 ```
 
 ---
