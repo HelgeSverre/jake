@@ -73,11 +73,11 @@ pub fn main() !void {
     var jakefile_data = loadJakefile(allocator, args.jakefile) catch |err| {
         const stderr = getStderr();
         if (err == error.FileNotFound) {
-            stderr.writeAll("\x1b[1;31merror:\x1b[0m No Jakefile found\n") catch {};
+            stderr.writeAll(args_mod.ansi.err_prefix ++ "No Jakefile found\n") catch {};
             stderr.writeAll("Create a file named 'Jakefile' in the current directory.\n") catch {};
         } else {
             var buf: [256]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Failed to load Jakefile: {s}\n", .{@errorName(err)}) catch "error\n";
+            const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to load Jakefile: {s}\n", .{@errorName(err)}) catch "error\n";
             stderr.writeAll(msg) catch {};
         }
         std.process.exit(1);
@@ -119,7 +119,7 @@ pub fn main() !void {
         if (jakefile_data.jakefile.getDefaultRecipe()) |r| {
             break :blk r.name;
         }
-        getStderr().writeAll("\x1b[1;31merror:\x1b[0m No default recipe and no recipe specified\n") catch {};
+        getStderr().writeAll(args_mod.ansi.err_prefix ++ "No default recipe and no recipe specified\n") catch {};
         std.process.exit(1);
     };
 
@@ -142,7 +142,7 @@ pub fn main() !void {
         watcher.watch(target) catch |err| {
             const stderr = getStderr();
             var buf: [256]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Watch failed: {s}\n", .{@errorName(err)}) catch "error\n";
+            const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Watch failed: {s}\n", .{@errorName(err)}) catch "error\n";
             stderr.writeAll(msg) catch {};
             std.process.exit(1);
         };
@@ -168,23 +168,23 @@ pub fn main() !void {
                 if (suggestions.len > 0) {
                     var suggest_buf: [128]u8 = undefined;
                     const suggest_str = jake.suggest.formatSuggestion(&suggest_buf, suggestions);
-                    const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' not found\n{s}", .{ target, suggest_str }) catch "error\n";
+                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Recipe '{s}' not found\n{s}", .{ target, suggest_str }) catch "error\n";
                     stderr.writeAll(msg) catch {};
                 } else {
-                    const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' not found\nRun 'jake --list' to see available recipes.\n", .{target}) catch "error\n";
+                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Recipe '{s}' not found\nRun 'jake --list' to see available recipes.\n", .{target}) catch "error\n";
                     stderr.writeAll(msg) catch {};
                 }
             },
             error.CyclicDependency => {
-                const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Cyclic dependency detected in '{s}'\n", .{target}) catch "error\n";
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Cyclic dependency detected in '{s}'\n", .{target}) catch "error\n";
                 stderr.writeAll(msg) catch {};
             },
             error.CommandFailed => {
-                const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' failed\n", .{target}) catch "error\n";
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Recipe '{s}' failed\n", .{target}) catch "error\n";
                 stderr.writeAll(msg) catch {};
             },
             else => {
-                const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m {s}\n", .{@errorName(err)}) catch "error\n";
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "{s}\n", .{@errorName(err)}) catch "error\n";
                 stderr.writeAll(msg) catch {};
             },
         }
@@ -231,7 +231,7 @@ fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !JakefileWithSou
                 error.ParseError => "Failed to parse imported file",
                 else => @errorName(err),
             };
-            const err_msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Import failed: {s}\n", .{msg}) catch "error\n";
+            const err_msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Import failed: {s}\n", .{msg}) catch "error\n";
             stderr.writeAll(err_msg) catch {};
             return error.ImportFailed;
         };
