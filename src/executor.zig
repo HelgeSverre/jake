@@ -1318,8 +1318,11 @@ pub const Executor = struct {
         // Short mode: one recipe name per line, no colors, no formatting
         if (short_mode) {
             for (self.jakefile.recipes) |*recipe| {
-                // Skip private recipes (names starting with '_')
+                // Skip private recipes (starting with '_' or prefixed private like 'foo._bar')
                 if (recipe.name.len > 0 and recipe.name[0] == '_') {
+                    continue;
+                }
+                if (std.mem.indexOf(u8, recipe.name, "._") != null) {
                     continue;
                 }
                 stdout.writeAll(recipe.name) catch {};
@@ -1347,8 +1350,12 @@ pub const Executor = struct {
 
         // Collect recipes into groups
         for (self.jakefile.recipes) |*recipe| {
-            // Skip private recipes (names starting with '_')
+            // Skip private recipes (starting with '_' or prefixed private like 'foo._bar')
             if (recipe.name.len > 0 and recipe.name[0] == '_') {
+                hidden_count += 1;
+                continue;
+            }
+            if (std.mem.indexOf(u8, recipe.name, "._") != null) {
                 hidden_count += 1;
                 continue;
             }
