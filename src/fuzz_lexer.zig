@@ -1,5 +1,6 @@
 const std = @import("std");
 const jake = @import("jake");
+const compat = jake.compat;
 
 // Fuzzing harness for lexer/tokenization.
 //
@@ -21,7 +22,7 @@ pub fn main() !void {
         if (args.len >= 2) {
             break :blk try std.fs.cwd().readFileAlloc(allocator, args[1], max_len);
         }
-        break :blk try std.fs.File.stdin().readToEndAlloc(allocator, max_len);
+        break :blk try compat.getStdIn().readToEndAlloc(allocator, max_len);
     };
     defer allocator.free(input);
 
