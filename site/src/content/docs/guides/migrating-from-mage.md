@@ -1,6 +1,9 @@
 ---
 title: Migrating from Mage
 description: Convert your magefile.go to a Jakefile.
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
 ---
 
 Mage (magefile.org) uses Go functions as build tasks. Jake provides similar functionality with a simpler DSL that doesn't require compiling.

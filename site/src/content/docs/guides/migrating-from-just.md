@@ -1,6 +1,9 @@
 ---
 title: Migrating from Just
 description: A guide to converting your justfile to a Jakefile.
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
 ---
 
 If you're coming from Just, the transition to Jake is smooth. Most syntax is similar or identical.

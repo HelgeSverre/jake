@@ -1,6 +1,9 @@
 ---
 title: Migrating from Bash Scripts
 description: Replace your build.sh and task runner scripts with Jake.
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
 ---
 
 Many projects use bash scripts (`build.sh`, `run.sh`, `Taskfile`) as task runners. Jake provides the same functionality with better ergonomics.

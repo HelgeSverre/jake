@@ -1,6 +1,9 @@
 ---
 title: Migrating from Make
 description: A guide to converting your Makefile to a Jakefile.
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
 ---
 
 If you're coming from GNU Make, this guide will help you translate your Makefiles to Jakefiles.

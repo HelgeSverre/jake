@@ -1,6 +1,9 @@
 ---
 title: Migrating from Invoke
 description: Convert your tasks.py to a Jakefile.
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
 ---
 
 Invoke (pyinvoke.org) is a Python library for managing shell tasks. Jake provides similar functionality without requiring Python.

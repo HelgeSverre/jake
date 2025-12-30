@@ -1,6 +1,9 @@
 ---
 title: Migrating from Doit
 description: Convert your dodo.py to a Jakefile.
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
 ---
 
 Doit (pydoit.org) is a Python-based build tool. If you're looking for a simpler, faster alternative, Jake provides similar functionality without requiring Python.

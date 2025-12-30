@@ -1,6 +1,9 @@
 ---
 title: Migrating from Taskfile
 description: Convert your Taskfile.yml to a Jakefile.
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 2
 ---
 
 Taskfile (taskfile.dev) is a popular YAML-based task runner. Jake provides similar features with a more concise syntax.
