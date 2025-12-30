@@ -1,5 +1,6 @@
 // completions.zig - Shell completion script generators for jake
 // Generates completion scripts for bash, zsh, and fish shells
+// Includes smart installation with environment detection
 
 const std = @import("std");
 const args_mod = @import("args.zig");
@@ -26,18 +27,33 @@ pub const Shell = enum {
     }
 };
 
+/// Zsh environment type for smart installation
+pub const ZshEnv = enum {
+    oh_my_zsh, // Has Oh-My-Zsh installed
+    homebrew, // Has Homebrew zsh site-functions
+    vanilla, // Plain zsh, needs .zshrc modification
+};
+
+/// Installation result with path and status
+pub const InstallResult = struct {
+    path: []const u8,
+    config_modified: bool,
+    needs_instructions: bool,
+    instructions: ?[]const u8,
+};
+
+/// Markers for config file blocks
+const CONFIG_BLOCK_START = "# >>> jake completion >>>";
+const CONFIG_BLOCK_END = "# <<< jake completion <<<";
+
 /// Detect shell from $SHELL environment variable
 pub fn detectShell() ?Shell {
     const shell_path = std.posix.getenv("SHELL") orelse return null;
-
-    // Extract basename from path (e.g., /bin/zsh -> zsh)
     const basename = std.fs.path.basename(shell_path);
 
     if (std.mem.eql(u8, basename, "bash")) return .bash;
     if (std.mem.eql(u8, basename, "zsh")) return .zsh;
     if (std.mem.eql(u8, basename, "fish")) return .fish;
-
-    // Handle common variations
     if (std.mem.startsWith(u8, basename, "bash")) return .bash;
     if (std.mem.startsWith(u8, basename, "zsh")) return .zsh;
     if (std.mem.startsWith(u8, basename, "fish")) return .fish;
@@ -50,31 +66,372 @@ fn getHomeDir() ?[]const u8 {
     return std.posix.getenv("HOME");
 }
 
-/// Installation result with path and any additional instructions
-pub const InstallResult = struct {
-    path: []const u8,
-    instructions: ?[]const u8,
-};
+/// Detect zsh environment type
+pub fn detectZshEnv() ZshEnv {
+    const home = getHomeDir() orelse return .vanilla;
 
-/// Get the installation path for completions
-pub fn getInstallPath(allocator: std.mem.Allocator, shell: Shell) !InstallResult {
+    // Check for Oh-My-Zsh (most specific first)
+    // Look for $ZSH env var or ~/.oh-my-zsh directory
+    if (std.posix.getenv("ZSH")) |zsh_dir| {
+        // Verify it's actually Oh-My-Zsh by checking for oh-my-zsh.sh
+        var path_buf: [512]u8 = undefined;
+        const check_path = std.fmt.bufPrint(&path_buf, "{s}/oh-my-zsh.sh", .{zsh_dir}) catch return .vanilla;
+        if (std.fs.cwd().access(check_path, .{})) |_| {
+            return .oh_my_zsh;
+        } else |_| {}
+    }
+
+    // Check for ~/.oh-my-zsh directory
+    var omz_buf: [512]u8 = undefined;
+    const omz_path = std.fmt.bufPrint(&omz_buf, "{s}/.oh-my-zsh/oh-my-zsh.sh", .{home}) catch return .vanilla;
+    if (std.fs.cwd().access(omz_path, .{})) |_| {
+        return .oh_my_zsh;
+    } else |_| {}
+
+    // Check for Homebrew zsh site-functions
+    if (std.fs.cwd().access("/opt/homebrew/share/zsh/site-functions", .{})) |_| {
+        return .homebrew;
+    } else |_| {}
+
+    // Also check Intel Mac Homebrew path
+    if (std.fs.cwd().access("/usr/local/share/zsh/site-functions", .{})) |_| {
+        return .homebrew;
+    } else |_| {}
+
+    return .vanilla;
+}
+
+/// Get the best installation path for zsh completions
+fn getZshInstallPath(allocator: std.mem.Allocator) !struct { path: []const u8, env: ZshEnv } {
+    const home = getHomeDir() orelse return error.NoHomeDir;
+    const env = detectZshEnv();
+
+    const path = switch (env) {
+        .oh_my_zsh => blk: {
+            // Use $ZSH_CUSTOM if set, otherwise default
+            const zsh_custom = std.posix.getenv("ZSH_CUSTOM") orelse {
+                const zsh = std.posix.getenv("ZSH") orelse {
+                    break :blk try std.fmt.allocPrint(allocator, "{s}/.oh-my-zsh/custom/completions/_jake", .{home});
+                };
+                break :blk try std.fmt.allocPrint(allocator, "{s}/custom/completions/_jake", .{zsh});
+            };
+            break :blk try std.fmt.allocPrint(allocator, "{s}/completions/_jake", .{zsh_custom});
+        },
+        .homebrew => blk: {
+            // Try ARM Mac first, then Intel Mac
+            if (std.fs.cwd().access("/opt/homebrew/share/zsh/site-functions", .{})) |_| {
+                break :blk try allocator.dupe(u8, "/opt/homebrew/share/zsh/site-functions/_jake");
+            } else |_| {}
+            break :blk try allocator.dupe(u8, "/usr/local/share/zsh/site-functions/_jake");
+        },
+        .vanilla => try std.fmt.allocPrint(allocator, "{s}/.zsh/completions/_jake", .{home}),
+    };
+
+    return .{ .path = path, .env = env };
+}
+
+/// Check if a file contains our config block
+fn hasConfigBlock(content: []const u8) bool {
+    return std.mem.indexOf(u8, content, CONFIG_BLOCK_START) != null;
+}
+
+/// Remove existing config block from content
+fn removeConfigBlock(allocator: std.mem.Allocator, content: []const u8) ![]const u8 {
+    const start_idx = std.mem.indexOf(u8, content, CONFIG_BLOCK_START) orelse return try allocator.dupe(u8, content);
+    const end_idx = std.mem.indexOf(u8, content, CONFIG_BLOCK_END) orelse return try allocator.dupe(u8, content);
+
+    // Find the actual end (after the end marker and newline)
+    var actual_end = end_idx + CONFIG_BLOCK_END.len;
+    if (actual_end < content.len and content[actual_end] == '\n') {
+        actual_end += 1;
+    }
+
+    // Find the start (including preceding newline if present)
+    var actual_start = start_idx;
+    if (actual_start > 0 and content[actual_start - 1] == '\n') {
+        actual_start -= 1;
+    }
+
+    // Concatenate before and after
+    const before = content[0..actual_start];
+    const after = if (actual_end < content.len) content[actual_end..] else "";
+
+    return try std.fmt.allocPrint(allocator, "{s}{s}", .{ before, after });
+}
+
+/// Generate the config block for .zshrc
+fn generateZshConfigBlock(allocator: std.mem.Allocator) ![]const u8 {
+    return try std.fmt.allocPrint(allocator,
+        \\
+        \\{s}
+        \\# This block is managed by jake. Do not edit manually.
+        \\fpath=(~/.zsh/completions $fpath)
+        \\autoload -Uz compinit && compinit -u
+        \\{s}
+    , .{ CONFIG_BLOCK_START, CONFIG_BLOCK_END });
+}
+
+/// Patch .zshrc with our config block
+fn patchZshrc(allocator: std.mem.Allocator, writer: anytype) !bool {
     const home = getHomeDir() orelse return error.NoHomeDir;
 
-    return switch (shell) {
-        .bash => .{
-            .path = try std.fmt.allocPrint(allocator, "{s}/.local/share/bash-completion/completions/jake", .{home}),
-            .instructions = null,
-        },
-        .zsh => .{
-            .path = try std.fmt.allocPrint(allocator, "{s}/.zsh/completions/_jake", .{home}),
-            .instructions = "Add to your ~/.zshrc:\n  fpath=(~/.zsh/completions $fpath)\n  autoload -Uz compinit && compinit",
-        },
-        .fish => .{
-            .path = try std.fmt.allocPrint(allocator, "{s}/.config/fish/completions/jake.fish", .{home}),
-            .instructions = null,
-        },
+    var path_buf: [512]u8 = undefined;
+    const zshrc_path = std.fmt.bufPrint(&path_buf, "{s}/.zshrc", .{home}) catch return error.PathTooLong;
+
+    // Read existing content
+    const file = std.fs.cwd().openFile(zshrc_path, .{ .mode = .read_write }) catch |err| {
+        if (err == error.FileNotFound) {
+            // Create new .zshrc with our block
+            const new_file = try std.fs.cwd().createFile(zshrc_path, .{});
+            defer new_file.close();
+            const block = try generateZshConfigBlock(allocator);
+            defer allocator.free(block);
+            try new_file.writeAll(block);
+            return true;
+        }
+        return err;
     };
+    defer file.close();
+
+    // Read content
+    const content = file.readToEndAlloc(allocator, 1024 * 1024) catch |err| {
+        try writer.print("Warning: Could not read ~/.zshrc: {s}\n", .{@errorName(err)});
+        return false;
+    };
+    defer allocator.free(content);
+
+    // Check if block already exists
+    if (hasConfigBlock(content)) {
+        // Remove old block first
+        const cleaned = try removeConfigBlock(allocator, content);
+        defer allocator.free(cleaned);
+
+        // Add new block at end
+        const block = try generateZshConfigBlock(allocator);
+        defer allocator.free(block);
+
+        const new_content = try std.fmt.allocPrint(allocator, "{s}{s}", .{ cleaned, block });
+        defer allocator.free(new_content);
+
+        // Rewrite file
+        try file.seekTo(0);
+        try file.writeAll(new_content);
+        try file.setEndPos(new_content.len);
+
+        return true;
+    }
+
+    // Append block to end
+    const block = try generateZshConfigBlock(allocator);
+    defer allocator.free(block);
+
+    try file.seekFromEnd(0);
+    try file.writeAll(block);
+
+    return true;
 }
+
+/// Uninstall completion and config block
+pub fn uninstall(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !void {
+    const home = getHomeDir() orelse return error.NoHomeDir;
+
+    // Remove completion file
+    switch (shell) {
+        .bash => {
+            var path_buf: [512]u8 = undefined;
+            const path = std.fmt.bufPrint(&path_buf, "{s}/.local/share/bash-completion/completions/jake", .{home}) catch return;
+            std.fs.cwd().deleteFile(path) catch |err| {
+                if (err != error.FileNotFound) {
+                    try writer.print("Warning: Could not remove {s}: {s}\n", .{ path, @errorName(err) });
+                }
+            };
+            try writer.print("Removed bash completions from: {s}\n", .{path});
+        },
+        .zsh => {
+            // Try all possible zsh locations
+            const paths = [_][]const u8{
+                "/.oh-my-zsh/custom/completions/_jake",
+                "/.zsh/completions/_jake",
+            };
+
+            for (paths) |suffix| {
+                var path_buf: [512]u8 = undefined;
+                const path = std.fmt.bufPrint(&path_buf, "{s}{s}", .{ home, suffix }) catch continue;
+                std.fs.cwd().deleteFile(path) catch continue;
+                try writer.print("Removed zsh completions from: {s}\n", .{path});
+            }
+
+            // Also try Homebrew paths (may fail due to permissions)
+            const brew_paths = [_][]const u8{
+                "/opt/homebrew/share/zsh/site-functions/_jake",
+                "/usr/local/share/zsh/site-functions/_jake",
+            };
+
+            for (brew_paths) |path| {
+                std.fs.cwd().deleteFile(path) catch continue;
+                try writer.print("Removed zsh completions from: {s}\n", .{path});
+            }
+
+            // Remove config block from .zshrc
+            var zshrc_buf: [512]u8 = undefined;
+            const zshrc_path = std.fmt.bufPrint(&zshrc_buf, "{s}/.zshrc", .{home}) catch return;
+
+            const file = std.fs.cwd().openFile(zshrc_path, .{ .mode = .read_write }) catch return;
+            defer file.close();
+
+            const content = file.readToEndAlloc(allocator, 1024 * 1024) catch return;
+            defer allocator.free(content);
+
+            if (hasConfigBlock(content)) {
+                const cleaned = try removeConfigBlock(allocator, content);
+                defer allocator.free(cleaned);
+
+                try file.seekTo(0);
+                try file.writeAll(cleaned);
+                try file.setEndPos(cleaned.len);
+
+                try writer.writeAll("Removed jake config block from ~/.zshrc\n");
+            }
+        },
+        .fish => {
+            var path_buf: [512]u8 = undefined;
+            const path = std.fmt.bufPrint(&path_buf, "{s}/.config/fish/completions/jake.fish", .{home}) catch return;
+            std.fs.cwd().deleteFile(path) catch |err| {
+                if (err != error.FileNotFound) {
+                    try writer.print("Warning: Could not remove {s}: {s}\n", .{ path, @errorName(err) });
+                }
+            };
+            try writer.print("Removed fish completions from: {s}\n", .{path});
+        },
+    }
+
+    try writer.writeAll("\nUninstallation complete. Restart your shell to apply changes.\n");
+}
+
+/// Install completion script with smart environment detection
+pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !void {
+    const home = getHomeDir() orelse return error.NoHomeDir;
+
+    // Generate the completion script to memory
+    var script_buf: [16384]u8 = undefined;
+    var script_stream = std.io.fixedBufferStream(&script_buf);
+    try generate(script_stream.writer(), shell);
+    const script = script_stream.getWritten();
+
+    switch (shell) {
+        .bash => {
+            var path_buf: [512]u8 = undefined;
+            const path = std.fmt.bufPrint(&path_buf, "{s}/.local/share/bash-completion/completions/jake", .{home}) catch return error.PathTooLong;
+
+            // Create directory
+            const dir_path = std.fs.path.dirname(path) orelse return error.InvalidPath;
+            std.fs.cwd().makePath(dir_path) catch {};
+
+            // Write file
+            const file = try std.fs.cwd().createFile(path, .{});
+            defer file.close();
+            try file.writeAll(script);
+
+            try writer.print("Installed bash completions to: {s}\n", .{path});
+            try writer.writeAll("\nRestart your shell or run: source ");
+            try writer.writeAll(path);
+            try writer.writeAll("\n");
+        },
+        .zsh => {
+            const zsh_info = try getZshInstallPath(allocator);
+            defer allocator.free(zsh_info.path);
+
+            // Create directory
+            const dir_path = std.fs.path.dirname(zsh_info.path) orelse return error.InvalidPath;
+
+            // Try to create directory and write file
+            const write_result: ?anyerror = blk: {
+                std.fs.cwd().makePath(dir_path) catch |err| {
+                    if (err == error.AccessDenied) break :blk error.AccessDenied;
+                };
+
+                const file = std.fs.cwd().createFile(zsh_info.path, .{}) catch |err| {
+                    break :blk err;
+                };
+                defer file.close();
+                file.writeAll(script) catch |err| break :blk err;
+                break :blk null;
+            };
+
+            if (write_result) |err| {
+                // Failed to write to preferred location
+                if (err == error.AccessDenied and zsh_info.env == .homebrew) {
+                    // Homebrew path needs sudo, fall back to user directory
+                    try writer.print("Note: {s} requires elevated permissions.\n", .{zsh_info.path});
+                    try writer.writeAll("Falling back to user directory...\n\n");
+
+                    // Fall back to ~/.zsh/completions
+                    var fallback_buf: [512]u8 = undefined;
+                    const fallback_path = std.fmt.bufPrint(&fallback_buf, "{s}/.zsh/completions/_jake", .{home}) catch return error.PathTooLong;
+
+                    const fallback_dir = std.fs.path.dirname(fallback_path) orelse return error.InvalidPath;
+                    std.fs.cwd().makePath(fallback_dir) catch {};
+
+                    const file = try std.fs.cwd().createFile(fallback_path, .{});
+                    defer file.close();
+                    try file.writeAll(script);
+
+                    try writer.print("Installed zsh completions to: {s}\n", .{fallback_path});
+
+                    // Patch .zshrc for vanilla install
+                    if (try patchZshrc(allocator, writer)) {
+                        try writer.writeAll("\nModified ~/.zshrc to include completion setup.\n");
+                    }
+                } else {
+                    return err;
+                }
+            } else {
+                try writer.print("Installed zsh completions to: {s}\n", .{zsh_info.path});
+
+                switch (zsh_info.env) {
+                    .oh_my_zsh => {
+                        try writer.writeAll("\nOh-My-Zsh detected - completions will be loaded automatically.\n");
+                    },
+                    .homebrew => {
+                        try writer.writeAll("\nHomebrew zsh detected - completions will be loaded automatically.\n");
+                    },
+                    .vanilla => {
+                        // Need to patch .zshrc
+                        if (try patchZshrc(allocator, writer)) {
+                            try writer.writeAll("\nModified ~/.zshrc to include completion setup.\n");
+                        } else {
+                            try writer.writeAll("\nAdd to your ~/.zshrc:\n");
+                            try writer.writeAll("  fpath=(~/.zsh/completions $fpath)\n");
+                            try writer.writeAll("  autoload -Uz compinit && compinit\n");
+                        }
+                    },
+                }
+            }
+
+            try writer.writeAll("\nRestart your shell to enable completions.\n");
+        },
+        .fish => {
+            var path_buf: [512]u8 = undefined;
+            const path = std.fmt.bufPrint(&path_buf, "{s}/.config/fish/completions/jake.fish", .{home}) catch return error.PathTooLong;
+
+            // Create directory
+            const dir_path = std.fs.path.dirname(path) orelse return error.InvalidPath;
+            std.fs.cwd().makePath(dir_path) catch {};
+
+            // Write file
+            const file = try std.fs.cwd().createFile(path, .{});
+            defer file.close();
+            try file.writeAll(script);
+
+            try writer.print("Installed fish completions to: {s}\n", .{path});
+            try writer.writeAll("\nFish auto-loads completions - restart your shell to enable.\n");
+        },
+    }
+}
+
+// ============================================================================
+// Completion Script Generators
+// ============================================================================
 
 /// Generate bash completion script
 pub fn generateBash(writer: anytype) !void {
@@ -169,7 +526,6 @@ pub fn generateZsh(writer: anytype) !void {
     // Add all flags from args.zig with descriptions
     for (args_mod.flags) |flag| {
         if (flag.short) |s| {
-            // Short and long form together
             switch (flag.takes_value) {
                 .none => try writer.print("        '(-{c} --{s})'{{{c},--{s}}}'[{s}]' \\\n", .{ s, flag.long, s, flag.long, flag.desc }),
                 .required => {
@@ -182,7 +538,6 @@ pub fn generateZsh(writer: anytype) !void {
                 },
             }
         } else {
-            // Long form only
             switch (flag.takes_value) {
                 .none => try writer.print("        '--{s}[{s}]' \\\n", .{ flag.long, flag.desc }),
                 .required => {
@@ -262,14 +617,12 @@ pub fn generateFish(writer: anytype) !void {
     // Add all flags from args.zig
     for (args_mod.flags) |flag| {
         if (flag.short) |s| {
-            // Has both short and long form
             switch (flag.takes_value) {
                 .none => try writer.print("complete -c jake -s {c} -l {s} -d '{s}'\n", .{ s, flag.long, flag.desc }),
                 .required => {
                     try writer.print("complete -c jake -s {c} -l {s} -d '{s}' -r", .{ s, flag.long, flag.desc });
-                    // Add value completions for specific flags
                     if (std.mem.eql(u8, flag.long, "jakefile")) {
-                        try writer.writeAll(" -F"); // File completion
+                        try writer.writeAll(" -F");
                     } else if (std.mem.eql(u8, flag.long, "show")) {
                         try writer.writeAll(" -a '(__jake_recipes)'");
                     }
@@ -284,7 +637,6 @@ pub fn generateFish(writer: anytype) !void {
                 },
             }
         } else {
-            // Long form only
             switch (flag.takes_value) {
                 .none => try writer.print("complete -c jake -l {s} -d '{s}'\n", .{ flag.long, flag.desc }),
                 .required, .optional => {
@@ -308,39 +660,6 @@ pub fn generate(writer: anytype, shell: Shell) !void {
     }
 }
 
-/// Install completion script to user directory
-pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !void {
-    const result = try getInstallPath(allocator, shell);
-    defer allocator.free(result.path);
-
-    // Create parent directories
-    const dir_path = std.fs.path.dirname(result.path) orelse return error.InvalidPath;
-
-    // Create directory (may already exist)
-    std.fs.cwd().makePath(dir_path) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-
-    // Generate the completion script to memory first
-    var script_buf: [16384]u8 = undefined;
-    var script_stream = std.io.fixedBufferStream(&script_buf);
-    try generate(script_stream.writer(), shell);
-
-    // Write to file
-    const file = try std.fs.cwd().createFile(result.path, .{});
-    defer file.close();
-    try file.writeAll(script_stream.getWritten());
-
-    // Print success message
-    try writer.print("Installed {s} completions to: {s}\n", .{ shell.toString(), result.path });
-
-    if (result.instructions) |instructions| {
-        try writer.print("\n{s}\n", .{instructions});
-    }
-
-    try writer.writeAll("\nRestart your shell or source the completion file to enable completions.\n");
-}
-
 // ============================================================================
 // Tests
 // ============================================================================
@@ -348,7 +667,6 @@ pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !voi
 const testing = std.testing;
 
 test "detectShell returns null for unknown shell" {
-    // This test depends on environment, so just verify the function works
     _ = detectShell();
 }
 
@@ -371,7 +689,6 @@ test "generateBash produces valid script" {
     try generateBash(stream.writer());
     const output = stream.getWritten();
 
-    // Verify key components
     try testing.expect(std.mem.indexOf(u8, output, "_jake()") != null);
     try testing.expect(std.mem.indexOf(u8, output, "complete -F _jake jake") != null);
     try testing.expect(std.mem.indexOf(u8, output, "--summary") != null);
@@ -384,7 +701,6 @@ test "generateZsh produces valid script" {
     try generateZsh(stream.writer());
     const output = stream.getWritten();
 
-    // Verify key components
     try testing.expect(std.mem.indexOf(u8, output, "#compdef jake") != null);
     try testing.expect(std.mem.indexOf(u8, output, "_jake()") != null);
     try testing.expect(std.mem.indexOf(u8, output, "--summary") != null);
@@ -396,29 +712,32 @@ test "generateFish produces valid script" {
     try generateFish(stream.writer());
     const output = stream.getWritten();
 
-    // Verify key components
     try testing.expect(std.mem.indexOf(u8, output, "function __jake_recipes") != null);
     try testing.expect(std.mem.indexOf(u8, output, "complete -c jake") != null);
     try testing.expect(std.mem.indexOf(u8, output, "--summary") != null);
 }
 
-test "getInstallPath returns correct paths" {
+test "hasConfigBlock detects block" {
+    const with_block = "some content\n" ++ CONFIG_BLOCK_START ++ "\nstuff\n" ++ CONFIG_BLOCK_END ++ "\nmore";
+    const without_block = "some content\nno block here\n";
+
+    try testing.expect(hasConfigBlock(with_block));
+    try testing.expect(!hasConfigBlock(without_block));
+}
+
+test "removeConfigBlock removes block" {
     const allocator = testing.allocator;
+    const content = "before\n" ++ CONFIG_BLOCK_START ++ "\nmanaged content\n" ++ CONFIG_BLOCK_END ++ "\nafter";
 
-    // Only test if HOME is set
-    if (std.posix.getenv("HOME")) |home| {
-        const bash_result = try getInstallPath(allocator, .bash);
-        defer allocator.free(bash_result.path);
-        try testing.expect(std.mem.indexOf(u8, bash_result.path, home) != null);
-        try testing.expect(std.mem.indexOf(u8, bash_result.path, "bash-completion") != null);
+    const result = try removeConfigBlock(allocator, content);
+    defer allocator.free(result);
 
-        const zsh_result = try getInstallPath(allocator, .zsh);
-        defer allocator.free(zsh_result.path);
-        try testing.expect(std.mem.indexOf(u8, zsh_result.path, "_jake") != null);
-        try testing.expect(zsh_result.instructions != null);
+    try testing.expect(std.mem.indexOf(u8, result, CONFIG_BLOCK_START) == null);
+    try testing.expect(std.mem.indexOf(u8, result, "before") != null);
+    try testing.expect(std.mem.indexOf(u8, result, "after") != null);
+}
 
-        const fish_result = try getInstallPath(allocator, .fish);
-        defer allocator.free(fish_result.path);
-        try testing.expect(std.mem.indexOf(u8, fish_result.path, "jake.fish") != null);
-    }
+test "detectZshEnv returns a valid value" {
+    const env = detectZshEnv();
+    _ = env; // Just verify it doesn't crash
 }

@@ -68,7 +68,7 @@ pub fn main() !void {
     }
 
     // Handle completions (doesn't need Jakefile)
-    if (args.completions_enabled or args.install_completions) {
+    if (args.completions_enabled or args.install_completions or args.uninstall_completions) {
         const stdout = getStdout();
         const stderr = getStderr();
 
@@ -89,9 +89,18 @@ pub fn main() !void {
             };
         };
 
-        if (args.install_completions) {
+        const stdout_writer = FileWriter{ .file = stdout };
+
+        if (args.uninstall_completions) {
+            // Uninstall completions
+            completions.uninstall(allocator, shell, stdout_writer) catch |err| {
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to uninstall completions: {s}\n", .{@errorName(err)}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+                std.process.exit(1);
+            };
+        } else if (args.install_completions) {
             // Install completions to user directory
-            const stdout_writer = FileWriter{ .file = stdout };
             completions.install(allocator, shell, stdout_writer) catch |err| {
                 var buf: [256]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to install completions: {s}\n", .{@errorName(err)}) catch "error\n";

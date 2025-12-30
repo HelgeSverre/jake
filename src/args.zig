@@ -41,6 +41,7 @@ pub const flags = [_]Flag{
     .{ .short = null, .long = "summary", .desc = "Print recipe names (space-separated, for scripts)" },
     .{ .short = null, .long = "completions", .desc = "Print shell completion script", .takes_value = .optional, .value_name = "SHELL" },
     .{ .short = null, .long = "install", .desc = "Install completions to user directory" },
+    .{ .short = null, .long = "uninstall", .desc = "Remove completions and config" },
 };
 
 pub const Args = struct {
@@ -62,6 +63,7 @@ pub const Args = struct {
     completions: ?[]const u8 = null, // Shell name for completions (bash/zsh/fish)
     completions_enabled: bool = false, // True if --completions was passed
     install_completions: bool = false, // Install completions to user directory
+    uninstall_completions: bool = false, // Uninstall completions
 
     /// Free allocated memory (positional args slice)
     pub fn deinit(self: *Args, allocator: std.mem.Allocator) void {
@@ -198,6 +200,8 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                 result.summary = true;
             } else if (std.mem.eql(u8, name, "install")) {
                 result.install_completions = true;
+            } else if (std.mem.eql(u8, name, "uninstall")) {
+                result.uninstall_completions = true;
             }
         },
         .required => {
