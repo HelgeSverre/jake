@@ -10,16 +10,26 @@
 version = "0.2.0"
 binary = "jake"
 
+# Export version for child processes
+@export version
+
 # Global hooks
 @pre echo "=== Jake Build System v{{version}} ==="
 @on_error echo "Build failed!"
 
+# Targeted hooks for release tasks
+@before release.all echo "Starting cross-platform build..."
+@after release.all echo "All platforms built successfully!"
+@before release.package echo "Preparing release package..."
+
 # Default: build and test
 @default
+@group dev
 @desc "Build and test everything"
 task all: [build, test]
     echo "Build complete!"
 
+@group dev
 @desc "Development build with optional watch mode"
 task dev: [build]
     @if is_watching()
@@ -28,6 +38,7 @@ task dev: [build]
         echo "Run with 'jake dev -w' for auto-rebuild"
     @end
 
+@group dev
 @desc "Show current build info and version"
 task info:
     @if exists(zig-out/bin/jake)
@@ -37,16 +48,19 @@ task info:
         echo "Binary not built yet. Run: jake build"
     @end
 
+@group dev
 @desc "Run all CI checks"
 task ci: [lint, test, build]
     echo "CI checks passed!"
 
+@group test
 @desc "Fuzz the Jakefile parser (1000 iterations)"
 task fuzz:
     @needs zig
     zig build fuzz-parse -Doptimize=ReleaseSafe
     ./scripts/dumb-fuzz.sh 1000
 
+@group test
 @desc "Fuzz using AFL++ in dumb mode (requires afl++)"
 task fuzz-afl:
     @needs zig
@@ -57,6 +71,7 @@ task fuzz-afl:
     find samples -name "*.jake" -type f -exec cp {} corpus/ \; 2>/dev/null || true
     AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 afl-fuzz -n -i corpus -o findings -- ./zig-out/bin/jake-fuzz-parse @@
 
+@group dev
 @desc "Quick pre-commit checks"
 task check: [lint, test]
     echo "Pre-commit checks passed!"
@@ -174,3 +189,212 @@ for i in range(1000):
     print()
 " > /tmp/large.jake
     echo "Generated /tmp/large.jake with 1000 tasks"
+
+# ============================================================================
+# Packaging & Distribution
+# ============================================================================
+
+@desc "Build release binary for current platform"
+@group packaging
+task package-binary:
+    @needs zig
+    @pre echo "Building release binary..."
+    zig build -Doptimize=ReleaseSafe
+    @post echo "Binary: zig-out/bin/jake"
+
+@desc "Build release binaries for all platforms (requires cross-compilation)"
+@group packaging
+task package-binaries:
+    @needs zig
+    @pre echo "Building cross-platform binaries..."
+    mkdir -p dist
+    @each x86_64-linux aarch64-linux x86_64-macos aarch64-macos
+        echo "Building for {{item}}..."
+        zig build -Doptimize=ReleaseSafe -Dtarget={{item}}
+        cp zig-out/bin/jake dist/jake-{{item}}
+    @end
+    @post ls -lh dist/
+
+@desc "Build Docker image"
+@group packaging
+task package-docker:
+    @needs docker
+    @pre echo "Building Docker image..."
+    docker build -t jake:{{version}} -t jake:latest -f packaging/docker/Dockerfile .
+    @post docker images jake
+
+@desc "Test Homebrew formula locally"
+@group packaging
+@only-os macos
+task package-homebrew-test:
+    @needs brew
+    @pre echo "Testing Homebrew formula..."
+    brew install --build-from-source ./packaging/homebrew/jake.rb
+    @post jake --version
+
+@desc "Build Nix package"
+@group packaging
+task package-nix:
+    @needs nix
+    @pre echo "Building Nix package..."
+    cd packaging/nix && nix build
+    @post ls -lh packaging/nix/result/bin/jake
+
+@desc "Generate AUR source package"
+@group packaging
+task package-aur:
+    @pre echo "Generating AUR source package..."
+    cd packaging/aur && makepkg --source
+    @post ls -lh packaging/aur/*.src.tar.gz
+
+@desc "Generate checksums for release binaries"
+@group packaging
+task package-checksums:
+    @pre echo "Generating checksums..."
+    @if exists(dist)
+        cd dist && sha256sum jake-* > SHA256SUMS
+        cat dist/SHA256SUMS
+    @else
+        echo "No dist/ directory. Run: jake package-binaries"
+    @end
+
+@desc "Test install script locally"
+@group packaging
+task package-install-test:
+    @pre echo "Testing install script..."
+    JAKE_INSTALL=/tmp/jake-test sh packaging/install.sh
+    /tmp/jake-test/jake --version
+    rm -rf /tmp/jake-test
+
+@desc "Build all packages"
+@group packaging
+task package-all: [package-binaries, package-docker, package-checksums]
+    @post echo "All packages built! See dist/ directory."
+
+# ============================================================================
+# Samples & Examples
+# ============================================================================
+
+@group samples
+@desc "Run a specific sample (usage: jake run-sample 01-basics)"
+task run-sample:
+    @if exists(samples/{{$1}}/Jakefile)
+        @cd samples/{{$1}}
+        ../../zig-out/bin/jake
+    @else
+        echo "Sample not found: {{$1}}"
+        echo "Available samples:"
+        ls -1 samples/
+    @end
+
+@group samples
+@desc "Validate all sample Jakefiles parse correctly"
+task samples-validate: [build-release]
+    @pre echo "Validating all sample Jakefiles..."
+    @each 01-basics 02-parallel 03-conditions 04-functions
+        echo "Checking samples/{{item}}..."
+        ./zig-out/bin/jake -f samples/{{item}}/Jakefile -n || true
+    @end
+    @post echo "Sample validation complete!"
+
+@group samples
+@desc "List all sample projects with descriptions"
+task samples-list:
+    echo "Available samples:"
+    echo "  01-basics     - Basic task definitions and dependencies"
+    echo "  02-parallel   - Parallel task execution"
+    echo "  03-conditions - Conditional logic with @if/@else"
+    echo "  04-functions  - Built-in functions demo"
+
+# ============================================================================
+# Code Statistics
+# ============================================================================
+
+@group stats
+@desc "Count lines of code in Zig sources"
+task loc:
+    @pre echo "Lines of code:"
+    find src -name "*.zig" | xargs wc -l | tail -1
+
+@group stats
+@desc "Find TODO/FIXME/HACK comments in source"
+task todos:
+    @ignore
+    grep -rn "TODO\|FIXME\|HACK\|XXX" src/ || echo "No TODOs found!"
+
+@group stats
+@desc "Show largest source files by line count"
+task complexity:
+    @pre echo "Largest source files:"
+    wc -l src/*.zig | sort -n | tail -10
+
+# ============================================================================
+# Git & Release Workflow
+# ============================================================================
+
+@group git
+@desc "Show changelog since last tag"
+task changelog:
+    @pre echo "Changes since last release:"
+    git log --oneline $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~10)..HEAD
+
+@group git
+@desc "Create and push a git tag for current version"
+task tag:
+    @confirm Create tag v{{version}} and push to remote?
+    git tag -a v{{version}} -m "Release v{{version}}"
+    git push origin v{{version}}
+    echo "Tagged and pushed v{{version}}"
+
+@group git
+@desc "Show project contributors"
+task contributors:
+    @pre echo "Project contributors:"
+    git shortlog -sn
+
+# ============================================================================
+# Debugging & Inspection
+# ============================================================================
+
+@group debug
+@desc "Run jake with verbose tracing"
+task trace:
+    @needs zig
+    zig build -Doptimize=ReleaseFast
+    ./zig-out/bin/jake -v {{$1}}
+
+@group debug
+@desc "Show environment and system info"
+task env-info:
+    echo "Jake version: {{version}}"
+    echo "Platform: $(uname -s) $(uname -m)"
+    echo "Home: {{home()}}"
+    echo "Shell: $SHELL"
+    echo "PATH contains jake: "
+    which jake || echo "jake not in PATH"
+
+# ============================================================================
+# Maintenance
+# ============================================================================
+
+@group maint
+@desc "Rebuild and reinstall jake"
+task self-update: [build-release]
+    @pre echo "Reinstalling jake..."
+    cp zig-out/bin/jake {{local_bin("jake")}}
+    @post echo "Updated {{local_bin(\"jake\")}}"
+
+@group maint
+@desc "Clear jake cache files"
+task cache-clean:
+    @ignore
+    rm -rf .jake
+    echo "Jake cache cleared"
+
+@group maint
+@desc "Remove all build artifacts and caches"
+task prune:
+    @ignore
+    @pre echo "Pruning build artifacts..."
+    rm -rf zig-out .zig-cache .jake dist
+    @post echo "All artifacts removed"
