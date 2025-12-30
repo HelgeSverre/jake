@@ -1,5 +1,10 @@
 /* Jake Custom Theme */
 
+/* Hide theme toggle - force dark mode only */
+starlight-theme-select {
+	display: none;
+}
+
 :root {
 	/* Primary colors - Jake Red */
 	--sl-color-accent-low: #4c0519;
