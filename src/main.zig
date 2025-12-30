@@ -2,8 +2,8 @@ const std = @import("std");
 const jake = @import("jake");
 const compat = jake.compat;
 const build_options = @import("build_options");
-const args_mod = @import("args.zig");
-const completions = @import("completions.zig");
+const args_mod = jake.args;
+const completions = jake.completions;
 
 const version = "0.3.0";
 

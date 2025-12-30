@@ -91,8 +91,45 @@ pub fn parse(allocator: std.mem.Allocator, raw_args: []const []const u8) ParseEr
     while (i < raw_args.len) : (i += 1) {
         const arg = raw_args[i];
 
-        // Once we have a recipe, everything else is positional
+        // Once we have a recipe, check if this is a global flag before treating as positional
         if (result.recipe != null) {
+            // Allow global boolean flags (--yes, --verbose, --dry-run, etc.) after recipe
+            if (arg.len > 0 and arg[0] == '-') {
+                if (arg.len > 1 and arg[1] == '-') {
+                    // Long flag: check if it's a known boolean flag
+                    const long_name = arg[2..];
+                    if (matchLongFlag(long_name)) |flag_idx| {
+                        if (flags[flag_idx].takes_value == .none) {
+                            try setFlag(&result, flag_idx, null, raw_args, &i);
+                            continue;
+                        }
+                    }
+                } else {
+                    // Short flag: check if all chars are known boolean flags
+                    const short_chars = arg[1..];
+                    var all_boolean = true;
+                    for (short_chars) |c| {
+                        if (matchShortFlag(c)) |flag_idx| {
+                            if (flags[flag_idx].takes_value != .none) {
+                                all_boolean = false;
+                                break;
+                            }
+                        } else {
+                            all_boolean = false;
+                            break;
+                        }
+                    }
+                    if (all_boolean and short_chars.len > 0) {
+                        for (short_chars) |c| {
+                            if (matchShortFlag(c)) |flag_idx| {
+                                try setFlag(&result, flag_idx, null, raw_args, &i);
+                            }
+                        }
+                        continue;
+                    }
+                }
+            }
+            // Not a global flag, treat as positional
             positional_list.append(allocator, arg) catch {};
             continue;
         }
@@ -503,12 +540,31 @@ test "multiple boolean flags" {
     try expectEqualStrings("build", args.recipe.?);
 }
 
-test "flags after recipe are positional" {
-    var args = try parse(testing.allocator, &.{ "jake", "build", "-v" });
+test "boolean flags after recipe still work" {
+    var args = try parse(testing.allocator, &.{ "jake", "build", "-v", "--yes" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expect(args.verbose); // -v is processed as flag
+    try expect(args.yes); // --yes is processed as flag
+    try expectEqual(@as(usize, 0), args.positional.len);
+}
+
+test "unknown flags after recipe are positional" {
+    var args = try parse(testing.allocator, &.{ "jake", "build", "--unknown-flag" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
     try expectEqual(@as(usize, 1), args.positional.len);
-    try expectEqualStrings("-v", args.positional[0]);
+    try expectEqualStrings("--unknown-flag", args.positional[0]);
+}
+
+test "value flags after recipe are positional" {
+    // -f takes a value, so it should be treated as positional after recipe
+    var args = try parse(testing.allocator, &.{ "jake", "build", "-f", "file.jake" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expectEqual(@as(usize, 2), args.positional.len);
+    try expectEqualStrings("-f", args.positional[0]);
+    try expectEqualStrings("file.jake", args.positional[1]);
 }
 
 test "all boolean flags" {
@@ -653,4 +709,138 @@ test "parse --install alone" {
     const args = try parse(testing.allocator, &.{ "jake", "--install" });
     try expect(args.install_completions);
     try expect(!args.completions_enabled);
+}
+
+// ============================================================================
+// Flag Ordering Tests (flags after recipe)
+// ============================================================================
+
+test "all global boolean flags work after recipe" {
+    var args = try parse(testing.allocator, &.{
+        "jake", "build",
+        "-h", "-V", "-l", "-n", "-v", "-y", "--short", "--summary", "--install", "--uninstall",
+    });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expect(args.help);
+    try expect(args.version);
+    try expect(args.list);
+    try expect(args.dry_run);
+    try expect(args.verbose);
+    try expect(args.yes);
+    try expect(args.short);
+    try expect(args.summary);
+    try expect(args.install_completions);
+    try expect(args.uninstall_completions);
+    try expectEqual(@as(usize, 0), args.positional.len);
+}
+
+test "mixed boolean flags before and after recipe" {
+    var args = try parse(testing.allocator, &.{ "jake", "-v", "build", "-n", "--yes" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expect(args.verbose);
+    try expect(args.dry_run);
+    try expect(args.yes);
+    try expectEqual(@as(usize, 0), args.positional.len);
+}
+
+test "combined short flags after recipe" {
+    var args = try parse(testing.allocator, &.{ "jake", "deploy", "-vny" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("deploy", args.recipe.?);
+    try expect(args.verbose);
+    try expect(args.dry_run);
+    try expect(args.yes);
+    try expectEqual(@as(usize, 0), args.positional.len);
+}
+
+test "real positional args with flags after recipe" {
+    var args = try parse(testing.allocator, &.{ "jake", "deploy", "prod", "fast", "--yes" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("deploy", args.recipe.?);
+    try expect(args.yes);
+    try expectEqual(@as(usize, 2), args.positional.len);
+    try expectEqualStrings("prod", args.positional[0]);
+    try expectEqualStrings("fast", args.positional[1]);
+}
+
+test "inline value format --jakefile=custom.jake" {
+    const args = try parse(testing.allocator, &.{ "jake", "--jakefile=custom.jake", "build" });
+    try expectEqualStrings("custom.jake", args.jakefile);
+    try expectEqualStrings("build", args.recipe.?);
+}
+
+test "inline value format --show=recipe" {
+    const args = try parse(testing.allocator, &.{ "jake", "--show=build" });
+    try expectEqualStrings("build", args.show.?);
+}
+
+test "inline value format --jobs=8" {
+    const args = try parse(testing.allocator, &.{ "jake", "--jobs=8", "build" });
+    try expectEqual(@as(usize, 8), args.jobs.?);
+    try expectEqualStrings("build", args.recipe.?);
+}
+
+test "inline value format --watch=pattern" {
+    const args = try parse(testing.allocator, &.{ "jake", "--watch=src/*.zig", "build" });
+    try expect(args.watch_enabled);
+    try expectEqualStrings("src/*.zig", args.watch.?);
+    try expectEqualStrings("build", args.recipe.?);
+}
+
+test "--uninstall flag parses correctly" {
+    const args = try parse(testing.allocator, &.{ "jake", "--uninstall" });
+    try expect(args.uninstall_completions);
+}
+
+test "flags after recipe with equals sign in positional" {
+    var args = try parse(testing.allocator, &.{ "jake", "test", "name=value", "--verbose" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("test", args.recipe.?);
+    try expect(args.verbose);
+    try expectEqual(@as(usize, 1), args.positional.len);
+    try expectEqualStrings("name=value", args.positional[0]);
+}
+
+test "long flag with value after recipe is positional" {
+    // --jakefile takes a value, so it's treated as positional after recipe
+    var args = try parse(testing.allocator, &.{ "jake", "build", "--jakefile", "other.jake" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expectEqual(@as(usize, 2), args.positional.len);
+    try expectEqualStrings("--jakefile", args.positional[0]);
+    try expectEqualStrings("other.jake", args.positional[1]);
+}
+
+test "inline value flag after recipe is positional" {
+    // Even --jakefile=value is positional after recipe since it takes a value
+    var args = try parse(testing.allocator, &.{ "jake", "build", "--jakefile=other.jake" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expectEqual(@as(usize, 1), args.positional.len);
+    try expectEqualStrings("--jakefile=other.jake", args.positional[0]);
+}
+
+test "empty args after program name" {
+    const args = try parse(testing.allocator, &.{"jake"});
+    try expect(args.recipe == null);
+    try expect(!args.help);
+    try expect(!args.list);
+}
+
+test "recipe that looks like a flag" {
+    // A recipe named literally "-v" would be strange but should work
+    // Actually no - first check is if it starts with -, so this would be parsed as flag
+    const args = try parse(testing.allocator, &.{ "jake", "some-recipe" });
+    try expectEqualStrings("some-recipe", args.recipe.?);
+}
+
+test "double-dash separator not special" {
+    // Just verify -- is treated normally (as unknown flag error or positional based on context)
+    var args = try parse(testing.allocator, &.{ "jake", "build", "--" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    // "--" after recipe becomes positional (not a known flag)
+    try expectEqual(@as(usize, 1), args.positional.len);
 }

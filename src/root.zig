@@ -14,6 +14,10 @@ pub const compat = @import("compat.zig");
 pub const suggest = @import("suggest.zig");
 pub const tracy = @import("tracy.zig");
 pub const hooks = @import("hooks.zig");
+pub const args = @import("args.zig");
+pub const conditions = @import("conditions.zig");
+pub const prompt = @import("prompt.zig");
+pub const completions = @import("completions.zig");
 
 pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;
@@ -59,6 +63,10 @@ comptime {
     _ = functions;
     _ = suggest;
     _ = hooks;
+    _ = args;
+    _ = conditions;
+    _ = prompt;
+    _ = completions;
 }
 
 test "basic lexer test" {
