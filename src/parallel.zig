@@ -358,6 +358,13 @@ pub const ParallelExecutor = struct {
             return true; // Success (skipped)
         }
 
+        // Check recipe-level @needs requirements before running any commands
+        if (recipe.needs.len > 0) {
+            if (!self.checkRecipeLevelNeeds(recipe)) {
+                return false;
+            }
+        }
+
         // Check if file target needs rebuilding
         if (recipe.kind == .file) {
             const needs_run = self.checkFileTarget(recipe) catch true;
@@ -384,6 +391,52 @@ pub const ParallelExecutor = struct {
             }
         }
 
+        return true;
+    }
+
+    /// Check if a command exists in PATH
+    fn commandExists(cmd: []const u8) bool {
+        // Handle absolute paths
+        if (cmd.len > 0 and cmd[0] == '/') {
+            return std.fs.accessAbsolute(cmd, .{}) != error.FileNotFound;
+        }
+
+        // Search in PATH
+        const path_env = std.process.getEnvVarOwned(std.heap.page_allocator, "PATH") catch return false;
+        defer std.heap.page_allocator.free(path_env);
+
+        var path_iter = std.mem.splitScalar(u8, path_env, ':');
+        while (path_iter.next()) |dir| {
+            var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+            const full_path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ dir, cmd }) catch continue;
+            if (std.fs.accessAbsolute(full_path, .{})) |_| {
+                return true;
+            } else |_| {
+                continue;
+            }
+        }
+        return false;
+    }
+
+    /// Check recipe-level @needs requirements before running any commands
+    fn checkRecipeLevelNeeds(self: *ParallelExecutor, recipe: *const Recipe) bool {
+        for (recipe.needs) |req| {
+            if (!commandExists(req.command)) {
+                self.printSynchronized("\x1b[1;31merror:\x1b[0m recipe '{s}' requires '{s}' but it's not installed\n", .{ recipe.name, req.command });
+
+                // Show hint if provided
+                if (req.hint) |hint| {
+                    self.printSynchronized("  hint: {s}\n", .{hint});
+                }
+
+                // Show install task suggestion if provided
+                if (req.install_task) |task| {
+                    self.printSynchronized("  run: jake {s}\n", .{task});
+                }
+
+                return false;
+            }
+        }
         return true;
     }
 
@@ -1299,4 +1352,62 @@ test "parallel executor @else branch" {
     try exec.buildGraph("test");
     // Should succeed - else branch executes
     try exec.execute();
+}
+
+// Recipe-level @needs tests for parallel executor
+
+test "parallel executor recipe-level @needs succeeds when command exists" {
+    const source =
+        \\@needs sh
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    defer exec.deinit();
+
+    try exec.buildGraph("test");
+    // Should succeed - 'sh' exists on all systems
+    try exec.execute();
+}
+
+test "parallel executor recipe-level @needs fails when command missing" {
+    const source =
+        \\@needs jake_nonexistent_xyz123
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    defer exec.deinit();
+
+    try exec.buildGraph("test");
+    // Should fail - command doesn't exist
+    const result = exec.execute();
+    try std.testing.expectError(executor_mod.ExecuteError.CommandFailed, result);
+}
+
+test "parallel executor recipe-level @needs with hint and task reference" {
+    const source =
+        \\@needs jake_nonexistent_xyz123 "Install it" -> install-cmd
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    const jakefile = try p.parseJakefile();
+
+    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    defer exec.deinit();
+
+    try exec.buildGraph("test");
+    // Should fail with hint and task suggestion in output
+    const result = exec.execute();
+    try std.testing.expectError(executor_mod.ExecuteError.CommandFailed, result);
 }

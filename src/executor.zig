@@ -208,6 +208,27 @@ pub const Executor = struct {
         return false;
     }
 
+    /// Check recipe-level @needs requirements before running any commands
+    fn checkRecipeLevelNeeds(self: *Executor, recipe: *const parser.Recipe) ExecuteError!void {
+        for (recipe.needs) |req| {
+            if (!self.commandExists(req.command)) {
+                self.print("\x1b[1;31merror:\x1b[0m recipe '{s}' requires '{s}' but it's not installed\n", .{ recipe.name, req.command });
+
+                // Show hint if provided
+                if (req.hint) |hint| {
+                    self.print("  hint: {s}\n", .{hint});
+                }
+
+                // Show install task suggestion if provided
+                if (req.install_task) |task| {
+                    self.print("  run: jake {s}\n", .{task});
+                }
+
+                return ExecuteError.CommandFailed;
+            }
+        }
+    }
+
     /// Check @needs directive - verify required commands exist
     /// Supports: @needs cmd, @needs cmd "hint", @needs cmd -> task, @needs cmd "hint" -> task
     fn checkNeedsDirective(self: *Executor, line: []const u8) ExecuteError!void {
@@ -636,6 +657,11 @@ pub const Executor = struct {
             self.print("jake: skipping '{s}' (not for {s})\n", .{ name, current_os });
             self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
             return;
+        }
+
+        // Check recipe-level @needs requirements before running any commands
+        if (recipe.needs.len > 0) {
+            try self.checkRecipeLevelNeeds(recipe);
         }
 
         // Mark as in progress
@@ -2822,6 +2848,111 @@ test "@needs with task reference still works when command exists" {
 
     // Should succeed - task reference only used on failure
     try executor.execute("test");
+}
+
+// Recipe-level @needs tests
+
+test "recipe-level @needs verifies command exists before execution" {
+    const source =
+        \\@needs sh
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // 'sh' should exist - recipe-level @needs checked before commands run
+    try executor.execute("test");
+}
+
+test "recipe-level @needs fails with helpful error when command missing" {
+    const source =
+        \\@needs jake_nonexistent_xyz123
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should fail because command doesn't exist - checked before commands run
+    const err = executor.execute("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, err);
+}
+
+test "recipe-level @needs with hint and task reference" {
+    const source =
+        \\@needs jake_nonexistent_xyz123 "Install from example.com" -> install-it
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should fail - hint and task reference will be shown in error
+    const err = executor.execute("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, err);
+}
+
+test "recipe-level @needs fails before any command executes" {
+    // This test verifies that @needs is checked BEFORE any commands run
+    // If @needs wasn't checked early, the first echo would execute before failure
+    const source =
+        \\@needs jake_nonexistent_xyz123
+        \\task test:
+        \\    echo "this should never run"
+        \\    exit 0
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    // NOT dry_run - we want to verify commands don't execute
+    // The @needs check should fail before any commands run
+
+    const err = executor.execute("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, err);
+    // If we got CommandFailed and not some other error, @needs checked first
+}
+
+test "recipe-level @needs checks multiple commands on same line" {
+    const source =
+        \\@needs sh cat jake_nonexistent_xyz123
+        \\task test:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should fail because third command doesn't exist
+    const err = executor.execute("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, err);
 }
 
 // @confirm tests
