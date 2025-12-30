@@ -673,6 +673,36 @@ test "platform conditions work with parentheses variations" {
     _ = try evaluate("is_unix()", &variables, .{});
 }
 
+// ============================================================================
+// Edge case tests from TODO.md test gaps
+// ============================================================================
+
+test "env with empty variable name returns false" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // env("") should return false (empty string is never a valid env var)
+    const result = try evaluate("env(\"\")", &variables, test_context);
+    try std.testing.expect(!result);
+}
+
+test "exists with empty path returns false" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("exists(\"\")", &variables, test_context);
+    try std.testing.expect(!result);
+}
+
+test "exists with path containing spaces" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // A non-existent path with spaces should still return false (not error)
+    const result = try evaluate("exists(\"/path with spaces\")", &variables, test_context);
+    try std.testing.expect(!result);
+}
+
 // --- Fuzz Testing ---
 
 test "fuzz condition evaluation" {

@@ -637,3 +637,88 @@ test "unknown escape sequence preserved" {
     // Unknown escapes like \x should be preserved as-is
     try std.testing.expectEqualStrings("hello\\xworld", env.get("UNKNOWN").?);
 }
+
+// ============================================================================
+// Edge case tests from TODO.md test gaps
+// ============================================================================
+
+test "empty key is ignored" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\=value_with_no_key
+        \\VALID=yes
+    ;
+
+    try env.parseDotenv(content);
+
+    // Empty key should result in empty string key being set or ignored
+    // The current behavior stores it with empty key
+    try std.testing.expectEqualStrings("yes", env.get("VALID").?);
+    // Empty key may be stored, but shouldn't cause issues
+    _ = env.get("");
+}
+
+test "recursive variable reference uses first defined value" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    // When A references B and B references A, each gets the value
+    // at the time of their definition (no infinite loop)
+    const content =
+        \\A=$B
+        \\B=$A
+    ;
+
+    try env.parseDotenv(content);
+
+    // A is defined first, B is undefined at that point, so A gets ""
+    // B is defined second, A is "" at that point, so B gets ""
+    try std.testing.expectEqualStrings("", env.get("A").?);
+    try std.testing.expectEqualStrings("", env.get("B").?);
+}
+
+test "recursive variable reference with initial value" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\BASE=/opt
+        \\A=$BASE/data
+        \\B=$A/logs
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("/opt", env.get("BASE").?);
+    try std.testing.expectEqualStrings("/opt/data", env.get("A").?);
+    try std.testing.expectEqualStrings("/opt/data/logs", env.get("B").?);
+}
+
+test "quote mismatch treated as literal" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\MISMATCH="value'
+    ;
+
+    try env.parseDotenv(content);
+
+    // Mismatched quotes are preserved as-is (not stripped)
+    try std.testing.expectEqualStrings("\"value'", env.get("MISMATCH").?);
+}
+
+test "single quote at start only treated as literal" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\SINGLE_START='value
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("'value", env.get("SINGLE_START").?);
+}

@@ -48,7 +48,7 @@ pub fn evaluate(allocator: std.mem.Allocator, call: []const u8, variables: *cons
     } else if (std.mem.eql(u8, func_name, "shell_config")) {
         return shellConfig(allocator);
     } else if (std.mem.eql(u8, func_name, "launch")) {
-        return launch(allocator);
+        return launch(allocator, arg);
     }
 
     return FunctionError.UnknownFunction;
@@ -86,6 +86,12 @@ fn trim(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
 fn dirname(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (std.fs.path.dirname(path)) |dir| {
         return try allocator.dupe(u8, dir);
+    }
+    // Handle special cases where Zig's dirname returns null
+    // but POSIX behavior expects a specific result
+    if (path.len > 0 and path[0] == '/') {
+        // dirname("/") should return "/" (POSIX behavior)
+        return try allocator.dupe(u8, "/");
     }
     return try allocator.dupe(u8, ".");
 }
@@ -199,15 +205,14 @@ fn shellConfig(allocator: std.mem.Allocator) FunctionError![]const u8 {
     return std.fmt.allocPrint(allocator, "{s}/.profile", .{home_dir}) catch return FunctionError.OutOfMemory;
 }
 
-/// launch() - Returns the platform-specific command for opening files/URLs
-fn launch(allocator: std.mem.Allocator) FunctionError![]const u8 {
-    const cmd = switch (builtin.os.tag) {
-        .macos => "open",
-        .linux => "xdg-open",
-        .windows => "cmd /c start \"\"",
+/// launch(target) - Returns the platform-specific command for opening files/URLs
+fn launch(allocator: std.mem.Allocator, target: []const u8) FunctionError![]const u8 {
+    return switch (builtin.os.tag) {
+        .macos => std.fmt.allocPrint(allocator, "open {s}", .{target}),
+        .linux => std.fmt.allocPrint(allocator, "xdg-open {s}", .{target}),
+        .windows => std.fmt.allocPrint(allocator, "cmd /c start \"\" {s}", .{target}),
         else => return FunctionError.InvalidArguments,
-    };
-    return allocator.dupe(u8, cmd) catch return FunctionError.OutOfMemory;
+    } catch return FunctionError.OutOfMemory;
 }
 
 // Tests
@@ -627,19 +632,19 @@ test "extension with double extension" {
 // Error handling tests
 // ============================================================================
 
-test "launch function returns platform command" {
+test "launch function returns platform command with target" {
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
 
-    const result = try evaluate(allocator, "launch()", &vars);
+    const result = try evaluate(allocator, "launch(http://example.com)", &vars);
     defer allocator.free(result);
 
-    // Verify it returns a non-empty string for the current platform
+    // Verify it returns the full command for the current platform
     const expected = switch (builtin.os.tag) {
-        .macos => "open",
-        .linux => "xdg-open",
-        .windows => "cmd /c start \"\"",
+        .macos => "open http://example.com",
+        .linux => "xdg-open http://example.com",
+        .windows => "cmd /c start \"\" http://example.com",
         else => unreachable,
     };
     try std.testing.expectEqualStrings(expected, result);
@@ -670,6 +675,116 @@ test "function with no opening paren returns error" {
 
     const result = evaluate(allocator, "uppercase hello)", &vars);
     try std.testing.expectError(FunctionError.InvalidArguments, result);
+}
+
+// ============================================================================
+// Path function edge cases (from TODO.md test gaps)
+// ============================================================================
+
+test "dirname of root returns root" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    const result = try evaluate(allocator, "dirname(/)", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("/", result);
+}
+
+test "dirname of bare filename returns dot" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    const result = try evaluate(allocator, "dirname(file.txt)", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings(".", result);
+}
+
+test "basename of trailing slash directory" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    const result = try evaluate(allocator, "basename(dir/)", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("dir", result);
+}
+
+test "basename of empty string" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    const result = try evaluate(allocator, "basename()", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("", result);
+}
+
+test "basename of root" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    const result = try evaluate(allocator, "basename(/)", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("", result);
+}
+
+test "extension of dotfile returns empty" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    const result = try evaluate(allocator, "extension(.bashrc)", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("", result);
+}
+
+test "extension of file without extension returns empty" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    const result = try evaluate(allocator, "extension(README)", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("", result);
+}
+
+// ============================================================================
+// String function edge cases (from TODO.md test gaps)
+// ============================================================================
+
+test "uppercase preserves non-ASCII as-is" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    // Non-ASCII characters pass through unchanged (std.ascii.toUpper only affects a-z)
+    const result = try evaluate(allocator, "uppercase(café)", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("CAFé", result);
+}
+
+test "trim of all whitespace returns empty" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+    try vars.put("spaces", "   ");
+
+    const result = try evaluate(allocator, "trim(spaces)", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("", result);
+}
+
+test "lowercase preserves numbers and symbols" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    const result = try evaluate(allocator, "lowercase(Hello123!)", &vars);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("hello123!", result);
 }
 
 // --- Fuzz Testing ---

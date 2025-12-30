@@ -513,6 +513,66 @@ test "parsePattern" {
     try std.testing.expectEqualStrings("*.txt", p3.glob_part);
 }
 
+// ============================================================================
+// Edge case tests from TODO.md test gaps
+// ============================================================================
+
+test "character range matches boundaries" {
+    // Explicitly test that boundaries are inclusive
+    try std.testing.expect(match("[a-z].txt", "a.txt")); // lower bound
+    try std.testing.expect(match("[a-z].txt", "z.txt")); // upper bound
+    try std.testing.expect(match("[0-9].txt", "0.txt")); // lower bound
+    try std.testing.expect(match("[0-9].txt", "9.txt")); // upper bound
+}
+
+test "negated character range" {
+    // [!a-z] should match uppercase but not lowercase
+    try std.testing.expect(match("[!a-z].txt", "A.txt"));
+    try std.testing.expect(match("[!a-z].txt", "Z.txt"));
+    try std.testing.expect(match("[!a-z].txt", "5.txt"));
+    try std.testing.expect(!match("[!a-z].txt", "a.txt"));
+    try std.testing.expect(!match("[!a-z].txt", "z.txt"));
+    try std.testing.expect(!match("[!a-z].txt", "m.txt"));
+}
+
+test "multiple ranges in character class" {
+    // [a-zA-Z0-9] should match letters and digits
+    try std.testing.expect(match("[a-zA-Z0-9].txt", "a.txt"));
+    try std.testing.expect(match("[a-zA-Z0-9].txt", "z.txt"));
+    try std.testing.expect(match("[a-zA-Z0-9].txt", "A.txt"));
+    try std.testing.expect(match("[a-zA-Z0-9].txt", "Z.txt"));
+    try std.testing.expect(match("[a-zA-Z0-9].txt", "0.txt"));
+    try std.testing.expect(match("[a-zA-Z0-9].txt", "9.txt"));
+    try std.testing.expect(!match("[a-zA-Z0-9].txt", "!.txt"));
+    try std.testing.expect(!match("[a-zA-Z0-9].txt", "-.txt"));
+}
+
+test "double asterisk at end matches all" {
+    try std.testing.expect(match("src/**", "src/main.zig"));
+    try std.testing.expect(match("src/**", "src/foo/bar.zig"));
+    try std.testing.expect(match("src/**", "src/a/b/c/d.txt"));
+    try std.testing.expect(!match("src/**", "test/main.zig"));
+}
+
+test "empty pattern behavior" {
+    // Empty pattern doesn't match non-empty paths
+    try std.testing.expect(!match("", "anything"));
+    // Empty pattern matches empty path (both exhausted)
+    try std.testing.expect(match("", ""));
+}
+
+test "empty path with non-empty pattern" {
+    try std.testing.expect(!match("*.txt", ""));
+    try std.testing.expect(!match("?", ""));
+    try std.testing.expect(!match("[abc]", ""));
+}
+
+test "double asterisk only matches everything" {
+    try std.testing.expect(match("**", "anything"));
+    try std.testing.expect(match("**", "path/to/file.txt"));
+    try std.testing.expect(match("**", ""));
+}
+
 // --- Fuzz Testing ---
 
 test "fuzz glob pattern matching" {

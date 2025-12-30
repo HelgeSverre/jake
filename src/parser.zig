@@ -3180,6 +3180,109 @@ test "section headers with blank lines are not captured" {
     try std.testing.expect(recipe.doc_comment == null);
 }
 
+// ============================================================================
+// Edge case tests from TODO.md test gaps
+// ============================================================================
+
+test "parse empty dependency list" {
+    const source =
+        \\task build: []
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].name);
+    try std.testing.expectEqual(@as(usize, 0), jakefile.recipes[0].dependencies.len);
+}
+
+test "parse trailing comma in dependencies" {
+    const source =
+        \\build: [a, b,]
+        \\    echo "done"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].dependencies.len);
+    try std.testing.expectEqualStrings("a", jakefile.recipes[0].dependencies[0]);
+    try std.testing.expectEqualStrings("b", jakefile.recipes[0].dependencies[1]);
+}
+
+test "parse dependency with hyphens" {
+    const source =
+        \\build: [my-dep, another-one]
+        \\    echo "done"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].dependencies.len);
+    try std.testing.expectEqualStrings("my-dep", jakefile.recipes[0].dependencies[0]);
+    try std.testing.expectEqualStrings("another-one", jakefile.recipes[0].dependencies[1]);
+}
+
+test "parse parameter with empty quoted default" {
+    const source =
+        \\task build a="":
+        \\    echo "a is: $a"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].params.len);
+    try std.testing.expectEqualStrings("a", jakefile.recipes[0].params[0].name);
+    try std.testing.expectEqualStrings("", jakefile.recipes[0].params[0].default.?);
+}
+
+test "parse parameter default with spaces" {
+    const source =
+        \\task greet name="hello world":
+        \\    echo "$name"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].params.len);
+    try std.testing.expectEqualStrings("name", jakefile.recipes[0].params[0].name);
+    try std.testing.expectEqualStrings("hello world", jakefile.recipes[0].params[0].default.?);
+}
+
+test "parse multiple parameters with mixed defaults" {
+    const source =
+        \\task test a b="default" c:
+        \\    echo "$a $b $c"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes[0].params.len);
+    try std.testing.expectEqualStrings("a", jakefile.recipes[0].params[0].name);
+    try std.testing.expect(jakefile.recipes[0].params[0].default == null);
+    try std.testing.expectEqualStrings("b", jakefile.recipes[0].params[1].name);
+    try std.testing.expectEqualStrings("default", jakefile.recipes[0].params[1].default.?);
+    try std.testing.expectEqualStrings("c", jakefile.recipes[0].params[2].name);
+    try std.testing.expect(jakefile.recipes[0].params[2].default == null);
+}
+
 // --- Fuzz Testing ---
 
 test "fuzz parser" {
