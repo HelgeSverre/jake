@@ -5,6 +5,7 @@
 @import "lib/release.jake" as release
 @import "lib/web.jake" as web
 @import "lib/perf.jake" as perf
+@import "lib/editors.jake" as editors
 
 @dotenv
 
@@ -362,6 +363,12 @@ task self-update: [build-release]
     @pre echo "Reinstalling jake..."
     cp zig-out/bin/jake {{local_bin("jake")}}
     @post echo "Updated {{local_bin(\"jake\")}}"
+
+@group maintenance
+@desc "Remove jake from local bin"
+task uninstall:
+    rm -f {{local_bin("jake")}}
+    echo "Removed {{local_bin(\"jake\")}}"
 
 @group maintenance
 @desc "Clear jake cache files"

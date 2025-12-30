@@ -281,12 +281,9 @@ pub fn build(b: *std.Build) void {
     // ---------------------------------------------------------------------
     // Tracy profiler (optional, lazy dependency)
     // ---------------------------------------------------------------------
-    // Note: Tracy integration requires a compatible zig-tracy package.
-    // The current SpexGuy/Zig-Tracy doesn't follow the new Zig 0.15 package format.
-    // To enable Tracy, you'll need to:
-    // 1. Find or create a Zig 0.15-compatible Tracy binding
-    // 2. Update build.zig.zon with the correct URL/hash
-    // 3. Uncomment and update the module import below
+    // Uses zig-gamedev/ztracy which is compatible with Zig 0.15+.
+    // Build with: zig build -Dtracy=true -Doptimize=ReleaseFast
+    // View traces with: tracy-capture -o trace.tracy && tracy trace.tracy
 
     const tracy_enabled = b.option(bool, "tracy", "Enable Tracy profiler instrumentation") orelse false;
 
@@ -298,11 +295,14 @@ pub fn build(b: *std.Build) void {
     mod.addOptions("tracy_options", tracy_options);
 
     if (tracy_enabled) {
-        // Tracy integration is currently disabled - the available zig-tracy packages
-        // don't follow the Zig 0.15 package format with proper module exports.
-        // The tracy.zig wrapper is ready - just need a compatible Tracy binding.
-        std.debug.print("Warning: Tracy profiler requested but not available.\n", .{});
-        std.debug.print("         See build.zig for instructions on enabling Tracy.\n", .{});
+        if (b.lazyDependency("ztracy", .{
+            .enable_ztracy = true,
+        })) |ztracy_dep| {
+            const ztracy_mod = ztracy_dep.module("root");
+            mod.addImport("ztracy", ztracy_mod);
+            exe.root_module.addImport("ztracy", ztracy_mod);
+            exe.linkLibrary(ztracy_dep.artifact("tracy"));
+        }
     }
 
     // Just like flags, top level steps are also listed in the `--help` menu.

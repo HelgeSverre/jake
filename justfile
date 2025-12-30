@@ -98,6 +98,11 @@ fetch:
 install:
     zig build --prefix ~/.local
 
+# Uninstall from ~/.local/bin
+[group('maintenance')]
+uninstall:
+    rm -f ~/.local/bin/jake
+
 # Generate Zig API documentation (into zig-out/docs)
 [group('maintenance')]
 docs:

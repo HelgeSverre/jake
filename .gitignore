@@ -26,6 +26,7 @@ Thumbs.db
 # Test artifacts
 test_*
 tests/e2e/output.txt
+coverage-out/
 
 # Docs
 docs/
