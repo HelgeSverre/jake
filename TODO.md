@@ -1038,6 +1038,16 @@ None currently! All known bugs have been fixed.
    - Built-in Recipes (@builtin docker/npm/git)
 3. **Long-term**: Container execution (@container) and workspace/monorepo support
 
+**Deferred Refactoring:**
+- [ ] **executor.zig modularization** - See `REFACTOR.md` for detailed plan
+  - Extract `platform.zig` (OS detection, ~40 lines)
+  - Extract `system.zig` (command existence checks, ~30 lines)
+  - Extract `expansion.zig` (variable expansion, ~80 lines)
+  - Extract `directive_parser.zig` (pure parsing, ~200 lines)
+  - Extract `display.zig` (recipe listing/display, ~360 lines)
+  - Deduplicate code shared with `parallel.zig`
+  - Goal: Reduce executor.zig from ~1700 → ~1000 lines of code
+
 ---
 
 ## Build & Test Commands
