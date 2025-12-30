@@ -87,25 +87,36 @@ pub const HookRunner = struct {
     }
 
     /// Run all pre-hooks for a recipe
+    /// Order: 1. Global @pre, 2. Targeted @before, 3. Recipe @pre
     pub fn runPreHooks(
         self: *HookRunner,
         recipe_pre_hooks: []const Hook,
         context: *const HookContext,
     ) HookError!void {
-        // Run global pre-hooks first (only if they match the current recipe)
+        // 1. Run truly global pre-hooks first (no recipe_name specified)
         for (self.global_pre_hooks.items) |hook| {
-            if (shouldRunHook(hook, context.recipe_name)) {
+            if (hook.recipe_name == null) {
                 try self.executeHook(hook, context);
             }
         }
 
-        // Run recipe-specific pre-hooks
+        // 2. Run targeted @before hooks (recipe_name matches current recipe)
+        for (self.global_pre_hooks.items) |hook| {
+            if (hook.recipe_name) |target| {
+                if (std.mem.eql(u8, target, context.recipe_name)) {
+                    try self.executeHook(hook, context);
+                }
+            }
+        }
+
+        // 3. Run recipe-specific pre-hooks (inside recipe body)
         for (recipe_pre_hooks) |hook| {
             try self.executeHook(hook, context);
         }
     }
 
     /// Run all post-hooks for a recipe (runs even on failure for cleanup)
+    /// Order: 1. Recipe @post, 2. Targeted @after, 3. Global @post
     pub fn runPostHooks(
         self: *HookRunner,
         recipe_post_hooks: []const Hook,
@@ -113,16 +124,27 @@ pub const HookRunner = struct {
     ) HookError!void {
         var first_error: ?HookError = null;
 
-        // Run recipe-specific post-hooks first
+        // 1. Run recipe-specific post-hooks first (inside recipe body)
         for (recipe_post_hooks) |hook| {
             self.executeHook(hook, context) catch |err| {
                 if (first_error == null) first_error = err;
             };
         }
 
-        // Run global post-hooks (only if they match the current recipe)
+        // 2. Run targeted @after hooks (recipe_name matches current recipe)
         for (self.global_post_hooks.items) |hook| {
-            if (shouldRunHook(hook, context.recipe_name)) {
+            if (hook.recipe_name) |target| {
+                if (std.mem.eql(u8, target, context.recipe_name)) {
+                    self.executeHook(hook, context) catch |err| {
+                        if (first_error == null) first_error = err;
+                    };
+                }
+            }
+        }
+
+        // 3. Run truly global post-hooks last (no recipe_name specified)
+        for (self.global_post_hooks.items) |hook| {
+            if (hook.recipe_name == null) {
                 self.executeHook(hook, context) catch |err| {
                     if (first_error == null) first_error = err;
                 };
@@ -384,7 +406,7 @@ test "hook runner handles empty hook list" {
     };
 
     // Running with empty hooks should not crash
-    runner.runHooks(.pre, context) catch {};
+    runner.runPreHooks(&.{}, &context) catch {};
 }
 
 test "hook runner handles null recipe name in context" {
@@ -403,7 +425,7 @@ test "hook runner handles null recipe name in context" {
     };
 
     // Should not crash with empty recipe name
-    runner.runHooks(.pre, context) catch {};
+    runner.runPreHooks(&.{}, &context) catch {};
 }
 
 test "shouldRunHook handles empty recipe name" {
@@ -427,17 +449,25 @@ test "shouldRunHook handles empty recipe name" {
 }
 
 test "hook variable expansion with special characters" {
-    const allocator = std.testing.allocator;
+    var runner = HookRunner.init(std.testing.allocator);
+    defer runner.deinit();
 
-    var variables = std.StringHashMap([]const u8).init(allocator);
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
     try variables.put("path", "/some/path with spaces");
     try variables.put("msg", "hello \"world\"");
 
+    const context = HookContext{
+        .recipe_name = "test",
+        .success = true,
+        .error_message = null,
+        .variables = &variables,
+    };
+
     const command = "echo {{path}} {{msg}}";
-    const expanded = try HookRunner.expandHookVariables(allocator, command, &variables);
-    defer allocator.free(expanded);
+    const expanded = try runner.expandHookVariables(command, &context);
+    defer std.testing.allocator.free(expanded);
 
     try std.testing.expectEqualStrings("echo /some/path with spaces hello \"world\"", expanded);
 }
