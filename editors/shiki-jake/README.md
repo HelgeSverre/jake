@@ -1,6 +1,6 @@
 # shiki-jake
 
-[Shiki](https://shiki.style/) syntax highlighting for [Jake](https://github.com/helgee/jake) task runner files.
+[Shiki](https://shiki.style/) syntax highlighting for [Jake](https://github.com/HelgeSverre/jake) task runner files.
 
 Shiki is a beautiful syntax highlighter powered by the same language grammars as VS Code. It provides accurate, high-quality syntax highlighting with zero dependencies at runtime.
 

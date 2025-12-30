@@ -1,6 +1,6 @@
 # highlightjs-jake
 
-[highlight.js](https://highlightjs.org/) syntax highlighting for [Jake](https://github.com/helgee/jake) task runner files.
+[highlight.js](https://highlightjs.org/) syntax highlighting for [Jake](https://github.com/HelgeSverre/jake) task runner files.
 
 ## Installation
 

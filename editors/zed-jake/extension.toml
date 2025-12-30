@@ -2,10 +2,11 @@
 name = "jake"
 version = "0.1.0"
 description = "Jake task runner language support for Zed"
-repository = "https://github.com/helgee/jake"
+repository = "https://github.com/HelgeSverre/jake"
 authors = ["Jake Contributors"]
 license = "MIT"
 
 [grammars.jake]
-repository = "https://github.com/helgee/tree-sitter-jake"
+repository = "https://github.com/HelgeSverre/jake"
+path = "editors/tree-sitter-jake"
 rev = "main"

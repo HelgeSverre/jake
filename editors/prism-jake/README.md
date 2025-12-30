@@ -1,6 +1,6 @@
 # prism-jake
 
-[Prism.js](https://prismjs.com/) syntax highlighting for [Jake](https://github.com/helgee/jake) task runner files.
+[Prism.js](https://prismjs.com/) syntax highlighting for [Jake](https://github.com/HelgeSverre/jake) task runner files.
 
 ## Installation
 

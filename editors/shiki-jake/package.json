@@ -9,7 +9,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/helgee/jake"
+    "url": "https://github.com/HelgeSverre/jake"
   },
   "peerDependencies": {
     "shiki": ">=1.0.0"
