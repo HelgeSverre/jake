@@ -61,7 +61,7 @@ syn region jakeInterpolation start="{{" end="}}" contains=jakeFunction,jakeVarRe
 syn match jakeVarRef "\<[a-zA-Z_][a-zA-Z0-9_]*\>" contained
 syn match jakeFunction "\<\(dirname\|basename\|extension\|without_extension\|without_extensions\)\>" contained
 syn match jakeFunction "\<\(absolute_path\|abs_path\|uppercase\|lowercase\|trim\)\>" contained
-syn match jakeFunction "\<\(home\|local_bin\|shell_config\|env\|exists\|eq\|neq\)\>" contained
+syn match jakeFunction "\<\(home\|local_bin\|shell_config\|launch\|env\|exists\|eq\|neq\)\>" contained
 syn match jakeFunction "\<\(is_watching\|is_dry_run\|is_verbose\|is_platform\|is_macos\|is_linux\|is_windows\|is_unix\|item\)\>" contained
 
 " Shell variables

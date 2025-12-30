@@ -4,6 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Jake Syntax Highlighting Test</title>
+
+  <!-- Prism.js - with data-manual to disable auto-highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js" data-manual></script>
+
+  <!-- highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <!-- Load Jake language definitions after libraries (defer preserves order) -->
+  <script defer src="prism-jake/prism-jake.js"></script>
+  <script defer src="highlightjs-jake/jake.js"></script>
+
+  <!-- Custom styles AFTER theme CSS for proper specificity -->
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -21,14 +35,14 @@
       background: #252526;
       border-radius: 8px;
     }
-    pre {
+    .section pre {
       margin: 0;
       padding: 15px;
-      background: #1e1e1e;
+      background: #1e1e1e !important;
       border-radius: 4px;
       overflow-x: auto;
     }
-    code {
+    .section code {
       font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
       font-size: 14px;
     }
@@ -47,18 +61,6 @@
       margin-top: 5px;
     }
   </style>
-
-  <!-- Prism.js - with data-manual to disable auto-highlighting -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js" data-manual></script>
-
-  <!-- highlight.js -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
-  <!-- Load Jake language definitions after libraries (defer preserves order) -->
-  <script defer src="prism-jake/prism-jake.js"></script>
-  <script defer src="highlightjs-jake/jake.js"></script>
 </head>
 <body>
   <h1>Jake Syntax Highlighting Test</h1>
@@ -104,14 +106,14 @@ file dist/app.js: [compile]
   <!-- Prism.js Section -->
   <div class="section">
     <h2>Prism.js <span id="prism-status" class="status">Loading...</span></h2>
-    <pre><code id="prism-code" class="language-jake"></code></pre>
+    <pre class="language-jake"><code id="prism-code"></code></pre>
     <p class="note">Uses: prism-jake/prism-jake.js</p>
   </div>
 
-  <!-- highlight.js Section -->
+  <!-- highlight.js Section (no language-* class to avoid Prism CSS leak) -->
   <div class="section">
     <h2>highlight.js <span id="hljs-status" class="status">Loading...</span></h2>
-    <pre><code id="hljs-code" class="language-jake"></code></pre>
+    <pre><code id="hljs-code" class="hljs"></code></pre>
     <p class="note">Uses: highlightjs-jake/jake.js</p>
   </div>
 
@@ -128,12 +130,11 @@ file dist/app.js: [compile]
     document.addEventListener('DOMContentLoaded', function() {
       var sampleCode = document.getElementById('jake-sample').textContent;
 
-      // Prism.js
+      // Prism.js - use highlight() directly
       try {
         var prismCode = document.getElementById('prism-code');
-        prismCode.textContent = sampleCode;
         if (Prism.languages.jake) {
-          Prism.highlightElement(prismCode);
+          prismCode.innerHTML = Prism.highlight(sampleCode, Prism.languages.jake, 'jake');
           document.getElementById('prism-status').textContent = 'OK';
           document.getElementById('prism-status').className = 'status ok';
         } else {
@@ -145,15 +146,14 @@ file dist/app.js: [compile]
         document.getElementById('prism-code').textContent = sampleCode;
       }
 
-      // highlight.js
+      // highlight.js - use highlight() directly, guard against double-registration
       try {
-        if (typeof hljsDefineJake === 'function') {
+        if (typeof hljsDefineJake === 'function' && !hljs.getLanguage('jake')) {
           hljs.registerLanguage('jake', hljsDefineJake);
         }
         var hljsCode = document.getElementById('hljs-code');
-        hljsCode.textContent = sampleCode;
         if (hljs.getLanguage('jake')) {
-          hljs.highlightElement(hljsCode);
+          hljsCode.innerHTML = hljs.highlight(sampleCode, { language: 'jake' }).value;
           document.getElementById('hljs-status').textContent = 'OK';
           document.getElementById('hljs-status').className = 'status ok';
         } else {
@@ -165,13 +165,20 @@ file dist/app.js: [compile]
         document.getElementById('hljs-code').textContent = sampleCode;
       }
 
-      // Shiki - load from CDN with custom grammar
+      // Shiki - load from CDN with custom grammar, force name to 'jake'
       (async function() {
         try {
           const shiki = await import('https://esm.sh/shiki@1.24.0');
           const grammarResponse = await fetch('shiki-jake/jake.tmLanguage.json');
           if (!grammarResponse.ok) throw new Error('Failed to load Jake grammar');
-          const jakeGrammar = await grammarResponse.json();
+          const raw = await grammarResponse.json();
+
+          // Ensure name is lowercase 'jake' for consistent lookup
+          const jakeGrammar = {
+            name: 'jake',
+            scopeName: raw.scopeName || 'source.jake',
+            ...raw
+          };
 
           const highlighter = await shiki.createHighlighter({
             themes: ['github-dark'],

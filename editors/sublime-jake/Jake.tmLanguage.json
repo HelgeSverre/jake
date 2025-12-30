@@ -361,7 +361,7 @@
           },
           "patterns": [
             {
-              "match": "\\b(dirname|basename|extension|without_extension|without_extensions|absolute_path|abs_path|uppercase|lowercase|trim|home|local_bin|shell_config|env|exists|eq|neq|is_watching|is_dry_run|is_verbose|is_platform|is_macos|is_linux|is_windows|is_unix)\\s*\\(",
+              "match": "\\b(dirname|basename|extension|without_extension|without_extensions|absolute_path|abs_path|uppercase|lowercase|trim|home|local_bin|shell_config|launch|env|exists|eq|neq|is_watching|is_dry_run|is_verbose|is_platform|is_macos|is_linux|is_windows|is_unix)\\s*\\(",
               "captures": {
                 "1": { "name": "support.function.jake" }
               }
