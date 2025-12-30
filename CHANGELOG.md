@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-12-30
+
+### Added
+
+- **@launch Directive**
+  - Open files and URLs from Jakefiles with `@launch`
+  - Built-in `launch()` function for use in commands
+  - Cross-platform support using `open` (macOS), `xdg-open` (Linux), `start` (Windows)
+
+- **Platform Detection Conditions**
+  - `os()` condition: check `macos`, `linux`, `windows`
+  - `arch()` condition: check `x86_64`, `aarch64`
+  - Enables platform-specific recipe commands
+
+- **CLI Improvements**
+  - Global flags now work after recipe name (e.g., `jake build -v`)
+  - More flexible argument ordering
+
+- **Jake Modules**
+  - Reusable Jakefile modules in `jake/` directory
+  - `build.jake` - Core build, test, and install tasks
+  - `release.jake` - Cross-platform release builds
+  - `perf.jake` - Performance and profiling tasks
+  - `web.jake` - Website-related tasks
+  - `editors.jake` - Editor integration setup
+
+- **Watch Mode Improvements**
+  - Better pattern parsing with feedback
+  - Improved watch mode testing fixtures
+
+### Fixed
+
+- `dirname("/")` edge case now returns "/" correctly
+- Editor syntax highlighters updated for `launch()` function
+- GitHub URLs updated to HelgeSverre organization
+- Docker completions test uses Zig 0.15.2
+
+### Changed
+
+- Removed legacy corpus, lib modules, and fuzz tests
+- Improved hook execution and error handling
+- Refactored functions, glob, and lexer modules
+
 ## [0.3.0] - 2025-12-30
 
 ### Added
@@ -130,6 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Multi-platform build support (Linux, macOS, Windows)
   - Cross-compilation for x86_64 and aarch64
 
+[0.4.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.4.0
 [0.3.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.3.0
 [0.2.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.2.0
 [0.1.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.1.0
