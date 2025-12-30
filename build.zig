@@ -160,8 +160,13 @@ pub fn build(b: *std.Build) void {
         .root_module = mod,
     });
 
-    // A run step that will run the test executable.
-    const run_mod_tests = b.addRunArtifact(mod_tests);
+    // Run test executable without --listen flag to avoid IPC hang
+    // (see https://github.com/ziglang/zig/issues/18111)
+    // We manually create the Run step instead of using addRunArtifact
+    // which would add the --listen=- flag that causes hangs.
+    const run_mod_tests = std.Build.Step.Run.create(b, "run module tests");
+    run_mod_tests.addArtifactArg(mod_tests);
+    run_mod_tests.stdio = .inherit;
 
     // Creates an executable that will run `test` blocks from the executable's
     // root module. Note that test executables only test one module at a time,
@@ -170,8 +175,10 @@ pub fn build(b: *std.Build) void {
         .root_module = exe.root_module,
     });
 
-    // A run step that will run the second test executable.
-    const run_exe_tests = b.addRunArtifact(exe_tests);
+    // Run second test executable without --listen flag
+    const run_exe_tests = std.Build.Step.Run.create(b, "run exe tests");
+    run_exe_tests.addArtifactArg(exe_tests);
+    run_exe_tests.stdio = .inherit;
 
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
@@ -179,79 +186,6 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
-
-    // ---------------------------------------------------------------------
-    // Fuzzing targets
-    // ---------------------------------------------------------------------
-
-    const fuzz_parse_exe = b.addExecutable(.{
-        .name = "jake-fuzz-parse",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/fuzz_parse.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "jake", .module = mod },
-            },
-        }),
-    });
-    fuzz_parse_exe.root_module.fuzz = true;
-
-    const install_fuzz_parse = b.addInstallArtifact(fuzz_parse_exe, .{});
-
-    const fuzz_parse_step = b.step("fuzz-parse", "Build parser fuzzing target");
-    fuzz_parse_step.dependOn(&install_fuzz_parse.step);
-
-    // Lexer fuzzer
-    const fuzz_lexer_exe = b.addExecutable(.{
-        .name = "jake-fuzz-lexer",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/fuzz_lexer.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "jake", .module = mod },
-            },
-        }),
-    });
-    fuzz_lexer_exe.root_module.fuzz = true;
-    const install_fuzz_lexer = b.addInstallArtifact(fuzz_lexer_exe, .{});
-    const fuzz_lexer_step = b.step("fuzz-lexer", "Build lexer fuzzing target");
-    fuzz_lexer_step.dependOn(&install_fuzz_lexer.step);
-
-    // Executor fuzzer
-    const fuzz_executor_exe = b.addExecutable(.{
-        .name = "jake-fuzz-executor",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/fuzz_executor.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "jake", .module = mod },
-            },
-        }),
-    });
-    fuzz_executor_exe.root_module.fuzz = true;
-    const install_fuzz_executor = b.addInstallArtifact(fuzz_executor_exe, .{});
-    const fuzz_executor_step = b.step("fuzz-executor", "Build executor fuzzing target");
-    fuzz_executor_step.dependOn(&install_fuzz_executor.step);
-
-    // Glob fuzzer
-    const fuzz_glob_exe = b.addExecutable(.{
-        .name = "jake-fuzz-glob",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/fuzz_glob.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "jake", .module = mod },
-            },
-        }),
-    });
-    fuzz_glob_exe.root_module.fuzz = true;
-    const install_fuzz_glob = b.addInstallArtifact(fuzz_glob_exe, .{});
-    const fuzz_glob_step = b.step("fuzz-glob", "Build glob fuzzing target");
-    fuzz_glob_step.dependOn(&install_fuzz_glob.step);
 
     // ---------------------------------------------------------------------
     // Benchmarks (using std.time.Timer)

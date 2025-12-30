@@ -252,7 +252,9 @@ test "cache isStale returns true for file not in cache" {
     const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
     defer std.testing.allocator.free(old_cwd);
 
-    try std.posix.chdir(try tmp_dir.dir.realpathAlloc(std.testing.allocator, "."));
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
     defer std.posix.chdir(old_cwd) catch {};
 
     const stale = try cache.isStale("test.txt");

@@ -119,6 +119,7 @@ pub const Jakefile = struct {
             allocator.free(recipe.post_hooks);
             allocator.free(recipe.aliases);
             allocator.free(recipe.only_os);
+            allocator.free(recipe.needs);
         }
         allocator.free(self.recipes);
         for (self.directives) |directive| {
@@ -308,7 +309,24 @@ pub const Parser = struct {
     }
 
     fn skipNewlines(self: *Parser) void {
+        var saw_blank_line = false;
+
         while (self.current.tag == .newline or self.current.tag == .comment) {
+            if (self.current.tag == .newline) {
+                // Two consecutive newlines = blank line, clear doc comment
+                if (saw_blank_line) {
+                    self.pending_doc_comment = null;
+                }
+                saw_blank_line = true;
+            } else if (self.current.tag == .comment) {
+                // Capture comment as potential doc comment for next recipe
+                // Only comments immediately before a recipe (no blank lines) are kept
+                const comment_text = self.slice(self.current);
+                if (comment_text.len > 1 and comment_text[0] == '#') {
+                    self.pending_doc_comment = std.mem.trimLeft(u8, comment_text[1..], " ");
+                }
+                saw_blank_line = false; // Reset - comment breaks the blank line sequence
+            }
             self.advance();
         }
     }
@@ -417,12 +435,10 @@ pub const Parser = struct {
                 .kw_file => try self.parseFileRecipe(),
                 .comment => {
                     // Store comment as potential doc comment for next recipe
+                    // Only kept if immediately before recipe (no blank lines)
                     const comment_text = self.slice(self.current);
-                    // Strip leading "# " from comment
-                    if (comment_text.len > 2 and comment_text[0] == '#') {
+                    if (comment_text.len > 1 and comment_text[0] == '#') {
                         self.pending_doc_comment = std.mem.trimLeft(u8, comment_text[1..], " ");
-                    } else if (comment_text.len > 0 and comment_text[0] == '#') {
-                        self.pending_doc_comment = comment_text[1..];
                     }
                     self.advance();
                 },
@@ -510,6 +526,8 @@ pub const Parser = struct {
         // Handle @desc or @description directive
         if (self.current.tag == .kw_desc or self.current.tag == .kw_description) {
             self.advance();
+            // Clear doc_comment when explicit description is provided
+            self.pending_doc_comment = null;
 
             // Get description (string or remaining text)
             if (self.current.tag == .string) {
@@ -689,9 +707,17 @@ pub const Parser = struct {
                 self.advance();
 
                 // Only treat as targeted if next token is also an ident (the actual command)
+                // BUT: if next ident starts with '-', it's a flag (like -X), not a command
                 if (self.current.tag == .ident) {
-                    target_recipe = potential_recipe;
-                    cmd_start = self.current.loc.start;
+                    const next_token = self.slice(self.current);
+                    if (next_token.len > 0 and next_token[0] == '-') {
+                        // Next token is a flag (e.g., -X), not a command name - treat as global
+                        self.lexer.index = saved_index;
+                        self.current = saved_current;
+                    } else {
+                        target_recipe = potential_recipe;
+                        cmd_start = self.current.loc.start;
+                    }
                 } else {
                     // Next token is not an ident (e.g., string, newline) - restore and treat as global
                     self.lexer.index = saved_index;
@@ -788,7 +814,7 @@ pub const Parser = struct {
         if (self.current.tag == .equals) {
             // Variable assignment: name = value
             self.advance();
-            const value = if (self.current.tag == .string or self.current.tag == .ident or self.current.tag == .glob_pattern)
+            const value = if (self.current.tag == .string or self.current.tag == .ident or self.current.tag == .glob_pattern or self.current.tag == .number)
                 self.slice(self.current)
             else
                 "";
@@ -1001,7 +1027,9 @@ pub const Parser = struct {
 
             // Check for directive
             var directive: ?Recipe.CommandDirective = null;
+            var at_pos: ?usize = null; // Track @ position for commands like @echo
             if (self.current.tag == .at) {
+                at_pos = self.current.loc.start;
                 self.advance();
 
                 // Check for @pre or @post hook
@@ -1074,7 +1102,12 @@ pub const Parser = struct {
                 };
             }
 
-            const cmd_start = self.current.loc.start;
+            // For commands with @ prefix but no recognized directive (like @echo),
+            // include the @ in the command line
+            const cmd_start = if (directive == null and at_pos != null)
+                at_pos.?
+            else
+                self.current.loc.start;
             while (self.current.tag != .newline and self.current.tag != .eof) {
                 self.advance();
             }
@@ -3065,7 +3098,7 @@ test "doc comment only applies to next recipe" {
     try std.testing.expect(test_recipe.doc_comment == null);
 }
 
-test "description takes precedence over doc_comment in display" {
+test "description clears doc_comment when explicitly set" {
     const source =
         \\# Doc comment here
         \\@description "Explicit description"
@@ -3080,7 +3113,82 @@ test "description takes precedence over doc_comment in display" {
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
     const recipe = jakefile.recipes[0];
 
-    // Both should be set
-    try std.testing.expectEqualStrings("Doc comment here", recipe.doc_comment.?);
+    // doc_comment is cleared when @description is provided (avoids file headers showing)
+    try std.testing.expect(recipe.doc_comment == null);
     try std.testing.expectEqualStrings("Explicit description", recipe.description.?);
+}
+
+// Regression test: only comments immediately before recipe are captured (no blank lines)
+test "blank line clears doc_comment" {
+    const source =
+        \\# This comment has a blank line after it
+        \\
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+
+    // Blank line between comment and recipe clears doc_comment
+    try std.testing.expect(recipe.doc_comment == null);
+}
+
+test "comment immediately before recipe is captured" {
+    const source =
+        \\# This comment is immediately before the recipe
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+
+    // No blank line, so comment is captured
+    try std.testing.expectEqualStrings("This comment is immediately before the recipe", recipe.doc_comment.?);
+}
+
+test "section headers with blank lines are not captured" {
+    // Common pattern: section header followed by blank line
+    const source =
+        \\# ============================================================================
+        \\# Build Section
+        \\# ============================================================================
+        \\
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+
+    // Blank line after section header clears doc_comment
+    try std.testing.expect(recipe.doc_comment == null);
+}
+
+// --- Fuzz Testing ---
+
+test "fuzz parser" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            var lex = Lexer.init(input);
+            var p = Parser.init(std.testing.allocator, &lex);
+
+            // Parse the fuzzed input - errors are expected for invalid syntax
+            var jakefile = p.parseJakefile() catch return;
+            defer jakefile.deinit(std.testing.allocator);
+        }
+    }.testOne, .{});
 }

@@ -25,6 +25,41 @@ task build:  # Inline comment
 
 **Scope Name:** `comment.line.number-sign.jake`
 
+#### Doc Comments
+
+Comments placed **immediately before** a recipe (no blank lines) are captured as documentation and displayed in `jake -l` output:
+
+```jake
+# Build the application binary
+task build:
+    zig build
+```
+
+This shows as:
+```
+  build [task]
+    Build the application binary
+```
+
+**Important:** A blank line between the comment and recipe prevents capture:
+
+```jake
+# This comment is NOT captured (blank line follows)
+
+task build:
+    zig build
+```
+
+Use `@desc` for explicit descriptions that appear inline:
+
+```jake
+@desc "Build the application"
+task build:
+    zig build
+```
+
+Shows as: `build [task]  # Build the application`
+
 ---
 
 ### 2. Recipe Declarations

@@ -25,6 +25,13 @@ pub fn evaluate(
 ) ConditionError!bool {
     const trimmed = std.mem.trim(u8, condition, " \t");
 
+    // Handle bare boolean literals
+    if (std.mem.eql(u8, trimmed, "true")) {
+        return true;
+    } else if (std.mem.eql(u8, trimmed, "false")) {
+        return false;
+    }
+
     // Parse function call: func(args)
     if (std.mem.indexOf(u8, trimmed, "(")) |paren_start| {
         const func_name = trimmed[0..paren_start];
@@ -176,6 +183,39 @@ fn stripQuotes(s: []const u8) []const u8 {
 
 // Default context for tests (no runtime flags set)
 const test_context = RuntimeContext{};
+
+// Regression tests for bare boolean literals (fixed in issue with @if true/@if false)
+test "bare true literal returns true" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("true", &variables, test_context);
+    try std.testing.expect(result == true);
+}
+
+test "bare false literal returns false" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("false", &variables, test_context);
+    try std.testing.expect(result == false);
+}
+
+test "bare true with whitespace" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("  true  ", &variables, test_context);
+    try std.testing.expect(result == true);
+}
+
+test "bare false with whitespace" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("  false  ", &variables, test_context);
+    try std.testing.expect(result == false);
+}
 
 test "env condition - set variable" {
     // Set a test environment variable
@@ -443,4 +483,28 @@ test "neq comparing variable to literal" {
 
     try std.testing.expect(try evaluate("neq(mode, release)", &variables, .{}));
     try std.testing.expect(!try evaluate("neq(mode, debug)", &variables, .{}));
+}
+
+// --- Fuzz Testing ---
+
+test "fuzz condition evaluation" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+            defer variables.deinit();
+
+            // Add some test variables for the fuzzer to potentially reference
+            variables.put("mode", "debug") catch return;
+            variables.put("version", "1.0.0") catch return;
+
+            const context = RuntimeContext{
+                .watch_mode = false,
+                .dry_run = false,
+                .verbose = false,
+            };
+
+            // Evaluate condition - errors are expected for invalid syntax
+            _ = evaluate(input, &variables, context) catch {};
+        }
+    }.testOne, .{});
 }

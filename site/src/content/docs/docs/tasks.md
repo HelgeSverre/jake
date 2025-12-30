@@ -89,11 +89,23 @@ Arguments: a b c d
 
 ### Description
 
+Use `@description` for inline descriptions:
+
 ```jake
 task deploy:
     @description "Deploy application to production server"
     ./deploy.sh
 ```
+
+Or use a comment **immediately before** the recipe (no blank lines):
+
+```jake
+# Deploy application to production server
+task deploy:
+    ./deploy.sh
+```
+
+A blank line between comment and recipe prevents capture—useful for section headers.
 
 ### Grouping
 

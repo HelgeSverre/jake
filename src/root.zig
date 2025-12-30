@@ -13,6 +13,7 @@ pub const functions = @import("functions.zig");
 pub const compat = @import("compat.zig");
 pub const suggest = @import("suggest.zig");
 pub const tracy = @import("tracy.zig");
+pub const hooks = @import("hooks.zig");
 
 pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;
@@ -42,6 +43,22 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !Jakefile {
     defer allocator.free(source);
 
     return parse(allocator, source);
+}
+
+// Reference all sub-modules so their tests are discovered
+comptime {
+    _ = lexer;
+    _ = parser;
+    _ = executor;
+    _ = cache;
+    _ = glob;
+    _ = watch;
+    _ = parallel;
+    _ = env;
+    _ = import_mod;
+    _ = functions;
+    _ = suggest;
+    _ = hooks;
 }
 
 test "basic lexer test" {

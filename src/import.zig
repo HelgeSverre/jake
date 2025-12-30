@@ -72,6 +72,7 @@ pub const ImportResolver = struct {
         on_error_hooks: std.ArrayListUnmanaged([]const Hook),
         dependencies: std.ArrayListUnmanaged([]const []const u8),
         needs: std.ArrayListUnmanaged([]const NeedsRequirement),
+        imports: std.ArrayListUnmanaged([]const ImportDirective),
     },
 
     pub fn init(allocator: std.mem.Allocator) ImportResolver {
@@ -90,6 +91,7 @@ pub const ImportResolver = struct {
                 .on_error_hooks = .{},
                 .dependencies = .{},
                 .needs = .{},
+                .imports = .{},
             },
         };
     }
@@ -149,16 +151,26 @@ pub const ImportResolver = struct {
         }
         self.replaced_slices.dependencies.deinit(self.allocator);
 
-        for (self.replaced_slices.needs.items) |slice| {
-            self.allocator.free(slice);
-        }
+        // Note: needs slices are NOT freed here - they are managed by jakefile.deinit()
         self.replaced_slices.needs.deinit(self.allocator);
 
-        // Note: allocated_names and loaded_sources are NOT freed here.
-        // They are returned to the caller via extractPersistentAllocations()
-        // and must be freed when the Jakefile is no longer needed.
-        self.allocated_names.deinit(self.allocator);
+        for (self.replaced_slices.imports.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.imports.deinit(self.allocator);
+
+        // Free loaded_sources and allocated_names if they weren't extracted.
+        // After extractPersistentAllocations(), these arrays will be empty.
+        // On error paths, they may still contain data that needs to be freed.
+        for (self.loaded_sources.items) |source| {
+            self.allocator.free(source);
+        }
         self.loaded_sources.deinit(self.allocator);
+
+        for (self.allocated_names.items) |name| {
+            self.allocator.free(name);
+        }
+        self.allocated_names.deinit(self.allocator);
     }
 
     /// Extract allocations that must persist after the resolver is deinitialized.
@@ -223,6 +235,7 @@ pub const ImportResolver = struct {
 
         // Recursively resolve imports in the imported file
         self.resolveImports(&imported, import_base) catch |err| {
+            imported.deinit(self.allocator); // Free the imported jakefile on error
             if (self.import_stack.fetchRemove(resolved_path)) |entry| {
                 self.allocator.free(entry.key);
             }
@@ -231,6 +244,7 @@ pub const ImportResolver = struct {
 
         // Merge the imported content into target
         self.mergeJakefile(target, imported, import_directive.prefix, resolved_path) catch |err| {
+            imported.deinit(self.allocator); // Free the imported jakefile on error
             if (self.import_stack.fetchRemove(resolved_path)) |entry| {
                 self.allocator.free(entry.key);
             }
@@ -338,13 +352,14 @@ pub const ImportResolver = struct {
         if (imported.global_on_error_hooks.len > 0) {
             self.replaced_slices.on_error_hooks.append(self.allocator, imported.global_on_error_hooks) catch return ImportError.OutOfMemory;
         }
-
-        // Track needs slices from imported recipes (allocated during parsing)
-        for (imported.recipes) |recipe| {
-            if (recipe.needs.len > 0) {
-                self.replaced_slices.needs.append(self.allocator, recipe.needs) catch return ImportError.OutOfMemory;
-            }
+        // Track imported file's imports slice (they've already been processed)
+        if (imported.imports.len > 0) {
+            self.replaced_slices.imports.append(self.allocator, imported.imports) catch return ImportError.OutOfMemory;
         }
+
+        // Note: We intentionally do NOT track needs slices in replaced_slices.
+        // The needs arrays are shallow-copied when recipes are merged, and
+        // jakefile.deinit() will free them via allocator.free(recipe.needs).
 
         // Merge variables (no prefix on variables)
         const new_vars_len = target.variables.len + imported.variables.len;
@@ -462,16 +477,21 @@ pub fn resolveImports(
     // Get the directory containing the jakefile
     const base_path = std.fs.path.dirname(jakefile_path) orelse ".";
 
-    // Add the main jakefile to resolved cache to prevent self-import
+    // Add the main jakefile to import_stack for cycle detection
     const real_path = std.fs.cwd().realpathAlloc(allocator, jakefile_path) catch {
         try resolver.resolveImports(jakefile, base_path);
         const allocations = resolver.extractPersistentAllocations();
         resolver.deinit();
         return allocations;
     };
-    resolver.resolved_cache.put(allocator, real_path, {}) catch return ImportError.OutOfMemory;
+    // Add to import_stack (not resolved_cache) so that circular imports are detected
+    resolver.import_stack.put(allocator, real_path, {}) catch return ImportError.OutOfMemory;
 
     try resolver.resolveImports(jakefile, base_path);
+
+    // Move from import_stack to resolved_cache after successful processing
+    _ = resolver.import_stack.remove(real_path);
+    resolver.resolved_cache.put(allocator, real_path, {}) catch return ImportError.OutOfMemory;
     const allocations = resolver.extractPersistentAllocations();
     resolver.deinit();
     return allocations;
@@ -512,6 +532,8 @@ test "isImportedRecipe finds matching recipe" {
     const recipes = [_]Recipe{
         .{
             .name = "build",
+            .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
+            .origin = null,
             .kind = .task,
             .dependencies = &.{},
             .file_deps = &.{},
@@ -529,9 +551,12 @@ test "isImportedRecipe finds matching recipe" {
             .shell = null,
             .working_dir = null,
             .quiet = false,
+            .needs = &.{},
         },
         .{
             .name = "test",
+            .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
+            .origin = null,
             .kind = .task,
             .dependencies = &.{},
             .file_deps = &.{},
@@ -549,6 +574,7 @@ test "isImportedRecipe finds matching recipe" {
             .shell = null,
             .working_dir = null,
             .quiet = false,
+            .needs = &.{},
         },
     };
 
@@ -569,14 +595,8 @@ test "import stack tracks in-progress imports" {
     var resolver = ImportResolver.init(std.testing.allocator);
     defer resolver.deinit();
 
-    // Simulate adding to import stack
+    // Simulate adding to import stack - deinit() will free the key
     try resolver.import_stack.put(std.testing.allocator, try std.testing.allocator.dupe(u8, "/path/to/file.jake"), {});
-    defer {
-        var iter = resolver.import_stack.keyIterator();
-        while (iter.next()) |key| {
-            std.testing.allocator.free(key.*);
-        }
-    }
 
     try std.testing.expect(resolver.import_stack.contains("/path/to/file.jake"));
     try std.testing.expect(!resolver.import_stack.contains("/other/file.jake"));
@@ -586,14 +606,8 @@ test "resolved cache prevents re-processing" {
     var resolver = ImportResolver.init(std.testing.allocator);
     defer resolver.deinit();
 
-    // Simulate adding to resolved cache
+    // Simulate adding to resolved cache - deinit() will free the key
     try resolver.resolved_cache.put(std.testing.allocator, try std.testing.allocator.dupe(u8, "/resolved/file.jake"), {});
-    defer {
-        var iter = resolver.resolved_cache.keyIterator();
-        while (iter.next()) |key| {
-            std.testing.allocator.free(key.*);
-        }
-    }
 
     try std.testing.expect(resolver.resolved_cache.contains("/resolved/file.jake"));
     try std.testing.expectEqual(@as(usize, 1), resolver.resolved_cache.count());
@@ -601,7 +615,6 @@ test "resolved cache prevents re-processing" {
 
 test "loaded sources are tracked for cleanup" {
     var resolver = ImportResolver.init(std.testing.allocator);
-    defer resolver.deinit();
 
     // Simulate adding loaded sources
     const source1 = try std.testing.allocator.dupe(u8, "task build:\n    echo hello");
@@ -611,7 +624,11 @@ test "loaded sources are tracked for cleanup" {
     try resolver.loaded_sources.append(std.testing.allocator, source2);
 
     try std.testing.expectEqual(@as(usize, 2), resolver.loaded_sources.items.len);
-    // Sources are freed by deinit()
+
+    // Extract allocations and then free them (this is the proper cleanup pattern)
+    var allocs = resolver.extractPersistentAllocations();
+    resolver.deinit();
+    allocs.deinit();
 }
 
 test "import resolution cleans up all memory" {

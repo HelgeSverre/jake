@@ -160,8 +160,8 @@ test "levenshteinDistance transpositions" {
 
 test "levenshteinDistance common typos" {
     try testing.expectEqual(@as(usize, 1), levenshteinDistance("buld", "build")); // missing 'i'
-    try testing.expectEqual(@as(usize, 1), levenshteinDistance("delpoy", "deploy")); // missing 'l', extra 'l'
-    try testing.expectEqual(@as(usize, 2), levenshteinDistance("dploy", "deploy")); // missing 'e'
+    try testing.expectEqual(@as(usize, 2), levenshteinDistance("delpoy", "deploy")); // transposition: lp -> pl
+    try testing.expectEqual(@as(usize, 1), levenshteinDistance("dploy", "deploy")); // missing 'e'
 }
 
 test "levenshteinDistance completely different" {

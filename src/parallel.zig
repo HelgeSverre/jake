@@ -1018,7 +1018,8 @@ test "parallel executor basic" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
@@ -1039,7 +1040,8 @@ test "cycle detection" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
@@ -1062,7 +1064,8 @@ test "parallelism stats" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
@@ -1083,7 +1086,8 @@ test "parallel dry-run does not leak expansions" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
@@ -1109,7 +1113,8 @@ test "parallel executor recognizes @if directive" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     // Verify the parser correctly identifies @if as a directive
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
@@ -1134,7 +1139,8 @@ test "parallel executor recognizes @each directive" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
     const recipe = jakefile.recipes[0];
@@ -1153,7 +1159,8 @@ test "parallel executor recognizes @ignore directive" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
     const recipe = jakefile.recipes[0];
@@ -1178,7 +1185,8 @@ test "parallel executor skips directive command when condition is false" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
@@ -1199,7 +1207,8 @@ test "parallel executor handles @each loop expansion" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
@@ -1221,7 +1230,8 @@ test "parallel executor @ignore allows command failure" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
@@ -1242,7 +1252,8 @@ test "parallel executor @if true executes body" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
@@ -1261,7 +1272,8 @@ test "parallel executor @if false skips body" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
@@ -1280,7 +1292,8 @@ test "parallel executor @each expands items" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
@@ -1301,7 +1314,8 @@ test "parallel executor nested @if in @each" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
@@ -1323,10 +1337,12 @@ test "parallel executor @elif branch" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
+    exec.dry_run = true;
 
     try exec.buildGraph("test");
     // Should succeed - only elif branch executes
@@ -1344,10 +1360,12 @@ test "parallel executor @else branch" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
+    exec.dry_run = true;
 
     try exec.buildGraph("test");
     // Should succeed - else branch executes
@@ -1364,10 +1382,12 @@ test "parallel executor recipe-level @needs succeeds when command exists" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
+    exec.dry_run = true;
 
     try exec.buildGraph("test");
     // Should succeed - 'sh' exists on all systems
@@ -1382,7 +1402,8 @@ test "parallel executor recipe-level @needs fails when command missing" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
@@ -1401,7 +1422,8 @@ test "parallel executor recipe-level @needs with hint and task reference" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
@@ -1419,7 +1441,8 @@ test "parallel executor handles empty dependency graph" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
@@ -1440,7 +1463,8 @@ test "parallel executor handles large thread count gracefully" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     // Request way more threads than needed
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 100);
@@ -1460,7 +1484,8 @@ test "parallel executor handles zero thread count" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     // Zero threads should use 1 as minimum
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 0);
@@ -1484,7 +1509,8 @@ test "parallel executor detectCycle returns false for acyclic graph" {
     ;
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
-    const jakefile = try p.parseJakefile();
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
 
     var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
     defer exec.deinit();

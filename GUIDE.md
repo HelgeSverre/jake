@@ -47,7 +47,7 @@ Jake uses a simple, readable syntax without Make's tab sensitivity or arcane fea
 
 ### From Source (Recommended)
 
-Requires [Zig](https://ziglang.org/) 0.14 or later:
+Requires [Zig](https://ziglang.org/) 0.15.2 or later:
 
 ```bash
 git clone https://github.com/HelgeSverre/jake.git
@@ -122,6 +122,8 @@ Now `jake` with no arguments runs `build`.
 task foo:  # Inline comment
     echo "Hello"
 ```
+
+Comments immediately before a recipe (no blank lines) become doc comments shown in `jake -l`. See [@description](#description---recipe-description) for details.
 
 ### Indentation
 
@@ -939,6 +941,34 @@ task deploy:
     ./deploy.sh
 ```
 
+Alternatively, comments placed **immediately before** a recipe (no blank lines) are captured as doc comments:
+
+```jake
+# Deploy application to production server
+task deploy:
+    ./deploy.sh
+```
+
+**Important:** A blank line between the comment and recipe prevents capture:
+
+```jake
+# This comment is NOT captured
+
+task deploy:
+    ./deploy.sh
+```
+
+This makes it easy to use section headers without them appearing in recipe listings:
+
+```jake
+# ============================================
+# Deployment Tasks
+# ============================================
+
+task deploy:  # No doc comment (blank line above)
+    ./deploy.sh
+```
+
 ### @platform - Platform-Specific Recipes
 
 Run recipes only on specific operating systems:
@@ -1653,4 +1683,4 @@ Create a `Jakefile` in current directory, or use `-f` to specify path.
 
 ---
 
-*Jake v0.2.0 • MIT License*
+*Jake v0.3.0 • MIT License*

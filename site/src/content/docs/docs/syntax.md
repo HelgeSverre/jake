@@ -11,6 +11,35 @@ task foo:  # Inline comment
     echo "Hello"
 ```
 
+### Doc Comments
+
+Comments placed **immediately before** a recipe (no blank lines) are captured as documentation and shown in `jake -l`:
+
+```jake
+# Build the application binary
+task build:
+    zig build
+```
+
+A blank line between the comment and recipe **prevents** capture, making it easy to use section headers:
+
+```jake
+# ============================================
+# Build Section
+# ============================================
+
+task build:  # This has no doc comment
+    zig build
+```
+
+For inline descriptions, use `@desc` (shown in the same line as the recipe name):
+
+```jake
+@desc "Build the application"
+task build:
+    zig build
+```
+
 ## Indentation
 
 Commands must be indented with **4 spaces** or **1 tab**:
