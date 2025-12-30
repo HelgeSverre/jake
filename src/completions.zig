@@ -3,6 +3,7 @@
 // Includes smart installation with environment detection
 
 const std = @import("std");
+const builtin = @import("builtin");
 const args_mod = @import("args.zig");
 
 /// Shell types supported for completion generation
@@ -48,6 +49,10 @@ const CONFIG_BLOCK_END = "# <<< jake completion <<<";
 
 /// Detect shell from $SHELL environment variable
 pub fn detectShell() ?Shell {
+    // Shell completions are not applicable on Windows
+    if (comptime builtin.os.tag == .windows) {
+        return null;
+    }
     const shell_path = std.posix.getenv("SHELL") orelse return null;
     const basename = std.fs.path.basename(shell_path);
 
@@ -63,11 +68,18 @@ pub fn detectShell() ?Shell {
 
 /// Get the user's home directory
 fn getHomeDir() ?[]const u8 {
+    if (comptime builtin.os.tag == .windows) {
+        return null;
+    }
     return std.posix.getenv("HOME");
 }
 
 /// Detect zsh environment type
 pub fn detectZshEnv() ZshEnv {
+    // Zsh environments are not applicable on Windows
+    if (comptime builtin.os.tag == .windows) {
+        return .vanilla;
+    }
     const home = getHomeDir() orelse return .vanilla;
 
     // Check for Oh-My-Zsh (most specific first)
@@ -103,6 +115,10 @@ pub fn detectZshEnv() ZshEnv {
 
 /// Get the best installation path for zsh completions
 fn getZshInstallPath(allocator: std.mem.Allocator) !struct { path: []const u8, env: ZshEnv } {
+    // Not applicable on Windows
+    if (comptime builtin.os.tag == .windows) {
+        return error.NoHomeDir;
+    }
     const home = getHomeDir() orelse return error.NoHomeDir;
     const env = detectZshEnv();
 

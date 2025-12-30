@@ -2,6 +2,7 @@
 // Provides string manipulation and path utilities
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const FunctionError = error{
     UnknownFunction,
@@ -145,6 +146,10 @@ fn absolutePath(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
 }
 
 fn home(allocator: std.mem.Allocator) FunctionError![]const u8 {
+    // home() is not available on Windows (no $HOME)
+    if (comptime builtin.os.tag == .windows) {
+        return FunctionError.InvalidArguments;
+    }
     if (std.posix.getenv("HOME")) |home_dir| {
         return allocator.dupe(u8, home_dir) catch return FunctionError.OutOfMemory;
     }
@@ -152,6 +157,10 @@ fn home(allocator: std.mem.Allocator) FunctionError![]const u8 {
 }
 
 fn localBin(allocator: std.mem.Allocator, name: []const u8) FunctionError![]const u8 {
+    // local_bin() is not available on Windows (no $HOME/.local/bin)
+    if (comptime builtin.os.tag == .windows) {
+        return FunctionError.InvalidArguments;
+    }
     if (std.posix.getenv("HOME")) |home_dir| {
         return std.fmt.allocPrint(allocator, "{s}/.local/bin/{s}", .{ home_dir, name }) catch return FunctionError.OutOfMemory;
     }
@@ -159,6 +168,10 @@ fn localBin(allocator: std.mem.Allocator, name: []const u8) FunctionError![]cons
 }
 
 fn shellConfig(allocator: std.mem.Allocator) FunctionError![]const u8 {
+    // shell_config() is not available on Windows (no $HOME or $SHELL)
+    if (comptime builtin.os.tag == .windows) {
+        return FunctionError.InvalidArguments;
+    }
     const home_dir = std.posix.getenv("HOME") orelse return FunctionError.InvalidArguments;
     const shell = std.posix.getenv("SHELL") orelse return FunctionError.InvalidArguments;
 
@@ -257,6 +270,9 @@ test "home function returns non-empty path" {
 }
 
 test "home function returns absolute path" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -268,6 +284,9 @@ test "home function returns absolute path" {
 }
 
 test "home function matches HOME env" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -280,6 +299,9 @@ test "home function matches HOME env" {
 }
 
 test "local_bin function with simple name" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -290,6 +312,9 @@ test "local_bin function with simple name" {
 }
 
 test "local_bin function with quoted name" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -300,6 +325,9 @@ test "local_bin function with quoted name" {
 }
 
 test "local_bin function starts with home" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -311,6 +339,9 @@ test "local_bin function starts with home" {
 }
 
 test "local_bin function with variable" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -322,6 +353,9 @@ test "local_bin function with variable" {
 }
 
 test "shell_config function returns non-empty path" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -332,6 +366,9 @@ test "shell_config function returns non-empty path" {
 }
 
 test "shell_config function starts with home" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -343,6 +380,9 @@ test "shell_config function starts with home" {
 }
 
 test "shell_config function returns valid config file" {
+    // Skip on Windows (no posix.getenv)
+    if (comptime builtin.os.tag == .windows) return;
+
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();

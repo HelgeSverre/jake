@@ -65,5 +65,5 @@ jobs:
 
       - name: Run E2E Tests
         run: |
-          cd samples
-          ../zig-out/bin/jake test-all
+          cd tests/e2e
+          ../../zig-out/bin/jake test-all
