@@ -1,6 +1,6 @@
 ---
 import '../styles/global.css';
-import { Package, Sparkles, Zap, RefreshCw, FolderInput, GitBranch, Anchor, Globe } from 'lucide-astro';
+import { Package, Sparkles, Zap, RefreshCw, FolderInput, GitBranch, Anchor, Globe, FileCode, Terminal, Layers, Shield, Clock, Eye, Play, Search, CheckCircle, AlertTriangle, ArrowRight } from 'lucide-astro';
 
 const features = [
   {
@@ -175,6 +175,133 @@ const hooksExample = `<span class="text-syntax-comment"># Global hooks</span>
 
 <span class="text-syntax-comment"># Error handling</span>
 <span class="text-syntax-keyword">@on_error</span> notify <span class="text-syntax-string">"Build failed!"</span>`;
+
+// Deep-dive section examples
+const incrementalBuildExample = `<span class="text-syntax-comment"># File target with glob pattern</span>
+<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/bundle.js</span>: <span class="text-text-secondary">src/**/*.ts</span>
+    esbuild src/index.ts --bundle --outfile=dist/bundle.js
+
+<span class="text-syntax-comment"># Chain file targets together</span>
+<span class="text-syntax-keyword">file</span> <span class="text-syntax-function">dist/app.min.js</span>: <span class="text-text-secondary">dist/bundle.js</span>
+    terser dist/bundle.js -o dist/app.min.js
+
+<span class="text-syntax-comment"># Tasks can depend on file targets</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">build</span>: [dist/app.min.js]
+    echo <span class="text-syntax-string">"Build complete!"</span>`;
+
+const incrementalOutput = `<span class="text-text-muted">$</span> jake build
+<span class="text-jake">→</span> dist/bundle.js
+  esbuild src/index.ts --bundle --outfile=dist/bundle.js
+<span class="text-green-500">✓</span> dist/bundle.js <span class="text-text-muted">(0.42s)</span>
+<span class="text-jake">→</span> dist/app.min.js
+  terser dist/bundle.js -o dist/app.min.js
+<span class="text-green-500">✓</span> dist/app.min.js <span class="text-text-muted">(0.18s)</span>
+<span class="text-jake">→</span> build
+  echo "Build complete!"
+<span class="text-green-500">✓</span> build <span class="text-text-muted">(0.01s)</span>
+
+<span class="text-text-muted">$</span> jake build  <span class="text-syntax-comment"># Run again - no changes!</span>
+<span class="text-text-muted">⊘</span> dist/bundle.js <span class="text-text-muted">(up to date)</span>
+<span class="text-text-muted">⊘</span> dist/app.min.js <span class="text-text-muted">(up to date)</span>
+<span class="text-green-500">✓</span> build <span class="text-text-muted">(0.01s)</span>`;
+
+const devExperienceExample = `<span class="text-syntax-comment"># Clear, descriptive task definitions</span>
+<span class="text-syntax-keyword">@group</span> build
+<span class="text-syntax-keyword">@desc</span> <span class="text-syntax-string">"Build the application for production"</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">build</span> <span class="text-syntax-variable">mode</span>=<span class="text-syntax-string">"release"</span>:
+    cargo build --<span class="text-syntax-variable">{{mode}}</span>
+
+<span class="text-syntax-comment"># Aliases for common shortcuts</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">build</span> | <span class="text-syntax-function">b</span> | <span class="text-syntax-function">compile</span>:
+    cargo build
+
+<span class="text-syntax-comment"># Private helpers (hidden from -l)</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">_setup-env</span>:
+    <span class="text-syntax-keyword">@quiet</span>
+    export NODE_ENV=production`;
+
+const devExperienceOutput = `<span class="text-text-muted">$</span> jake buidl  <span class="text-syntax-comment"># Oops, typo!</span>
+<span class="text-red-500">error:</span> Recipe 'buidl' not found
+<span class="text-text-secondary">Did you mean:</span> <span class="text-jake">build</span>?
+
+<span class="text-text-muted">$</span> jake -s build  <span class="text-syntax-comment"># Inspect recipe</span>
+<span class="text-jake">Recipe:</span> build
+<span class="text-text-secondary">Type:</span>    task
+<span class="text-text-secondary">Group:</span>   build
+<span class="text-text-secondary">Desc:</span>    Build the application for production
+<span class="text-text-secondary">Aliases:</span> b, compile
+
+<span class="text-text-secondary">Parameters:</span>
+  mode <span class="text-text-muted">(default: "release")</span>
+
+<span class="text-text-secondary">Commands:</span>
+  cargo build --{{mode}}`;
+
+const executionExample = `<span class="text-syntax-comment"># Parallel task execution</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">all</span>: [frontend, backend, docs]
+
+<span class="text-syntax-comment"># Watch mode with custom patterns</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">dev</span>:
+    <span class="text-syntax-keyword">@watch</span> src/**/*.ts tests/**/*.ts
+    npm run dev
+
+<span class="text-syntax-comment"># Conditional logic</span>
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">deploy</span>:
+    <span class="text-syntax-keyword">@if</span> <span class="text-syntax-function">env</span>(CI)
+        ./deploy-ci.sh
+    <span class="text-syntax-keyword">@elif</span> <span class="text-syntax-function">eq</span>($ENV, <span class="text-syntax-string">"prod"</span>)
+        <span class="text-syntax-keyword">@confirm</span> <span class="text-syntax-string">"Deploy to production?"</span>
+        ./deploy-prod.sh
+    <span class="text-syntax-keyword">@else</span>
+        ./deploy-staging.sh
+    <span class="text-syntax-keyword">@end</span>`;
+
+const executionOutput = `<span class="text-text-muted">$</span> jake -j4 all  <span class="text-syntax-comment"># 4 parallel jobs</span>
+<span class="text-jake">→</span> frontend <span class="text-text-muted">│</span> <span class="text-jake">→</span> backend <span class="text-text-muted">│</span> <span class="text-jake">→</span> docs
+<span class="text-green-500">✓</span> docs <span class="text-text-muted">(1.2s)</span>
+<span class="text-green-500">✓</span> frontend <span class="text-text-muted">(2.8s)</span>
+<span class="text-green-500">✓</span> backend <span class="text-text-muted">(3.1s)</span>
+<span class="text-green-500">✓</span> all <span class="text-text-muted">(3.1s total)</span>
+
+<span class="text-text-muted">$</span> jake -w dev  <span class="text-syntax-comment"># Watch mode</span>
+<span class="text-blue-400">👀</span> Watching src/**/*.ts, tests/**/*.ts
+<span class="text-green-500">✓</span> dev <span class="text-text-muted">(0.8s)</span>
+
+<span class="text-yellow-500">Changed:</span> src/index.ts
+<span class="text-jake">→</span> dev <span class="text-text-muted">(rebuilding...)</span>
+<span class="text-green-500">✓</span> dev <span class="text-text-muted">(0.3s)</span>`;
+
+const scaleExample = `<span class="text-syntax-comment"># Import with namespacing</span>
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"scripts/docker.jake"</span> <span class="text-syntax-keyword">as</span> docker
+<span class="text-syntax-keyword">@import</span> <span class="text-syntax-string">"scripts/k8s.jake"</span> <span class="text-syntax-keyword">as</span> k8s
+
+<span class="text-syntax-comment"># Environment configuration</span>
+<span class="text-syntax-keyword">@dotenv</span>
+<span class="text-syntax-keyword">@dotenv</span> <span class="text-syntax-string">".env.local"</span>
+<span class="text-syntax-keyword">@export</span> NODE_ENV=production
+
+<span class="text-syntax-comment"># Validation before running</span>
+<span class="text-syntax-keyword">@needs</span> docker kubectl helm
+<span class="text-syntax-keyword">@require</span> AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+
+<span class="text-syntax-comment"># Platform-specific tasks</span>
+<span class="text-syntax-keyword">@platform</span> macos
+<span class="text-syntax-keyword">task</span> <span class="text-syntax-function">install-deps</span>:
+    brew install protobuf`;
+
+const scaleOutput = `<span class="text-text-muted">$</span> jake docker.build k8s.deploy
+<span class="text-jake">→</span> docker.build
+<span class="text-green-500">✓</span> docker.build <span class="text-text-muted">(12.4s)</span>
+<span class="text-jake">→</span> k8s.deploy
+<span class="text-green-500">✓</span> k8s.deploy <span class="text-text-muted">(3.2s)</span>
+
+<span class="text-text-muted">$</span> jake deploy  <span class="text-syntax-comment"># Missing requirement</span>
+<span class="text-red-500">error:</span> Required command not found: <span class="text-jake">helm</span>
+<span class="text-text-secondary">hint:</span> Install with: brew install helm
+
+<span class="text-text-muted">$</span> jake deploy  <span class="text-syntax-comment"># Missing env var</span>
+<span class="text-red-500">error:</span> Required environment variable not set:
+       <span class="text-jake">AWS_ACCESS_KEY_ID</span>`;
 
 const logo = "{j}";
 ---
@@ -411,6 +538,214 @@ const logo = "{j}";
             <p class="text-text-secondary text-sm leading-relaxed">{feature.description}</p>
           </div>
         ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Deep Dive: Incremental Builds -->
+  <section class="py-32 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <!-- Left: Content -->
+        <div class="space-y-8">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <Clock size={14} />
+            The Make Advantage
+          </div>
+          <h2 class="text-4xl font-bold">
+            Build <span class="text-gradient">smarter</span>, not harder
+          </h2>
+          <p class="text-xl text-text-secondary leading-relaxed">
+            File targets track modification times and only rebuild what changed. Chain them together for multi-stage builds that skip unnecessary work.
+          </p>
+          <ul class="space-y-4">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Glob patterns</span> — Match files with <code class="text-jake text-sm">src/**/*.ts</code></span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Dependency chains</span> — File targets can depend on other file targets</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Automatic skip</span> — "Up to date" when nothing changed</span>
+            </li>
+          </ul>
+        </div>
+        <!-- Right: Code -->
+        <div class="space-y-6">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Jakefile</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={incrementalBuildExample}></code></pre>
+          </div>
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <Terminal size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Terminal</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={incrementalOutput}></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Deep Dive: Developer Experience -->
+  <section class="py-32 border-t border-border bg-bg-secondary">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <!-- Left: Code (swapped) -->
+        <div class="space-y-6 order-2 lg:order-1">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-tertiary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Jakefile</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={devExperienceExample}></code></pre>
+          </div>
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-tertiary">
+              <Terminal size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Terminal</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={devExperienceOutput}></code></pre>
+          </div>
+        </div>
+        <!-- Right: Content (swapped) -->
+        <div class="space-y-8 order-1 lg:order-2">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <Sparkles size={14} />
+            The Just Advantage + More
+          </div>
+          <h2 class="text-4xl font-bold">
+            Code you <span class="text-gradient">want to read</span>
+          </h2>
+          <p class="text-xl text-text-secondary leading-relaxed">
+            Clean syntax without tab sensitivity or cryptic symbols. Plus intelligent tooling that catches your mistakes and helps you explore.
+          </p>
+          <ul class="space-y-4">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Typo suggestions</span> — "Did you mean: build?" using Levenshtein distance</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Recipe inspection</span> — <code class="text-jake text-sm">jake -s build</code> shows full details</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Aliases</span> — <code class="text-jake text-sm">task build | b | compile:</code> for shortcuts</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Deep Dive: Powerful Execution -->
+  <section class="py-32 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <!-- Left: Content -->
+        <div class="space-y-8">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <Zap size={14} />
+            Jake's Unique Strengths
+          </div>
+          <h2 class="text-4xl font-bold">
+            Run tasks <span class="text-gradient">your way</span>
+          </h2>
+          <p class="text-xl text-text-secondary leading-relaxed">
+            Parallel execution, live file watching, and conditional logic. Control exactly how and when your tasks run.
+          </p>
+          <ul class="space-y-4">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Parallel jobs</span> — <code class="text-jake text-sm">jake -j4</code> runs independent tasks simultaneously</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Watch mode</span> — <code class="text-jake text-sm">jake -w</code> rebuilds on file changes</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Conditionals</span> — <code class="text-jake text-sm">@if</code>/<code class="text-jake text-sm">@elif</code>/<code class="text-jake text-sm">@else</code> for dynamic behavior</span>
+            </li>
+          </ul>
+        </div>
+        <!-- Right: Code -->
+        <div class="space-y-6">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Jakefile</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={executionExample}></code></pre>
+          </div>
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <Terminal size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Terminal</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={executionOutput}></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Deep Dive: Scale Gracefully -->
+  <section class="py-32 border-t border-border bg-bg-secondary">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <!-- Left: Code (swapped) -->
+        <div class="space-y-6 order-2 lg:order-1">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-tertiary">
+              <FileCode size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Jakefile</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={scaleExample}></code></pre>
+          </div>
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-tertiary">
+              <Terminal size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Terminal</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={scaleOutput}></code></pre>
+          </div>
+        </div>
+        <!-- Right: Content (swapped) -->
+        <div class="space-y-8 order-1 lg:order-2">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <Layers size={14} />
+            Organization & Safety
+          </div>
+          <h2 class="text-4xl font-bold">
+            From scripts to <span class="text-gradient">systems</span>
+          </h2>
+          <p class="text-xl text-text-secondary leading-relaxed">
+            Split your Jakefile into modules, validate requirements before running, and handle different platforms gracefully.
+          </p>
+          <ul class="space-y-4">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Namespaced imports</span> — <code class="text-jake text-sm">@import "x.jake" as x</code></span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Validation</span> — <code class="text-jake text-sm">@needs</code> and <code class="text-jake text-sm">@require</code> catch issues early</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Platform-specific</span> — <code class="text-jake text-sm">@platform macos linux</code> for OS-aware tasks</span>
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
   </section>
