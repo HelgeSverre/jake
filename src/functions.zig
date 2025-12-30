@@ -47,6 +47,8 @@ pub fn evaluate(allocator: std.mem.Allocator, call: []const u8, variables: *cons
         return localBin(allocator, arg);
     } else if (std.mem.eql(u8, func_name, "shell_config")) {
         return shellConfig(allocator);
+    } else if (std.mem.eql(u8, func_name, "launch")) {
+        return launch(allocator);
     }
 
     return FunctionError.UnknownFunction;
@@ -195,6 +197,17 @@ fn shellConfig(allocator: std.mem.Allocator) FunctionError![]const u8 {
     }
     // Fallback to .profile for unknown shells
     return std.fmt.allocPrint(allocator, "{s}/.profile", .{home_dir}) catch return FunctionError.OutOfMemory;
+}
+
+/// launch() - Returns the platform-specific command for opening files/URLs
+fn launch(allocator: std.mem.Allocator) FunctionError![]const u8 {
+    const cmd = switch (builtin.os.tag) {
+        .macos => "open",
+        .linux => "xdg-open",
+        .windows => "cmd /c start \"\"",
+        else => return FunctionError.InvalidArguments,
+    };
+    return allocator.dupe(u8, cmd) catch return FunctionError.OutOfMemory;
 }
 
 // Tests
@@ -613,6 +626,24 @@ test "extension with double extension" {
 // ============================================================================
 // Error handling tests
 // ============================================================================
+
+test "launch function returns platform command" {
+    const allocator = std.testing.allocator;
+    var vars = std.StringHashMap([]const u8).init(allocator);
+    defer vars.deinit();
+
+    const result = try evaluate(allocator, "launch()", &vars);
+    defer allocator.free(result);
+
+    // Verify it returns a non-empty string for the current platform
+    const expected = switch (builtin.os.tag) {
+        .macos => "open",
+        .linux => "xdg-open",
+        .windows => "cmd /c start \"\"",
+        else => unreachable,
+    };
+    try std.testing.expectEqualStrings(expected, result);
+}
 
 test "unknown function returns error" {
     const allocator = std.testing.allocator;

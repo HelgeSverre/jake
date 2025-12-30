@@ -324,6 +324,26 @@ pub const Executor = struct {
         return self.prompt.confirm(message);
     }
 
+    /// Execute @launch directive - open file/URL with platform-specific command
+    fn executeLaunch(self: *Executor, target: []const u8) ExecuteError!void {
+        const argv: []const []const u8 = switch (builtin.os.tag) {
+            .macos => &[_][]const u8{ "open", target },
+            .linux => &[_][]const u8{ "xdg-open", target },
+            .windows => &[_][]const u8{ "cmd", "/c", "start", "", target },
+            else => {
+                self.print("\x1b[1;31merror:\x1b[0m @launch not supported on this platform\n", .{});
+                return ExecuteError.CommandFailed;
+            },
+        };
+
+        var child = std.process.Child.init(argv, self.allocator);
+        child.spawn() catch |err| {
+            self.print("\x1b[1;31merror:\x1b[0m failed to launch '{s}': {s}\n", .{ target, @errorName(err) });
+            return ExecuteError.CommandFailed;
+        };
+        // Don't wait - let the app run in background
+    }
+
     /// Parse items from @each directive line.
     /// Supports literal items, comma/space separated, and glob patterns.
     /// Glob patterns (containing *, ?, [) are expanded to matching files.
@@ -1129,6 +1149,27 @@ pub const Executor = struct {
                         // The -w/--watch CLI flag handles actual watching
                         continue;
                     },
+                    .launch => {
+                        // @launch directive: open file/URL with system default app
+                        if (!executing) continue;
+
+                        // Strip "launch" keyword from line to get the target
+                        var target = std.mem.trim(u8, cmd.line, " \t");
+                        if (std.mem.startsWith(u8, target, "launch")) {
+                            target = std.mem.trimLeft(u8, target[6..], " \t");
+                        }
+                        const expanded_target = try self.expandJakeVariables(target);
+                        // Track allocation for cleanup
+                        try self.expanded_strings.append(self.allocator, expanded_target);
+
+                        if (self.dry_run) {
+                            self.print("  [dry-run] @launch {s}\n", .{expanded_target});
+                            continue;
+                        }
+
+                        try self.executeLaunch(expanded_target);
+                        continue;
+                    },
                 }
             }
 
@@ -1607,6 +1648,7 @@ pub const Executor = struct {
                         .end => "end",
                         .each => "each",
                         .ignore => "ignore",
+                        .launch => "launch",
                     };
                     stdout.writeAll(dir_name) catch {};
                     stdout.writeAll("\x1b[0m ") catch {};

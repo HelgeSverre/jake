@@ -631,6 +631,30 @@ pub const ParallelExecutor = struct {
                         // These are handled elsewhere or not applicable in parallel mode
                         continue;
                     },
+                    .launch => {
+                        // @launch - open file/URL with platform default app
+                        if (!executing) continue;
+
+                        // Strip "launch" keyword from line to get the target
+                        var target = std.mem.trim(u8, cmd.line, " \t");
+                        if (std.mem.startsWith(u8, target, "launch")) {
+                            target = std.mem.trimLeft(u8, target[6..], " \t");
+                        }
+
+                        const argv: []const []const u8 = switch (builtin.os.tag) {
+                            .macos => &[_][]const u8{ "open", target },
+                            .linux => &[_][]const u8{ "xdg-open", target },
+                            .windows => &[_][]const u8{ "cmd", "/c", "start", "", target },
+                            else => {
+                                continue; // Unsupported platform, skip
+                            },
+                        };
+
+                        var child = std.process.Child.init(argv, self.allocator);
+                        _ = child.spawn() catch {};
+                        // Don't wait - let the app run in background
+                        continue;
+                    },
                 }
             }
 
