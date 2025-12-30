@@ -1,5 +1,33 @@
 const std = @import("std");
 
+/// Get git commit hash (short, 7 chars)
+fn getGitHash(b: *std.Build) []const u8 {
+    var code: u8 = 0;
+    const result = b.runAllowFail(&.{ "git", "rev-parse", "--short", "HEAD" }, &code, .Ignore) catch {
+        return "unknown";
+    };
+    return std.mem.trim(u8, result, "\n\r ");
+}
+
+/// Check if working tree has uncommitted changes
+fn getGitDirty(b: *std.Build) []const u8 {
+    var code: u8 = 0;
+    const result = b.runAllowFail(&.{ "git", "status", "--porcelain" }, &code, .Ignore) catch {
+        return "";
+    };
+    return if (result.len > 0) "-dirty" else "";
+}
+
+/// Get current date in YYYY-MM-DD format
+fn getBuildDate(b: *std.Build) []const u8 {
+    // Run date command to get current date
+    var code: u8 = 0;
+    const result = b.runAllowFail(&.{ "date", "+%Y-%m-%d" }, &code, .Ignore) catch {
+        return "unknown";
+    };
+    return std.mem.trim(u8, result, "\n\r ");
+}
+
 // Although this function looks imperative, it does not perform the build
 // directly and instead it mutates the build graph (`b`) that will be then
 // executed by an external runner. The functions in `std.Build` implement a DSL
@@ -20,6 +48,15 @@ pub fn build(b: *std.Build) void {
     // of this build script using `b.option()`. All defined flags (including
     // target and optimize options) will be listed when running `zig build --help`
     // in this directory.
+
+    // ---------------------------------------------------------------------
+    // Build options (version metadata)
+    // ---------------------------------------------------------------------
+    const options = b.addOptions();
+    options.addOption([]const u8, "git_hash", getGitHash(b));
+    options.addOption([]const u8, "git_dirty", getGitDirty(b));
+    options.addOption([]const u8, "build_date", getBuildDate(b));
+    options.addOption([]const u8, "optimize_mode", @tagName(optimize));
 
     // This creates a module, which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
@@ -79,6 +116,7 @@ pub fn build(b: *std.Build) void {
                 // can be extremely useful in case of collisions (which can happen
                 // importing modules from different packages).
                 .{ .name = "jake", .module = mod },
+                .{ .name = "build_options", .module = options.createModule() },
             },
         }),
     });
@@ -141,6 +179,28 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+
+    // ---------------------------------------------------------------------
+    // Fuzzing targets
+    // ---------------------------------------------------------------------
+
+    const fuzz_parse_exe = b.addExecutable(.{
+        .name = "jake-fuzz-parse",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/fuzz_parse.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "jake", .module = mod },
+            },
+        }),
+    });
+    fuzz_parse_exe.root_module.fuzz = true;
+
+    const install_fuzz_parse = b.addInstallArtifact(fuzz_parse_exe, .{});
+
+    const fuzz_parse_step = b.step("fuzz-parse", "Build parser fuzzing target");
+    fuzz_parse_step.dependOn(&install_fuzz_parse.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //

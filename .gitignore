@@ -29,3 +29,6 @@ test_*
 
 # Docs
 docs/
+
+# Fuzzing artifacts
+findings/

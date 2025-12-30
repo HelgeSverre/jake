@@ -4,6 +4,7 @@
 const std = @import("std");
 const jake = @import("jake");
 const compat = jake.compat;
+const build_options = @import("build_options");
 
 const version = "0.2.0";
 
@@ -100,7 +101,15 @@ pub fn main() !void {
     }
 
     if (show_version) {
-        try getStdout().writeAll("jake " ++ version ++ "\n");
+        var buf: [256]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, "jake {s} ({s}{s} {s} {s})\n", .{
+            version,
+            build_options.git_hash,
+            build_options.git_dirty,
+            build_options.build_date,
+            build_options.optimize_mode,
+        }) catch "jake " ++ version ++ "\n";
+        try getStdout().writeAll(msg);
         return;
     }
 
@@ -128,6 +137,7 @@ pub fn main() !void {
     defer executor.deinit();
     executor.dry_run = dry_run;
     executor.verbose = verbose;
+    executor.watch_mode = watch_mode;
     executor.auto_yes = auto_yes;
     executor.jobs = jobs;
     executor.setPositionalArgs(positional_args.items);
@@ -201,10 +211,15 @@ const JakefileWithSource = struct {
     jakefile: jake.Jakefile,
     source: []const u8,
     allocator: std.mem.Allocator,
+    import_allocations: ?jake.ImportAllocations,
 
     pub fn deinit(self: *JakefileWithSource) void {
         self.jakefile.deinit(self.allocator);
         self.allocator.free(self.source);
+        if (self.import_allocations) |*allocs| {
+            var mutable_allocs = allocs.*;
+            mutable_allocs.deinit();
+        }
     }
 };
 
@@ -220,8 +235,9 @@ fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !JakefileWithSou
     var jakefile = try p.parseJakefile();
 
     // Process imports if any
+    var import_allocations: ?jake.ImportAllocations = null;
     if (jakefile.imports.len > 0) {
-        jake.resolveImports(allocator, &jakefile, path) catch |err| {
+        import_allocations = jake.resolveImports(allocator, &jakefile, path) catch |err| {
             const stderr = getStderr();
             var buf: [512]u8 = undefined;
             const msg = switch (err) {
@@ -240,6 +256,7 @@ fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !JakefileWithSou
         .jakefile = jakefile,
         .source = source,
         .allocator = allocator,
+        .import_allocations = import_allocations,
     };
 }
 
