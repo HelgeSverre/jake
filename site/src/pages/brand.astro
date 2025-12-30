@@ -4,12 +4,6 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 // Chosen brand elements
 const logo = "{j}";
 
-// Font options (chosen: System Mono or Fira Code)
-const fontFamilies = [
-  { name: 'System Mono (Menlo)', family: 'ui-monospace, Menlo, Monaco, monospace' },
-  { name: 'Fira Code', family: '"Fira Code", monospace' },
-];
-
 // All colors for comparison (48px side-by-side)
 const allColors = [
   // Reds
@@ -195,26 +189,12 @@ const twoToneBadges = badgeLabels.flatMap(({ label, display }) =>
     <!-- LOGO VARIATIONS -->
     <!-- ============================================================== -->
 
-    <!-- Font Comparison -->
-    <section class="mb-16">
-      <h2 class="text-2xl font-semibold mb-6 text-jake">Font Comparison</h2>
-      <div class="grid grid-cols-2 gap-6">
-        {fontFamilies.map((font) => (
-          <div class="bg-bg-card border border-border rounded-xl p-6 text-center hover-lift">
-            <div class="w-12 h-12 bg-jake text-white flex items-center justify-center rounded-lg font-semibold text-xl mx-auto mb-4" style={`font-family: ${font.family};`}>{logo}</div>
-            <div class="text-lg font-semibold mb-1">{font.name}</div>
-            <div class="text-text-muted text-xs font-mono">{font.family}</div>
-          </div>
-        ))}
-      </div>
-    </section>
-
     <!-- Container Shapes -->
     <section class="mb-16">
       <h2 class="text-2xl font-semibold mb-6 text-jake">Container Shapes</h2>
       <div class="grid grid-cols-3 md:grid-cols-6 lg:grid-cols-9 gap-4">
         <div class="text-center hover-lift">
-          <div class="inline-block text-4xl font-mono text-jake font-semibold mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
+          <div class="inline-flex items-center justify-center w-16 h-16 text-jake text-2xl font-mono font-semibold mb-2" style="font-family: 'Fira Code', monospace;">{logo}</div>
           <div class="text-xs text-text-muted">Plain</div>
         </div>
         <div class="text-center hover-lift">

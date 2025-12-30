@@ -1,0 +1,69 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = "The best of Make and Just, combined. File dependencies, clean syntax, parallel execution, and more." } = Astro.props;
+const logo = "{j}";
+---
+
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:image" content="https://jakefile.dev/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+</head>
+<body class="bg-bg-primary text-text-primary antialiased">
+  <!-- Navigation -->
+  <nav class="fixed top-0 left-0 right-0 z-50 bg-bg-primary/80 backdrop-blur-xl border-b border-border">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2 text-xl font-semibold">
+        <span class="text-jake font-mono" style="font-family: 'Fira Code', monospace;">{logo}</span>
+        <span>jake</span>
+      </a>
+      <div class="flex items-center gap-6">
+        <a href="/docs/introduction" class="text-text-secondary hover:text-text-primary transition-colors text-sm">Docs</a>
+        <a href="https://github.com/HelgeSverre/jake" class="text-text-secondary hover:text-text-primary transition-colors text-sm">GitHub</a>
+        <a href="/docs/installation" class="bg-jake hover:bg-jake-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          Get Started
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <slot />
+
+  <!-- Footer -->
+  <footer class="py-12 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="flex flex-col md:flex-row justify-between items-center gap-6">
+        <div class="flex items-center gap-2">
+          <span class="text-jake font-mono text-xl" style="font-family: 'Fira Code', monospace;">{logo}</span>
+          <span class="text-text-secondary">jake</span>
+          <span class="text-text-muted text-sm">· Modern command running</span>
+        </div>
+        <div class="flex items-center gap-6 text-sm text-text-secondary">
+          <a href="/docs/introduction" class="hover:text-text-primary transition-colors">Docs</a>
+          <a href="https://github.com/HelgeSverre/jake" class="hover:text-text-primary transition-colors">GitHub</a>
+          <a href="https://github.com/HelgeSverre/jake/issues" class="hover:text-text-primary transition-colors">Issues</a>
+          <a href="/brand" class="hover:text-text-primary transition-colors">Brand</a>
+          <span class="text-text-muted">MIT License</span>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
