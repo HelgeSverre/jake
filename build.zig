@@ -1,5 +1,20 @@
 const std = @import("std");
 
+/// Get version from git tags using `git describe`
+/// Returns semver like "0.4.0" at a tag, or "0.4.0-5-g1234abc" for dev builds
+fn getGitVersion(b: *std.Build) []const u8 {
+    var code: u8 = 0;
+    const result = b.runAllowFail(&.{ "git", "describe", "--tags", "--always" }, &code, .Ignore) catch {
+        return "0.0.0-unknown";
+    };
+    const trimmed = std.mem.trim(u8, result, "\n\r ");
+    // Strip leading 'v' if present (v0.4.0 -> 0.4.0)
+    if (trimmed.len > 0 and trimmed[0] == 'v') {
+        return trimmed[1..];
+    }
+    return trimmed;
+}
+
 /// Get git commit hash (short, 7 chars)
 fn getGitHash(b: *std.Build) []const u8 {
     var code: u8 = 0;
@@ -53,6 +68,7 @@ pub fn build(b: *std.Build) void {
     // Build options (version metadata)
     // ---------------------------------------------------------------------
     const options = b.addOptions();
+    options.addOption([]const u8, "version", getGitVersion(b));
     options.addOption([]const u8, "git_hash", getGitHash(b));
     options.addOption([]const u8, "git_dirty", getGitDirty(b));
     options.addOption([]const u8, "build_date", getBuildDate(b));

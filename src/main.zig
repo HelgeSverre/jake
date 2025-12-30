@@ -5,7 +5,7 @@ const build_options = @import("build_options");
 const args_mod = jake.args;
 const completions = jake.completions;
 
-const version = "0.3.0";
+const version = build_options.version;
 
 fn getStdout() std.fs.File {
     return compat.getStdOut();

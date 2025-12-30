@@ -190,3 +190,31 @@ test: tests
 refactor: code refactoring
 perf: performance
 ```
+
+## Versioning & Releases
+
+### Automatic Version Detection
+
+The version is **automatically derived from git tags** at build time using `git describe --tags`. No manual version bumping is required.
+
+- **At a tag**: `jake --version` shows `jake 0.4.0 (...)`
+- **After commits**: Shows `jake 0.4.0-5-g1234abc (...)` (5 commits after v0.4.0)
+- **With changes**: Adds `-dirty` suffix to git hash
+
+This is implemented in `build.zig` via `getGitVersion()` and passed to `main.zig` as `build_options.version`.
+
+### Creating a Release
+
+1. **Update CHANGELOG.md** with the new version section
+2. **Commit the changelog**: `git commit -m "docs: update changelog for vX.Y.Z"`
+3. **Create annotated tag**: `git tag -a vX.Y.Z -m "vX.Y.Z release notes..."`
+4. **Push**: `git push origin main && git push origin vX.Y.Z`
+
+The GitHub Actions workflow (`.github/workflows/release.yml`) automatically:
+- Builds binaries for all platforms (Linux, macOS, Windows × x86_64/aarch64)
+- Generates checksums
+- Creates a GitHub release with assets
+
+### Version Format
+
+Tags must use the `vX.Y.Z` format (e.g., `v0.4.0`). The leading `v` is stripped for display.
