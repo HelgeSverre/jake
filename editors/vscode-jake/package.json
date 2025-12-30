@@ -1,13 +1,21 @@
 {
   "name": "jake-lang",
-  "displayName": "Jake",
-  "description": "Syntax highlighting for Jake task runner files",
+  "displayName": "Jakefile",
+  "description": "Syntax highlighting for Jakefile and .jake modules/files",
   "version": "0.1.0",
-  "publisher": "jake-lang",
+  "publisher": "helgesverre",
   "license": "MIT",
+  "author": {
+    "name": "Helge Sverre",
+    "url": "https://helgesver.re"
+  },
+  "homepage": "https://jakefile.dev",
+  "bugs": {
+    "url": "https://github.com/HelgeSverre/jake/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/helgeblod/jake"
+    "url": "https://github.com/HelgeSverre/jake"
   },
   "engines": {
     "vscode": "^1.75.0"
@@ -34,13 +42,10 @@
           ".jake"
         ],
         "filenames": [
-          "Jakefile"
+          "Jakefile",
+          "jakefile"
         ],
-        "configuration": "./language-configuration.json",
-        "icon": {
-          "light": "./images/icon.png",
-          "dark": "./images/icon.png"
-        }
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [

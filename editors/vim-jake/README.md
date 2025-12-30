@@ -1,4 +1,4 @@
-# Jakefile Syntax for VS Code
+# Jakefile Syntax for Vim/Neovim
 
 Syntax highlighting for Jakefile and .jake modules/files.
 
@@ -13,51 +13,76 @@ Part of the [Jake](https://github.com/HelgeSverre/jake) task runner project.
 
 - Syntax highlighting for `Jakefile` and `*.jake` files
 - Comment toggling with `#`
-- Bracket matching and auto-closing
-- Code folding for recipes
+- Proper indentation (4 spaces)
+- Folding support
 
 ## Syntax Highlighting
 
-The extension provides highlighting for:
+The plugin highlights:
 
-- **Keywords**: `task`, `file`, `import`, `as`
-- **Directives**: `@if`, `@else`, `@each`, `@end`, `@needs`, `@require`, `@cache`, `@watch`, `@confirm`, `@group`, `@desc`, `@alias`, `@quiet`, `@ignore`, `@only-os`, `@platform`, `@cd`, `@shell`, `@export`, `@pre`, `@post`, `@before`, `@after`, `@on_error`
+- **Keywords**: `task`, `file`, `default`
+- **Directives**: `@if`, `@else`, `@each`, `@end`, `@needs`, `@require`, `@cache`, `@watch`, `@confirm`, `@group`, `@desc`, `@alias`, `@quiet`, `@ignore`, `@only-os`, `@platform`, `@cd`, `@shell`, `@export`, `@pre`, `@post`, `@before`, `@after`, `@on_error`, `@import`, `@dotenv`
 - **Variables**: `{{variable}}`, `{{function(arg)}}`, `$VAR`, `${VAR}`, `$1`, `$@`
 - **Functions**: `dirname()`, `basename()`, `extension()`, `uppercase()`, `lowercase()`, `trim()`, `home()`, `env()`, `exists()`, `eq()`, `neq()`
 - **Strings**: Double and single quoted strings with escape sequences
 - **Comments**: `# comment`
 - **Recipe definitions**: `task name:`, `file output: deps`, `name:`
 - **Dependencies**: `[dep1, dep2]`
-- **Parameters**: `task name param="default":`
+- **Platform names**: `linux`, `macos`, `windows`, etc.
 
 ## Installation
 
-### From VSIX (Local)
-
-1. Download or build the `.vsix` file
-2. In VS Code, open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
-3. Run "Extensions: Install from VSIX..."
-4. Select the `.vsix` file
-
-### Development
-
-1. Clone this repository
-2. Open the `editors/vscode-jake` folder in VS Code
-3. Press `F5` to launch the Extension Development Host
-4. Open a `Jakefile` to test the highlighting
-
-## Building
+### Using jake (recommended)
 
 ```bash
-# Install vsce if not already installed
-npm install -g @vscode/vsce
-
-# Package the extension
-cd editors/vscode-jake
-vsce package
+jake editors.vim-install      # Install to ~/.vim
+jake editors.neovim-install   # Install to ~/.config/nvim
 ```
 
-This creates a `.vsix` file that can be installed locally or published.
+### Manual Installation
+
+#### Vim
+
+```bash
+mkdir -p ~/.vim/syntax ~/.vim/ftdetect ~/.vim/ftplugin
+cp syntax/jake.vim ~/.vim/syntax/
+cp ftdetect/jake.vim ~/.vim/ftdetect/
+cp ftplugin/jake.vim ~/.vim/ftplugin/
+```
+
+#### Neovim
+
+```bash
+mkdir -p ~/.config/nvim/syntax ~/.config/nvim/ftdetect ~/.config/nvim/ftplugin
+cp syntax/jake.vim ~/.config/nvim/syntax/
+cp ftdetect/jake.vim ~/.config/nvim/ftdetect/
+cp ftplugin/jake.vim ~/.config/nvim/ftplugin/
+```
+
+### Using a Plugin Manager
+
+#### vim-plug
+
+```vim
+Plug 'HelgeSverre/jake', { 'rtp': 'editors/vim-jake' }
+```
+
+#### lazy.nvim (Neovim)
+
+```lua
+{
+  'HelgeSverre/jake',
+  config = function()
+    vim.opt.rtp:append(vim.fn.stdpath('data') .. '/lazy/jake/editors/vim-jake')
+  end
+}
+```
+
+#### Vundle
+
+```vim
+Plugin 'HelgeSverre/jake', { 'rtp': 'editors/vim-jake' }
+```
 
 ## Example Jakefile
 

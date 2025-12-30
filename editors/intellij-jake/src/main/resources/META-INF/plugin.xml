@@ -1,0 +1,50 @@
+<idea-plugin>
+    <id>com.jakefile.intellij</id>
+    <name>Jakefile</name>
+    <version>0.1.0</version>
+    <vendor email="helge@helgesverre.com" url="https://helgesver.re">Helge Sverre</vendor>
+
+    <description><![CDATA[
+    Syntax highlighting for Jakefile and .jake modules/files.
+
+    <p>
+    <a href="https://jakefile.dev">Website</a> |
+    <a href="https://github.com/HelgeSverre/jake">Repository</a>
+    </p>
+
+    <h2>Features</h2>
+    <ul>
+        <li>Syntax highlighting for <code>Jakefile</code> and <code>*.jake</code> files</li>
+        <li>Comment toggling</li>
+        <li>Bracket matching</li>
+    </ul>
+
+    <h2>Highlighted Elements</h2>
+    <ul>
+        <li><b>Keywords</b>: task, file, import, as</li>
+        <li><b>Directives</b>: @if, @else, @each, @end, @needs, @require, @cache, @watch, @confirm, @group, @desc, @alias, @quiet, @ignore, @only-os, @platform, @cd, @shell, @export, @pre, @post</li>
+        <li><b>Variables</b>: {{variable}}, {{function(arg)}}, $VAR, ${VAR}</li>
+        <li><b>Functions</b>: dirname(), basename(), extension(), uppercase(), lowercase(), trim(), home(), env(), exists()</li>
+        <li><b>Strings</b>: Double and single quoted strings</li>
+        <li><b>Comments</b>: # comment</li>
+    </ul>
+    ]]></description>
+
+    <change-notes><![CDATA[
+    <h2>0.1.0</h2>
+    <ul>
+        <li>Initial release</li>
+        <li>Syntax highlighting via TextMate grammar</li>
+    </ul>
+    ]]></change-notes>
+
+    <!-- Product compatibility - supports all JetBrains IDEs -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <!-- TextMate bundle support -->
+    <depends>org.jetbrains.plugins.textmate</depends>
+
+    <extensions defaultExtensionNs="org.jetbrains.plugins.textmate">
+        <bundle name="Jakefile" path="/bundle"/>
+    </extensions>
+</idea-plugin>

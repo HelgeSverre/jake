@@ -1,0 +1,6 @@
+# VS Code extension ignore file
+.gitignore
+.vscode/**
+node_modules/**
+*.vsix
+.vscodeignore

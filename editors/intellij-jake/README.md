@@ -1,4 +1,4 @@
-# Jakefile Syntax for VS Code
+# Jakefile Syntax for IntelliJ IDEA
 
 Syntax highlighting for Jakefile and .jake modules/files.
 
@@ -12,13 +12,10 @@ Part of the [Jake](https://github.com/HelgeSverre/jake) task runner project.
 ## Features
 
 - Syntax highlighting for `Jakefile` and `*.jake` files
-- Comment toggling with `#`
-- Bracket matching and auto-closing
-- Code folding for recipes
+- Works in all JetBrains IDEs (IntelliJ IDEA, WebStorm, PyCharm, etc.)
+- Uses TextMate grammar for consistent highlighting
 
-## Syntax Highlighting
-
-The extension provides highlighting for:
+## Highlighted Elements
 
 - **Keywords**: `task`, `file`, `import`, `as`
 - **Directives**: `@if`, `@else`, `@each`, `@end`, `@needs`, `@require`, `@cache`, `@watch`, `@confirm`, `@group`, `@desc`, `@alias`, `@quiet`, `@ignore`, `@only-os`, `@platform`, `@cd`, `@shell`, `@export`, `@pre`, `@post`, `@before`, `@after`, `@on_error`
@@ -28,36 +25,56 @@ The extension provides highlighting for:
 - **Comments**: `# comment`
 - **Recipe definitions**: `task name:`, `file output: deps`, `name:`
 - **Dependencies**: `[dep1, dep2]`
-- **Parameters**: `task name param="default":`
 
 ## Installation
 
-### From VSIX (Local)
+### From JetBrains Marketplace
 
-1. Download or build the `.vsix` file
-2. In VS Code, open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
-3. Run "Extensions: Install from VSIX..."
-4. Select the `.vsix` file
+1. Open your JetBrains IDE
+2. Go to Settings → Plugins → Marketplace
+3. Search for "Jakefile"
+4. Click Install
 
-### Development
+### From Disk
 
-1. Clone this repository
-2. Open the `editors/vscode-jake` folder in VS Code
-3. Press `F5` to launch the Extension Development Host
-4. Open a `Jakefile` to test the highlighting
+1. Download the `.zip` file from [Releases](https://github.com/HelgeSverre/jake/releases)
+2. Go to Settings → Plugins → ⚙️ → Install Plugin from Disk
+3. Select the downloaded `.zip` file
 
-## Building
+### Building from Source
 
 ```bash
-# Install vsce if not already installed
-npm install -g @vscode/vsce
-
-# Package the extension
-cd editors/vscode-jake
-vsce package
+cd editors/intellij-jake
+./gradlew buildPlugin
 ```
 
-This creates a `.vsix` file that can be installed locally or published.
+The plugin will be in `build/distributions/`.
+
+## Development
+
+### Prerequisites
+
+- JDK 17+
+- Gradle (wrapper included)
+
+### Building
+
+```bash
+./gradlew buildPlugin
+```
+
+### Running in Development IDE
+
+```bash
+./gradlew runIde
+```
+
+### Publishing
+
+```bash
+# Requires PUBLISH_TOKEN environment variable
+./gradlew publishPlugin
+```
 
 ## Example Jakefile
 
