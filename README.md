@@ -197,6 +197,15 @@ task build:
     @post echo "Build complete!"
 ```
 
+### Validation
+```jake
+@needs docker npm     # Check commands exist before running
+@require API_KEY      # Check environment variables
+
+task deploy:
+    docker build -t app .
+```
+
 ### Watch Mode
 ```bash
 jake -w build              # Watch and rebuild

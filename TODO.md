@@ -42,6 +42,17 @@
 | Private recipes (_) | ✅ Complete | 2 tests | Hidden from listing |
 | Positional arguments | ✅ Complete | 7 tests | $1, $2, $@ in recipes |
 
+### v0.2.2 Feature Additions (COMPLETE)
+| Feature | Status | Tests | Notes |
+|---------|--------|-------|-------|
+| Recipe-level @needs | ✅ Complete | 17 tests | Check requirements before commands run |
+| @platform directive | ✅ Complete | 3 tests | Alias for @only-os, preferred name |
+| @description directive | ✅ Complete | 2 tests | Alias for @desc, both official |
+| @on_error targeting | ✅ Complete | 3 tests | Target specific recipes with error hooks |
+| without_extensions() | ✅ Complete | 9 tests | Strip all extensions from path |
+| Parallel directives | ✅ Complete | 10 tests | @if/@each/@ignore work in -j mode |
+| @export fix | ✅ Complete | 7 tests | Variables exported to shell environment |
+
 ---
 
 ## Test Coverage Summary
@@ -188,11 +199,11 @@
 - [ ] `test "extension of file without extension"` - `extension("README")` → `""`
 - [ ] `test "without_extension with multiple dots"` - `without_extension("file.tar.gz")` → `"file.tar"`
 
-**New Function: without_extensions (Haskell-style, plural for consistency):**
-- [ ] Implement `without_extensions(p)` - strips ALL extensions
-- [ ] `test "without_extensions removes all extensions"` - `without_extensions("file.tar.gz")` → `"file"`
-- [ ] `test "without_extensions on single extension"` - `without_extensions("file.txt")` → `"file"`
-- [ ] `test "without_extensions on dotfile"` - `without_extensions(".bashrc")` → `".bashrc"`
+**New Function: without_extensions ✅ COMPLETE:**
+- [x] Implement `without_extensions(p)` - strips ALL extensions
+- [x] `test "without_extensions removes all extensions"` - `without_extensions("file.tar.gz")` → `"file"`
+- [x] `test "without_extensions on single extension"` - `without_extensions("file.txt")` → `"file"`
+- [x] `test "without_extensions on dotfile"` - `without_extensions(".bashrc")` → `".bashrc"`
 
 **System Function Edge Cases:**
 - [ ] `test "home returns error when HOME unset"` - Should fail explicitly
@@ -452,6 +463,12 @@ task docker:build:
      - [ ] Align `=` in variable definitions
      - [ ] Sort imports alphabetically
      - [ ] `--check` flag for CI
+   - [ ] `--json` flag - Machine-readable JSON output for tooling integration
+     - [ ] `jake --list --json` - recipes as JSON array with metadata
+     - [ ] `jake --dry-run --json` - execution plan as JSON
+     - [ ] `jake <recipe> --json` - execution result/timing as JSON
+     - [ ] `jake --vars --json` - resolved variables as JSON object
+     - [ ] Consistent schema: `{ "success": bool, "data": ..., "error": ... }`
 
 6. **Editor & Syntax Highlighting** (prioritized for adoption)
 
@@ -499,6 +516,48 @@ task docker:build:
 
    **Phase 6: Web Syntax Highlighting**
    - [ ] Separate repo: `jakefile-highlight` for highlight.js/prism.js
+
+   **Phase 7: Language Server Protocol (LSP)**
+
+   *Approach*: Built-in to jake binary (`jake --lsp`) - reuses existing parser, zero extra dependencies for users.
+
+   *Useful features for a task runner* (vs full programming language):
+   | Feature | Value | Notes |
+   |---------|-------|-------|
+   | Diagnostics | ★★★★★ | Parse errors, unknown recipes, undefined vars |
+   | Completion | ★★★★★ | Recipe names, @directives, {{variables}}, functions |
+   | Hover | ★★★★☆ | Recipe docs, resolved variable values, directive help |
+   | Go to Definition | ★★★★☆ | Dependency → recipe, @import → file |
+   | Document Symbols | ★★★★☆ | Recipe outline in sidebar |
+   | Find References | ★★★☆☆ | "Who depends on this recipe?" |
+   | Rename | ★★☆☆☆ | Recipe name refactoring |
+
+   *Implementation tasks*:
+   - [ ] Add `jake --lsp` flag (enters LSP stdio mode)
+   - [ ] Core LSP handlers: `initialize`, `shutdown`, `textDocument/didOpen`, `didChange`
+   - [ ] `textDocument/publishDiagnostics` - reuse existing parse errors + add:
+     - Unknown recipe in dependency list
+     - Undefined variable reference
+     - Missing required parameter
+     - Typo suggestions ("did you mean X?")
+   - [ ] `textDocument/completion`
+     - Recipe names (from parsed Jakefile)
+     - @directives (static list with snippets)
+     - {{variables}} (from parsed Jakefile + env)
+     - Function names with signatures
+   - [ ] `textDocument/hover`
+     - Recipe: description, dependencies, parameters
+     - Variable: resolved value
+     - Directive: documentation
+     - Function: signature + docs
+   - [ ] `textDocument/definition`
+     - Recipe dependency → jump to recipe definition
+     - @import path → open imported file
+     - Variable reference → variable definition
+   - [ ] `textDocument/documentSymbol` - recipe list for outline view
+   - [ ] `textDocument/references` - find all dependents of a recipe
+   - [ ] Update VS Code extension to use LSP (`jake.lspPath` setting)
+   - [ ] Document LSP setup for other editors (Neovim, Emacs, Helix, etc.)
 
 7. **New Directives**
    - [ ] `@timeout 30s` - Kill recipe if exceeds time limit
@@ -638,22 +697,103 @@ All TDD implementation steps are complete with 387 passing unit tests + 47 e2e t
 
 **Known Issues (Bugs to Fix):**
 
-1. **Parallel executor doesn't handle directives** - When using `-j` flag for parallel execution, recipes containing directives like `@each`, `@if`, `@else`, etc. don't work correctly. The parallel executor in `parallel.zig` passes directive lines directly to the shell instead of processing them. Fix requires refactoring `executeNode()` to use the same command execution logic as the sequential executor.
-
-2. **@export directive not working** - Variables marked with `@export` aren't being exported to the shell environment. Jake variable syntax (`{{VAR}}`) works correctly, but shell environment variables (`$VAR`) are not populated. The directive is parsed but the export mechanism in the executor isn't wiring variables to the child process environment.
+None currently! All known bugs have been fixed.
 
 **Recent Bug Fixes (v0.2.2):**
 
-1. **Fixed nested conditionals** - `@if`/`@else`/`@end` blocks inside outer `@if` blocks now work correctly. Previously, the inner `@end` would reset state and cause the outer `@else` to execute incorrectly. Fixed by implementing a conditional state stack in `executeCommands()`.
+1. **Fixed parallel executor directive handling** - The `-j` flag for parallel execution now correctly handles directives like `@if`, `@elif`, `@else`, `@end`, `@each`, and `@ignore`. Added `executeRecipeCommands()` with full conditional state stack support.
 
-2. **Fixed @if inside @each loops** - Directives like `@if`, `@else`, `@elif`, `@end` inside `@each` loops now work correctly. Previously they were passed to the shell as commands. Fixed by rewriting `executeEachBody()` to handle directives properly.
+2. **Fixed @export directive** - Variables marked with `@export` are now properly exported to child process environment. Supports `@export KEY=value`, `@export KEY value`, and `@export KEY` (exports Jake variable).
 
-3. **Fixed memory leak in hooks** - `expandHookVariables()` returned allocated memory that wasn't freed. Fixed by adding defer cleanup in `executeHook()`.
+3. **Fixed nested conditionals** - `@if`/`@else`/`@end` blocks inside outer `@if` blocks now work correctly. Previously, the inner `@end` would reset state and cause the outer `@else` to execute incorrectly. Fixed by implementing a conditional state stack in `executeCommands()`.
 
-4. **Fixed @on_error parsing** - The first word after `@on_error` was incorrectly treated as a recipe name. Fixed by making `@on_error` always global (no recipe targeting).
+4. **Fixed @if inside @each loops** - Directives like `@if`, `@else`, `@elif`, `@end` inside `@each` loops now work correctly. Previously they were passed to the shell as commands. Fixed by rewriting `executeEachBody()` to handle directives properly.
+
+5. **Fixed memory leak in hooks** - `expandHookVariables()` returned allocated memory that wasn't freed. Fixed by adding defer cleanup in `executeHook()`.
+
+6. **Added @on_error targeting** - `@on_error` can now target specific recipes: `@on_error deploy echo "Deploy failed!"`. Uses heuristic to distinguish from global hooks.
+
+---
+
+## UX/DX Improvements
+
+### CLI Improvements
+
+1. **Recipe typo suggestions** (High Priority)
+   - [ ] Add Levenshtein distance matching for recipe names
+   - [ ] When recipe not found, suggest closest match: `Did you mean: build?`
+   - [ ] Implement in main.zig after `RecipeNotFound` error
+
+2. **`jake --show <recipe>`** - Inspect recipe details
+   - [ ] Display recipe definition, dependencies, commands, metadata
+   - [ ] Useful for understanding imported recipes without reading files
+
+3. **`--list` improvements**
+   - [ ] Add `--list --short` for one recipe name per line (pipeable)
+   - [ ] Consider tree-style output for grouped recipes
+
+4. **Watch mode feedback**
+   - [ ] Print what patterns are being watched when entering watch mode
+   - [ ] Example: `Watching: src/**/*.ts, Jakefile (Press Ctrl+C to stop)`
+
+### Error Message Improvements
+
+5. **Parse errors with source context**
+   - [ ] Show the offending line with a caret pointing to the error
+   - [ ] Example:
+     ```
+     error at line 5, column 12: expected ':', found 'ident'
+       5 | task build name
+         |            ^^^^
+     ```
+
+6. **Dependency cycle visualization**
+   - [ ] Show the full cycle path: `build -> test -> lint -> build`
+   - [ ] Currently only shows the recipe name where cycle was detected
+
+7. **`home()` function failure**
+   - [ ] Return explicit error when `$HOME` unset and no passwd fallback
+   - [ ] Include hint: `Set HOME environment variable or ensure user entry exists in /etc/passwd`
+
+### Documentation Improvements
+
+8. **Document output suppression options**
+   - [ ] Add comparison table: `@quiet` vs `@` prefix vs planned `@silent`
+   - [ ] `@quiet` = suppress command echo for whole recipe
+   - [ ] `@` prefix = suppress echo for single command
+   - [ ] `@silent` = suppress all output including command output
+
+9. **Variable scoping section**
+   - [ ] Document when variables are available (global vs recipe vs shell)
+   - [ ] Clarify `{{VAR}}` (Jake) vs `$VAR` (shell) vs `@export`
+   - [ ] Note: `@export` is currently broken (see Known Issues)
+
+10. **Recipe type decision tree**
+    - [ ] Add guidance: When to use `task` vs `file` vs simple recipe
+    - [ ] `file` = need dependency tracking, incremental builds
+    - [ ] `task` = always runs, explicit intent
+    - [ ] simple = quick Make-style syntax
+
+11. **Parallel mode limitations warning**
+    - [ ] Document that `-j` doesn't handle `@each`, `@if`, etc.
+    - [ ] Add note in `--help` or warn when `-j` used with directive recipes
+
+12. **Import conflict resolution**
+    - [ ] Document what happens when two imports define same recipe name
+    - [ ] Clarify precedence rules
+
+### DSL Consistency
+
+13. **Hook naming clarity**
+    - [ ] Clarify `@pre`/`@post` vs `@before`/`@after` relationship
+    - [ ] Document which is canonical, which is alias
+
+14. **Directive naming consistency**
+    - [ ] `@only-os` uses hyphen while others don't (`@dotenv`, `@require`)
+    - [ ] Consider documenting rationale or adding `@onlyos` alias
 
 **Future work:**
-1. **Short-term**: Shell completions (bash/zsh/fish), fix parallel executor directive handling, fix @export
+1. **Short-term**: Shell completions (bash/zsh/fish) *(parallel executor and @export are now fixed)*
 2. **Medium-term**: See "Future Features (Detailed Design)" section for:
    - Remote Cache Support (HTTP/S3 backends)
    - Built-in Recipes (@builtin docker/npm/git)

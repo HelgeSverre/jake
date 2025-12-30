@@ -482,12 +482,18 @@ Files are loaded in order; later files override earlier ones.
 
 ### Exporting Variables
 
-@todo explain why you want to do this, and where these envs are available (subprocesses only? only in the file, in module, is it available in another file if we import this file into the main jakefile? etc, add test cases if needed to cover this behavior in detail, document it explicitly.
+Use `@export` to set environment variables that are passed to all subprocess commands:
 
 ```jake
 @export NODE_ENV=production
 @export DEBUG=false
 ```
+
+Exported variables:
+- Are available to all shell commands executed by Jake
+- Persist for the entire Jake execution
+- Are available in imported files
+- Override system environment variables with the same name
 
 ### Using Environment Variables
 
@@ -508,16 +514,18 @@ DB_POOL_SIZE=10
 
 # API Keys (use quotes for special chars)
 API_KEY="abc123!@#"
-SECRET="multi
-line
-value"
 
-SECRET="does\nnot support\nescapes"  # TODO: clarify escape behavior in documentation
+# Empty values
+EMPTY_VAR=
+ALSO_EMPTY=""
 
-ANOTHER_KEY=  # parsed as empty string (verify this behavior with unit test)
-ANOTHER_EMPTY_KEY="" # parsed as empty string (verify this behavior with unit test)
-
+# Escape sequences (supported)
+MULTILINE=line1\nline2\nline3
+TABBED=col1\tcol2
+WINDOWS_PATH=C:\\Users\\Name
 ```
+
+**Supported escape sequences:** `\n` (newline), `\t` (tab), `\r` (carriage return), `\\` (backslash), `\"` (quote), `\'` (single quote), `\$` (literal dollar sign)
 
 ---
 
@@ -713,7 +721,23 @@ jake -y deploy
 
 ### @needs - Command Existence Check
 
-Verify required commands are available:
+Verify required commands are available before running a recipe.
+
+#### Recipe-Level @needs (Recommended)
+
+Place `@needs` before the recipe definition for early validation:
+
+```jake
+@needs docker npm node
+task build:
+    docker build -t myapp .
+```
+
+This checks requirements **before** any commands run, providing immediate feedback if dependencies are missing.
+
+#### Command-Level @needs
+
+You can also use `@needs` inside the recipe body:
 
 ```jake
 task build:
@@ -728,9 +752,9 @@ If any command is missing, Jake exits with a helpful error.
 Provide helpful installation instructions:
 
 ```jake
+@needs honggfuzz "https://github.com/google/honggfuzz"
+@needs zig "Install from https://ziglang.org"
 task fuzz:
-    @needs honggfuzz "https://github.com/google/honggfuzz"
-    @needs zig "Install from https://ziglang.org"
     honggfuzz -i corpus ./fuzz-target
 ```
 
@@ -741,17 +765,19 @@ When the command is missing, Jake shows your custom hint instead of the generic 
 Reference a task to run when a command is missing:
 
 ```jake
+@needs honggfuzz -> toolchain.install-honggfuzz
 task fuzz:
-    @needs honggfuzz -> toolchain.install-honggfuzz
     honggfuzz -i corpus ./fuzz-target
 ```
 
 When `honggfuzz` is missing, Jake shows: `run: jake toolchain.install-honggfuzz`
 
-You can combine hints and task references:
+#### Combined Hints and Task References
 
 ```jake
 @needs honggfuzz "Google fuzzer" -> toolchain.install-honggfuzz
+task fuzz:
+    honggfuzz -i corpus ./fuzz-target
 ```
 
 ### @require - Environment Variables
@@ -912,21 +938,23 @@ task deploy:
     ./deploy.sh
 ```
 
-### @only-os - Platform-Specific Recipes
+### @platform - Platform-Specific Recipes
 
 Run recipes only on specific operating systems:
 
 ```jake
-@only-os linux macos
+@platform linux macos
 task install-deps:
     ./install.sh
 
-@only-os windows
+@platform windows
 task install-deps:
     install.bat
 ```
 
 Valid OS values: `linux`, `macos`, `windows`
+
+> **Note:** `@only-os` and `@only` are aliases for `@platform` and work identically.
 
 ### @quiet - Suppress Output
 
@@ -1038,7 +1066,8 @@ Use functions in variable expansion with `{{function(arg)}}` syntax.
 | `dirname(p)`           | Get directory part | `{{dirname(/a/b/c.txt)}}` → `/a/b`                    |
 | `basename(p)`          | Get filename part  | `{{basename(/a/b/c.txt)}}` → `c.txt`                  |
 | `extension(p)`         | Get file extension | `{{extension(file.txt)}}` → `.txt`                    |
-| `without_extension(p)` | Remove extension   | `{{without_extension(file.txt)}}` → `file`            |
+| `without_extension(p)` | Remove last extension | `{{without_extension(file.tar.gz)}}` → `file.tar`     |
+| `without_extensions(p)` | Remove ALL extensions | `{{without_extensions(file.tar.gz)}}` → `file`        |
 | `absolute_path(p)`     | Get absolute path  | `{{absolute_path(./src)}}` → `/home/user/project/src` |
 
 ### System Functions
