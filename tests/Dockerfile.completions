@@ -11,12 +11,12 @@ FROM debian:bookworm-slim AS builder
 RUN apt-get update && apt-get install -y curl xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -L https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ -C /opt \
-    && ln -s /opt/zig-linux-x86_64-0.14.0/zig /usr/local/bin/zig
+RUN curl -L https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz | tar -xJ -C /opt \
+    && ln -s /opt/zig-x86_64-linux-0.15.2/zig /usr/local/bin/zig
 
 WORKDIR /jake
 COPY . .
-RUN zig build -Doptimize=ReleaseFast
+RUN zig build -Doptimize=ReleaseFast --seed 0
 
 # ============================================================================
 # Test stage - vanilla Linux environment (no Oh-My-Zsh, no Homebrew)
