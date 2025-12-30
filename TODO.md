@@ -62,6 +62,7 @@
 | executor.zig | 132 | Excellent |
 | parser.zig | 83 | Excellent |
 | lexer.zig | 64 | Excellent |
+| args.zig | 45 | Excellent |
 | conditions.zig | 17 | Good |
 | cache.zig | 16 | Good |
 | functions.zig | 16 | Good |
@@ -71,12 +72,13 @@
 | watch.zig | 8 | Good |
 | prompt.zig | 8 | Good |
 | hooks.zig | 8 | Good |
+| completions.zig | 7 | Good |
 | parallel.zig | 4 | Basic |
 | main.zig | 1 | Minimal |
 | root.zig | 1 | Minimal |
-| **TOTAL** | **387** | |
+| **TOTAL** | **439** | |
 
-**E2E Tests:** 47 tests in `tests/e2e_test.sh`
+**E2E Tests:** `tests/e2e_test.sh`
 
 ---
 
@@ -263,15 +265,18 @@ Parameter syntax: `task name param="default":` or `task name param:` (required)
 
 ---
 
-### Upcoming Features
+### Completed Features
 
-1. **Shell Completions** ⬅️ IN PROGRESS
-   - [ ] Generate bash completions (`jake --completions bash`)
-   - [ ] Generate zsh completions (`jake --completions zsh`)
-   - [ ] Generate fish completions (`jake --completions fish`)
-   - [ ] Auto-install command (`jake --install-completions`)
-   - [ ] Complete recipe names dynamically from Jakefile
-   - [ ] Complete flags and options
+1. **Shell Completions** ✅ COMPLETE
+   - [x] Generate bash completions (`jake --completions bash`)
+   - [x] Generate zsh completions (`jake --completions zsh`)
+   - [x] Generate fish completions (`jake --completions fish`)
+   - [x] Auto-install command (`jake --completions --install`)
+   - [x] Complete recipe names dynamically from Jakefile (via `jake --summary`)
+   - [x] Complete flags and options
+   - [x] Add `--summary` flag for machine-readable recipe list
+
+### Upcoming Features
 
 ### Future Features (Detailed Design)
 
@@ -618,6 +623,7 @@ task docker:build:
 ```
 src/
 ├── main.zig        # CLI entry point (1 test)
+├── args.zig        # Argument parsing (45 tests)
 ├── lexer.zig       # Tokenizer (64 tests)
 ├── parser.zig      # AST builder (83 tests)
 ├── executor.zig    # Recipe execution (132 tests)
@@ -630,11 +636,11 @@ src/
 ├── watch.zig       # File watching (8 tests)
 ├── prompt.zig      # @confirm prompts (8 tests)
 ├── hooks.zig       # @pre/@post hooks (8 tests)
+├── completions.zig # Shell completions (7 tests)
 ├── parallel.zig    # Thread pool exec (4 tests)
 ├── compat.zig      # Zig 0.14/0.15 compatibility
 ├── fuzz_parse.zig  # Parser fuzz testing
-├── root.zig        # Library exports (1 test)
-└── completions.zig # Shell completions (planned)
+└── root.zig        # Library exports (1 test)
 ```
 
 ### Key Data Structures
@@ -659,7 +665,7 @@ src/
 
 ## Next Steps
 
-All TDD implementation steps are complete with 387 passing unit tests + 47 e2e tests.
+All TDD implementation steps are complete. Run `zig build test` for unit tests and `bash tests/e2e_test.sh` for E2E tests.
 
 **Cleanup tasks completed:**
 - ✅ Added `--yes`/`-y` flag to main.zig
@@ -797,9 +803,11 @@ None currently! All known bugs have been fixed.
 
 **Recent completions:**
 - ✅ CLI UX quick wins: `--list --short`, `--show`, typo suggestions (Levenshtein distance)
+- ✅ Shell completions: bash, zsh, fish with `--completions` and `--completions --install`
+- ✅ Machine-readable output: `--summary` for scripting/completion integration
 
 **Future work:**
-1. **Short-term**: Shell completions (bash/zsh/fish)
+1. **Short-term**: Fix parallel executor directive handling, fix @export
 2. **Medium-term**: See "Future Features (Detailed Design)" section for:
    - Remote Cache Support (HTTP/S3 backends)
    - Built-in Recipes (@builtin docker/npm/git)
@@ -828,11 +836,14 @@ zig build test
 # Verbose output
 ./zig-out/bin/jake build -v
 
-# Shell completions (planned)
-./zig-out/bin/jake --completions bash > jake.bash
-./zig-out/bin/jake --completions zsh > _jake
-./zig-out/bin/jake --completions fish > jake.fish
-./zig-out/bin/jake --install-completions  # Auto-detect shell and install
+# Shell completions
+./zig-out/bin/jake --completions bash     # Print bash completion script
+./zig-out/bin/jake --completions zsh      # Print zsh completion script
+./zig-out/bin/jake --completions fish     # Print fish completion script
+./zig-out/bin/jake --completions --install  # Auto-detect shell and install
+
+# Machine-readable output for scripting
+./zig-out/bin/jake --summary              # Print space-separated recipe names
 ```
 
 ---
