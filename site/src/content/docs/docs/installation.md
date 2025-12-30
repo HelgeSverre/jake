@@ -3,9 +3,22 @@ title: Installation
 description: How to install Jake on your system.
 ---
 
-## From Source (Recommended)
+## Quick Install (Recommended)
 
-Requires [Zig](https://ziglang.org/) 0.14 or later:
+```bash
+curl -fsSL jakefile.dev/install.sh | sh
+```
+
+This downloads the latest release binary for your platform (Linux, macOS).
+
+### Environment Variables
+
+- `JAKE_VERSION` - Install a specific version (default: latest)
+- `JAKE_INSTALL` - Installation directory (default: ~/.local/bin)
+
+## From Source
+
+Requires [Zig](https://ziglang.org/) 0.15.2 or later:
 
 ```bash
 git clone https://github.com/HelgeSverre/jake.git
@@ -35,9 +48,26 @@ Download from [GitHub Releases](https://github.com/HelgeSverre/jake/releases) fo
 jake --version
 ```
 
-## Shell Completion
+## Shell Completions
 
-Jake doesn't currently provide shell completions, but recipe names work well with basic tab completion in most shells.
+Jake supports shell completions for bash, zsh, and fish:
+
+```bash
+# Print completion script to stdout
+jake --completions bash
+jake --completions zsh
+jake --completions fish
+
+# Auto-install to your shell config
+jake --install
+```
+
+## Uninstall
+
+```bash
+jake --uninstall  # Remove completions and config
+rm ~/.local/bin/jake
+```
 
 ## Next Steps
 
