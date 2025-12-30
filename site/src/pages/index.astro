@@ -315,7 +315,7 @@ const scaleOutput = `<span class="text-text-muted">$</span> jake docker.build k8
           Written in Zig. Blazing fast.
         </div>
 
-        <h1 class="text-5xl lg:text-6xl font-bold leading-tight">
+        <h1 class="text-5xl lg:text-6xl font-bold leading-none">
           Modern<br/>
           <span class="text-gradient">command running</span>
         </h1>
@@ -425,58 +425,6 @@ const scaleOutput = `<span class="text-text-muted">$</span> jake docker.build k8
           </div>
           <pre class="p-4 text-sm leading-relaxed overflow-x-auto"><code set:html={jakeCode}></code></pre>
         </div>
-      </div>
-
-      <!-- Comparison table -->
-      <div class="mt-16 bg-bg-card border border-border rounded-xl overflow-hidden">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-border bg-bg-secondary">
-              <th class="text-left px-6 py-4 font-medium text-text-secondary">Feature</th>
-              <th class="text-center px-6 py-4 font-medium text-text-secondary">Make</th>
-              <th class="text-center px-6 py-4 font-medium text-text-secondary">Just</th>
-              <th class="text-center px-6 py-4 font-medium text-jake">Jake</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <tr>
-              <td class="px-6 py-4 text-text-secondary">File-based dependencies</td>
-              <td class="px-6 py-4 text-center text-green-500">✓</td>
-              <td class="px-6 py-4 text-center text-text-muted">✗</td>
-              <td class="px-6 py-4 text-center text-green-500">✓</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 text-text-secondary">Clean, readable syntax</td>
-              <td class="px-6 py-4 text-center text-text-muted">✗</td>
-              <td class="px-6 py-4 text-center text-green-500">✓</td>
-              <td class="px-6 py-4 text-center text-green-500">✓</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 text-text-secondary">Parallel execution</td>
-              <td class="px-6 py-4 text-center text-green-500">✓</td>
-              <td class="px-6 py-4 text-center text-yellow-500" title="[parallel] attribute for dependencies only">~</td>
-              <td class="px-6 py-4 text-center text-green-500">✓</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 text-text-secondary">Glob patterns in deps</td>
-              <td class="px-6 py-4 text-center text-yellow-500" title="Via $(wildcard) function">~</td>
-              <td class="px-6 py-4 text-center text-text-muted">✗</td>
-              <td class="px-6 py-4 text-center text-green-500">✓</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 text-text-secondary">Watch mode</td>
-              <td class="px-6 py-4 text-center text-text-muted">✗</td>
-              <td class="px-6 py-4 text-center text-text-muted">✗</td>
-              <td class="px-6 py-4 text-center text-green-500">✓</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 text-text-secondary">Pre/post hooks</td>
-              <td class="px-6 py-4 text-center text-text-muted">✗</td>
-              <td class="px-6 py-4 text-center text-text-muted">✗</td>
-              <td class="px-6 py-4 text-center text-green-500">✓</td>
-            </tr>
-          </tbody>
-        </table>
       </div>
     </div>
   </section>
