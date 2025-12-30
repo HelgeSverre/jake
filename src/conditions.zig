@@ -48,6 +48,19 @@ pub fn evaluate(
         } else if (std.mem.eql(u8, func_name, "is_verbose")) {
             return context.verbose;
         }
+        // OS/platform conditions (no arguments)
+        else if (std.mem.eql(u8, func_name, "is_macos")) {
+            return builtin.os.tag == .macos;
+        } else if (std.mem.eql(u8, func_name, "is_linux")) {
+            return builtin.os.tag == .linux;
+        } else if (std.mem.eql(u8, func_name, "is_windows")) {
+            return builtin.os.tag == .windows;
+        } else if (std.mem.eql(u8, func_name, "is_unix")) {
+            return switch (builtin.os.tag) {
+                .linux, .macos, .freebsd, .openbsd, .netbsd, .dragonfly => true,
+                else => false,
+            };
+        }
 
         // Conditions that require arguments
         if (!has_args) {
@@ -62,6 +75,10 @@ pub fn evaluate(
             return evaluateEq(args_str, variables, true);
         } else if (std.mem.eql(u8, func_name, "neq")) {
             return evaluateEq(args_str, variables, false);
+        } else if (std.mem.eql(u8, func_name, "is_platform")) {
+            return evaluatePlatform(args_str);
+        } else if (std.mem.eql(u8, func_name, "command")) {
+            return evaluateCommand(args_str);
         } else {
             return ConditionError.UnknownFunction;
         }
@@ -99,6 +116,40 @@ fn evaluateExists(args: []const u8, variables: *const std.StringHashMap([]const 
         return false;
     };
     return true;
+}
+
+/// is_platform(name) - returns true if current OS matches the given platform name
+fn evaluatePlatform(args: []const u8) bool {
+    const platform_name = stripQuotes(std.mem.trim(u8, args, " \t"));
+    const current_os = @tagName(builtin.os.tag);
+    return std.mem.eql(u8, current_os, platform_name);
+}
+
+/// command(name) - returns true if command exists in PATH or as absolute path
+fn evaluateCommand(args: []const u8) bool {
+    const cmd_name = stripQuotes(std.mem.trim(u8, args, " \t"));
+    if (cmd_name.len == 0) return false;
+
+    // Handle absolute paths
+    if (cmd_name[0] == '/') {
+        return if (std.fs.accessAbsolute(cmd_name, .{})) true else |_| false;
+    }
+
+    // Search in PATH
+    const path_env = std.process.getEnvVarOwned(std.heap.page_allocator, "PATH") catch return false;
+    defer std.heap.page_allocator.free(path_env);
+
+    var path_iter = std.mem.splitScalar(u8, path_env, ':');
+    while (path_iter.next()) |dir| {
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const full_path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ dir, cmd_name }) catch continue;
+        if (std.fs.accessAbsolute(full_path, .{})) |_| {
+            return true;
+        } else |_| {
+            continue;
+        }
+    }
+    return false;
 }
 
 /// eq(a, b) / neq(a, b) - string equality/inequality comparison
@@ -485,6 +536,143 @@ test "neq comparing variable to literal" {
     try std.testing.expect(!try evaluate("neq(mode, debug)", &variables, .{}));
 }
 
+// --- Platform Detection Tests ---
+
+test "is_macos condition" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("is_macos()", &variables, .{});
+    // Result depends on compile-time OS
+    if (builtin.os.tag == .macos) {
+        try std.testing.expect(result);
+    } else {
+        try std.testing.expect(!result);
+    }
+}
+
+test "is_linux condition" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("is_linux()", &variables, .{});
+    if (builtin.os.tag == .linux) {
+        try std.testing.expect(result);
+    } else {
+        try std.testing.expect(!result);
+    }
+}
+
+test "is_windows condition" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("is_windows()", &variables, .{});
+    if (builtin.os.tag == .windows) {
+        try std.testing.expect(result);
+    } else {
+        try std.testing.expect(!result);
+    }
+}
+
+test "is_unix condition" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("is_unix()", &variables, .{});
+    const is_unix_os = switch (builtin.os.tag) {
+        .linux, .macos, .freebsd, .openbsd, .netbsd, .dragonfly => true,
+        else => false,
+    };
+    try std.testing.expectEqual(is_unix_os, result);
+}
+
+test "is_platform with current OS" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const current_os = @tagName(builtin.os.tag);
+    var buf: [64]u8 = undefined;
+    const condition = std.fmt.bufPrint(&buf, "is_platform({s})", .{current_os}) catch return;
+
+    const result = try evaluate(condition, &variables, .{});
+    try std.testing.expect(result);
+}
+
+test "is_platform with non-matching OS" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // Use an OS that's definitely not the current one
+    const fake_os = if (builtin.os.tag == .linux) "windows" else "linux";
+    var buf: [64]u8 = undefined;
+    const condition = std.fmt.bufPrint(&buf, "is_platform({s})", .{fake_os}) catch return;
+
+    const result = try evaluate(condition, &variables, .{});
+    try std.testing.expect(!result);
+}
+
+test "is_platform with quoted argument" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const current_os = @tagName(builtin.os.tag);
+    var buf: [64]u8 = undefined;
+    const condition = std.fmt.bufPrint(&buf, "is_platform(\"{s}\")", .{current_os}) catch return;
+
+    const result = try evaluate(condition, &variables, .{});
+    try std.testing.expect(result);
+}
+
+test "is_platform with whitespace around argument" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const current_os = @tagName(builtin.os.tag);
+    var buf: [64]u8 = undefined;
+    const condition = std.fmt.bufPrint(&buf, "is_platform(  {s}  )", .{current_os}) catch return;
+
+    const result = try evaluate(condition, &variables, .{});
+    try std.testing.expect(result);
+}
+
+test "is_platform with invalid platform returns false" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("is_platform(nonexistent_os_xyz)", &variables, .{});
+    try std.testing.expect(!result);
+}
+
+test "is_unix returns true on macOS" {
+    if (builtin.os.tag != .macos) return;
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("is_unix()", &variables, .{});
+    try std.testing.expect(result);
+}
+
+test "is_unix returns true on Linux" {
+    if (builtin.os.tag != .linux) return;
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("is_unix()", &variables, .{});
+    try std.testing.expect(result);
+}
+
+test "platform conditions work with parentheses variations" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // Test with empty parens (should work)
+    _ = try evaluate("is_macos()", &variables, .{});
+    _ = try evaluate("is_linux()", &variables, .{});
+    _ = try evaluate("is_windows()", &variables, .{});
+    _ = try evaluate("is_unix()", &variables, .{});
+}
+
 // --- Fuzz Testing ---
 
 test "fuzz condition evaluation" {
@@ -507,4 +695,76 @@ test "fuzz condition evaluation" {
             _ = evaluate(input, &variables, context) catch {};
         }
     }.testOne, .{});
+}
+
+// --- command() condition tests ---
+
+test "command condition - existing command (sh)" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // /bin/sh should always exist on Unix systems
+    const result = try evaluate("command(sh)", &variables, test_context);
+    try std.testing.expect(result);
+}
+
+test "command condition - existing command (ls)" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // ls should be in PATH on Unix systems
+    const result = try evaluate("command(ls)", &variables, test_context);
+    try std.testing.expect(result);
+}
+
+test "command condition - nonexistent command" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("command(jake_nonexistent_cmd_xyz123)", &variables, test_context);
+    try std.testing.expect(!result);
+}
+
+test "command condition - absolute path exists" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // /bin/sh should exist as an absolute path
+    const result = try evaluate("command(/bin/sh)", &variables, test_context);
+    try std.testing.expect(result);
+}
+
+test "command condition - absolute path nonexistent" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const result = try evaluate("command(/nonexistent/path/cmd)", &variables, test_context);
+    try std.testing.expect(!result);
+}
+
+test "command condition - empty argument returns false" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // Empty string should return false, not error
+    const result = try evaluate("command(\"\")", &variables, test_context);
+    try std.testing.expect(!result);
+}
+
+test "command condition - with quotes" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // command("sh") should work with quotes
+    const result = try evaluate("command(\"sh\")", &variables, test_context);
+    try std.testing.expect(result);
+}
+
+test "command condition - with whitespace" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // Whitespace should be trimmed
+    const result = try evaluate("command(  sh  )", &variables, test_context);
+    try std.testing.expect(result);
 }
