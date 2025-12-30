@@ -161,13 +161,13 @@ const singleColorBadges = badgeLabels.flatMap(({ label, display }) =>
   )
 );
 
-// Generate two-tone labeled badges (with smart logo pairing based on badge color)
+// Generate two-tone labeled badges (with smart logo pairing based on label color)
 const twoToneBadges = badgeLabels.flatMap(({ label, display }) =>
   twoToneCombos.flatMap((combo) => {
-    // Find the color key for the badge color (right side where logo appears)
-    const badgeColorKey = Object.entries(badgeColorPalette)
-      .find(([_, c]) => c.hex === combo.badgeColor.hex)?.[0] || 'gray';
-    return getValidLogos(badgeColorKey).map((logoKey) => {
+    // Logo appears on LEFT side with label, so contrast with labelColor
+    const labelColorKey = Object.entries(badgeColorPalette)
+      .find(([_, c]) => c.hex === combo.labelColor.hex)?.[0] || 'gray';
+    return getValidLogos(labelColorKey).map((logoKey) => {
       const url = buildTwoToneBadgeUrl(label, combo.labelColor.hex, combo.badgeColor.hex, badgeLogos[logoKey]);
       return {
         label,

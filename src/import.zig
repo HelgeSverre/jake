@@ -792,6 +792,227 @@ test "import sets origin for prefixed recipes with private detection" {
     }
 }
 
+test "import without prefix merges recipes without prefixing" {
+    // Test that @import "file.jake" (without "as prefix") merges recipes unprefixed
+    // and does NOT set origin (since names aren't changed)
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const imported_content =
+        \\task helper:
+        \\    echo "helper"
+        \\
+        \\task _private:
+        \\    echo "private"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "imported.jake", .data = imported_content });
+
+    // Import WITHOUT "as prefix"
+    const main_content = "@import \"imported.jake\"\n\ntask main:\n    echo \"main\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data = main_content });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+
+    var lex = Lexer.init(main_source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var import_allocs = try resolveImports(allocator, &jakefile, main_path);
+    defer import_allocs.deinit();
+
+    // Should have 3 recipes: main, helper, _private (unprefixed)
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes.len);
+
+    // Verify recipes are NOT prefixed
+    var found_main = false;
+    var found_helper = false;
+    var found_private = false;
+    for (jakefile.recipes) |recipe| {
+        if (std.mem.eql(u8, recipe.name, "main")) {
+            found_main = true;
+            try std.testing.expect(recipe.origin == null);
+        }
+        if (std.mem.eql(u8, recipe.name, "helper")) {
+            found_helper = true;
+            // Without prefix, origin should still be null (no name change)
+            try std.testing.expect(recipe.origin == null);
+        }
+        if (std.mem.eql(u8, recipe.name, "_private")) {
+            found_private = true;
+            try std.testing.expect(recipe.origin == null);
+        }
+    }
+    try std.testing.expect(found_main);
+    try std.testing.expect(found_helper);
+    try std.testing.expect(found_private);
+}
+
+test "multiple imports with different prefixes" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // First imported file
+    const lib1_content = "task build:\n    echo \"lib1 build\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "lib1.jake", .data = lib1_content });
+
+    // Second imported file
+    const lib2_content = "task build:\n    echo \"lib2 build\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "lib2.jake", .data = lib2_content });
+
+    // Main file imports both with different prefixes
+    const main_content =
+        \\@import "lib1.jake" as a
+        \\@import "lib2.jake" as b
+        \\
+        \\task main:
+        \\    echo "main"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data = main_content });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+
+    var lex = Lexer.init(main_source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var import_allocs = try resolveImports(allocator, &jakefile, main_path);
+    defer import_allocs.deinit();
+
+    // Should have 3 recipes: main, a.build, b.build
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes.len);
+
+    var found_main = false;
+    var found_a_build = false;
+    var found_b_build = false;
+    for (jakefile.recipes) |recipe| {
+        if (std.mem.eql(u8, recipe.name, "main")) {
+            found_main = true;
+        }
+        if (std.mem.eql(u8, recipe.name, "a.build")) {
+            found_a_build = true;
+            try std.testing.expect(recipe.origin != null);
+            try std.testing.expectEqualStrings("build", recipe.origin.?.original_name);
+            try std.testing.expectEqualStrings("a", recipe.origin.?.import_prefix.?);
+        }
+        if (std.mem.eql(u8, recipe.name, "b.build")) {
+            found_b_build = true;
+            try std.testing.expect(recipe.origin != null);
+            try std.testing.expectEqualStrings("build", recipe.origin.?.original_name);
+            try std.testing.expectEqualStrings("b", recipe.origin.?.import_prefix.?);
+        }
+    }
+    try std.testing.expect(found_main);
+    try std.testing.expect(found_a_build);
+    try std.testing.expect(found_b_build);
+}
+
+test "nested imports 2 levels deep with prefixes" {
+    // Test: main.jake imports lib.jake (as lib), lib.jake imports util.jake (as util)
+    // Result: main has recipes: main, lib.build, lib.util.helper
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Deepest level - util.jake
+    const util_content =
+        \\task helper:
+        \\    echo "util helper"
+        \\
+        \\task _private_util:
+        \\    echo "private util"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "util.jake", .data = util_content });
+
+    // Middle level - lib.jake imports util
+    const lib_content =
+        \\@import "util.jake" as util
+        \\
+        \\task build:
+        \\    echo "lib build"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "lib.jake", .data = lib_content });
+
+    // Top level - main.jake imports lib
+    const main_content =
+        \\@import "lib.jake" as lib
+        \\
+        \\task main:
+        \\    echo "main"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data = main_content });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+
+    var lex = Lexer.init(main_source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var import_allocs = try resolveImports(allocator, &jakefile, main_path);
+    defer import_allocs.deinit();
+
+    // Should have: main, lib.build, lib.util.helper, lib.util._private_util
+    try std.testing.expectEqual(@as(usize, 4), jakefile.recipes.len);
+
+    var found_main = false;
+    var found_lib_build = false;
+    var found_lib_util_helper = false;
+    var found_lib_util_private = false;
+
+    for (jakefile.recipes) |recipe| {
+        if (std.mem.eql(u8, recipe.name, "main")) {
+            found_main = true;
+            try std.testing.expect(recipe.origin == null);
+        }
+        if (std.mem.eql(u8, recipe.name, "lib.build")) {
+            found_lib_build = true;
+            try std.testing.expect(recipe.origin != null);
+            try std.testing.expectEqualStrings("build", recipe.origin.?.original_name);
+        }
+        if (std.mem.eql(u8, recipe.name, "lib.util.helper")) {
+            found_lib_util_helper = true;
+            try std.testing.expect(recipe.origin != null);
+            // The original name should be "util.helper" (from lib's perspective)
+            try std.testing.expectEqualStrings("util.helper", recipe.origin.?.original_name);
+        }
+        if (std.mem.eql(u8, recipe.name, "lib.util._private_util")) {
+            found_lib_util_private = true;
+            try std.testing.expect(recipe.origin != null);
+            // Original name preserves the nested structure
+            try std.testing.expectEqualStrings("util._private_util", recipe.origin.?.original_name);
+        }
+    }
+
+    try std.testing.expect(found_main);
+    try std.testing.expect(found_lib_build);
+    try std.testing.expect(found_lib_util_helper);
+    try std.testing.expect(found_lib_util_private);
+}
+
 test "import detects direct circular dependency" {
     const allocator = std.testing.allocator;
 

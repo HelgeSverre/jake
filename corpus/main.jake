@@ -9,7 +9,7 @@
 @dotenv
 
 # Variables
-version = "0.2.0"
+version = "0.3.0"
 binary = "jake"
 
 # Export version for child processes

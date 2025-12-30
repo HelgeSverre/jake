@@ -2261,6 +2261,118 @@ test "no hidden recipes when none start with underscore" {
     try std.testing.expectEqual(@as(usize, 0), hidden_count);
 }
 
+test "isPrivateRecipe detects private via origin.original_name" {
+    // Test that isPrivateRecipe correctly uses origin.original_name for imported recipes
+    var recipe = Recipe{
+        .name = "lib._helper", // Prefixed name doesn't start with _
+        .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
+        .origin = .{
+            .original_name = "_helper", // Original starts with _
+            .import_prefix = "lib",
+            .source_file = "imported.jake",
+        },
+        .kind = .task,
+        .dependencies = &.{},
+        .file_deps = &.{},
+        .output = null,
+        .params = &.{},
+        .commands = &.{},
+        .pre_hooks = &.{},
+        .post_hooks = &.{},
+        .doc_comment = null,
+        .is_default = false,
+        .aliases = &.{},
+        .group = null,
+        .description = null,
+        .shell = null,
+        .working_dir = null,
+        .only_os = &.{},
+        .quiet = false,
+        .needs = &.{},
+    };
+
+    // Should be private because origin.original_name starts with _
+    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+
+    // Now test a non-private imported recipe
+    recipe.name = "lib.build";
+    recipe.origin = .{
+        .original_name = "build",
+        .import_prefix = "lib",
+        .source_file = "imported.jake",
+    };
+    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+
+    // Test direct private recipe (no origin)
+    recipe.name = "_local_helper";
+    recipe.origin = null;
+    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+
+    // Test direct public recipe (no origin)
+    recipe.name = "build";
+    recipe.origin = null;
+    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+}
+
+test "isPrivateRecipe edge cases" {
+    var recipe = Recipe{
+        .name = "",
+        .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
+        .origin = null,
+        .kind = .task,
+        .dependencies = &.{},
+        .file_deps = &.{},
+        .output = null,
+        .params = &.{},
+        .commands = &.{},
+        .pre_hooks = &.{},
+        .post_hooks = &.{},
+        .doc_comment = null,
+        .is_default = false,
+        .aliases = &.{},
+        .group = null,
+        .description = null,
+        .shell = null,
+        .working_dir = null,
+        .only_os = &.{},
+        .quiet = false,
+        .needs = &.{},
+    };
+
+    // Empty name should return false (not private)
+    recipe.name = "";
+    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+
+    // Single underscore is private
+    recipe.name = "_";
+    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+
+    // Double underscore is private
+    recipe.name = "__init";
+    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+
+    // Name starting with dot is NOT private (different convention)
+    recipe.name = ".hidden";
+    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+
+    // Origin with empty original_name should use that (return false)
+    recipe.name = "lib._helper";
+    recipe.origin = .{
+        .original_name = "",
+        .import_prefix = "lib",
+        .source_file = "test.jake",
+    };
+    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+
+    // Origin with single underscore original_name
+    recipe.origin = .{
+        .original_name = "_",
+        .import_prefix = "lib",
+        .source_file = "test.jake",
+    };
+    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+}
+
 // --- @ignore Directive Tests ---
 
 test "executor @ignore continues after failed command" {

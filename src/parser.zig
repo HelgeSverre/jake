@@ -1627,6 +1627,98 @@ test "parse simple recipe without deps" {
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].commands.len);
 }
 
+test "recipe loc is set correctly during parsing" {
+    const source =
+        \\task build:
+        \\    echo "building"
+        \\
+        \\task _private:
+        \\    echo "private"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+
+    // First recipe "build" should be at line 1
+    const build = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("build", build.name);
+    try std.testing.expectEqual(@as(usize, 1), build.loc.line);
+    try std.testing.expect(build.loc.start > 0); // After "task "
+
+    // Second recipe "_private" should be at line 4
+    const private = jakefile.recipes[1];
+    try std.testing.expectEqualStrings("_private", private.name);
+    try std.testing.expectEqual(@as(usize, 4), private.loc.line);
+    // Verify origin is null for non-imported recipes
+    try std.testing.expect(private.origin == null);
+}
+
+test "simple recipe loc is set correctly" {
+    const source =
+        \\build:
+        \\    echo "building"
+        \\
+        \\clean:
+        \\    rm -rf dist
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+
+    // Simple recipe "build" at line 1, column 1
+    const build = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("build", build.name);
+    try std.testing.expectEqual(@as(usize, 1), build.loc.line);
+    try std.testing.expectEqual(@as(usize, 1), build.loc.column);
+    try std.testing.expectEqual(Recipe.Kind.simple, build.kind);
+
+    // Simple recipe "clean" at line 4
+    const clean = jakefile.recipes[1];
+    try std.testing.expectEqualStrings("clean", clean.name);
+    try std.testing.expectEqual(@as(usize, 4), clean.loc.line);
+}
+
+test "file recipe loc is set correctly" {
+    const source =
+        \\file dist/app.js: src/**/*.ts
+        \\    tsc --outFile dist/app.js
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+
+    const file_recipe = jakefile.recipes[0];
+    try std.testing.expectEqualStrings("dist/app.js", file_recipe.name);
+    try std.testing.expectEqual(@as(usize, 1), file_recipe.loc.line);
+    try std.testing.expectEqual(Recipe.Kind.file, file_recipe.kind);
+    // Verify loc.start points to after "file "
+    try std.testing.expect(file_recipe.loc.start == 5);
+}
+
+test "recipe loc.end captures name end position" {
+    const source = "task build:\n    echo hi";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.recipes[0];
+    // "build" starts at position 5 (after "task ") and ends at 10
+    try std.testing.expectEqual(@as(usize, 5), recipe.loc.start);
+    try std.testing.expectEqual(@as(usize, 10), recipe.loc.end);
+    // Verify the slice matches
+    try std.testing.expectEqualStrings("build", source[recipe.loc.start..recipe.loc.end]);
+}
+
 test "parse simple recipe with single dependency" {
     const source =
         \\deploy: [build]

@@ -5,6 +5,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-12-30
+
+### Added
+
+- **Shell Completions**
+  - Generate shell completions for bash, zsh, and fish (`jake --completions <shell>`)
+  - Auto-install/uninstall commands (`jake --completions --install`)
+  - Smart zsh environment detection (Oh-My-Zsh, Homebrew, vanilla)
+  - Machine-readable recipe list (`jake --summary`)
+
+- **CLI Improvements**
+  - `jake --list --short` for pipeable one-per-line recipe names
+  - `jake --show <recipe>` to display recipe details (dependencies, commands, metadata)
+  - Typo suggestions using Levenshtein distance ("Did you mean: build?")
+
+- **Recipe-Level @needs Directive**
+  - Check command/binary requirements before recipe execution
+  - `@needs git npm docker` validates tools exist in PATH
+
+- **Built-in Functions**
+  - System path functions: `home()`, `local_bin()`, `shell_config()`
+  - String functions: `uppercase()`, `lowercase()`, `trim()`
+  - Path functions: `dirname()`, `basename()`, `extension()`, `without_extension()`, `without_extensions()`
+
+- **Runtime Conditions**
+  - `@if`, `@elif`, `@else`, `@end` with condition functions
+  - Condition functions: `env()`, `exists()`, `eq()`, `neq()`, `os()`, `arch()`
+
+- **Editor Support**
+  - Vim syntax highlighting plugin (`editors/vim-jake/`)
+  - IntelliJ Platform plugin with dynamic TextMate bundle (`editors/intellij-jake/`)
+
+- **Recipe Metadata**
+  - Location and origin tracking for recipes
+  - Recipe source file tracking for imports
+
+- **Documentation Website**
+  - New documentation site built with Astro Starlight
+  - Feature deep-dives and CLI branding guide
+
+### Fixed
+
+- Zsh completion syntax and array handling
+- Private recipes with dot prefix now filtered from listings
+- Zig 0.14/0.15 compatibility layer for CI
+
+### Changed
+
+- Migrated E2E tests to `tests/e2e/` directory
+- Updated to ztracy library with new API
+- Refactored argument parsing with dedicated args module
+
+### CI/CD
+
+- Bumped actions/upload-artifact from 4 to 6
+- Bumped actions/download-artifact from 4 to 7
+- Bumped mlugg/setup-zig from 1 to 2
+- Bumped softprops/action-gh-release from 1 to 2
+- Bumped actions/stale from 9 to 10
+
+## [0.2.0] - 2025-12-28
+
+### Added
+
+- **@quiet Directive** - Suppress command echo for entire recipe
+- **@confirm Directive** - Interactive confirmation prompts with `--yes` flag support
+- **Environment Validation** - `@require` checks env vars exist before execution
+- **Command Dependency Checking** - `@needs` validates commands exist in PATH
+
+### Fixed
+
+- Shell/working_dir assignment in parser
+- Windows compatibility for environment variable access
+- Zig 0.14-compatible std.io API calls
+
 ## [0.1.0] - 2025-12-28
 
 ### Added
@@ -55,4 +130,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Multi-platform build support (Linux, macOS, Windows)
   - Cross-compilation for x86_64 and aarch64
 
+[0.3.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.3.0
+[0.2.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.2.0
 [0.1.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.1.0

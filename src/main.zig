@@ -5,7 +5,7 @@ const build_options = @import("build_options");
 const args_mod = @import("args.zig");
 const completions = @import("completions.zig");
 
-const version = "0.2.0";
+const version = "0.3.0";
 
 fn getStdout() std.fs.File {
     return compat.getStdOut();
