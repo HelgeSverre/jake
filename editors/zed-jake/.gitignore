@@ -1,0 +1,14 @@
+# Rust (if any native code)
+target/
+Cargo.lock
+
+# Build artifacts
+*.so
+*.dylib
+*.dll
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/

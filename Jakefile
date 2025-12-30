@@ -1,17 +1,18 @@
 # Jakefile for building jake itself
 # A comprehensive example showcasing jake's features
 
-@import "lib/build.jake"
-@import "lib/release.jake" as release
-@import "lib/web.jake" as web
-@import "lib/perf.jake" as perf
-@import "lib/editors.jake" as editors
+@import "jake/build.jake"
+@import "jake/release.jake" as release
+@import "jake/web.jake" as web
+@import "jake/perf.jake" as perf
+@import "jake/editors.jake" as editors
 
 @dotenv
 
 # Variables
 version = "0.3.0"
 binary = "jake"
+JAKE_FUZZ_PORT = "4455"
 
 # Export version for child processes
 @export version
@@ -57,22 +58,12 @@ task ci: [lint, test, build]
     echo "CI checks passed!"
 
 @group test
-@desc "Fuzz the Jakefile parser (1000 iterations)"
+@desc "Run coverage-guided fuzz testing"
 task fuzz:
     @needs zig
-    zig build fuzz-parse -Doptimize=ReleaseSafe
-    ./scripts/dumb-fuzz.sh 1000
-
-@group test
-@desc "Fuzz using AFL++ in dumb mode (requires afl++)"
-task fuzz-afl:
-    @needs zig
-    @needs afl-fuzz
-    zig build fuzz-parse -Doptimize=ReleaseSafe
-    mkdir -p corpus findings
-    cp Jakefile corpus/main.jake 2>/dev/null || true
-    find tests/e2e/fixtures -name "*.jake" -type f -exec cp {} corpus/ \; 2>/dev/null || true
-    AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 afl-fuzz -n -i corpus -o findings -- ./zig-out/bin/jake-fuzz-parse @@
+    @pre echo "Running fuzz tests with coverage guidance..."
+    @pre echo "Web UI: http://127.0.0.1:{{JAKE_FUZZ_PORT}}"
+    zig build fuzz --fuzz --webui=127.0.0.1:{{JAKE_FUZZ_PORT}} -Doptimize=ReleaseSafe -j4
 
 @group dev
 @desc "Quick pre-commit checks"

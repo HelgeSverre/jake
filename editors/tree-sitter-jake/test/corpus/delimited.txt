@@ -1,0 +1,110 @@
+================================================================================
+basic string
+================================================================================
+
+VERSION = "1.0.0"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (string)))))
+
+================================================================================
+string with escape sequences
+================================================================================
+
+MSG = "Hello\nWorld\t!"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (string
+          (escape_sequence)
+          (escape_sequence))))))
+
+================================================================================
+raw string
+================================================================================
+
+PATTERN = 'no\escapes'
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (string)))))
+
+================================================================================
+interpolation in command
+================================================================================
+
+task greet:
+    echo "Hello {{name}}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (identifier))))
+        (text)))))
+
+================================================================================
+interpolation with function
+================================================================================
+
+task install:
+    cp jake {{local_bin("jake")}}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (function_call
+                name: (identifier)
+                arguments: (sequence
+                  (expression
+                    (value
+                      (string))))))))))))
+
+================================================================================
+backtick command
+================================================================================
+
+GIT_SHA = `git rev-parse HEAD`
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (external_command
+          (command_body))))))

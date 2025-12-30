@@ -64,20 +64,20 @@
 | lexer.zig | 64 | Excellent |
 | args.zig | 45 | Excellent |
 | functions.zig | 37 | Excellent |
-| conditions.zig | 28 | Good |
+| conditions.zig | 36 | Good |
 | parallel.zig | 23 | Good |
 | env.zig | 23 | Good |
 | cache.zig | 16 | Good |
 | suggest.zig | 13 | Good |
 | import.zig | 12 | Good |
 | hooks.zig | 12 | Good |
-| watch.zig | 11 | Good |
+| watch.zig | 15 | Good |
 | glob.zig | 10 | Good |
 | completions.zig | 10 | Good |
 | prompt.zig | 8 | Good |
 | main.zig | 1 | Minimal |
 | root.zig | 1 | Minimal |
-| **TOTAL** | **568** | |
+| **TOTAL** | **580** | |
 
 **E2E Tests:** `jake e2e` (tests/e2e/Jakefile)
 
@@ -467,7 +467,7 @@ task docker:build:
 
 #### 5. Module-Level @group (Design Decision Pending)
 
-**Problem**: In module files like `lib/web.jake`, every task repeats the same `@group` directive:
+**Problem**: In module files like `jake/web.jake`, every task repeats the same `@group` directive:
 
 ```jake
 # Current: repetitive
@@ -530,7 +530,7 @@ task deploy:
 
 ```jake
 # In main Jakefile - group is derived from namespace
-@import "lib/web.jake" as web   # All recipes get group "web" automatically
+@import "jake/web.jake" as web   # All recipes get group "web" automatically
 ```
 
 | Pros | Cons |
@@ -564,8 +564,8 @@ task dev:
 **Option D: Implicit from Filename**
 
 ```
-lib/web.jake      → group "web" (auto-derived)
-lib/docker.jake   → group "docker"
+jake/web.jake      → group "web" (auto-derived)
+jake/docker.jake   → group "docker"
 ```
 
 | Pros | Cons |
@@ -790,7 +790,7 @@ test "list command groups recipes by module-level group" {
    - [ ] `env_or(name, default)` - Get env var with fallback default
 
 9. **New Conditions**
-   - [ ] `command(name)` - True if command exists in PATH
+   - [x] `command(name)` - True if command exists in PATH ✅ COMPLETE
    - [ ] `file_newer(a, b)` - True if file A is newer than file B
    - [ ] `contains(str, sub)` - True if string contains substring
    - [ ] `matches(str, pattern)` - True if string matches regex pattern
@@ -948,9 +948,9 @@ None currently! All known bugs have been fixed.
    - [x] Add `--list --short` for one recipe name per line (pipeable)
    - [ ] Consider tree-style output for grouped recipes (future)
 
-4. **Watch mode feedback**
-   - [ ] Print what patterns are being watched when entering watch mode
-   - [ ] Example: `Watching: src/**/*.ts, Jakefile (Press Ctrl+C to stop)`
+4. **Watch mode feedback** ✅ COMPLETE
+   - [x] Print what patterns are being watched when entering watch mode
+   - [x] Example: `[watch] Patterns: src/**/*.ts, Jakefile`
 
 5. **`--list` filtering** (Planned)
    - [ ] `--group GROUP` - Filter recipes to specified group
@@ -1722,3 +1722,26 @@ Jakefile linguist-language=Jake
 | 8 | Sublime Text | Low | Can reuse TextMate or write .sublime-syntax |
 
 **Key insight**: TextMate grammar (Phase 1) unlocks VS Code + GitHub + Sublime. Tree-sitter grammar (Phase 3) unlocks Zed + Neovim + Helix + Emacs. These two grammars provide ~80% of editor coverage.
+
+---
+
+### Tree-sitter Grammar Known Limitations
+
+The tree-sitter grammar (`editors/tree-sitter-jake/`) has the following known limitations:
+
+1. **Escaped quotes in interpolation**: When you have `"{{func(\"arg\")}}"`, the `\"` inside the interpolation conflicts with the outer string context.
+   - **Workaround**: Use single quotes inside interpolation: `{{func('arg')}}`
+
+2. **Multi-line command bodies with embedded quotes**: Python/shell scripts spanning multiple lines with embedded quotes aren't parsed correctly.
+   - **Workaround**: Use shebangs for multi-line scripts:
+     ```jake
+     task generate:
+         #!/usr/bin/env python3
+         for i in range(10):
+             print(f"Task {i}")
+     ```
+
+3. **File recipe names with paths**: Identifiers like `dist/app.js` containing `.` or `/` are not supported as recipe names.
+   - **Workaround**: Use simple identifiers for file recipes or quote the path
+
+These are complex parsing issues that would require significant grammar changes to fix.

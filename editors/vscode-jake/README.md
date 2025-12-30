@@ -66,7 +66,7 @@ This creates a `.vsix` file that can be installed locally or published.
 version = "1.0.0"
 app_name = "myapp"
 
-@import "lib/helpers.jake" as helpers
+@import "jake/helpers.jake" as helpers
 @dotenv
 @require API_KEY
 

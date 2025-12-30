@@ -1,0 +1,22 @@
+{
+  "name": "shiki-jake",
+  "version": "0.1.0",
+  "description": "Shiki syntax highlighting for Jake task runner",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "keywords": ["shiki", "syntax", "highlighting", "jake", "jakefile", "task-runner", "textmate"],
+  "author": "Jake Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/helgee/jake"
+  },
+  "peerDependencies": {
+    "shiki": ">=1.0.0"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "jake.tmLanguage.json"
+  ]
+}

@@ -39,6 +39,28 @@ task test:
     echo "Testing {{project}}"
 ```
 
+## Variable Precedence
+
+When the same variable name is defined in multiple places, the following precedence applies (highest to lowest):
+
+1. **Recipe parameters** (passed via CLI: `jake build env=prod`)
+2. **Environment variables** (loaded via `@dotenv` or from shell)
+3. **Jakefile variables** (defined with `=` assignment)
+
+This means `@dotenv` should appear **before** variable assignments to allow `.env` files to override defaults:
+
+```jake
+@dotenv                    # Load .env first
+PORT = "3000"              # Default value (overridden by .env if PORT is set there)
+
+task serve:
+    echo "Running on port {{PORT}}"
+```
+
+With `.env` containing `PORT=8080`, the task outputs: `Running on port 8080`
+
+Without `.env` or if `PORT` is not set, it uses the default: `Running on port 3000`
+
 ## Environment Variables
 
 ### Loading .env Files

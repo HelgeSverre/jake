@@ -1,0 +1,198 @@
+================================================================================
+if directive
+================================================================================
+
+task build:
+    @if env(DEBUG)
+        echo "debug mode"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (if_directive
+          condition: (condition_expression
+            (condition_function
+              arguments: (sequence
+                (expression
+                  (value
+                    (identifier))))))))
+      (command_line
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+if else directive
+================================================================================
+
+task build:
+    @if env(DEBUG)
+        echo "debug"
+    @else
+        echo "release"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (if_directive
+          condition: (condition_expression
+            (condition_function
+              arguments: (sequence
+                (expression
+                  (value
+                    (identifier))))))))
+      (command_line
+        (text))
+      (body_directive
+        (else_directive))
+      (command_line
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+each directive
+================================================================================
+
+task build:
+    @each foo bar baz
+        echo {{$1}}
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (each_directive
+          (identifier)
+          (identifier)
+          (identifier)))
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (shell_variable)))))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+cd directive
+================================================================================
+
+task build:
+    @cd src
+        make
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (cd_directive
+          path: (identifier)))
+      (command_line
+        (text)))))
+
+================================================================================
+cache directive
+================================================================================
+
+task build:
+    @cache src/*.c Makefile
+        make
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (cache_directive
+          path: (glob_pattern)
+          path: (identifier)))
+      (command_line
+        (text)))))
+
+================================================================================
+needs directive in body
+================================================================================
+
+task build:
+    @needs gcc make
+    make
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (body_needs_directive
+          (identifier)
+          (identifier)))
+      (command_line
+        (text)))))
+
+================================================================================
+confirm directive
+================================================================================
+
+task deploy:
+    @confirm
+    kubectl apply -f deploy.yaml
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (confirm_directive))
+      (command_line
+        (text)))))
+
+================================================================================
+ignore directive
+================================================================================
+
+task clean:
+    @ignore
+    rm -rf build
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (ignore_directive))
+      (command_line
+        (text)))))

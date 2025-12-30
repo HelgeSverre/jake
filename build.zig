@@ -187,6 +187,12 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
+    // Dedicated fuzz step - only runs module tests (which contain all fuzz tests)
+    // Use: zig build fuzz --fuzz
+    const run_fuzz_tests = b.addRunArtifact(mod_tests);
+    const fuzz_step = b.step("fuzz", "Run fuzz tests (use with --fuzz flag)");
+    fuzz_step.dependOn(&run_fuzz_tests.step);
+
     // ---------------------------------------------------------------------
     // Benchmarks (using std.time.Timer)
     // ---------------------------------------------------------------------

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jake Syntax Highlighting Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    h1 { color: #569cd6; border-bottom: 1px solid #333; padding-bottom: 10px; }
+    h2 { color: #4ec9b0; margin-top: 30px; }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #252526;
+      border-radius: 8px;
+    }
+    pre {
+      margin: 0;
+      padding: 15px;
+      background: #1e1e1e;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+    }
+    .status {
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-left: 10px;
+    }
+    .status.ok { background: #2d5a2d; color: #98c379; }
+    .status.error { background: #5a2d2d; color: #e06c75; }
+    .status.warn { background: #5a5a2d; color: #d4d474; }
+    .note {
+      color: #808080;
+      font-size: 12px;
+      margin-top: 5px;
+    }
+  </style>
+
+  <!-- Prism.js - with data-manual to disable auto-highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js" data-manual></script>
+
+  <!-- highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <!-- Load Jake language definitions after libraries (defer preserves order) -->
+  <script defer src="prism-jake/prism-jake.js"></script>
+  <script defer src="highlightjs-jake/jake.js"></script>
+</head>
+<body>
+  <h1>Jake Syntax Highlighting Test</h1>
+  <p>This page tests the three web syntax highlighting libraries for Jake.</p>
+
+  <!-- Sample code that will be used for all tests -->
+  <script id="jake-sample" type="text/plain"># Comment - Jake task runner
+VERSION = "1.0.0"
+BIN = local_bin("jake")
+
+@import "jake/build.jake" as build
+
+@dotenv .env.local
+@require API_KEY DATABASE_URL
+@export NODE_ENV = "production"
+
+@group build
+@desc "Build the project"
+task build: [clean, prepare]
+    @needs gcc make
+    @if env(DEBUG)
+        echo "Debug mode: {{VERSION}}"
+    @else
+        echo "Release mode"
+    @end
+    @each src/*.c
+        gcc -c {{$1}} -o {{$1}}.o
+    @end
+    make -j4
+
+@group install
+@desc "Install to local bin"
+task install:
+    @confirm "Install jake to {{BIN}}?"
+    @cd dist
+        cp jake {{BIN}}
+    echo "Installed to {{BIN}}"
+
+file dist/app.js: [compile]
+    @cache src/**/*.ts
+    npm run build</script>
+
+  <!-- Prism.js Section -->
+  <div class="section">
+    <h2>Prism.js <span id="prism-status" class="status">Loading...</span></h2>
+    <pre><code id="prism-code" class="language-jake"></code></pre>
+    <p class="note">Uses: prism-jake/prism-jake.js</p>
+  </div>
+
+  <!-- highlight.js Section -->
+  <div class="section">
+    <h2>highlight.js <span id="hljs-status" class="status">Loading...</span></h2>
+    <pre><code id="hljs-code" class="language-jake"></code></pre>
+    <p class="note">Uses: highlightjs-jake/jake.js</p>
+  </div>
+
+  <!-- Shiki Section -->
+  <div class="section">
+    <h2>Shiki <span id="shiki-status" class="status">Loading...</span></h2>
+    <div id="shiki-output">
+      <pre><code id="shiki-code"></code></pre>
+    </div>
+    <p class="note">Uses: shiki-jake/jake.tmLanguage.json (loaded via esm.sh CDN)</p>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var sampleCode = document.getElementById('jake-sample').textContent;
+
+      // Prism.js
+      try {
+        var prismCode = document.getElementById('prism-code');
+        prismCode.textContent = sampleCode;
+        if (Prism.languages.jake) {
+          Prism.highlightElement(prismCode);
+          document.getElementById('prism-status').textContent = 'OK';
+          document.getElementById('prism-status').className = 'status ok';
+        } else {
+          throw new Error('Jake language not registered');
+        }
+      } catch (e) {
+        document.getElementById('prism-status').textContent = 'Error: ' + e.message;
+        document.getElementById('prism-status').className = 'status error';
+        document.getElementById('prism-code').textContent = sampleCode;
+      }
+
+      // highlight.js
+      try {
+        if (typeof hljsDefineJake === 'function') {
+          hljs.registerLanguage('jake', hljsDefineJake);
+        }
+        var hljsCode = document.getElementById('hljs-code');
+        hljsCode.textContent = sampleCode;
+        if (hljs.getLanguage('jake')) {
+          hljs.highlightElement(hljsCode);
+          document.getElementById('hljs-status').textContent = 'OK';
+          document.getElementById('hljs-status').className = 'status ok';
+        } else {
+          throw new Error('Jake language not registered');
+        }
+      } catch (e) {
+        document.getElementById('hljs-status').textContent = 'Error: ' + e.message;
+        document.getElementById('hljs-status').className = 'status error';
+        document.getElementById('hljs-code').textContent = sampleCode;
+      }
+
+      // Shiki - load from CDN with custom grammar
+      (async function() {
+        try {
+          const shiki = await import('https://esm.sh/shiki@1.24.0');
+          const grammarResponse = await fetch('shiki-jake/jake.tmLanguage.json');
+          if (!grammarResponse.ok) throw new Error('Failed to load Jake grammar');
+          const jakeGrammar = await grammarResponse.json();
+
+          const highlighter = await shiki.createHighlighter({
+            themes: ['github-dark'],
+            langs: [jakeGrammar]
+          });
+
+          const html = highlighter.codeToHtml(sampleCode, {
+            lang: 'jake',
+            theme: 'github-dark'
+          });
+
+          document.getElementById('shiki-output').innerHTML = html;
+          document.getElementById('shiki-status').textContent = 'OK';
+          document.getElementById('shiki-status').className = 'status ok';
+        } catch (e) {
+          document.getElementById('shiki-code').textContent = sampleCode;
+          document.getElementById('shiki-status').textContent = 'Error: ' + e.message;
+          document.getElementById('shiki-status').className = 'status error';
+        }
+      })();
+    });
+  </script>
+
+  <div class="section" style="margin-top: 40px;">
+    <h2>Test Checklist</h2>
+    <ul>
+      <li>Comments should be gray/green</li>
+      <li>Keywords (task, file) should be blue/purple</li>
+      <li>Directives (@if, @needs, etc.) should be highlighted as keywords</li>
+      <li>Strings should be orange/green</li>
+      <li>Interpolation {{...}} should be distinct</li>
+      <li>Function calls should be highlighted</li>
+      <li>Variables should be distinct from strings</li>
+    </ul>
+  </div>
+</body>
+</html>

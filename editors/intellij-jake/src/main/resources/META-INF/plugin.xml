@@ -3,6 +3,7 @@
     <name>Jakefile</name>
     <version>0.1.0</version>
     <vendor email="helge@helgesverre.com" url="https://helgesver.re">Helge Sverre</vendor>
+    <icon>/icons/pluginIcon.svg</icon>
 
     <description><![CDATA[
     Syntax highlighting for Jakefile and .jake modules/files.

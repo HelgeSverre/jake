@@ -91,7 +91,7 @@ Plugin 'HelgeSverre/jake', { 'rtp': 'editors/vim-jake' }
 version = "1.0.0"
 app_name = "myapp"
 
-@import "lib/helpers.jake" as helpers
+@import "jake/helpers.jake" as helpers
 @dotenv
 @require API_KEY
 

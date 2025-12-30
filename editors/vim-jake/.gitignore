@@ -1,0 +1,15 @@
+# Vim swap/backup files
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Tags
+tags
+tags.lock
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/

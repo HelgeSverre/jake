@@ -126,3 +126,26 @@ table {
 th {
 	font-weight: 600;
 }
+
+/* Sidebar active link - use brand color */
+nav.sidebar a[aria-current='page'],
+nav.sidebar a[aria-current='true'] {
+	color: var(--sl-color-accent);
+	font-weight: 600;
+	background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Override Starlight's default salmon/pink focus backgrounds */
+nav.sidebar a[aria-current='page']::before,
+nav.sidebar a[aria-current='true']::before {
+	background-color: transparent !important;
+}
+
+/* Social icons - white */
+.social-icons a {
+	color: var(--sl-color-white);
+}
+
+.social-icons a:hover {
+	color: var(--sl-color-accent);
+}

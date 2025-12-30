@@ -1,0 +1,57 @@
+{
+  "name": "tree-sitter-jake",
+  "author": "Jake contributors",
+  "license": "MIT",
+  "version": "0.1.0",
+  "description": "Jake grammar for tree-sitter",
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/helgee/jake"
+  },
+  "keywords": [
+    "tree-sitter",
+    "jake",
+    "jakefile",
+    "parser",
+    "lexer"
+  ],
+  "files": [
+    "grammar.js",
+    "binding.gyp",
+    "prebuilds/**",
+    "bindings/node/*",
+    "queries/*",
+    "src/**"
+  ],
+  "dependencies": {
+    "tree-sitter": "^0.22.1",
+    "prettier": "^3.3.3",
+    "node-addon-api": "^8.2.2",
+    "node-gyp-build": "^4.8.3"
+  },
+  "peerDependencies": {
+    "tree-sitter": "^0.22.1"
+  },
+  "peerDependenciesMeta": {
+    "tree_sitter": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "eslint": ">=9.15.0",
+    "eslint-config-google": "^0.14.0",
+    "eslint-config-prettier": "^9.1.0",
+    "tree-sitter-cli": "^0.24.4",
+    "prebuildify": "^6.0.1"
+  },
+  "scripts": {
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write .",
+    "lint:check": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "install": "node-gyp-build",
+    "prebuildify": "prebuildify --napi --strip"
+  }
+}

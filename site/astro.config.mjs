@@ -72,6 +72,11 @@ export default defineConfig({
                   items: [
                       { label: 'From Make', slug: 'guides/migrating-from-make' },
                       { label: 'From Just', slug: 'guides/migrating-from-just' },
+                      { label: 'From Bash Scripts', slug: 'guides/migrating-from-bash' },
+                      { label: 'From Taskfile', slug: 'guides/migrating-from-taskfile' },
+                      { label: 'From Doit', slug: 'guides/migrating-from-doit' },
+                      { label: 'From Mage', slug: 'guides/migrating-from-mage' },
+                      { label: 'From Invoke', slug: 'guides/migrating-from-invoke' },
                   ],
               },
               {

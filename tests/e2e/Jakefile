@@ -114,6 +114,22 @@ task test-conditionals:
     {{jake}} -f fixtures/conditionals/triple-nested.jake triple-nest > {{out}} 2>&1
     grep -q "L1: /bin exists" {{out}} && grep -q "L2: HOME set" {{out}} && grep -q "L3: /usr exists" {{out}} && grep -q "Done" {{out}}
     echo "  Triple nested conditionals work ....................... PASS"
+    # command() condition with existing command
+    {{jake}} -f fixtures/conditionals/command.jake check-existing > {{out}} 2>&1
+    grep -q "sh exists in PATH" {{out}}
+    echo "  command() condition with existing command ............. PASS"
+    # command() condition with missing command
+    {{jake}} -f fixtures/conditionals/command.jake check-missing > {{out}} 2>&1
+    grep -q "command not found (expected)" {{out}}
+    echo "  command() condition with missing command .............. PASS"
+    # command() condition with absolute path
+    {{jake}} -f fixtures/conditionals/command.jake check-absolute > {{out}} 2>&1
+    grep -q "absolute path exists" {{out}}
+    echo "  command() condition with absolute path ................ PASS"
+    # command() condition with multiple tool checks
+    {{jake}} -f fixtures/conditionals/command.jake check-tools > {{out}} 2>&1
+    grep -q "ls: found" {{out}} && grep -q "cat: found" {{out}} && grep -q "fake: not found" {{out}}
+    echo "  command() condition with multiple tool checks ......... PASS"
 
 # ============================================================================
 # Directive Tests
@@ -319,6 +335,11 @@ task test-cli:
     {{jake}} -f fixtures/cli/typo.jake delpoy > {{out}} 2>&1 || true
     grep -q "not found" {{out}} && grep -q "Did you mean" {{out}} && grep -q "deploy" {{out}}
     echo "  Typo suggestion for 'delpoy' .......................... PASS"
+    # Watch mode pattern feedback - capture initial output with timeout
+    @ignore
+    sh -c '{{jake}} -f fixtures/cli/watch-feedback.jake -w build > {{out}} 2>&1 & pid=$!; sleep 1; kill $pid 2>/dev/null; exit 0'
+    grep -q "Patterns:" {{out}} && grep -q "src/\*.zig" {{out}}
+    echo "  Watch mode shows patterns being watched ............... PASS"
 
 # ============================================================================
 # Integration Tests

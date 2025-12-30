@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "helgesverre",
   "license": "MIT",
+  "icon": "icon.png",
   "author": {
     "name": "Helge Sverre",
     "url": "https://helgesver.re"
@@ -45,7 +46,11 @@
           "Jakefile",
           "jakefile"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/jake-light.svg",
+          "dark": "./icons/jake-dark.svg"
+        }
       }
     ],
     "grammars": [

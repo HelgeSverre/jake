@@ -41,8 +41,12 @@ syn match jakeGlobalDirective "^@\(dotenv\|require\|export\|default\)\>"
 syn match jakeGlobalHook "^@\(pre\|post\|on_error\|before\|after\)\>"
 
 " Recipe-level directives (indented)
-syn match jakeDirective "^\s\+@\(if\|elif\|else\|end\)\>"
-syn match jakeDirective "^\s\+@\(each\|needs\|require\|confirm\|cache\|watch\)\>"
+" Conditionals get their own group for distinct highlighting
+syn match jakeConditional "^\s\+@\(if\|elif\|else\|end\)\>"
+" Loop directive
+syn match jakeLoop "^\s\+@each\>"
+" Other directives
+syn match jakeDirective "^\s\+@\(needs\|require\|confirm\|cache\|watch\)\>"
 syn match jakeDirective "^\s\+@\(cd\|shell\|group\|desc\|description\|alias\)\>"
 syn match jakeDirective "^\s\+@\(quiet\|ignore\|only\|only-os\|platform\)\>"
 syn match jakeDirective "^\s\+@\(export\|pre\|post\)\>"
@@ -58,7 +62,7 @@ syn match jakeVarRef "\<[a-zA-Z_][a-zA-Z0-9_]*\>" contained
 syn match jakeFunction "\<\(dirname\|basename\|extension\|without_extension\|without_extensions\)\>" contained
 syn match jakeFunction "\<\(absolute_path\|abs_path\|uppercase\|lowercase\|trim\)\>" contained
 syn match jakeFunction "\<\(home\|local_bin\|shell_config\|env\|exists\|eq\|neq\)\>" contained
-syn match jakeFunction "\<\(is_watching\|command\|item\)\>" contained
+syn match jakeFunction "\<\(is_watching\|is_dry_run\|is_verbose\|is_platform\|is_macos\|is_linux\|is_windows\|is_unix\|item\)\>" contained
 
 " Shell variables
 syn match jakeShellVar "\$[a-zA-Z_][a-zA-Z0-9_]*"
@@ -71,8 +75,8 @@ syn region jakeString start=+'+ end=+'+ skip=+\\'+ contains=jakeEscape
 syn match jakeEscape "\\[nrt\"'\\]" contained
 
 " Condition functions (in @if)
-syn match jakeCondFunc "\<\(env\|exists\|eq\|neq\|is_watching\|command\)\s*(" contains=jakeCondFuncName
-syn match jakeCondFuncName "\<\(env\|exists\|eq\|neq\|is_watching\|command\)\>" contained
+syn match jakeCondFunc "\<\(env\|exists\|eq\|neq\|is_watching\|is_dry_run\|is_verbose\|is_platform\|is_macos\|is_linux\|is_windows\|is_unix\)\s*(" contains=jakeCondFuncName
+syn match jakeCondFuncName "\<\(env\|exists\|eq\|neq\|is_watching\|is_dry_run\|is_verbose\|is_platform\|is_macos\|is_linux\|is_windows\|is_unix\)\>" contained
 
 " Platform names
 syn keyword jakePlatform linux macos windows darwin freebsd openbsd netbsd
@@ -84,36 +88,59 @@ syn match jakePrivate "^_[a-zA-Z0-9_-]*:"
 syn match jakeColon ":"
 
 " Highlighting links
+" Comments (gray)
 hi def link jakeComment Comment
 hi def link jakeTodo Todo
+
+" Keywords (purple/magenta)
 hi def link jakeKeyword Keyword
+hi def link jakeImport Include
+hi def link jakeImportAsKeyword Keyword
+hi def link jakeGlobalDirective PreProc
+hi def link jakeGlobalHook PreProc
+hi def link jakeConditional Conditional
+hi def link jakeLoop Repeat
+hi def link jakeDirective Statement
+
+" Recipe/function names (blue)
 hi def link jakeRecipeName Function
 hi def link jakeRecipeNameDef Function
 hi def link jakeSimpleRecipe Function
-hi def link jakeParam Identifier
-hi def link jakeParamDefault String
-hi def link jakeDeps Special
 hi def link jakeDepName Function
-hi def link jakeImport Include
-hi def link jakeImportPath String
-hi def link jakeImportAsKeyword Keyword
-hi def link jakeNamespace Type
-hi def link jakeGlobalDirective PreProc
-hi def link jakeGlobalHook PreProc
-hi def link jakeDirective Statement
+
+" Parameters (orange - use Special to differentiate from variables)
+hi def link jakeParam Special
+hi def link jakeParamDefault String
+
+" Variables (cyan)
 hi def link jakeVarDef Identifier
 hi def link jakeVarName Identifier
-hi def link jakeOperator Operator
-hi def link jakeInterpolation Special
 hi def link jakeVarRef Identifier
-hi def link jakeFunction Function
 hi def link jakeShellVar Identifier
 hi def link jakePositional Special
+
+" Strings (green)
 hi def link jakeString String
 hi def link jakeEscape SpecialChar
-hi def link jakeCondFunc Function
-hi def link jakeCondFuncName Function
+
+" Built-in functions (yellow/gold - use Type for distinct color)
+hi def link jakeFunction Type
+hi def link jakeCondFunc Type
+hi def link jakeCondFuncName Type
+
+" Constants (red/pink)
 hi def link jakePlatform Constant
+
+" Namespaces (light blue)
+hi def link jakeNamespace Type
+
+" Operators
+hi def link jakeOperator Operator
+
+" Special elements
+hi def link jakeDeps Special
+hi def link jakeInterpolation Special
+hi def link jakeImportPath String
 hi def link jakePrivate Comment
 hi def link jakeColon Delimiter
 

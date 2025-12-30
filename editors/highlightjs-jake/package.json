@@ -1,0 +1,19 @@
+{
+  "name": "highlightjs-jake",
+  "version": "0.1.0",
+  "description": "highlight.js syntax highlighting for Jake task runner",
+  "main": "jake.js",
+  "keywords": ["highlight.js", "highlightjs", "syntax", "highlighting", "jake", "jakefile", "task-runner"],
+  "author": "Jake Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/helgee/jake"
+  },
+  "peerDependencies": {
+    "highlight.js": ">=11.0.0"
+  },
+  "files": [
+    "jake.js"
+  ]
+}

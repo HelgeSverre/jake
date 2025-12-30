@@ -83,7 +83,7 @@ The plugin will be in `build/distributions/`.
 version = "1.0.0"
 app_name = "myapp"
 
-@import "lib/helpers.jake" as helpers
+@import "jake/helpers.jake" as helpers
 @dotenv
 @require API_KEY
 

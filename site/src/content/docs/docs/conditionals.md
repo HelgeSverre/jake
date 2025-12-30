@@ -33,6 +33,7 @@ task deploy:
 |-----------------|---------------------------------------------------|
 | `env(VAR)`      | True if environment variable is set and non-empty |
 | `exists(path)`  | True if file or directory exists                  |
+| `command(name)` | True if command exists in PATH                    |
 | `eq(a, b)`      | True if strings are equal                         |
 | `neq(a, b)`     | True if strings are not equal                     |
 | `is_watching()` | True if running in watch mode (`-w`)              |
@@ -86,5 +87,36 @@ task build:
         cargo build --release
     @else
         cargo build
+    @end
+```
+
+## Command Availability
+
+Check if tools are available before using them:
+
+```jake
+task build:
+    @if command(docker)
+        docker build -t myapp .
+    @elif command(podman)
+        podman build -t myapp .
+    @else
+        echo "No container runtime found"
+    @end
+
+task deploy:
+    @if command(kubectl)
+        kubectl apply -f k8s/
+    @else
+        echo "kubectl not installed - skipping deploy"
+    @end
+```
+
+Works with absolute paths too:
+
+```jake
+task check:
+    @if command(/usr/local/bin/custom-tool)
+        /usr/local/bin/custom-tool run
     @end
 ```

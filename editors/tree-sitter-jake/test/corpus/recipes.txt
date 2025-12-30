@@ -1,0 +1,173 @@
+================================================================================
+simple recipe
+================================================================================
+
+build:
+    echo "building"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+task recipe
+================================================================================
+
+task build:
+    echo "building"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+file recipe
+================================================================================
+
+file output:
+    echo "compiling"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+recipe with dependencies
+================================================================================
+
+task build: [clean, prepare]
+    echo "building"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier)
+      (dependencies
+        (dependency
+          name: (dependency_name))
+        (dependency
+          name: (dependency_name))))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+recipe with parameters
+================================================================================
+
+task greet name="World":
+    echo "Hello, {{name}}!"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier)
+      (parameters
+        (parameter
+          name: (identifier)
+          default: (value
+            (string)))))
+    (recipe_body
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (identifier))))
+        (text)))))
+
+================================================================================
+recipe with variadic parameter
+================================================================================
+
+task echo-all +args:
+    echo {{args}}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier)
+      (parameters
+        (variadic_parameter
+          (parameter
+            name: (identifier)))))
+    (recipe_body
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (identifier))))))))
+
+================================================================================
+recipe with group and description
+================================================================================
+
+@group build
+@desc "Build the project"
+task build:
+    make
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_attribute
+      name: (identifier))
+    (recipe_attribute
+      text: (string))
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+recipe with quiet prefix
+================================================================================
+
+task quiet-build:
+    @echo "silent"
+    -rm -f temp.txt
+    @-echo "silent and ignore errors"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (command_prefix)
+        (text))
+      (command_line
+        (command_prefix)
+        (text))
+      (command_line
+        (command_prefix)
+        (text)))))

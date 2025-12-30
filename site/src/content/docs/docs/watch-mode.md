@@ -15,6 +15,14 @@ Jake watches files based on:
 - File dependencies in file recipes
 - `@watch` directives in tasks
 
+When watch mode starts, Jake shows what's being monitored:
+
+```
+[watch] Watching 5 file(s) for changes...
+[watch] Patterns: src/**/*.ts, Jakefile
+[watch] Press Ctrl+C to stop
+```
+
 ## Watch Specific Patterns
 
 ```bash
