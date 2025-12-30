@@ -1,5 +1,5 @@
 ---
-import '../styles/global.css';
+import BaseLayout from '../layouts/BaseLayout.astro';
 
 // Chosen brand elements
 const logo = "{j}";
@@ -47,21 +47,116 @@ const allColors = [
 ];
 
 const sizes = [16, 24, 32, 48, 64, 96];
+
+// ============================================================
+// BADGE CONFIGURATION
+// ============================================================
+
+// Color palette for badges
+const badgeColorPalette = {
+  white: { hex: 'FFFFFF', name: 'White' },
+  black: { hex: '000000', name: 'Black' },
+  dark: { hex: '0a0a0a', name: 'Dark' },
+  gray: { hex: '555555', name: 'Gray' },
+  accent: { hex: 'F43F5E', name: 'Rose' },
+};
+
+// Logo SVGs (base64 encoded)
+const badgeLogos = {
+  white: 'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=',
+  red: 'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iI0Y0M0Y1RSI+e2p9PC90ZXh0Pjwvc3ZnPg==',
+};
+
+// Badge labels
+const badgeLabels = [
+  { label: 'Built_with', display: 'Built with' },
+  { label: 'Powered_by', display: 'Powered by' },
+  { label: 'Made_with', display: 'Made with' },
+  { label: 'Automated_with', display: 'Automated with' },
+  { label: 'Runs_on', display: 'Runs on' },
+  { label: 'Uses', display: 'Uses' },
+  { label: 'Managed_by', display: 'Managed by' },
+];
+
+// Two-tone color combinations
+const twoToneCombos = [
+  { labelColor: badgeColorPalette.gray, badgeColor: badgeColorPalette.white, name: 'Gray/White' },
+  { labelColor: badgeColorPalette.gray, badgeColor: badgeColorPalette.black, name: 'Gray/Black' },
+  { labelColor: badgeColorPalette.gray, badgeColor: badgeColorPalette.accent, name: 'Gray/Rose' },
+  { labelColor: badgeColorPalette.black, badgeColor: badgeColorPalette.white, name: 'Black/White' },
+  { labelColor: badgeColorPalette.black, badgeColor: badgeColorPalette.accent, name: 'Black/Rose' },
+  { labelColor: badgeColorPalette.accent, badgeColor: badgeColorPalette.black, name: 'Rose/Black' },
+  { labelColor: badgeColorPalette.accent, badgeColor: badgeColorPalette.white, name: 'Rose/White' },
+  { labelColor: badgeColorPalette.white, badgeColor: badgeColorPalette.black, name: 'White/Black' },
+  { labelColor: badgeColorPalette.white, badgeColor: badgeColorPalette.accent, name: 'White/Rose' },
+];
+
+// Helper functions
+function buildBadgeUrl(label: string | null, color: string, logoBase64: string) {
+  const labelPart = label ? `${label}-jake` : 'jake';
+  return `https://img.shields.io/badge/${labelPart}-${color}?style=flat&logo=data:image/svg+xml;base64,${logoBase64}`;
+}
+
+function buildTwoToneBadgeUrl(label: string, labelColor: string, badgeColor: string, logoBase64: string) {
+  return `https://img.shields.io/badge/${label}-jake-${badgeColor}?style=flat&labelColor=${labelColor}&logo=data:image/svg+xml;base64,${logoBase64}`;
+}
+
+function buildMarkdown(label: string | null, url: string) {
+  const alt = label ? `${label.replace(/_/g, ' ')} jake` : 'jake';
+  return `![${alt}](${url})`;
+}
+
+// Generate minimal badges (single-color, both logo variants)
+const minimalBadges = Object.entries(badgeColorPalette).flatMap(([colorKey, color]) =>
+  Object.entries(badgeLogos).map(([logoKey, logo]) => {
+    const url = buildBadgeUrl(null, color.hex, logo);
+    return {
+      url,
+      markdown: buildMarkdown(null, url),
+      colorName: color.name,
+      logoColor: logoKey,
+      description: `${color.name} / ${logoKey} logo`,
+    };
+  })
+);
+
+// Generate single-color labeled badges
+const singleColorBadges = badgeLabels.flatMap(({ label, display }) =>
+  Object.entries(badgeColorPalette).flatMap(([colorKey, color]) =>
+    Object.entries(badgeLogos).map(([logoKey, logo]) => {
+      const url = buildBadgeUrl(label, color.hex, logo);
+      return {
+        label,
+        display,
+        url,
+        markdown: buildMarkdown(label, url),
+        colorName: color.name,
+        logoColor: logoKey,
+      };
+    })
+  )
+);
+
+// Generate two-tone labeled badges
+const twoToneBadges = badgeLabels.flatMap(({ label, display }) =>
+  twoToneCombos.flatMap((combo) =>
+    Object.entries(badgeLogos).map(([logoKey, logo]) => {
+      const url = buildTwoToneBadgeUrl(label, combo.labelColor.hex, combo.badgeColor.hex, logo);
+      return {
+        label,
+        display,
+        url,
+        markdown: buildMarkdown(label, url),
+        comboName: combo.name,
+        logoColor: logoKey,
+      };
+    })
+  )
+);
 ---
 
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Jake Brand Guide</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-</head>
-<body class="bg-bg-primary text-text-primary antialiased p-8">
-  <div class="max-w-7xl mx-auto">
+<BaseLayout title="Jake Brand Guide" description="Official brand assets and guidelines for Jake">
+  <div class="max-w-7xl mx-auto px-8 pt-24 pb-8">
     <h1 class="text-4xl font-bold mb-2">Jake Brand Guide</h1>
     <p class="text-text-secondary mb-12">Official brand assets and guidelines</p>
 
@@ -179,7 +274,7 @@ const sizes = [16, 24, 32, 48, 64, 96];
       <p class="text-text-secondary mb-6">All colors at 48px for side-by-side comparison</p>
       <div class="flex flex-wrap gap-4">
         {allColors.map((c) => (
-          <div class={`text-center hover-lift ${c.chosen ? 'ring-2 ring-white ring-offset-2 ring-offset-bg-primary rounded-xl' : ''}`}>
+          <div class="text-center hover-lift">
             <div
               class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-mono font-semibold mb-2"
               style={`background-color: ${c.hex}; font-family: 'Fira Code', monospace;`}
@@ -354,171 +449,91 @@ const sizes = [16, 24, 32, 48, 64, 96];
 
     <section class="mb-16">
       <h2 class="text-2xl font-semibold mb-6 text-jake">GitHub Badges</h2>
-      <p class="text-text-secondary mb-8">Shield.io badges for README files and documentation. Click to copy markdown.</p>
+      <p class="text-text-secondary mb-8">Shield.io badges for README files. Click any badge to copy markdown. All badges use flat style.</p>
 
       <!-- Minimal Badges -->
-      <div class="mb-10">
+      <div class="mb-12">
         <h3 class="text-lg font-semibold mb-4 text-text-secondary">Minimal</h3>
-        <div class="flex flex-wrap gap-4 mb-4">
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-F43F5E?style=flat-square)')">
-            <img src="https://img.shields.io/badge/jake-F43F5E?style=flat-square" alt="jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-000000?style=flat-square)')">
-            <img src="https://img.shields.io/badge/jake-000000?style=flat-square" alt="jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-555555?style=flat-square)')">
-            <img src="https://img.shields.io/badge/jake-555555?style=flat-square" alt="jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
+        <div class="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-3">
+          {minimalBadges.map((badge) => (
+            <div
+              class="bg-bg-card border border-border rounded-lg p-3 hover-lift cursor-pointer group text-center"
+              onclick={`navigator.clipboard.writeText('${badge.markdown}')`}
+            >
+              <img src={badge.url} alt="jake" class="h-5 mx-auto mb-2" />
+              <div class="text-xs text-text-muted group-hover:text-jake">{badge.description}</div>
+            </div>
+          ))}
         </div>
       </div>
 
-      <!-- "Built with" Badges -->
-      <div class="mb-10">
-        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Built with jake</h3>
-        <div class="flex flex-wrap gap-4 mb-4">
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square)')">
-            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square" alt="Built with jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=for-the-badge)')">
-            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=for-the-badge" alt="Built with jake" class="h-7" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Built with jake](https://img.shields.io/badge/Built_with-jake-000000?style=flat-square)')">
-            <img src="https://img.shields.io/badge/Built_with-jake-000000?style=flat-square" alt="Built with jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+      <!-- Single-Color Labeled Badges (grouped by label) -->
+      {badgeLabels.map(({ label, display }) => (
+        <div class="mb-12">
+          <h3 class="text-lg font-semibold mb-4 text-text-secondary">{display} jake</h3>
+          <div class="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-3">
+            {singleColorBadges
+              .filter((b) => b.label === label)
+              .map((badge) => (
+                <div
+                  class="bg-bg-card border border-border rounded-lg p-3 hover-lift cursor-pointer group text-center"
+                  onclick={`navigator.clipboard.writeText('${badge.markdown}')`}
+                >
+                  <img src={badge.url} alt={`${badge.display} jake`} class="h-5 mx-auto mb-2" />
+                  <div class="text-xs text-text-muted group-hover:text-jake">{badge.colorName} / {badge.logoColor}</div>
+                </div>
+              ))}
           </div>
         </div>
-      </div>
+      ))}
 
-      <!-- "Powered by" Badges -->
-      <div class="mb-10">
-        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Powered by jake</h3>
-        <div class="flex flex-wrap gap-4 mb-4">
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Powered by jake](https://img.shields.io/badge/Powered_by-jake-F43F5E?style=flat-square)')">
-            <img src="https://img.shields.io/badge/Powered_by-jake-F43F5E?style=flat-square" alt="Powered by jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Powered by jake](https://img.shields.io/badge/Powered_by-jake-F43F5E?style=for-the-badge)')">
-            <img src="https://img.shields.io/badge/Powered_by-jake-F43F5E?style=for-the-badge" alt="Powered by jake" class="h-7" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Powered by jake](https://img.shields.io/badge/Powered_by-jake-555555?style=flat-square)')">
-            <img src="https://img.shields.io/badge/Powered_by-jake-555555?style=flat-square" alt="Powered by jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-        </div>
-      </div>
+      <!-- Two-Tone Color Combinations Section -->
+      <div class="mb-12">
+        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Two-Tone Combinations</h3>
+        <p class="text-text-muted mb-6">Badges with different label and badge colors</p>
 
-      <!-- "Made with" Badges -->
-      <div class="mb-10">
-        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Made with jake</h3>
-        <div class="flex flex-wrap gap-4 mb-4">
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Made with jake](https://img.shields.io/badge/Made_with-jake-F43F5E?style=flat-square)')">
-            <img src="https://img.shields.io/badge/Made_with-jake-F43F5E?style=flat-square" alt="Made with jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
+        {badgeLabels.map(({ label, display }) => (
+          <div class="mb-8">
+            <h4 class="text-md font-medium mb-3 text-text-muted">{display} jake</h4>
+            <div class="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-9 gap-3">
+              {twoToneBadges
+                .filter((b) => b.label === label)
+                .map((badge) => (
+                  <div
+                    class="bg-bg-card border border-border rounded-lg p-3 hover-lift cursor-pointer group text-center"
+                    onclick={`navigator.clipboard.writeText('${badge.markdown}')`}
+                  >
+                    <img src={badge.url} alt={`${badge.display} jake`} class="h-5 mx-auto mb-2" />
+                    <div class="text-xs text-text-muted group-hover:text-jake">{badge.comboName}</div>
+                    <div class="text-xs text-text-muted">{badge.logoColor}</div>
+                  </div>
+                ))}
+            </div>
           </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Made with jake](https://img.shields.io/badge/Made_with-jake-F43F5E?style=for-the-badge)')">
-            <img src="https://img.shields.io/badge/Made_with-jake-F43F5E?style=for-the-badge" alt="Made with jake" class="h-7" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Made with jake](https://img.shields.io/badge/Made_with-jake-0a0a0a?style=flat-square)')">
-            <img src="https://img.shields.io/badge/Made_with-jake-0a0a0a?style=flat-square" alt="Made with jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- "Automated with" Badges -->
-      <div class="mb-10">
-        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Automated with jake</h3>
-        <div class="flex flex-wrap gap-4 mb-4">
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Automated with jake](https://img.shields.io/badge/Automated_with-jake-F43F5E?style=flat-square)')">
-            <img src="https://img.shields.io/badge/Automated_with-jake-F43F5E?style=flat-square" alt="Automated with jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Automated with jake](https://img.shields.io/badge/Automated_with-jake-F43F5E?style=for-the-badge)')">
-            <img src="https://img.shields.io/badge/Automated_with-jake-F43F5E?style=for-the-badge" alt="Automated with jake" class="h-7" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![Automated with jake](https://img.shields.io/badge/Automated_with-jake-555555?style=flat-square)')">
-            <img src="https://img.shields.io/badge/Automated_with-jake-555555?style=flat-square" alt="Automated with jake" class="h-5" />
-            <div class="text-xs text-text-muted mt-2 group-hover:text-jake">Click to copy</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Style Variations -->
-      <div class="mb-10">
-        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Badge Styles</h3>
-        <div class="flex flex-wrap gap-4 mb-4">
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift">
-            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat" alt="flat" class="h-5 mb-2" />
-            <div class="text-xs text-text-muted">flat</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift">
-            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square" alt="flat-square" class="h-5 mb-2" />
-            <div class="text-xs text-text-muted">flat-square</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift">
-            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=plastic" alt="plastic" class="h-5 mb-2" />
-            <div class="text-xs text-text-muted">plastic</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 hover-lift">
-            <img src="https://img.shields.io/badge/Built_with-jake-F43F5E?style=for-the-badge" alt="for-the-badge" class="h-7 mb-2" />
-            <div class="text-xs text-text-muted">for-the-badge</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Color Combinations -->
-      <div class="mb-10">
-        <h3 class="text-lg font-semibold mb-4 text-text-secondary">Color Combinations</h3>
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-F43F5E?style=for-the-badge)')">
-            <img src="https://img.shields.io/badge/jake-F43F5E?style=for-the-badge" alt="Rose" class="h-7 mx-auto mb-2" />
-            <div class="text-xs text-text-muted">Rose</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-000000?style=for-the-badge)')">
-            <img src="https://img.shields.io/badge/jake-000000?style=for-the-badge" alt="Black" class="h-7 mx-auto mb-2" />
-            <div class="text-xs text-text-muted">Black</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-0a0a0a?style=for-the-badge)')">
-            <img src="https://img.shields.io/badge/jake-0a0a0a?style=for-the-badge" alt="Dark" class="h-7 mx-auto mb-2" />
-            <div class="text-xs text-text-muted">Dark</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-555555?style=for-the-badge)')">
-            <img src="https://img.shields.io/badge/jake-555555?style=for-the-badge" alt="Gray" class="h-7 mx-auto mb-2" />
-            <div class="text-xs text-text-muted">Gray</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-white?style=for-the-badge&color=white&labelColor=F43F5E)')">
-            <img src="https://img.shields.io/badge/jake-white?style=for-the-badge&color=white&labelColor=F43F5E" alt="White/Rose" class="h-7 mx-auto mb-2" />
-            <div class="text-xs text-text-muted">White/Rose</div>
-          </div>
-          <div class="bg-bg-card border border-border rounded-lg p-4 text-center hover-lift cursor-pointer group" onclick="navigator.clipboard.writeText('![jake](https://img.shields.io/badge/jake-F43F5E?style=for-the-badge&labelColor=000000)')">
-            <img src="https://img.shields.io/badge/jake-F43F5E?style=for-the-badge&labelColor=000000" alt="Black/Rose" class="h-7 mx-auto mb-2" />
-            <div class="text-xs text-text-muted">Black/Rose</div>
-          </div>
-        </div>
+        ))}
       </div>
 
       <!-- Markdown Reference -->
       <div class="bg-bg-code border border-border rounded-xl p-6">
         <h3 class="text-lg font-semibold mb-4 text-text-secondary">Markdown Reference</h3>
-        <pre class="text-sm font-mono text-text-secondary overflow-x-auto"><code class="text-text-primary"># Minimal
-![jake](https://img.shields.io/badge/jake-F43F5E?style=flat-square)
-
-# Built with
-![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square)
-
-# For-the-badge style
-![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=for-the-badge)
-
-# With link
-[![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat-square)](https://jakefile.dev)</code></pre>
+        <div class="space-y-4">
+          <div>
+            <div class="text-xs text-text-muted mb-2">Minimal badge (Rose background)</div>
+            <pre class="text-xs font-mono text-text-primary overflow-x-auto bg-bg-secondary p-2 rounded">![jake](https://img.shields.io/badge/jake-F43F5E?style=flat&logo=data:image/svg+xml;base64,{badgeLogos.white})</pre>
+          </div>
+          <div>
+            <div class="text-xs text-text-muted mb-2">Built with jake (Rose)</div>
+            <pre class="text-xs font-mono text-text-primary overflow-x-auto bg-bg-secondary p-2 rounded">![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat&logo=data:image/svg+xml;base64,{badgeLogos.white})</pre>
+          </div>
+          <div>
+            <div class="text-xs text-text-muted mb-2">Two-tone: Black label, Rose badge</div>
+            <pre class="text-xs font-mono text-text-primary overflow-x-auto bg-bg-secondary p-2 rounded">![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat&labelColor=000000&logo=data:image/svg+xml;base64,{badgeLogos.white})</pre>
+          </div>
+          <div>
+            <div class="text-xs text-text-muted mb-2">With link wrapper</div>
+            <pre class="text-xs font-mono text-text-primary overflow-x-auto bg-bg-secondary p-2 rounded">[![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat&logo=data:image/svg+xml;base64,{badgeLogos.white})](https://jakefile.dev)</pre>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -998,10 +1013,5 @@ const sizes = [16, 24, 32, 48, 64, 96];
         </div>
       </div>
     </section>
-
-    <footer class="text-center text-text-muted text-sm py-8 border-t border-border">
-      <a href="/" class="text-jake hover:underline">Back to Home</a>
-    </footer>
   </div>
-</body>
-</html>
+</BaseLayout>

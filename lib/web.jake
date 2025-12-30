@@ -19,7 +19,7 @@ task build:
 
 @group web
 @desc "Deploy {{website} to production"
-@needs vc "Install Vercel CLI: npm i -g vercel" -> "npm i -g vercel"
+@needs vc "Install Vercel CLI: npm i -g vercel" -> _install-vercel
 task deploy:
     @cd site
     @confirm "Deploy to production?"
@@ -27,7 +27,12 @@ task deploy:
 
 @group web
 @desc "Preview website deployment"
+@needs vc "Install Vercel CLI: npm i -g vercel" -> _install-vercel
 task preview:
     @cd site
-    @needs vc "Install Vercel CLI: npm i -g vercel"
     vc --yes
+
+# Private helper to install Vercel CLI
+task _install-vercel:
+    @quiet
+    npm i -g vercel

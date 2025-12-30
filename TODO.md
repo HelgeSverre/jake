@@ -59,24 +59,25 @@
 
 | File | Test Count | Coverage |
 |------|------------|----------|
-| executor.zig | 132 | Excellent |
-| parser.zig | 83 | Excellent |
+| executor.zig | 154 | Excellent |
+| parser.zig | 100 | Excellent |
 | lexer.zig | 64 | Excellent |
 | args.zig | 45 | Excellent |
-| conditions.zig | 17 | Good |
+| functions.zig | 37 | Excellent |
+| conditions.zig | 28 | Good |
+| parallel.zig | 23 | Good |
+| env.zig | 23 | Good |
 | cache.zig | 16 | Good |
-| functions.zig | 16 | Good |
+| suggest.zig | 13 | Good |
+| import.zig | 12 | Good |
+| hooks.zig | 12 | Good |
+| watch.zig | 11 | Good |
 | glob.zig | 10 | Good |
-| env.zig | 10 | Good |
-| import.zig | 9 | Good |
-| watch.zig | 8 | Good |
+| completions.zig | 10 | Good |
 | prompt.zig | 8 | Good |
-| hooks.zig | 8 | Good |
-| completions.zig | 7 | Good |
-| parallel.zig | 4 | Basic |
 | main.zig | 1 | Minimal |
 | root.zig | 1 | Minimal |
-| **TOTAL** | **439** | |
+| **TOTAL** | **568** | |
 
 **E2E Tests:** `jake e2e` (tests/e2e/Jakefile)
 
@@ -272,9 +273,14 @@ Parameter syntax: `task name param="default":` or `task name param:` (required)
    - [x] Generate zsh completions (`jake --completions zsh`)
    - [x] Generate fish completions (`jake --completions fish`)
    - [x] Auto-install command (`jake --completions --install`)
+   - [x] Auto-uninstall command (`jake --completions --uninstall`)
+   - [x] Smart zsh environment detection (Oh-My-Zsh, Homebrew, vanilla)
+   - [x] Idempotent .zshrc patching with marked config blocks
    - [x] Complete recipe names dynamically from Jakefile (via `jake --summary`)
    - [x] Complete flags and options
    - [x] Add `--summary` flag for machine-readable recipe list
+   - [x] Shell script tests (`tests/completions_test.sh`)
+   - [x] Docker-based isolated testing (`tests/Dockerfile.completions`)
 
 ### Upcoming Features
 
@@ -642,6 +648,22 @@ test "list command groups recipes by module-level group" {
 ---
 
 6. **CLI Commands**
+   - [ ] `jake upgrade` / `jake --upgrade` - Self-update from GitHub releases
+     - [ ] Check current version against latest GitHub release tag
+     - [ ] Use GitHub API: `https://api.github.com/repos/<owner>/<repo>/releases/latest`
+     - [ ] Alternative: Use `/releases/latest` redirect to avoid API rate limits
+     - [ ] Detect current OS/arch (`builtin.os.tag`, `builtin.cpu.arch`)
+     - [ ] Download appropriate binary asset (naming: `jake-{os}-{arch}.tar.gz`)
+     - [ ] Optional: Verify signature with minisign (embed public key in binary)
+     - [ ] Extract and replace binary in-place (works on macOS/Linux)
+     - [ ] Use `curl` as child process for HTTP (smaller binary than std.http)
+     - [ ] Handle edge cases: sudo required, read-only filesystem, network errors
+     - [ ] `--check` flag to only check for updates without installing
+     - [ ] Consider: zig-minisign library for signature verification
+     - [ ] Reference implementations:
+       - [go-github-selfupdate](https://github.com/rhysd/go-github-selfupdate) (Go patterns)
+       - [Zig App Release via GitHub](https://dbushell.com/2025/03/18/zig-app-release-and-updates-via-github/)
+       - [go-selfupdate](https://pkg.go.dev/github.com/creativeprojects/go-selfupdate)
    - [ ] `jake init` - Scaffold Jakefile from templates
      - [ ] Store templates in `templates/*.jake`, compile into binary
      - [ ] Auto-detect project type (Node, Go, Rust, Python, etc.)
@@ -786,7 +808,7 @@ test "list command groups recipes by module-level group" {
 
 11. **Quality & Testing**
     - [ ] Benchmarks suite (track parser/executor performance over time)
-    - [ ] Test coverage reports (kcov or similar)
+    - [x] Test coverage reports with kcov (`jake coverage`, `jake coverage-open`)
     - [ ] Property-based/generative tests (structured fuzzing)
     - [ ] Integration test suite with real-world Jakefiles
     - [ ] Regression test for each bug fix
@@ -809,19 +831,20 @@ src/
 ├── main.zig        # CLI entry point (1 test)
 ├── args.zig        # Argument parsing (45 tests)
 ├── lexer.zig       # Tokenizer (64 tests)
-├── parser.zig      # AST builder (83 tests)
-├── executor.zig    # Recipe execution (132 tests)
+├── parser.zig      # AST builder (100 tests)
+├── executor.zig    # Recipe execution (154 tests)
 ├── cache.zig       # Content hashing (16 tests)
-├── conditions.zig  # @if evaluation (17 tests)
-├── functions.zig   # String functions (16 tests)
+├── conditions.zig  # @if evaluation (28 tests)
+├── functions.zig   # String functions (37 tests)
 ├── glob.zig        # Pattern matching (10 tests)
-├── env.zig         # Dotenv/environment (10 tests)
-├── import.zig      # @import system (9 tests)
-├── watch.zig       # File watching (8 tests)
+├── env.zig         # Dotenv/environment (23 tests)
+├── import.zig      # @import system (12 tests)
+├── watch.zig       # File watching (11 tests)
 ├── prompt.zig      # @confirm prompts (8 tests)
-├── hooks.zig       # @pre/@post hooks (8 tests)
-├── completions.zig # Shell completions (7 tests)
-├── parallel.zig    # Thread pool exec (4 tests)
+├── hooks.zig       # @pre/@post hooks (12 tests)
+├── completions.zig # Shell completions (10 tests)
+├── parallel.zig    # Thread pool exec (23 tests)
+├── suggest.zig     # Typo suggestions (13 tests)
 ├── compat.zig      # Zig 0.14/0.15 compatibility
 ├── fuzz_parse.zig  # Parser fuzz testing
 └── root.zig        # Library exports (1 test)
@@ -928,6 +951,24 @@ None currently! All known bugs have been fixed.
 4. **Watch mode feedback**
    - [ ] Print what patterns are being watched when entering watch mode
    - [ ] Example: `Watching: src/**/*.ts, Jakefile (Press Ctrl+C to stop)`
+
+5. **`--list` filtering** (Planned)
+   - [ ] `--group GROUP` - Filter recipes to specified group
+     - `jake --list --group build` shows only recipes in "build" group
+     - Works with `--short`: `jake --list --group build --short`
+     - Case-sensitive exact match on `recipe.group`
+   - [ ] `--filter PATTERN` - Filter recipes by glob pattern
+     - `jake --list --filter 'test*'` shows recipes starting with "test"
+     - `jake --list --filter '*lint*'` shows recipes containing "lint"
+     - Reuses existing `glob.zig` pattern matching
+     - Matches against recipe name (not aliases)
+   - [ ] `--groups` - List available group names
+     - `jake --groups` outputs one group name per line
+     - Sorted alphabetically, no duplicates
+   - [ ] Combined filtering: `jake --list --group dev --filter '*test*'`
+   - [ ] Error handling: `--group nonexistent` warns "No recipes in group 'nonexistent'"
+
+   **Research**: [just](https://just.systems/man/en/listing-available-recipes.html) uses `--groups` to list groups. [Rake](https://batsov.com/articles/2012/03/08/ruby-tip-number-2-get-a-list-of-all-rake-tasks/) uses `rake -T pattern` for prefix filtering. [Taskfile](https://taskfile.dev/docs/reference/cli) relies on `--json` + external tools.
 
 ### Error Message Improvements
 

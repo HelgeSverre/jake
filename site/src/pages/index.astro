@@ -1,5 +1,5 @@
 ---
-import '../styles/global.css';
+import BaseLayout from '../layouts/BaseLayout.astro';
 import { Package, Sparkles, Zap, RefreshCw, FolderInput, GitBranch, Anchor, Globe, FileCode, Terminal, Layers, Shield, Clock, Eye, Play, Search, CheckCircle, AlertTriangle, ArrowRight } from 'lucide-astro';
 
 const features = [
@@ -302,44 +302,9 @@ const scaleOutput = `<span class="text-text-muted">$</span> jake docker.build k8
 <span class="text-text-muted">$</span> jake deploy  <span class="text-syntax-comment"># Missing env var</span>
 <span class="text-red-500">error:</span> Required environment variable not set:
        <span class="text-jake">AWS_ACCESS_KEY_ID</span>`;
-
-const logo = "{j}";
 ---
 
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Jake - Modern Command Running</title>
-  <meta name="description" content="The best of Make and Just, combined. File dependencies, clean syntax, parallel execution, and more." />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <meta property="og:title" content="Jake - Modern Command Running" />
-  <meta property="og:description" content="The best of Make and Just, combined." />
-  <meta property="og:image" content="https://jakefile.dev/og-image.png" />
-  <meta name="twitter:card" content="summary_large_image" />
-</head>
-<body class="bg-bg-primary text-text-primary antialiased">
-  <!-- Navigation -->
-  <nav class="fixed top-0 left-0 right-0 z-50 bg-bg-primary/80 backdrop-blur-xl border-b border-border">
-    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2 text-xl font-semibold">
-        <span class="text-jake font-mono">{logo}</span>
-        <span>jake</span>
-      </a>
-      <div class="flex items-center gap-6">
-        <a href="/docs/introduction" class="text-text-secondary hover:text-text-primary transition-colors text-sm">Docs</a>
-        <a href="https://github.com/HelgeSverre/jake" class="text-text-secondary hover:text-text-primary transition-colors text-sm">GitHub</a>
-        <a href="/docs/installation" class="bg-jake hover:bg-jake-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-          Get Started
-        </a>
-      </div>
-    </div>
-  </nav>
-
+<BaseLayout title="Jake - Modern Command Running">
   <!-- Hero Section -->
   <section class="relative min-h-screen flex items-center justify-center pt-16 bg-grid bg-radial overflow-hidden">
     <div class="max-w-6xl mx-auto px-6 py-24 grid lg:grid-cols-2 gap-16 items-center">
@@ -838,24 +803,4 @@ const logo = "{j}";
       </div>
     </div>
   </section>
-
-  <!-- Footer -->
-  <footer class="py-12 border-t border-border">
-    <div class="max-w-6xl mx-auto px-6">
-      <div class="flex flex-col md:flex-row justify-between items-center gap-6">
-        <div class="flex items-center gap-2">
-          <span class="text-jake font-mono text-xl">{logo}</span>
-          <span class="text-text-secondary">jake</span>
-          <span class="text-text-muted text-sm">· Modern command running</span>
-        </div>
-        <div class="flex items-center gap-6 text-sm text-text-secondary">
-          <a href="/docs/introduction" class="hover:text-text-primary transition-colors">Docs</a>
-          <a href="https://github.com/HelgeSverre/jake" class="hover:text-text-primary transition-colors">GitHub</a>
-          <a href="https://github.com/HelgeSverre/jake/issues" class="hover:text-text-primary transition-colors">Issues</a>
-          <span class="text-text-muted">MIT License</span>
-        </div>
-      </div>
-    </div>
-  </footer>
-</body>
-</html>
+</BaseLayout>

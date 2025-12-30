@@ -33,18 +33,16 @@ task bench-json:
 # Tracy Profiling
 # ============================================================================
 
-@desc "Build jake with Tracy instrumentation (requires compatible zig-tracy)"
+@desc "Build jake with Tracy instrumentation"
 @group perf
 task tracy-build:
     @needs zig
-    @pre echo "Note: Tracy integration requires a Zig 0.15-compatible tracy package."
-    @pre echo "See build.zig for setup instructions."
     zig build -Doptimize=ReleaseFast -Dtracy=true
 
-@desc "Run jake with Tracy capture"
+@desc "Run jake with Tracy profiling"
 @group perf
-task tracy-capture: [tracy-build]
-    @needs tracy-capture "Install Tracy: brew install tracy (macOS) or build from https://github.com/wolfpld/tracy"
+@needs tracy-capture "Install Tracy: brew install tracy" -> _install-tracy
+task tracy: [tracy-build]
     @pre echo "Starting Tracy capture..."
     tracy-capture -o trace.tracy &
     sleep 1
@@ -53,6 +51,11 @@ task tracy-capture: [tracy-build]
     killall tracy-capture 2>/dev/null || true
     @post echo "Trace saved to: trace.tracy"
     @post echo "Open with: tracy trace.tracy"
+
+# Private helper to install Tracy profiler
+task _install-tracy:
+    @quiet
+    brew install tracy
 
 # ============================================================================
 # Fuzzing

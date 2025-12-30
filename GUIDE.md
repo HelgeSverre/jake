@@ -23,10 +23,11 @@ A comprehensive guide to using Jake, the modern command runner with dependency t
 17. [Built-in Functions](#built-in-functions)
 18. [Parallel Execution](#parallel-execution)
 19. [Watch Mode](#watch-mode)
-20. [CLI Reference](#cli-reference)
-21. [Best Practices](#best-practices)
-22. [Migrating from Make](#migrating-from-make)
-23. [Migrating from Just](#migrating-from-just)
+20. [Shell Completions](#shell-completions)
+21. [CLI Reference](#cli-reference)
+22. [Best Practices](#best-practices)
+23. [Migrating from Make](#migrating-from-make)
+24. [Migrating from Just](#migrating-from-just)
 
 ---
 
@@ -1183,6 +1184,115 @@ Shows which files triggered the rebuild.
 
 ---
 
+## Shell Completions
+
+Jake provides tab completion for recipe names and flags in bash, zsh, and fish shells.
+
+### Quick Install
+
+The easiest way to set up completions is with the auto-install command:
+
+```bash
+jake --completions --install
+```
+
+This automatically detects your shell and installs completions to the appropriate location.
+
+### Manual Installation
+
+If you prefer manual installation, generate the completion script and save it:
+
+```bash
+# Bash
+jake --completions bash > ~/.local/share/bash-completion/completions/jake
+
+# Zsh
+jake --completions zsh > ~/.zsh/completions/_jake
+
+# Fish
+jake --completions fish > ~/.config/fish/completions/jake.fish
+```
+
+For zsh, you may need to add the completions directory to your `fpath` in `~/.zshrc`:
+
+```zsh
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
+```
+
+### Smart Environment Detection
+
+The `--install` command automatically detects your zsh environment:
+
+| Environment | Install Location | Configuration |
+|-------------|------------------|---------------|
+| **Oh-My-Zsh** | `~/.oh-my-zsh/custom/completions/_jake` | None needed (auto-loads) |
+| **Homebrew zsh** | `/opt/homebrew/share/zsh/site-functions/_jake` | None needed (in fpath) |
+| **Vanilla zsh** | `~/.zsh/completions/_jake` | Auto-patches `~/.zshrc` |
+| **Bash** | `~/.local/share/bash-completion/completions/jake` | None needed |
+| **Fish** | `~/.config/fish/completions/jake.fish` | None needed (auto-loads) |
+
+For vanilla zsh installations, the installer adds a clearly marked configuration block to your `~/.zshrc`:
+
+```zsh
+# >>> jake completion >>>
+# This block is managed by jake. Do not edit manually.
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit -u
+# <<< jake completion <<<
+```
+
+### Uninstalling Completions
+
+To remove completions and any configuration changes:
+
+```bash
+jake --completions --uninstall
+```
+
+This removes the completion file and cleans up any `.zshrc` modifications.
+
+### What Gets Completed
+
+Tab completion works for:
+
+- **Recipe names** - Dynamically loaded from your Jakefile
+- **CLI flags** - All options like `--list`, `--dry-run`, `--verbose`
+- **Flag values** - File paths for `-f/--jakefile`, shell names for `--completions`
+
+### Using Completions
+
+After installation, restart your shell (or source your config file), then try:
+
+```bash
+# Complete recipe names
+jake bu<TAB>        # → jake build
+
+# Complete flags
+jake --<TAB>        # Shows all available flags
+
+# Complete flag values
+jake --completions <TAB>    # → bash, zsh, fish
+jake -f <TAB>               # → file completion
+```
+
+### Machine-Readable Output
+
+For scripting and integration with other tools, use `--summary`:
+
+```bash
+# Get space-separated list of recipe names
+jake --summary
+# Output: build test deploy clean lint
+
+# Use in scripts
+for recipe in $(jake --summary); do
+    echo "Found recipe: $recipe"
+done
+```
+
+---
+
 ## CLI Reference
 
 ```
@@ -1204,6 +1314,10 @@ OPTIONS:
     -f, --jakefile PATH     Use specified Jakefile
     -w, --watch [PATTERN]   Watch and re-run on changes
     -j, --jobs [N]          Parallel jobs (default: CPU count)
+        --summary           Print recipe names (for scripting/completions)
+        --completions SHELL Print shell completion script (bash/zsh/fish)
+        --install           Install completions to user directory
+        --uninstall         Remove completions and config
 
 EXAMPLES:
     jake                    Run default recipe
@@ -1215,6 +1329,7 @@ EXAMPLES:
     jake -n deploy          Show what 'deploy' would do
     jake -l --short         List recipes for piping/scripting
     jake -s build           Show all details about 'build' recipe
+    jake --completions --install   Install shell completions
 ```
 
 ### Typo Suggestions

@@ -66,6 +66,37 @@ task e2e: [build-release]
     @cd tests/e2e
     ../../zig-out/bin/jake test-all
 
+@group test
+@desc "Run tests with code coverage (requires kcov)"
+task coverage:
+    @needs zig, kcov
+    @pre echo "Running tests with coverage..."
+    zig build test --test-cmd kcov --test-cmd coverage-out --test-cmd-bin
+    @post echo "Coverage report: coverage-out/index.html"
+
+@group test
+@desc "Run coverage and open report in browser"
+task coverage-open: [coverage]
+    @if os(macos)
+        open coverage-out/index.html
+    @elif os(linux)
+        xdg-open coverage-out/index.html
+    @end
+
+@group test
+@desc "Show coverage summary in terminal"
+task coverage-summary:
+    @needs zig, kcov
+    zig build test --test-cmd kcov --test-cmd coverage-out --test-cmd-bin
+    cat coverage-out/kcov-merged/coverage.json 2>/dev/null | grep -o '"percent_covered":"[^"]*"' | head -1 || echo "Run 'jake coverage' first"
+
+@group test
+@desc "Clean coverage data"
+task coverage-clean:
+    @ignore
+    rm -rf coverage-out
+    echo "Coverage data cleaned"
+
 @group install
 @desc "Install jake to ~/.local/bin"
 task install: [build-release]
