@@ -1,0 +1,84 @@
+# Dockerfile for testing jake shell completions
+# Tests bash, zsh, and fish completions in isolated environment
+#
+# Build: docker build -t jake-completions-test -f tests/Dockerfile.completions .
+# Run:   docker run --rm jake-completions-test
+
+FROM debian:bookworm-slim
+
+# Install shells and dependencies
+RUN apt-get update && apt-get install -y \
+    bash \
+    zsh \
+    fish \
+    curl \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Zig (for building jake)
+RUN curl -L https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ -C /opt \
+    && ln -s /opt/zig-linux-x86_64-0.14.0/zig /usr/local/bin/zig
+
+# Set up working directory
+WORKDIR /jake
+
+# Copy source code
+COPY . .
+
+# Build jake
+RUN zig build -Doptimize=ReleaseFast
+
+# Create test user (some shells behave differently as root)
+RUN useradd -m testuser
+USER testuser
+WORKDIR /home/testuser
+
+# Copy the built binary
+COPY --from=0 /jake/zig-out/bin/jake /usr/local/bin/jake
+
+# Create test script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "=== Testing Jake Shell Completions in Docker ==="\n\
+echo ""\n\
+\n\
+# Test basic functionality\n\
+echo "--- Testing jake --summary ---"\n\
+jake --summary && echo "PASS: --summary works"\n\
+echo ""\n\
+\n\
+# Test bash completions\n\
+echo "--- Testing Bash Completions ---"\n\
+jake --completions bash > ~/.bash_completion_jake\n\
+bash -c "source ~/.bash_completion_jake && type _jake" && echo "PASS: bash completions load"\n\
+echo ""\n\
+\n\
+# Test zsh completions\n\
+echo "--- Testing Zsh Completions ---"\n\
+mkdir -p ~/.zsh/completions\n\
+jake --completions zsh > ~/.zsh/completions/_jake\n\
+zsh -c "fpath=(~/.zsh/completions \$fpath); autoload -Uz compinit; compinit -u; type _jake" 2>&1 | grep -q "_jake is" && echo "PASS: zsh completions load"\n\
+echo ""\n\
+\n\
+# Test fish completions\n\
+echo "--- Testing Fish Completions ---"\n\
+mkdir -p ~/.config/fish/completions\n\
+jake --completions fish > ~/.config/fish/completions/jake.fish\n\
+fish -c "functions __jake_recipes" && echo "PASS: fish completions load"\n\
+echo ""\n\
+\n\
+# Test install command\n\
+echo "--- Testing --completions --install ---"\n\
+jake --completions bash --install && echo "PASS: bash install works"\n\
+jake --completions zsh --install && echo "PASS: zsh install works"\n\
+jake --completions fish --install && echo "PASS: fish install works"\n\
+echo ""\n\
+\n\
+echo "=== All Docker completion tests passed! ==="\n\
+' > /home/testuser/test_completions.sh && chmod +x /home/testuser/test_completions.sh
+
+# Create a simple Jakefile for testing
+RUN echo 'task hello:\n    echo "Hello from jake!"\n\ntask build:\n    echo "Building..."\n\ntask test:\n    echo "Testing..."\n' > /home/testuser/Jakefile
+
+# Run tests
+CMD ["/home/testuser/test_completions.sh"]
