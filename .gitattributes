@@ -1,0 +1,5 @@
+# GitHub Linguist overrides
+# Enables syntax highlighting on GitHub using Makefile grammar (closest match)
+# until Jake has its own official grammar in Linguist
+Jakefile linguist-language=Makefile
+*.jake linguist-language=Makefile
