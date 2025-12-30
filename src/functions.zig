@@ -640,3 +640,27 @@ test "function with no opening paren returns error" {
     const result = evaluate(allocator, "uppercase hello)", &vars);
     try std.testing.expectError(FunctionError.InvalidArguments, result);
 }
+
+// --- Fuzz Testing ---
+
+test "fuzz function evaluation" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            const allocator = std.testing.allocator;
+
+            var vars = std.StringHashMap([]const u8).init(allocator);
+            defer vars.deinit();
+
+            // Add some test variables for the fuzzer to potentially reference
+            vars.put("name", "testvalue") catch return;
+            vars.put("path", "/test/path/file.txt") catch return;
+
+            // Evaluate the fuzzed function call - errors are expected for invalid inputs
+            if (evaluate(allocator, input, &vars)) |result| {
+                allocator.free(result);
+            } else |_| {
+                // Expected for invalid inputs
+            }
+        }
+    }.testOne, .{});
+}

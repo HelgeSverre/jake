@@ -51,6 +51,7 @@ pub const Token = struct {
         kw_platform, // preferred name for OS filtering
         kw_alias,
         kw_quiet,
+        kw_launch,
         kw_before,
         kw_after,
         kw_on_error,
@@ -405,6 +406,8 @@ pub const Lexer = struct {
             .kw_alias
         else if (std.mem.eql(u8, text, "quiet"))
             .kw_quiet
+        else if (std.mem.eql(u8, text, "launch"))
+            .kw_launch
         else if (std.mem.eql(u8, text, "before"))
             .kw_before
         else if (std.mem.eql(u8, text, "after"))
@@ -595,7 +598,7 @@ test "lexer tab column tracking" {
 // --- Token Types: All Keywords ---
 
 test "lexer all keywords" {
-    const source = "task file default if elif else end import as dotenv require watch cache needs confirm each pre post export cd shell ignore group desc only only-os alias quiet";
+    const source = "task file default if elif else end import as dotenv require watch cache needs confirm each pre post export cd shell ignore group desc only only-os alias quiet launch";
     var lex = Lexer.init(source);
 
     try std.testing.expectEqual(Token.Tag.kw_task, lex.next().tag);
@@ -626,6 +629,7 @@ test "lexer all keywords" {
     try std.testing.expectEqual(Token.Tag.kw_only_os, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_alias, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_quiet, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.kw_launch, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
 }
 
@@ -1350,4 +1354,17 @@ test "lexer description keyword" {
     try std.testing.expectEqualStrings("description", desc_tok.slice(source));
     try std.testing.expectEqual(Token.Tag.string, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
+}
+
+// --- Fuzz Testing ---
+
+test "fuzz lexer tokenization" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            var lex = Lexer.init(input);
+            while (lex.next().tag != .eof) {
+                // Consume all tokens - should not crash on any input
+            }
+        }
+    }.testOne, .{});
 }

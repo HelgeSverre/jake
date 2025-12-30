@@ -512,3 +512,30 @@ test "parsePattern" {
     try std.testing.expectEqualStrings("a/b/c", p3.base);
     try std.testing.expectEqualStrings("*.txt", p3.glob_part);
 }
+
+// --- Fuzz Testing ---
+
+test "fuzz glob pattern matching" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            // Test matching against known paths
+            const test_paths = [_][]const u8{
+                "src/main.zig",
+                "src/parser.zig",
+                "build.zig",
+                "",
+                "a/b/c/d.txt",
+            };
+
+            for (test_paths) |path| {
+                _ = match(input, path);
+            }
+
+            // Test isGlobPattern
+            _ = isGlobPattern(input);
+
+            // Test parsePattern
+            _ = parsePattern(input);
+        }
+    }.testOne, .{});
+}
