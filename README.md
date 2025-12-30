@@ -9,8 +9,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/HelgeSverre/jake/actions/workflows/ci.yml"><img src="https://github.com/HelgeSverre/jake/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/HelgeSverre/jake/releases"><img src="https://img.shields.io/github/v/release/HelgeSverre/jake?style=flat-square" alt="Release"></a>
   <img src="https://img.shields.io/badge/lang-Zig-F7A41D?style=flat-square&logo=zig" alt="Zig">
-  <img src="https://img.shields.io/badge/built_with-Claude_Code-cc785c?style=flat-square&logo=anthropic" alt="Built with Claude Code">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License">
 </p>
 
