@@ -1311,6 +1311,13 @@ pub const Executor = struct {
         compat.getStdErr().writeAll(msg) catch {};
     }
 
+    /// Check if a recipe is private (should be hidden from listings)
+    /// Uses origin.original_name for imported recipes, otherwise uses name
+    fn isPrivateRecipe(recipe: *const Recipe) bool {
+        const name = if (recipe.origin) |o| o.original_name else recipe.name;
+        return name.len > 0 and name[0] == '_';
+    }
+
     /// List all available recipes
     pub fn listRecipes(self: *Executor, short_mode: bool) void {
         const stdout = compat.getStdOut();
@@ -1318,13 +1325,7 @@ pub const Executor = struct {
         // Short mode: one recipe name per line, no colors, no formatting
         if (short_mode) {
             for (self.jakefile.recipes) |*recipe| {
-                // Skip private recipes (starting with '_' or prefixed private like 'foo._bar')
-                if (recipe.name.len > 0 and recipe.name[0] == '_') {
-                    continue;
-                }
-                if (std.mem.indexOf(u8, recipe.name, "._") != null) {
-                    continue;
-                }
+                if (isPrivateRecipe(recipe)) continue;
                 stdout.writeAll(recipe.name) catch {};
                 stdout.writeAll("\n") catch {};
             }
@@ -1350,12 +1351,7 @@ pub const Executor = struct {
 
         // Collect recipes into groups
         for (self.jakefile.recipes) |*recipe| {
-            // Skip private recipes (starting with '_' or prefixed private like 'foo._bar')
-            if (recipe.name.len > 0 and recipe.name[0] == '_') {
-                hidden_count += 1;
-                continue;
-            }
-            if (std.mem.indexOf(u8, recipe.name, "._") != null) {
+            if (isPrivateRecipe(recipe)) {
                 hidden_count += 1;
                 continue;
             }
@@ -1431,10 +1427,7 @@ pub const Executor = struct {
         var first = true;
 
         for (self.jakefile.recipes) |*recipe| {
-            // Skip private recipes (names starting with '_')
-            if (recipe.name.len > 0 and recipe.name[0] == '_') {
-                continue;
-            }
+            if (isPrivateRecipe(recipe)) continue;
 
             if (!first) {
                 stdout.writeAll(" ") catch {};
