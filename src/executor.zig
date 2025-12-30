@@ -2970,7 +2970,12 @@ test "@require fails with clear error when env var missing" {
 }
 
 test "@require checks multiple variables in single directive" {
-    const source =
+    // Use platform-appropriate env vars (HOME on Unix, USERPROFILE on Windows)
+    const source = if (builtin.os.tag == .windows)
+        \\@require PATH USERPROFILE
+        \\task test:
+        \\    echo "ok"
+    else
         \\@require PATH HOME
         \\task test:
         \\    echo "ok"
@@ -2983,12 +2988,17 @@ test "@require checks multiple variables in single directive" {
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
-    // Both PATH and HOME should exist
     try executor.validateRequiredEnv();
 }
 
 test "@require checks multiple @require directives" {
-    const source =
+    // Use platform-appropriate env vars
+    const source = if (builtin.os.tag == .windows)
+        \\@require PATH
+        \\@require USERPROFILE
+        \\task test:
+        \\    echo "ok"
+    else
         \\@require PATH
         \\@require HOME
         \\task test:
