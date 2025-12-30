@@ -270,6 +270,7 @@ Appear inside recipe body (indented).
 | `@cd` | Change working directory | `@cd src/app` |
 | `@shell` | Set shell interpreter | `@shell bash` |
 | `@ignore` | Ignore command failure | `@ignore` |
+| `@launch` | Open file/URL cross-platform | `@launch https://example.com` |
 | `@require` | Require environment variable | `@require API_KEY` |
 | `@export` | Export to environment | `@export NODE_ENV = production` |
 | `@pre` | Recipe pre-hook | `@pre echo "Starting..."` |
@@ -326,6 +327,7 @@ Used in `{{...}}` interpolations.
 | `home()` | Home directory | `{{home()}}` → `/Users/helge` |
 | `local_bin(name)` | Local bin path | `{{local_bin(jake)}}` → `~/.local/bin/jake` |
 | `shell_config()` | Shell config file | `{{shell_config()}}` → `~/.zshrc` |
+| `launch()` | Platform open command | `{{launch()}}` → `open` (macOS) |
 
 **Scope Name:** `support.function.jake`
 
