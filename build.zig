@@ -18,11 +18,11 @@ fn getGitDirty(b: *std.Build) []const u8 {
     return if (result.len > 0) "-dirty" else "";
 }
 
-/// Get current date in YYYY-MM-DD format
+/// Get current date and time in YYYY-MM-DD HH:MM:SS format
 fn getBuildDate(b: *std.Build) []const u8 {
-    // Run date command to get current date
+    // Run date command to get current date and time
     var code: u8 = 0;
-    const result = b.runAllowFail(&.{ "date", "+%Y-%m-%d" }, &code, .Ignore) catch {
+    const result = b.runAllowFail(&.{ "date", "+%Y-%m-%d %H:%M:%S" }, &code, .Ignore) catch {
         return "unknown";
     };
     return std.mem.trim(u8, result, "\n\r ");
