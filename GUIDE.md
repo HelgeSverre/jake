@@ -546,9 +546,9 @@ task install:
 
 ```jake
 task deploy:
-    @if env(PRODUCTION)
+    @if eq($APP_ENV, "production")
         echo "Deploying to production"
-    @elif env(STAGING)
+    @elif eq($APP_ENV, "staging")
         echo "Deploying to staging"
     @else
         echo "Deploying to development"
@@ -896,12 +896,12 @@ task zsh-task:
 
 ### @ Command Prefix - Silent Execution
 
-Prefix a command with `@` to suppress echoing:
+Prefix a command with `@` to suppress printing the command line before execution. The command's output still appears.
 
 ```jake
 task build:
-    @echo "This won't show the 'echo' command itself"
-    npm run build
+    echo "This command line is printed before execution"
+    @echo "This runs silently (only output shows)"
 ```
 
 ---
