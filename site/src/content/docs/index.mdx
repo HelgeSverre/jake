@@ -1,0 +1,123 @@
+---
+title: Jake
+description: Modern command running. The best of Make and Just, combined.
+template: splash
+hero:
+  tagline: Modern command running. The best of Make and Just, combined.
+  actions:
+    - text: Get Started
+      link: /docs/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/HelgeSverre/jake
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, Code } from '@astrojs/starlight/components';
+
+## Install in seconds
+
+<Code code="curl -fsSL https://jakefile.dev/install.sh | sh" lang="bash" />
+
+Or build from source with Zig:
+
+<Code code={`git clone https://github.com/HelgeSverre/jake.git
+cd jake && zig build -Doptimize=ReleaseFast
+cp zig-out/bin/jake ~/.local/bin/`} lang="bash" />
+
+---
+
+## Why Jake?
+
+<CardGrid>
+  <Card title="File Dependencies" icon="document">
+    Like Make, Jake tracks file modifications and only rebuilds what's needed.
+  </Card>
+  <Card title="Clean Syntax" icon="pencil">
+    Like Just, Jake uses a readable, modern syntax without cryptic symbols.
+  </Card>
+  <Card title="Parallel Execution" icon="rocket">
+    Run independent tasks simultaneously with automatic job scheduling.
+  </Card>
+  <Card title="Glob Patterns" icon="magnifier">
+    Match files with patterns like `src/**/*.ts` for powerful file targeting.
+  </Card>
+  <Card title="Import System" icon="add-document">
+    Split large Jakefiles into modules with namespaced imports.
+  </Card>
+  <Card title="Built-in Watch Mode" icon="approve-check">
+    Re-run tasks automatically when source files change.
+  </Card>
+</CardGrid>
+
+---
+
+## Quick Example
+
+```jake
+# Variables
+app_name = "myapp"
+
+# Load environment
+@dotenv
+
+# Default task
+@default
+task build:
+    @description "Build the application"
+    cargo build --release
+
+# Task with dependencies
+task test: [build]
+    cargo test
+
+# File target - only rebuilds when sources change
+file dist/app: src/**/*.rs
+    cargo build --release
+    cp target/release/{{app_name}} dist/app
+
+# Conditional logic
+task deploy: [build, test]
+    @confirm "Deploy to production?"
+    @if env(CI)
+        ./scripts/deploy-ci.sh
+    @else
+        ./scripts/deploy-local.sh
+    @end
+```
+
+Run it:
+
+```bash
+jake              # Run default task
+jake test         # Run tests
+jake -j4 all      # Parallel execution
+jake -w build     # Watch mode
+jake -l           # List tasks
+```
+
+---
+
+## Feature Comparison
+
+| Feature | Make | Just | Jake |
+|---------|:----:|:----:|:----:|
+| File-based dependencies | Yes | No | Yes |
+| Clean syntax | No | Yes | Yes |
+| Parallel execution | Yes | No | Yes |
+| Glob patterns | No | No | Yes |
+| Import system | No | Yes | Yes |
+| Conditionals | No | Yes | Yes |
+| Pre/post hooks | No | No | Yes |
+| .env loading | No | Yes | Yes |
+| Watch mode | No | No | Yes |
+
+---
+
+<div style="text-align: center; margin-top: 3rem;">
+  <a href="/docs/introduction/" style="display: inline-block; background: var(--sl-color-accent); color: white; padding: 0.75rem 2rem; border-radius: 0.5rem; font-weight: 600; text-decoration: none;">
+    Read the Docs
+  </a>
+</div>

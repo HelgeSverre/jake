@@ -1,0 +1,123 @@
+/* Jake Custom Theme */
+
+:root {
+	/* Primary colors - Jake Red */
+	--sl-color-accent-low: #4c0519;
+	--sl-color-accent: #f43f5e;
+	--sl-color-accent-high: #fda4af;
+
+	/* Text colors */
+	--sl-color-white: #fafafa;
+	--sl-color-gray-1: #e4e4e7;
+	--sl-color-gray-2: #a1a1aa;
+	--sl-color-gray-3: #71717a;
+	--sl-color-gray-4: #3f3f46;
+	--sl-color-gray-5: #27272a;
+	--sl-color-gray-6: #18181b;
+	--sl-color-black: #0f0f0f;
+
+	/* Fonts */
+	--sl-font: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	--sl-font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+}
+
+/* Dark mode adjustments */
+:root[data-theme='dark'] {
+	--sl-color-bg: #0f0f0f;
+	--sl-color-bg-nav: #0f0f0f;
+	--sl-color-bg-sidebar: #0f0f0f;
+}
+
+/* Light mode adjustments */
+:root[data-theme='light'] {
+	--sl-color-bg: #fafafa;
+	--sl-color-accent-low: #ffe4e6;
+	--sl-color-accent: #e11d48;
+	--sl-color-accent-high: #9f1239;
+}
+
+/* Logo styling */
+.site-title {
+	font-weight: 600;
+	gap: 0.5rem;
+}
+
+/* Hero section enhancements */
+.hero {
+	padding-block: 4rem;
+}
+
+.hero h1 {
+	font-size: clamp(2.5rem, 8vw, 4rem);
+	font-weight: 700;
+	line-height: 1.1;
+}
+
+.hero .tagline {
+	font-size: 1.25rem;
+	color: var(--sl-color-gray-2);
+	max-width: 40ch;
+}
+
+/* Code block styling */
+.expressive-code {
+	border-radius: 0.5rem;
+}
+
+/* Feature cards */
+.card {
+	border-radius: 0.75rem;
+	transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+	transform: translateY(-2px);
+}
+
+/* Inline code */
+:not(pre) > code {
+	background: var(--sl-color-gray-5);
+	padding: 0.125rem 0.375rem;
+	border-radius: 0.25rem;
+	font-size: 0.875em;
+}
+
+:root[data-theme='light'] :not(pre) > code {
+	background: var(--sl-color-gray-1);
+}
+
+/* Hero install command styling */
+.hero .action {
+	font-weight: 500;
+}
+
+/* Make primary buttons pop */
+a.action.primary {
+	background: var(--sl-color-accent);
+	border-color: var(--sl-color-accent);
+	font-weight: 600;
+}
+
+a.action.primary:hover {
+	background: var(--sl-color-accent-high);
+	border-color: var(--sl-color-accent-high);
+}
+
+:root[data-theme='light'] a.action.primary:hover {
+	background: #be123c;
+	border-color: #be123c;
+}
+
+/* Sidebar refinements */
+.sidebar-content {
+	font-size: 0.9375rem;
+}
+
+/* Table styling */
+table {
+	font-size: 0.9375rem;
+}
+
+th {
+	font-weight: 600;
+}

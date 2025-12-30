@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+@theme {
+  /* Jake Brand Colors */
+  --color-jake: #f43f5e;
+  --color-jake-light: #fb7185;
+  --color-jake-dark: #e11d48;
+
+  /* Syntax highlighting */
+  --color-syntax-keyword: #f43f5e;
+  --color-syntax-string: #22c55e;
+  --color-syntax-comment: #6b7280;
+  --color-syntax-variable: #60a5fa;
+  --color-syntax-function: #c084fc;
+}
+
+/* Custom properties for backgrounds/text (not in @theme to avoid conflicts) */
+:root {
+  --jake-glow: rgba(244, 63, 94, 0.4);
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-tertiary: #1a1a1a;
+  --bg-card: #151515;
+  --bg-code: #0d0d0d;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border-color: #27272a;
+  --border-light: #3f3f46;
+}
+
+/* Base styles */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Code block base */
+pre, code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+}
+
+/* Gradient text utility */
+.text-gradient {
+  background: linear-gradient(135deg, #f43f5e 0%, #fb7185 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow effect */
+.glow {
+  box-shadow: 0 0 40px var(--jake-glow);
+}
+
+.glow-sm {
+  box-shadow: 0 0 20px var(--jake-glow);
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+/* Smooth hover transitions */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+/* Grid background pattern */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* Radial gradient overlay */
+.bg-radial {
+  background: radial-gradient(ellipse 80% 50% at 50% -20%, var(--jake-glow), transparent);
+}
+
+/* Custom utility classes using CSS variables */
+.bg-bg-primary { background-color: var(--bg-primary); }
+.bg-bg-secondary { background-color: var(--bg-secondary); }
+.bg-bg-tertiary { background-color: var(--bg-tertiary); }
+.bg-bg-card { background-color: var(--bg-card); }
+.bg-bg-code { background-color: var(--bg-code); }
+
+.text-text-primary { color: var(--text-primary); }
+.text-text-secondary { color: var(--text-secondary); }
+.text-text-muted { color: var(--text-muted); }
+
+.border-border { border-color: var(--border-color); }
+.border-border-light { border-color: var(--border-light); }
+
+/* Divide utilities */
+.divide-border > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border-color);
+}
+
+/* Syntax highlighting classes */
+.text-syntax-keyword { color: var(--color-syntax-keyword); }
+.text-syntax-string { color: var(--color-syntax-string); }
+.text-syntax-comment { color: var(--color-syntax-comment); }
+.text-syntax-variable { color: var(--color-syntax-variable); }
+.text-syntax-function { color: var(--color-syntax-function); }
+
+/* Jake color utilities with opacity */
+.bg-jake { background-color: #f43f5e; }
+.bg-jake-dark { background-color: #e11d48; }
+.bg-jake-light { background-color: #fb7185; }
+.text-jake { color: #f43f5e; }
+.text-jake-dark { color: #e11d48; }
+.text-jake-light { color: #fb7185; }
+.border-jake { border-color: #f43f5e; }
+
+/* Jake with opacity */
+.bg-jake\/5 { background-color: rgba(244, 63, 94, 0.05); }
+.bg-jake\/10 { background-color: rgba(244, 63, 94, 0.1); }
+.bg-jake\/20 { background-color: rgba(244, 63, 94, 0.2); }
+.border-jake\/30 { border-color: rgba(244, 63, 94, 0.3); }
+.border-jake\/50 { border-color: rgba(244, 63, 94, 0.5); }
+
+/* Muted with opacity */
+.bg-text-muted\/10 { background-color: rgba(113, 113, 122, 0.1); }
+
+/* Background opacity utilities */
+.bg-bg-primary\/80 { background-color: rgba(10, 10, 10, 0.8); }

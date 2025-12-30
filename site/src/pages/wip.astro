@@ -1,0 +1,264 @@
+---
+import '../styles/global.css';
+
+const logo = "{j}";
+
+const fontFamilies = [
+  { name: 'System Mono', class: 'font-mono' },
+  { name: 'JetBrains Mono', class: 'font-["JetBrains_Mono"]' },
+  { name: 'SF Mono', class: 'font-["SF_Mono",monospace]' },
+  { name: 'Fira Code', class: 'font-["Fira_Code",monospace]' },
+  { name: 'Inter', class: 'font-["Inter",sans-serif]' },
+  { name: 'System Sans', class: 'font-sans' },
+  { name: 'System Serif', class: 'font-serif' },
+];
+
+const sizes = [16, 24, 32, 48, 64, 96, 128];
+---
+
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jake Logo WIP</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Fira+Code:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body class="bg-bg-primary text-text-primary antialiased p-8">
+  <div class="max-w-6xl mx-auto">
+    <h1 class="text-4xl font-bold mb-2">Logo Experiments</h1>
+    <p class="text-text-secondary mb-12">Work in progress - pick the best variation</p>
+
+    <!-- Font Families -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Font Families</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        {fontFamilies.map((font) => (
+          <div class="bg-bg-card border border-border rounded-xl p-6 text-center">
+            <div class={`text-4xl mb-3 text-jake ${font.class}`}>{logo}</div>
+            <div class="text-xs text-text-muted">{font.name}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Sizes -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Sizes</h2>
+      <div class="flex flex-wrap items-end gap-6">
+        {sizes.map((size) => (
+          <div class="bg-bg-card border border-border rounded-xl p-4 text-center">
+            <div class="font-mono text-jake mb-2" style={`font-size: ${size}px; line-height: 1;`}>{logo}</div>
+            <div class="text-xs text-text-muted">{size}px</div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Container Shapes -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Container Shapes</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+        <!-- Plain -->
+        <div class="text-center">
+          <div class="inline-block text-4xl font-mono text-jake mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Plain</div>
+        </div>
+
+        <!-- Square -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Square</div>
+        </div>
+
+        <!-- Rounded Square -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-lg mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Rounded</div>
+        </div>
+
+        <!-- More Rounded -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-2xl mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">More Rounded</div>
+        </div>
+
+        <!-- Circle -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-full mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Circle</div>
+        </div>
+
+        <!-- Outline Square -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 border-2 border-jake text-jake text-2xl font-mono font-semibold rounded-lg mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Outline</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Color Variations -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Color Variations</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+        <!-- Solid Red -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-xl mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Solid</div>
+        </div>
+
+        <!-- Gradient -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 text-white text-2xl font-mono font-semibold rounded-xl mb-2" style="background: linear-gradient(135deg, #f43f5e 0%, #fb7185 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Gradient</div>
+        </div>
+
+        <!-- Dark Gradient -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 text-white text-2xl font-mono font-semibold rounded-xl mb-2" style="background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%);">{logo}</div>
+          <div class="text-xs text-text-muted">Dark Gradient</div>
+        </div>
+
+        <!-- White on Red -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-white text-jake text-2xl font-mono font-semibold rounded-xl mb-2">{logo}</div>
+          <div class="text-xs text-text-muted">Inverted</div>
+        </div>
+
+        <!-- Black bg -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-black text-jake text-2xl font-mono font-semibold rounded-xl mb-2 border border-border">{logo}</div>
+          <div class="text-xs text-text-muted">On Black</div>
+        </div>
+
+        <!-- Glow -->
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-jake text-white text-2xl font-mono font-semibold rounded-xl mb-2 glow">{logo}</div>
+          <div class="text-xs text-text-muted">With Glow</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- With Wordmark -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">With Wordmark</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Horizontal -->
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl font-mono text-jake font-semibold">{logo}</span>
+            <span class="text-2xl font-semibold">jake</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">Horizontal</div>
+        </div>
+
+        <!-- Horizontal with box -->
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-jake text-white flex items-center justify-center rounded-lg font-mono font-semibold">{logo}</div>
+            <span class="text-2xl font-semibold">jake</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">With Box</div>
+        </div>
+
+        <!-- Stacked -->
+        <div class="bg-bg-card border border-border rounded-xl p-6 text-center">
+          <div class="text-4xl font-mono text-jake font-semibold">{logo}</div>
+          <div class="text-xl font-semibold mt-1">jake</div>
+          <div class="text-xs text-text-muted mt-2">Stacked</div>
+        </div>
+
+        <!-- Light background -->
+        <div class="bg-white border border-gray-200 rounded-xl p-6">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl font-mono text-jake font-semibold">{logo}</span>
+            <span class="text-2xl font-semibold text-gray-900">jake</span>
+          </div>
+          <div class="text-xs text-gray-500 mt-2">Light Mode</div>
+        </div>
+
+        <!-- Badge style -->
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="inline-flex items-center gap-2 bg-jake/10 border border-jake/30 px-3 py-1.5 rounded-full">
+            <span class="font-mono text-jake font-semibold">{logo}</span>
+            <span class="text-sm font-medium text-jake">jake</span>
+          </div>
+          <div class="text-xs text-text-muted mt-3">Badge</div>
+        </div>
+
+        <!-- Minimal -->
+        <div class="bg-bg-card border border-border rounded-xl p-6">
+          <div class="flex items-center gap-2">
+            <span class="text-xl font-mono text-text-muted">{logo}</span>
+            <span class="text-lg text-text-secondary">jake</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">Minimal</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Favicon Sizes -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Favicon Previews</h2>
+      <div class="flex items-end gap-8">
+        <div class="text-center">
+          <div class="w-4 h-4 bg-jake rounded flex items-center justify-center">
+            <span class="text-white text-[8px] font-mono font-bold">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">16px</div>
+        </div>
+        <div class="text-center">
+          <div class="w-8 h-8 bg-jake rounded-md flex items-center justify-center">
+            <span class="text-white text-sm font-mono font-bold">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">32px</div>
+        </div>
+        <div class="text-center">
+          <div class="w-12 h-12 bg-jake rounded-lg flex items-center justify-center">
+            <span class="text-white text-lg font-mono font-bold">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">48px</div>
+        </div>
+        <div class="text-center">
+          <div class="w-16 h-16 bg-jake rounded-xl flex items-center justify-center">
+            <span class="text-white text-2xl font-mono font-bold">{logo}</span>
+          </div>
+          <div class="text-xs text-text-muted mt-2">64px</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Browser Tab Preview -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 text-jake">Browser Tab Preview</h2>
+      <div class="bg-bg-secondary rounded-t-xl border border-border overflow-hidden max-w-xl">
+        <div class="flex items-center gap-2 px-4 py-2 bg-bg-tertiary border-b border-border">
+          <div class="flex gap-1.5">
+            <div class="w-3 h-3 rounded-full bg-red-500/60"></div>
+            <div class="w-3 h-3 rounded-full bg-yellow-500/60"></div>
+            <div class="w-3 h-3 rounded-full bg-green-500/60"></div>
+          </div>
+          <div class="flex-1 flex items-center gap-2 ml-4">
+            <div class="flex items-center gap-2 bg-bg-secondary px-3 py-1 rounded-md text-sm">
+              <div class="w-4 h-4 bg-jake rounded flex items-center justify-center">
+                <span class="text-white text-[7px] font-mono font-bold">{logo}</span>
+              </div>
+              <span class="text-text-secondary">Jake - Modern Command Running</span>
+            </div>
+          </div>
+        </div>
+        <div class="h-32 flex items-center justify-center text-text-muted">
+          Page content...
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-center text-text-muted text-sm py-8 border-t border-border">
+      <a href="/" class="text-jake hover:underline">Back to Home</a>
+    </footer>
+  </div>
+</body>
+</html>
