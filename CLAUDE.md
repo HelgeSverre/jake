@@ -19,7 +19,7 @@ zig build test                       # Unit tests
 jake e2e                             # E2E tests (jake testing jake)
 
 # Fuzz testing
-zig build test --fuzz                # Run coverage-guided fuzz tests
+zig build fuzz --fuzz                # Run coverage-guided fuzz tests
 
 # Formatting
 zig fmt src/                         # Format source files
@@ -85,9 +85,9 @@ src/
 └── bench/            # Benchmark utilities
 ```
 
-### Library Files
+### Jake Modules
 
-Reusable Jakefile modules in `lib/`:
+Reusable Jakefile modules in `jake/`:
 - `build.jake` - Core build, test, and install tasks
 - `release.jake` - Cross-platform release builds
 - `perf.jake` - Performance and profiling tasks
@@ -158,6 +158,27 @@ See the `docs/` directory for detailed guides:
 - `TUTORIAL.md` - Getting started tutorial
 - `PROFILING.md` - Performance profiling guide
 - `FUZZING.md` - Fuzz testing guide
+
+### Documentation Updates Required
+
+When adding or modifying user-facing behavior, update ALL relevant documentation:
+
+1. **`docs/SYNTAX.md`** - Syntax reference (condition functions, directives, built-in functions)
+2. **`docs/TUTORIAL.md`** - Usage examples and patterns
+3. **`site/src/content/docs/`** - Website documentation:
+   - `docs/conditionals.md` - Condition function changes
+   - `docs/watch-mode.md` - Watch mode changes
+   - `reference/directives.md` - Directive changes
+   - `reference/functions.md` - Built-in function changes
+4. **`TODO.md`** - Mark completed features and update test counts
+
+**Checklist for new features:**
+- [ ] Add to relevant docs/ file
+- [ ] Add to relevant site/ documentation
+- [ ] Add usage example to TUTORIAL.md if applicable
+- [ ] Update TODO.md to mark as complete
+- [ ] Add unit tests
+- [ ] Add E2E tests in `tests/e2e/`
 
 ## Commit Convention
 
