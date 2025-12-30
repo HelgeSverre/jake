@@ -327,7 +327,7 @@ Used in `{{...}}` interpolations.
 | `home()` | Home directory | `{{home()}}` → `/Users/helge` |
 | `local_bin(name)` | Local bin path | `{{local_bin(jake)}}` → `~/.local/bin/jake` |
 | `shell_config()` | Shell config file | `{{shell_config()}}` → `~/.zshrc` |
-| `launch()` | Platform open command | `{{launch()}}` → `open` (macOS) |
+| `launch(target)` | Platform open command | `{{launch(file.html)}}` → `open file.html` (macOS) |
 
 **Scope Name:** `support.function.jake`
 
