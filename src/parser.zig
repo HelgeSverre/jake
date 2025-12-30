@@ -9,6 +9,8 @@ const Hook = hooks_mod.Hook;
 
 pub const Recipe = struct {
     name: []const u8,
+    loc: Token.Loc = .{ .start = 0, .end = 0, .line = 0, .column = 0 },
+    origin: ?RecipeOrigin = null,
     kind: Kind,
     dependencies: []const []const u8,
     file_deps: []const []const u8, // File patterns for file targets
@@ -63,6 +65,13 @@ pub const NeedsRequirement = struct {
     command: []const u8,
     hint: ?[]const u8, // Optional install hint
     install_task: ?[]const u8, // Optional -> task reference
+};
+
+/// Tracks where a recipe originated from (for imported recipes)
+pub const RecipeOrigin = struct {
+    original_name: []const u8, // Name before prefixing (e.g., "_install")
+    import_prefix: ?[]const u8, // Module prefix (e.g., "web"), null if main file
+    source_file: ?[]const u8, // Path to source file, null if main file
 };
 
 pub const Variable = struct {
@@ -789,11 +798,11 @@ pub const Parser = struct {
             self.variables.append(self.allocator, .{ .name = name, .value = stripQuotes(value) }) catch return ParseError.OutOfMemory;
         } else if (self.current.tag == .colon) {
             // Simple recipe: name: [deps]
-            try self.parseSimpleRecipe(name);
+            try self.parseSimpleRecipe(name, name_tok.loc);
         }
     }
 
-    fn parseSimpleRecipe(self: *Parser, name: []const u8) ParseError!void {
+    fn parseSimpleRecipe(self: *Parser, name: []const u8, name_loc: Token.Loc) ParseError!void {
         _ = try self.expectWithMessage(.colon, "expected ':' after recipe name");
 
         var deps: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -911,6 +920,7 @@ pub const Parser = struct {
 
         self.recipes.append(self.allocator, .{
             .name = name,
+            .loc = name_loc,
             .kind = .simple,
             .dependencies = deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .file_deps = &[_][]const u8{},
@@ -941,6 +951,7 @@ pub const Parser = struct {
         }
 
         const name = self.slice(self.current);
+        const name_loc = self.current.loc;
         self.advance();
 
         var params: std.ArrayListUnmanaged(Recipe.Param) = .empty;
@@ -1084,6 +1095,7 @@ pub const Parser = struct {
 
         self.recipes.append(self.allocator, .{
             .name = name,
+            .loc = name_loc,
             .kind = .task,
             .dependencies = deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .file_deps = &[_][]const u8{},
@@ -1115,6 +1127,7 @@ pub const Parser = struct {
 
         // Output file
         const output = self.slice(self.current);
+        const output_loc = self.current.loc;
         self.advance();
 
         _ = try self.expectWithMessage(.colon, "expected ':' after output filename");
@@ -1229,6 +1242,7 @@ pub const Parser = struct {
         // Use output as recipe name
         self.recipes.append(self.allocator, .{
             .name = output,
+            .loc = output_loc,
             .kind = .file,
             .dependencies = &[_][]const u8{},
             .file_deps = file_deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
