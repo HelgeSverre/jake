@@ -3,6 +3,13 @@
 
 const std = @import("std");
 
+// ANSI escape codes for colored output
+pub const ansi = struct {
+    pub const red = "\x1b[1;31m";
+    pub const reset = "\x1b[0m";
+    pub const err_prefix = red ++ "error:" ++ reset ++ " ";
+};
+
 pub const ValueMode = enum {
     none, // Boolean flag, no value
     required, // Must have a value
@@ -63,11 +70,6 @@ pub const ParseError = error{
     InvalidValue,
 };
 
-pub const ParseResult = struct {
-    args: Args,
-    err_arg: ?[]const u8 = null, // The argument that caused an error
-};
-
 /// Parse command-line arguments into Args struct
 /// raw_args should include the program name as first element
 pub fn parse(allocator: std.mem.Allocator, raw_args: []const []const u8) ParseError!Args {
@@ -118,16 +120,21 @@ pub fn parse(allocator: std.mem.Allocator, raw_args: []const []const u8) ParseEr
                     continue;
                 }
 
-                // Handle single short flag
-                if (short_chars.len == 1) {
-                    if (matchShortFlag(short_chars[0])) |flag_idx| {
+                // Handle short flag(s) - supports combined like -vn
+                for (short_chars) |c| {
+                    if (matchShortFlag(c)) |flag_idx| {
+                        // Only boolean flags can be combined
+                        if (flags[flag_idx].takes_value != .none) {
+                            // Value flags can only be last in a combined sequence
+                            // For simplicity, reject combining value flags
+                            if (short_chars.len > 1) {
+                                return error.UnknownFlag;
+                            }
+                        }
                         try setFlag(&result, flag_idx, null, raw_args, &i);
                     } else {
                         return error.UnknownFlag;
                     }
-                } else {
-                    // Multiple short flags like -vn (not supported yet, treat as unknown)
-                    return error.UnknownFlag;
                 }
             }
         } else {
@@ -160,19 +167,25 @@ fn matchShortFlag(char: u8) ?usize {
 
 fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: []const []const u8, i: *usize) ParseError!void {
     const flag = flags[flag_idx];
+    const name = flag.long;
 
     switch (flag.takes_value) {
         .none => {
-            // Boolean flag
-            switch (flag_idx) {
-                0 => result.help = true, // help
-                1 => result.version = true, // version
-                2 => result.list = true, // list
-                3 => result.dry_run = true, // dry-run
-                4 => result.verbose = true, // verbose
-                5 => result.yes = true, // yes
-                9 => result.short = true, // short
-                else => {},
+            // Boolean flags - use name comparison instead of fragile indices
+            if (std.mem.eql(u8, name, "help")) {
+                result.help = true;
+            } else if (std.mem.eql(u8, name, "version")) {
+                result.version = true;
+            } else if (std.mem.eql(u8, name, "list")) {
+                result.list = true;
+            } else if (std.mem.eql(u8, name, "dry-run")) {
+                result.dry_run = true;
+            } else if (std.mem.eql(u8, name, "verbose")) {
+                result.verbose = true;
+            } else if (std.mem.eql(u8, name, "yes")) {
+                result.yes = true;
+            } else if (std.mem.eql(u8, name, "short")) {
+                result.short = true;
             }
         },
         .required => {
@@ -185,55 +198,50 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                 break :blk raw_args[i.*];
             };
 
-            switch (flag_idx) {
-                6 => result.jakefile = value, // jakefile
-                10 => result.show = value, // show
-                else => {},
+            if (std.mem.eql(u8, name, "jakefile")) {
+                result.jakefile = value;
+            } else if (std.mem.eql(u8, name, "show")) {
+                result.show = value;
             }
         },
         .optional => {
             // May have a value
-            switch (flag_idx) {
-                7 => { // watch
-                    result.watch_enabled = true;
-                    if (inline_value) |v| {
-                        result.watch = v;
-                    } else if (i.* + 1 < raw_args.len) {
-                        const next = raw_args[i.* + 1];
-                        // Only consume if it doesn't look like a flag or recipe
-                        if (next.len > 0 and next[0] != '-' and !isLikelyRecipeName(next)) {
-                            // This is tricky - we need to peek ahead to see if it's a pattern
-                            // For now, assume anything with glob chars is a pattern
-                            if (std.mem.indexOf(u8, next, "*") != null or
-                                std.mem.indexOf(u8, next, "?") != null)
-                            {
-                                i.* += 1;
-                                result.watch = next;
-                            }
+            if (std.mem.eql(u8, name, "watch")) {
+                result.watch_enabled = true;
+                if (inline_value) |v| {
+                    result.watch = v;
+                } else if (i.* + 1 < raw_args.len) {
+                    const next = raw_args[i.* + 1];
+                    // Only consume if it doesn't look like a flag or recipe
+                    if (next.len > 0 and next[0] != '-' and !isLikelyRecipeName(next)) {
+                        // Assume anything with glob chars is a pattern
+                        if (std.mem.indexOf(u8, next, "*") != null or
+                            std.mem.indexOf(u8, next, "?") != null)
+                        {
+                            i.* += 1;
+                            result.watch = next;
                         }
                     }
-                },
-                8 => { // jobs
-                    if (inline_value) |v| {
-                        result.jobs = std.fmt.parseInt(usize, v, 10) catch {
-                            return error.InvalidValue;
-                        };
-                    } else if (i.* + 1 < raw_args.len) {
-                        const next = raw_args[i.* + 1];
-                        // Try to parse as number
-                        if (std.fmt.parseInt(usize, next, 10)) |n| {
-                            i.* += 1;
-                            result.jobs = n;
-                        } else |_| {
-                            // Not a number, use CPU count default
-                            result.jobs = std.Thread.getCpuCount() catch 4;
-                        }
-                    } else {
-                        // No next arg, use CPU count
+                }
+            } else if (std.mem.eql(u8, name, "jobs")) {
+                if (inline_value) |v| {
+                    result.jobs = std.fmt.parseInt(usize, v, 10) catch {
+                        return error.InvalidValue;
+                    };
+                } else if (i.* + 1 < raw_args.len) {
+                    const next = raw_args[i.* + 1];
+                    // Try to parse as number
+                    if (std.fmt.parseInt(usize, next, 10)) |n| {
+                        i.* += 1;
+                        result.jobs = n;
+                    } else |_| {
+                        // Not a number, use CPU count default
                         result.jobs = std.Thread.getCpuCount() catch 4;
                     }
-                },
-                else => {},
+                } else {
+                    // No next arg, use CPU count
+                    result.jobs = std.Thread.getCpuCount() catch 4;
+                }
             }
         },
     }
@@ -316,14 +324,14 @@ pub fn printHelp(writer: anytype) void {
 pub fn printError(writer: anytype, err: ParseError, arg: []const u8) void {
     switch (err) {
         error.UnknownFlag => {
-            writer.print("\x1b[1;31merror:\x1b[0m Unknown option: {s}\n", .{arg}) catch {};
+            writer.print(ansi.err_prefix ++ "Unknown option: {s}\n", .{arg}) catch {};
             writer.writeAll("Run 'jake --help' for usage.\n") catch {};
         },
         error.MissingValue => {
-            writer.print("\x1b[1;31merror:\x1b[0m Option '{s}' requires a value\n", .{arg}) catch {};
+            writer.print(ansi.err_prefix ++ "Option '{s}' requires a value\n", .{arg}) catch {};
         },
         error.InvalidValue => {
-            writer.print("\x1b[1;31merror:\x1b[0m Invalid value for option: {s}\n", .{arg}) catch {};
+            writer.print(ansi.err_prefix ++ "Invalid value for option: {s}\n", .{arg}) catch {};
         },
     }
 }
