@@ -377,24 +377,58 @@ task env-info:
 # Maintenance
 # ============================================================================
 
-@group maint
+@group maintenance
 @desc "Rebuild and reinstall jake"
 task self-update: [build-release]
     @pre echo "Reinstalling jake..."
     cp zig-out/bin/jake {{local_bin("jake")}}
     @post echo "Updated {{local_bin(\"jake\")}}"
 
-@group maint
+@group maintenance
 @desc "Clear jake cache files"
 task cache-clean:
     @ignore
     rm -rf .jake
     echo "Jake cache cleared"
 
-@group maint
+@group maintenance
 @desc "Remove all build artifacts and caches"
 task prune:
     @ignore
     @pre echo "Pruning build artifacts..."
     rm -rf zig-out .zig-cache .jake dist
     @post echo "All artifacts removed"
+
+# ============================================================================
+# Website (jakefile.dev)
+# ============================================================================
+
+@group site
+@desc "Start website dev server"
+task site-dev:
+    @cd site
+    @needs npm
+    npm run dev
+
+@group site
+@desc "Build website for production"
+task site-build:
+    @cd site
+    @needs npm
+    npm run build
+
+@group site
+@desc "Deploy website to Vercel"
+task site-deploy:
+    @description "Deploy jakefile.dev to production"
+    @cd site
+    @needs vc "Install Vercel CLI: npm i -g vercel"
+    @confirm "Deploy to production?"
+    vc --prod --yes
+
+@group site
+@desc "Preview website deployment"
+task site-preview:
+    @cd site
+    @needs vc "Install Vercel CLI: npm i -g vercel"
+    vc --yes
