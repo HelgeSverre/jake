@@ -23,10 +23,11 @@ zig-cache/
 .DS_Store
 Thumbs.db
 
-# Test artifacts
+# Test/coverage artifacts
 test_*
 tests/e2e/output.txt
 coverage-out/
+coverage-test/
 
 # Fuzzing artifacts
 findings/
