@@ -480,7 +480,7 @@ pub const Parser = struct {
         }
 
         // Handle @desc or @description directive
-        if (self.current.tag == .kw_desc) {
+        if (self.current.tag == .kw_desc or self.current.tag == .kw_description) {
             self.advance();
 
             // Get description (string or remaining text)
@@ -507,8 +507,8 @@ pub const Parser = struct {
             return;
         }
 
-        // Handle @only or @only-os directive for OS-specific recipes
-        if (self.current.tag == .kw_only or self.current.tag == .kw_only_os) {
+        // Handle @only, @only-os, or @platform directive for OS-specific recipes
+        if (self.current.tag == .kw_only or self.current.tag == .kw_only_os or self.current.tag == .kw_platform) {
             self.advance();
 
             // Collect OS names until newline (e.g., linux macos windows)
@@ -598,14 +598,37 @@ pub const Parser = struct {
             return;
         }
 
-        // Handle @on_error or @on-error hook
-        // Note: @on_error is always global (runs on any recipe failure)
-        // For recipe-specific error handling, use conditionals inside recipes
+        // Handle @on_error hook
+        // Supports both global and targeted forms:
+        //   @on_error echo "Something failed!"           (global - command starts with ident)
+        //   @on_error deploy echo "Deploy failed!"       (targeted - ident followed by ident)
+        // Heuristic: treat as targeted only if first ident is followed by another ident
+        // This distinguishes "echo args" (command) from "recipe command args"
         if (self.current.tag == .kw_on_error) {
             self.advance();
 
-            // Collect the entire command until newline
-            const cmd_start = self.current.loc.start;
+            var target_recipe: ?[]const u8 = null;
+            var cmd_start: usize = self.current.loc.start;
+
+            // Check if first token looks like a recipe name (ident followed by another ident)
+            if (self.current.tag == .ident) {
+                const potential_recipe = self.slice(self.current);
+                const saved_index = self.index;
+                const saved_current = self.current;
+                self.advance();
+
+                // Only treat as targeted if next token is also an ident (the actual command)
+                if (self.current.tag == .ident) {
+                    target_recipe = potential_recipe;
+                    cmd_start = self.current.loc.start;
+                } else {
+                    // Next token is not an ident (e.g., string, newline) - restore and treat as global
+                    self.index = saved_index;
+                    self.current = saved_current;
+                }
+            }
+
+            // Collect the command until newline
             while (self.current.tag != .newline and self.current.tag != .eof) {
                 self.advance();
             }
@@ -615,7 +638,7 @@ pub const Parser = struct {
             const hook = Hook{
                 .command = command,
                 .kind = .on_error,
-                .recipe_name = null, // Always global
+                .recipe_name = target_recipe,
             };
 
             self.global_on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory;
@@ -1386,8 +1409,8 @@ test "parse @on_error global hook" {
     try std.testing.expectEqual(@as(?[]const u8, null), jakefile.global_on_error_hooks[0].recipe_name);
 }
 
-test "parse @on_error is always global" {
-    // @on_error is always global - the entire line after it is the command
+test "parse @on_error with command taking string arg is global" {
+    // @on_error command "arg" - treated as global because "arg" is not an ident
     const source =
         \\@on_error notify "Build failed!"
         \\
@@ -1403,6 +1426,73 @@ test "parse @on_error is always global" {
     try std.testing.expectEqualStrings("notify \"Build failed!\"", jakefile.global_on_error_hooks[0].command);
     try std.testing.expectEqual(Hook.Kind.on_error, jakefile.global_on_error_hooks[0].kind);
     try std.testing.expectEqual(@as(?[]const u8, null), jakefile.global_on_error_hooks[0].recipe_name);
+}
+
+test "parse @on_error targeted to specific recipe" {
+    // @on_error recipe_name command - targeted to specific recipe
+    const source =
+        \\@on_error deploy notify "Deploy failed!"
+        \\
+        \\task deploy:
+        \\    echo "deploying"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.global_on_error_hooks.len);
+    try std.testing.expectEqualStrings("notify \"Deploy failed!\"", jakefile.global_on_error_hooks[0].command);
+    try std.testing.expectEqual(Hook.Kind.on_error, jakefile.global_on_error_hooks[0].kind);
+    try std.testing.expectEqualStrings("deploy", jakefile.global_on_error_hooks[0].recipe_name.?);
+}
+
+test "parse multiple @on_error hooks mixed global and targeted" {
+    const source =
+        \\@on_error echo "Global error handler"
+        \\@on_error build notify "Build failed!"
+        \\@on_error deploy rollback --auto
+        \\
+        \\task build:
+        \\    echo "building"
+        \\
+        \\task deploy:
+        \\    echo "deploying"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 3), jakefile.global_on_error_hooks.len);
+
+    // First is global
+    try std.testing.expectEqual(@as(?[]const u8, null), jakefile.global_on_error_hooks[0].recipe_name);
+    try std.testing.expectEqualStrings("echo \"Global error handler\"", jakefile.global_on_error_hooks[0].command);
+
+    // Second targets build
+    try std.testing.expectEqualStrings("build", jakefile.global_on_error_hooks[1].recipe_name.?);
+    try std.testing.expectEqualStrings("notify \"Build failed!\"", jakefile.global_on_error_hooks[1].command);
+
+    // Third targets deploy
+    try std.testing.expectEqualStrings("deploy", jakefile.global_on_error_hooks[2].recipe_name.?);
+    try std.testing.expectEqualStrings("rollback --auto", jakefile.global_on_error_hooks[2].command);
+}
+
+test "parse @on_error with complex shell command" {
+    const source =
+        \\@on_error curl -X POST -d '{"error": "build failed"}' https://hooks.example.com/notify
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.global_on_error_hooks.len);
+    try std.testing.expectEqual(@as(?[]const u8, null), jakefile.global_on_error_hooks[0].recipe_name);
+    try std.testing.expectEqualStrings("curl -X POST -d '{\"error\": \"build failed\"}' https://hooks.example.com/notify", jakefile.global_on_error_hooks[0].command);
 }
 
 test "parse multiple targeted hooks" {
@@ -2029,6 +2119,51 @@ test "parse description directive with string" {
     try std.testing.expectEqualStrings("Run all tests", jakefile.recipes[0].description.?);
 }
 
+test "parse @desc and @description work identically" {
+    // @desc version
+    const source_desc =
+        \\@desc "Build with desc"
+        \\task build-desc:
+        \\    echo "building"
+    ;
+    var lex1 = Lexer.init(source_desc);
+    var p1 = Parser.init(std.testing.allocator, &lex1);
+    var jakefile1 = try p1.parseJakefile();
+    defer jakefile1.deinit(std.testing.allocator);
+
+    // @description version
+    const source_description =
+        \\@description "Build with description"
+        \\task build-description:
+        \\    echo "building"
+    ;
+    var lex2 = Lexer.init(source_description);
+    var p2 = Parser.init(std.testing.allocator, &lex2);
+    var jakefile2 = try p2.parseJakefile();
+    defer jakefile2.deinit(std.testing.allocator);
+
+    // Both should parse correctly
+    try std.testing.expectEqual(@as(usize, 1), jakefile1.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile2.recipes.len);
+    try std.testing.expectEqualStrings("Build with desc", jakefile1.recipes[0].description.?);
+    try std.testing.expectEqualStrings("Build with description", jakefile2.recipes[0].description.?);
+}
+
+test "parse @description with unquoted text" {
+    const source =
+        \\@description Run the test suite
+        \\task test:
+        \\    npm test
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("Run the test suite", jakefile.recipes[0].description.?);
+}
+
 test "parse group and desc together" {
     const source =
         \\@group build
@@ -2375,6 +2510,72 @@ test "parse only-os combined with other directives" {
     try std.testing.expectEqual(@as(usize, 2), recipe.only_os.len);
     try std.testing.expectEqual(@as(usize, 1), recipe.aliases.len);
     try std.testing.expectEqualStrings("build", recipe.group.?);
+}
+
+test "parse @platform directive" {
+    const source =
+        \\@platform linux macos
+        \\task build-unix:
+        \\    ./build.sh
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
+    try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[1]);
+}
+
+test "parse @platform directive with single OS" {
+    const source =
+        \\@platform windows
+        \\task build-win:
+        \\    msbuild.exe project.sln
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("windows", jakefile.recipes[0].only_os[0]);
+}
+
+test "parse @only directive (alias for @platform)" {
+    const source =
+        \\@only linux
+        \\task linux-only:
+        \\    apt-get update
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
+}
+
+test "parse @only-os directive (alias for @platform)" {
+    const source =
+        \\@only-os macos linux
+        \\task unix-only:
+        \\    ./unix-script.sh
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].only_os.len);
+    try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[0]);
+    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[1]);
 }
 
 test "parse @cd directive in task recipe" {

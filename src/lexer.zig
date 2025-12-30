@@ -45,8 +45,10 @@ pub const Token = struct {
         kw_ignore,
         kw_group,
         kw_desc,
+        kw_description, // long form of @desc
         kw_only,
         kw_only_os, // only-os (hyphenated keyword)
+        kw_platform, // preferred name for OS filtering
         kw_alias,
         kw_quiet,
         kw_before,
@@ -392,11 +394,13 @@ pub const Lexer = struct {
         else if (std.mem.eql(u8, text, "desc"))
             .kw_desc
         else if (std.mem.eql(u8, text, "description"))
-            .kw_desc
+            .kw_description
         else if (std.mem.eql(u8, text, "only"))
             .kw_only
         else if (std.mem.eql(u8, text, "only-os"))
             .kw_only_os
+        else if (std.mem.eql(u8, text, "platform"))
+            .kw_platform
         else if (std.mem.eql(u8, text, "alias"))
             .kw_alias
         else if (std.mem.eql(u8, text, "quiet"))
@@ -1342,7 +1346,7 @@ test "lexer description keyword" {
 
     try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
     const desc_tok = lex.next();
-    try std.testing.expectEqual(Token.Tag.kw_desc, desc_tok.tag);
+    try std.testing.expectEqual(Token.Tag.kw_description, desc_tok.tag);
     try std.testing.expectEqualStrings("description", desc_tok.slice(source));
     try std.testing.expectEqual(Token.Tag.string, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);

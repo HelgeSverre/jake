@@ -30,6 +30,25 @@ pub const ImportError = error{
     Unexpected,
 };
 
+/// Allocations that persist after import resolution.
+/// The caller must call deinit() when the Jakefile is no longer needed.
+pub const ImportAllocations = struct {
+    sources: []const []const u8,
+    names: []const []const u8,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *ImportAllocations) void {
+        for (self.sources) |source| {
+            self.allocator.free(source);
+        }
+        self.allocator.free(self.sources);
+        for (self.names) |name| {
+            self.allocator.free(name);
+        }
+        self.allocator.free(self.names);
+    }
+};
+
 /// Resolves and processes imports for Jakefiles
 pub const ImportResolver = struct {
     allocator: std.mem.Allocator,
@@ -39,6 +58,18 @@ pub const ImportResolver = struct {
     resolved_cache: std.StringHashMapUnmanaged(void),
     /// Sources that have been loaded (kept alive for slices in Jakefile)
     loaded_sources: std.ArrayListUnmanaged([]const u8),
+    /// Prefixed names that have been allocated (need to outlive resolver)
+    allocated_names: std.ArrayListUnmanaged([]const u8),
+    /// Old slices that were replaced during merging (to be freed)
+    replaced_slices: struct {
+        variables: std.ArrayListUnmanaged([]const Variable),
+        recipes: std.ArrayListUnmanaged([]const Recipe),
+        directives: std.ArrayListUnmanaged([]const Directive),
+        pre_hooks: std.ArrayListUnmanaged([]const Hook),
+        post_hooks: std.ArrayListUnmanaged([]const Hook),
+        on_error_hooks: std.ArrayListUnmanaged([]const Hook),
+        dependencies: std.ArrayListUnmanaged([]const []const u8),
+    },
 
     pub fn init(allocator: std.mem.Allocator) ImportResolver {
         return .{
@@ -46,16 +77,90 @@ pub const ImportResolver = struct {
             .import_stack = .{},
             .resolved_cache = .{},
             .loaded_sources = .{},
+            .allocated_names = .{},
+            .replaced_slices = .{
+                .variables = .{},
+                .recipes = .{},
+                .directives = .{},
+                .pre_hooks = .{},
+                .post_hooks = .{},
+                .on_error_hooks = .{},
+                .dependencies = .{},
+            },
         };
     }
 
     pub fn deinit(self: *ImportResolver) void {
-        self.import_stack.deinit(self.allocator);
-        self.resolved_cache.deinit(self.allocator);
-        for (self.loaded_sources.items) |source| {
-            self.allocator.free(source);
+        // Free import_stack keys (duplicated path strings)
+        var stack_it = self.import_stack.keyIterator();
+        while (stack_it.next()) |key| {
+            self.allocator.free(key.*);
         }
+        self.import_stack.deinit(self.allocator);
+
+        // Free resolved_cache keys (duplicated path strings)
+        var cache_it = self.resolved_cache.keyIterator();
+        while (cache_it.next()) |key| {
+            self.allocator.free(key.*);
+        }
+        self.resolved_cache.deinit(self.allocator);
+
+        // Free all replaced slices that were orphaned during merging
+        for (self.replaced_slices.variables.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.variables.deinit(self.allocator);
+
+        // Only free the outer slices, not the inner content of recipes.
+        // The inner content (dependencies, commands, etc.) is shallow-copied
+        // to the new merged slices and still in use.
+        for (self.replaced_slices.recipes.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.recipes.deinit(self.allocator);
+
+        // Same for directives - only free the outer slice
+        for (self.replaced_slices.directives.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.directives.deinit(self.allocator);
+
+        for (self.replaced_slices.pre_hooks.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.pre_hooks.deinit(self.allocator);
+
+        for (self.replaced_slices.post_hooks.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.post_hooks.deinit(self.allocator);
+
+        for (self.replaced_slices.on_error_hooks.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.on_error_hooks.deinit(self.allocator);
+
+        for (self.replaced_slices.dependencies.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.dependencies.deinit(self.allocator);
+
+        // Note: allocated_names and loaded_sources are NOT freed here.
+        // They are returned to the caller via extractPersistentAllocations()
+        // and must be freed when the Jakefile is no longer needed.
+        self.allocated_names.deinit(self.allocator);
         self.loaded_sources.deinit(self.allocator);
+    }
+
+    /// Extract allocations that must persist after the resolver is deinitialized.
+    /// The caller is responsible for freeing these when the Jakefile is no longer needed.
+    pub fn extractPersistentAllocations(self: *ImportResolver) ImportAllocations {
+        const allocations = ImportAllocations{
+            .sources = self.loaded_sources.toOwnedSlice(self.allocator) catch &.{},
+            .names = self.allocated_names.toOwnedSlice(self.allocator) catch &.{},
+            .allocator = self.allocator,
+        };
+        return allocations;
     }
 
     /// Resolve all imports for a Jakefile, merging imported content into it.
@@ -97,8 +202,10 @@ pub const ImportResolver = struct {
 
         // Load and parse the imported file
         var imported = self.loadAndParse(resolved_path) catch |err| {
-            // Clean up the import stack entry on error
-            _ = self.import_stack.remove(resolved_path);
+            // Clean up the import stack entry on error (free the duplicated key)
+            if (self.import_stack.fetchRemove(resolved_path)) |entry| {
+                self.allocator.free(entry.key);
+            }
             return err;
         };
 
@@ -107,18 +214,24 @@ pub const ImportResolver = struct {
 
         // Recursively resolve imports in the imported file
         self.resolveImports(&imported, import_base) catch |err| {
-            _ = self.import_stack.remove(resolved_path);
+            if (self.import_stack.fetchRemove(resolved_path)) |entry| {
+                self.allocator.free(entry.key);
+            }
             return err;
         };
 
         // Merge the imported content into target
         self.mergeJakefile(target, imported, import_directive.prefix) catch |err| {
-            _ = self.import_stack.remove(resolved_path);
+            if (self.import_stack.fetchRemove(resolved_path)) |entry| {
+                self.allocator.free(entry.key);
+            }
             return err;
         };
 
-        // Remove from in-progress, add to resolved cache
-        _ = self.import_stack.remove(resolved_path);
+        // Remove from in-progress (free the duplicated key), add to resolved cache
+        if (self.import_stack.fetchRemove(resolved_path)) |entry| {
+            self.allocator.free(entry.key);
+        }
         self.resolved_cache.put(self.allocator, try self.allocator.dupe(u8, resolved_path), {}) catch return ImportError.OutOfMemory;
     }
 
@@ -175,12 +288,52 @@ pub const ImportResolver = struct {
         imported: Jakefile,
         prefix: ?[]const u8,
     ) ImportError!void {
+        // Track old slices from target that will be replaced (only if they have content)
+        // These will be freed when the resolver is deinitialized
+        if (target.variables.len > 0) {
+            self.replaced_slices.variables.append(self.allocator, target.variables) catch return ImportError.OutOfMemory;
+        }
+        if (target.recipes.len > 0) {
+            self.replaced_slices.recipes.append(self.allocator, target.recipes) catch return ImportError.OutOfMemory;
+        }
+        if (target.directives.len > 0) {
+            self.replaced_slices.directives.append(self.allocator, target.directives) catch return ImportError.OutOfMemory;
+        }
+        if (target.global_pre_hooks.len > 0) {
+            self.replaced_slices.pre_hooks.append(self.allocator, target.global_pre_hooks) catch return ImportError.OutOfMemory;
+        }
+        if (target.global_post_hooks.len > 0) {
+            self.replaced_slices.post_hooks.append(self.allocator, target.global_post_hooks) catch return ImportError.OutOfMemory;
+        }
+        if (target.global_on_error_hooks.len > 0) {
+            self.replaced_slices.on_error_hooks.append(self.allocator, target.global_on_error_hooks) catch return ImportError.OutOfMemory;
+        }
+
+        // Also track the imported jakefile's slices (they'll be orphaned after merge)
+        if (imported.variables.len > 0) {
+            self.replaced_slices.variables.append(self.allocator, imported.variables) catch return ImportError.OutOfMemory;
+        }
+        if (imported.recipes.len > 0) {
+            self.replaced_slices.recipes.append(self.allocator, imported.recipes) catch return ImportError.OutOfMemory;
+        }
+        if (imported.directives.len > 0) {
+            self.replaced_slices.directives.append(self.allocator, imported.directives) catch return ImportError.OutOfMemory;
+        }
+        if (imported.global_pre_hooks.len > 0) {
+            self.replaced_slices.pre_hooks.append(self.allocator, imported.global_pre_hooks) catch return ImportError.OutOfMemory;
+        }
+        if (imported.global_post_hooks.len > 0) {
+            self.replaced_slices.post_hooks.append(self.allocator, imported.global_post_hooks) catch return ImportError.OutOfMemory;
+        }
+        if (imported.global_on_error_hooks.len > 0) {
+            self.replaced_slices.on_error_hooks.append(self.allocator, imported.global_on_error_hooks) catch return ImportError.OutOfMemory;
+        }
+
         // Merge variables (no prefix on variables)
         const new_vars_len = target.variables.len + imported.variables.len;
         const new_vars = self.allocator.alloc(Variable, new_vars_len) catch return ImportError.OutOfMemory;
         @memcpy(new_vars[0..target.variables.len], target.variables);
         @memcpy(new_vars[target.variables.len..], imported.variables);
-        // Note: We don't free the old slice as it may still be referenced
 
         // Merge recipes (with optional prefix)
         const new_recipes_len = target.recipes.len + imported.recipes.len;
@@ -191,15 +344,23 @@ pub const ImportResolver = struct {
             var new_recipe = recipe;
             if (prefix) |p| {
                 // Create prefixed name: "prefix.recipe_name"
-                new_recipe.name = self.createPrefixedName(p, recipe.name) catch return ImportError.OutOfMemory;
+                const prefixed_name = self.createPrefixedName(p, recipe.name) catch return ImportError.OutOfMemory;
+                // Track the allocated name so it can be freed later
+                self.allocated_names.append(self.allocator, prefixed_name) catch return ImportError.OutOfMemory;
+                new_recipe.name = prefixed_name;
 
                 // Also prefix dependencies that point to imported recipes
                 if (recipe.dependencies.len > 0) {
+                    // Track the original dependencies slice before replacing it
+                    self.replaced_slices.dependencies.append(self.allocator, recipe.dependencies) catch return ImportError.OutOfMemory;
+
                     const new_deps = self.allocator.alloc([]const u8, recipe.dependencies.len) catch return ImportError.OutOfMemory;
                     for (recipe.dependencies, 0..) |dep, j| {
                         // Check if this dependency is from the imported file
                         if (self.isImportedRecipe(imported.recipes, dep)) {
-                            new_deps[j] = self.createPrefixedName(p, dep) catch return ImportError.OutOfMemory;
+                            const prefixed_dep = self.createPrefixedName(p, dep) catch return ImportError.OutOfMemory;
+                            self.allocated_names.append(self.allocator, prefixed_dep) catch return ImportError.OutOfMemory;
+                            new_deps[j] = prefixed_dep;
                         } else {
                             new_deps[j] = dep;
                         }
@@ -264,27 +425,32 @@ pub const ImportResolver = struct {
     }
 };
 
-/// Convenience function to resolve imports for a Jakefile
+/// Convenience function to resolve imports for a Jakefile.
+/// Returns allocations that must be freed when the Jakefile is no longer needed.
 pub fn resolveImports(
     allocator: std.mem.Allocator,
     jakefile: *Jakefile,
     jakefile_path: []const u8,
-) ImportError!void {
+) ImportError!ImportAllocations {
     var resolver = ImportResolver.init(allocator);
-    // Note: We don't deinit the resolver since the sources need to stay alive
-    // for the Jakefile slices. The caller is responsible for freeing memory
-    // when done with the Jakefile.
+    errdefer resolver.deinit();
 
     // Get the directory containing the jakefile
     const base_path = std.fs.path.dirname(jakefile_path) orelse ".";
 
     // Add the main jakefile to resolved cache to prevent self-import
     const real_path = std.fs.cwd().realpathAlloc(allocator, jakefile_path) catch {
-        return resolver.resolveImports(jakefile, base_path);
+        try resolver.resolveImports(jakefile, base_path);
+        const allocations = resolver.extractPersistentAllocations();
+        resolver.deinit();
+        return allocations;
     };
     resolver.resolved_cache.put(allocator, real_path, {}) catch return ImportError.OutOfMemory;
 
-    return resolver.resolveImports(jakefile, base_path);
+    try resolver.resolveImports(jakefile, base_path);
+    const allocations = resolver.extractPersistentAllocations();
+    resolver.deinit();
+    return allocations;
 }
 
 test "import resolver init" {
@@ -422,4 +588,62 @@ test "loaded sources are tracked for cleanup" {
 
     try std.testing.expectEqual(@as(usize, 2), resolver.loaded_sources.items.len);
     // Sources are freed by deinit()
+}
+
+test "import resolution cleans up all memory" {
+    // This test exercises the full import pipeline and checks for memory leaks.
+    // It creates temporary jake files, parses and resolves imports, then cleans up.
+    // The testing allocator will fail if any memory is leaked.
+    const allocator = std.testing.allocator;
+
+    // Create a temporary directory for test files
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Write the imported file
+    const imported_content = "task helper:\n    echo \"helper task\"\n\ntask util:\n    echo \"util task\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "imported.jake", .data = imported_content });
+
+    // Write the main file with an import
+    const main_content = "@import \"imported.jake\" as lib\n\ntask main:\n    echo \"main task\"\n";
+    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data = main_content });
+
+    // Get the full path to main.jake
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+
+    // Read and parse the main file
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+
+    var lex = Lexer.init(main_source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    // Verify we have the import directive
+    try std.testing.expectEqual(@as(usize, 1), jakefile.imports.len);
+    try std.testing.expectEqualStrings("imported.jake", jakefile.imports[0].path);
+    try std.testing.expectEqualStrings("lib", jakefile.imports[0].prefix.?);
+
+    // Resolve imports - this should not leak memory
+    var import_allocs = try resolveImports(allocator, &jakefile, main_path);
+    defer import_allocs.deinit();
+
+    // Verify the imports were merged correctly
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes.len);
+
+    // Find each recipe by name
+    var found_main = false;
+    var found_lib_helper = false;
+    var found_lib_util = false;
+    for (jakefile.recipes) |recipe| {
+        if (std.mem.eql(u8, recipe.name, "main")) found_main = true;
+        if (std.mem.eql(u8, recipe.name, "lib.helper")) found_lib_helper = true;
+        if (std.mem.eql(u8, recipe.name, "lib.util")) found_lib_util = true;
+    }
+
+    try std.testing.expect(found_main);
+    try std.testing.expect(found_lib_helper);
+    try std.testing.expect(found_lib_util);
 }

@@ -339,6 +339,7 @@ pub const Watcher = struct {
         defer exec.deinit();
         exec.dry_run = self.dry_run;
         exec.verbose = self.verbose;
+        exec.watch_mode = true;
 
         exec.execute(recipe_name) catch |err| {
             const err_name = @errorName(err);

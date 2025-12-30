@@ -10,10 +10,18 @@ pub const ConditionError = error{
     OutOfMemory,
 };
 
+/// Runtime context passed from the Executor for runtime state conditions
+pub const RuntimeContext = struct {
+    watch_mode: bool = false,
+    dry_run: bool = false,
+    verbose: bool = false,
+};
+
 /// Evaluates a condition expression like "env(VAR)", "exists(path)", "eq(a, b)"
 pub fn evaluate(
     condition: []const u8,
     variables: *const std.StringHashMap([]const u8),
+    context: RuntimeContext,
 ) ConditionError!bool {
     const trimmed = std.mem.trim(u8, condition, " \t");
 
@@ -22,11 +30,22 @@ pub fn evaluate(
         const func_name = trimmed[0..paren_start];
         const paren_end = std.mem.lastIndexOf(u8, trimmed, ")") orelse return ConditionError.InvalidSyntax;
 
-        if (paren_start + 1 >= paren_end) {
-            return ConditionError.MissingArgument;
+        const args_str = trimmed[paren_start + 1 .. paren_end];
+        const has_args = paren_start + 1 < paren_end;
+
+        // Runtime state conditions (no arguments)
+        if (std.mem.eql(u8, func_name, "is_watching")) {
+            return context.watch_mode;
+        } else if (std.mem.eql(u8, func_name, "is_dry_run")) {
+            return context.dry_run;
+        } else if (std.mem.eql(u8, func_name, "is_verbose")) {
+            return context.verbose;
         }
 
-        const args_str = trimmed[paren_start + 1 .. paren_end];
+        // Conditions that require arguments
+        if (!has_args) {
+            return ConditionError.MissingArgument;
+        }
 
         if (std.mem.eql(u8, func_name, "env")) {
             return evaluateEnv(args_str);
@@ -155,6 +174,9 @@ fn stripQuotes(s: []const u8) []const u8 {
 
 // Tests
 
+// Default context for tests (no runtime flags set)
+const test_context = RuntimeContext{};
+
 test "env condition - set variable" {
     // Set a test environment variable
     const result = try std.process.Child.run(.{
@@ -168,7 +190,7 @@ test "env condition - set variable" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const has_path = try evaluate("env(PATH)", &variables);
+    const has_path = try evaluate("env(PATH)", &variables, test_context);
     try std.testing.expect(has_path);
 }
 
@@ -176,7 +198,7 @@ test "env condition - unset variable" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const has_nonexistent = try evaluate("env(JAKE_TEST_NONEXISTENT_VAR_12345)", &variables);
+    const has_nonexistent = try evaluate("env(JAKE_TEST_NONEXISTENT_VAR_12345)", &variables, test_context);
     try std.testing.expect(!has_nonexistent);
 }
 
@@ -185,7 +207,7 @@ test "exists condition - existing path" {
     defer variables.deinit();
 
     // Current directory should exist
-    const exists_cwd = try evaluate("exists(.)", &variables);
+    const exists_cwd = try evaluate("exists(.)", &variables, test_context);
     try std.testing.expect(exists_cwd);
 }
 
@@ -193,7 +215,7 @@ test "exists condition - non-existing path" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const exists_none = try evaluate("exists(/nonexistent/path/12345)", &variables);
+    const exists_none = try evaluate("exists(/nonexistent/path/12345)", &variables, test_context);
     try std.testing.expect(!exists_none);
 }
 
@@ -201,7 +223,7 @@ test "eq condition - equal strings" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const are_equal = try evaluate("eq(hello, hello)", &variables);
+    const are_equal = try evaluate("eq(hello, hello)", &variables, test_context);
     try std.testing.expect(are_equal);
 }
 
@@ -209,7 +231,7 @@ test "eq condition - unequal strings" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const are_equal = try evaluate("eq(hello, world)", &variables);
+    const are_equal = try evaluate("eq(hello, world)", &variables, test_context);
     try std.testing.expect(!are_equal);
 }
 
@@ -217,7 +239,7 @@ test "neq condition - unequal strings" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const are_not_equal = try evaluate("neq(hello, world)", &variables);
+    const are_not_equal = try evaluate("neq(hello, world)", &variables, test_context);
     try std.testing.expect(are_not_equal);
 }
 
@@ -225,7 +247,7 @@ test "neq condition - equal strings" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const are_not_equal = try evaluate("neq(hello, hello)", &variables);
+    const are_not_equal = try evaluate("neq(hello, hello)", &variables, test_context);
     try std.testing.expect(!are_not_equal);
 }
 
@@ -234,7 +256,7 @@ test "eq with jake variable" {
     defer variables.deinit();
     try variables.put("mode", "debug");
 
-    const is_debug = try evaluate("eq(mode, debug)", &variables);
+    const is_debug = try evaluate("eq(mode, debug)", &variables, test_context);
     try std.testing.expect(is_debug);
 }
 
@@ -242,7 +264,7 @@ test "eq with quoted strings" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const are_equal = try evaluate("eq(\"hello world\", \"hello world\")", &variables);
+    const are_equal = try evaluate("eq(\"hello world\", \"hello world\")", &variables, test_context);
     try std.testing.expect(are_equal);
 }
 
@@ -250,7 +272,7 @@ test "invalid syntax" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const result = evaluate("invalid", &variables);
+    const result = evaluate("invalid", &variables, test_context);
     try std.testing.expectError(ConditionError.InvalidSyntax, result);
 }
 
@@ -258,7 +280,7 @@ test "unknown function" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const result = evaluate("unknown(arg)", &variables);
+    const result = evaluate("unknown(arg)", &variables, test_context);
     try std.testing.expectError(ConditionError.UnknownFunction, result);
 }
 
@@ -267,7 +289,7 @@ test "exists with variable" {
     defer variables.deinit();
     try variables.put("cwd", ".");
 
-    const exists_var = try evaluate("exists({{cwd}})", &variables);
+    const exists_var = try evaluate("exists({{cwd}})", &variables, test_context);
     try std.testing.expect(exists_var);
 }
 
@@ -283,7 +305,7 @@ test "eq with env variable" {
         // Create a variable with the same value
         try variables.put("home", home_val);
 
-        const matches = try evaluate("eq($HOME, home)", &variables);
+        const matches = try evaluate("eq($HOME, home)", &variables, test_context);
         try std.testing.expect(matches);
     }
 }
@@ -296,7 +318,7 @@ test "neq with different env variables" {
     defer variables.deinit();
 
     // PATH and HOME should be different
-    const result = try evaluate("neq($PATH, $HOME)", &variables);
+    const result = try evaluate("neq($PATH, $HOME)", &variables, test_context);
     try std.testing.expect(result);
 }
 
@@ -306,7 +328,7 @@ test "eq with empty vs non-empty" {
     try variables.put("empty", "");
     try variables.put("non_empty", "value");
 
-    const not_equal = try evaluate("neq(empty, non_empty)", &variables);
+    const not_equal = try evaluate("neq(empty, non_empty)", &variables, test_context);
     try std.testing.expect(not_equal);
 }
 
@@ -319,7 +341,106 @@ test "eq with braced env variable" {
 
     // HOME should be set on most systems
     if (getSystemEnv("HOME")) |_| {
-        const matches = try evaluate("eq(${HOME}, $HOME)", &variables);
+        const matches = try evaluate("eq(${HOME}, $HOME)", &variables, test_context);
         try std.testing.expect(matches);
     }
+}
+
+test "is_watching condition" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const ctx_watching = RuntimeContext{ .watch_mode = true };
+    const ctx_not = RuntimeContext{ .watch_mode = false };
+
+    try std.testing.expect(try evaluate("is_watching()", &variables, ctx_watching));
+    try std.testing.expect(!try evaluate("is_watching()", &variables, ctx_not));
+}
+
+test "is_dry_run condition" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const ctx_dry = RuntimeContext{ .dry_run = true };
+    const ctx_not = RuntimeContext{ .dry_run = false };
+
+    try std.testing.expect(try evaluate("is_dry_run()", &variables, ctx_dry));
+    try std.testing.expect(!try evaluate("is_dry_run()", &variables, ctx_not));
+}
+
+test "is_verbose condition" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    const ctx_verbose = RuntimeContext{ .verbose = true };
+    const ctx_not = RuntimeContext{ .verbose = false };
+
+    try std.testing.expect(try evaluate("is_verbose()", &variables, ctx_verbose));
+    try std.testing.expect(!try evaluate("is_verbose()", &variables, ctx_not));
+}
+
+// ============================================================================
+// Edge case tests
+// ============================================================================
+
+test "eq with both empty strings" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    try std.testing.expect(try evaluate("eq(\"\", \"\")", &variables, .{}));
+}
+
+test "neq with both empty strings" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    try std.testing.expect(!try evaluate("neq(\"\", \"\")", &variables, .{}));
+}
+
+test "eq with whitespace in arguments" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // Whitespace around arguments should be trimmed
+    try std.testing.expect(try evaluate("eq(  hello  ,  hello  )", &variables, .{}));
+}
+
+test "exists with current directory" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    try std.testing.expect(try evaluate("exists(.)", &variables, .{}));
+}
+
+test "exists with parent directory" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    try std.testing.expect(try evaluate("exists(..)", &variables, .{}));
+}
+
+test "env with undefined variable returns false" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+
+    // env() should return false for undefined variables
+    try std.testing.expect(!try evaluate("env(JAKE_TEST_UNDEFINED_VAR_12345)", &variables, .{}));
+}
+
+test "eq comparing variable to literal" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+    try variables.put("mode", "debug");
+
+    try std.testing.expect(try evaluate("eq(mode, debug)", &variables, .{}));
+    try std.testing.expect(!try evaluate("eq(mode, release)", &variables, .{}));
+}
+
+test "neq comparing variable to literal" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+    try variables.put("mode", "debug");
+
+    try std.testing.expect(try evaluate("neq(mode, release)", &variables, .{}));
+    try std.testing.expect(!try evaluate("neq(mode, debug)", &variables, .{}));
 }

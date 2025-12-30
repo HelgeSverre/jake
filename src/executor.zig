@@ -54,6 +54,7 @@ pub const Executor = struct {
     current_working_dir: ?[]const u8, // Working directory for current recipe (from @cd directive)
     current_quiet: bool, // Suppress command output for current recipe (from @quiet directive)
     prompt: Prompt, // Confirmation prompt handler
+    watch_mode: bool, // Whether jake is running in watch mode (-w/--watch)
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
         var variables = std.StringHashMap([]const u8).init(allocator);
@@ -80,15 +81,24 @@ pub const Executor = struct {
                     }
                 },
                 .@"export" => {
-                    // @export KEY=value or @export KEY value (OOM here is unrecoverable)
+                    // @export KEY=value - export with explicit value
+                    // @export KEY value - export with separate value
+                    // @export KEY - export Jake variable to environment
                     if (directive.args.len >= 1) {
                         const first_arg = directive.args[0];
                         if (std.mem.indexOfScalar(u8, first_arg, '=')) |eq_pos| {
+                            // @export KEY=value
                             const key = first_arg[0..eq_pos];
                             const value = first_arg[eq_pos + 1 ..];
                             environment.set(key, stripQuotes(value)) catch {};
                         } else if (directive.args.len >= 2) {
+                            // @export KEY value
                             environment.set(first_arg, stripQuotes(directive.args[1])) catch {};
+                        } else {
+                            // @export KEY - export Jake variable to environment
+                            if (variables.get(first_arg)) |value| {
+                                environment.set(first_arg, value) catch {};
+                            }
                         }
                     }
                 },
@@ -131,6 +141,7 @@ pub const Executor = struct {
             .current_working_dir = null,
             .current_quiet = false,
             .prompt = Prompt.init(),
+            .watch_mode = false,
         };
     }
 
@@ -198,6 +209,7 @@ pub const Executor = struct {
     }
 
     /// Check @needs directive - verify required commands exist
+    /// Supports: @needs cmd, @needs cmd "hint", @needs cmd -> task, @needs cmd "hint" -> task
     fn checkNeedsDirective(self: *Executor, line: []const u8) ExecuteError!void {
         // Parse command names (space or comma separated)
         // Skip leading whitespace
@@ -209,7 +221,7 @@ pub const Executor = struct {
             trimmed = std.mem.trimLeft(u8, trimmed[5..], " \t,");
         }
 
-        // Split by spaces and commas
+        // Split by spaces and commas, but handle quoted hints and -> task refs
         var i: usize = 0;
         while (i < trimmed.len) {
             // Skip separators (spaces and commas)
@@ -218,19 +230,53 @@ pub const Executor = struct {
             }
             if (i >= trimmed.len) break;
 
-            // Find end of command name
-            const start = i;
-            while (i < trimmed.len and trimmed[i] != ' ' and trimmed[i] != ',' and trimmed[i] != '\t') {
+            // Find end of command name (stop at space, comma, quote, or arrow)
+            const cmd_start = i;
+            while (i < trimmed.len and trimmed[i] != ' ' and trimmed[i] != ',' and
+                trimmed[i] != '\t' and trimmed[i] != '"' and
+                !(i + 1 < trimmed.len and trimmed[i] == '-' and trimmed[i + 1] == '>'))
+            {
                 i += 1;
             }
-            const cmd = trimmed[start..i];
+            const cmd = trimmed[cmd_start..i];
 
             if (cmd.len == 0) continue;
+
+            // Parse optional hint (quoted string)
+            var hint: ?[]const u8 = null;
+            while (i < trimmed.len and (trimmed[i] == ' ' or trimmed[i] == '\t')) i += 1;
+            if (i < trimmed.len and trimmed[i] == '"') {
+                i += 1; // skip opening quote
+                const hint_start = i;
+                while (i < trimmed.len and trimmed[i] != '"') i += 1;
+                hint = trimmed[hint_start..i];
+                if (i < trimmed.len) i += 1; // skip closing quote
+            }
+
+            // Parse optional task reference (-> task-name)
+            var install_task: ?[]const u8 = null;
+            while (i < trimmed.len and (trimmed[i] == ' ' or trimmed[i] == '\t')) i += 1;
+            if (i + 1 < trimmed.len and trimmed[i] == '-' and trimmed[i + 1] == '>') {
+                i += 2; // skip ->
+                while (i < trimmed.len and (trimmed[i] == ' ' or trimmed[i] == '\t')) i += 1;
+                const task_start = i;
+                while (i < trimmed.len and trimmed[i] != ' ' and trimmed[i] != ',' and trimmed[i] != '\t') {
+                    i += 1;
+                }
+                install_task = trimmed[task_start..i];
+            }
 
             // Check if command exists
             if (!self.commandExists(cmd)) {
                 self.print("\x1b[1;31merror:\x1b[0m Required command '{s}' not found\n", .{cmd});
-                self.print("  hint: Install '{s}' or check your PATH\n", .{cmd});
+                if (hint) |h| {
+                    self.print("  hint: {s}\n", .{h});
+                } else {
+                    self.print("  hint: Install '{s}' or check your PATH\n", .{cmd});
+                }
+                if (install_task) |task| {
+                    self.print("  run:  jake {s}\n", .{task});
+                }
                 return ExecuteError.CommandFailed;
             }
         }
@@ -402,7 +448,12 @@ pub const Executor = struct {
 
                         // Extract condition from line (strip "if " prefix)
                         const condition = extractCondition(expanded_line, "if ");
-                        const condition_result = conditions.evaluate(condition, &self.variables) catch false;
+                        const ctx = conditions.RuntimeContext{
+                            .watch_mode = self.watch_mode,
+                            .dry_run = self.dry_run,
+                            .verbose = self.verbose,
+                        };
+                        const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch false;
 
                         if (condition_result) {
                             executing = true;
@@ -428,7 +479,12 @@ pub const Executor = struct {
                         }
                         // Extract condition from line (strip "elif " prefix)
                         const condition = extractCondition(expanded_line, "elif ");
-                        const condition_result = conditions.evaluate(condition, &self.variables) catch false;
+                        const ctx = conditions.RuntimeContext{
+                            .watch_mode = self.watch_mode,
+                            .dry_run = self.dry_run,
+                            .verbose = self.verbose,
+                        };
+                        const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch false;
 
                         if (condition_result) {
                             executing = true;
@@ -822,7 +878,12 @@ pub const Executor = struct {
                         const condition = extractCondition(cmd.line, "if ");
 
                         // Evaluate the condition
-                        const condition_result = conditions.evaluate(condition, &self.variables) catch |err| blk: {
+                        const ctx = conditions.RuntimeContext{
+                            .watch_mode = self.watch_mode,
+                            .dry_run = self.dry_run,
+                            .verbose = self.verbose,
+                        };
+                        const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch |err| blk: {
                             self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ condition, @errorName(err) });
                             break :blk false;
                         };
@@ -854,7 +915,12 @@ pub const Executor = struct {
                         const condition = extractCondition(cmd.line, "elif ");
 
                         // Evaluate the condition
-                        const condition_result = conditions.evaluate(condition, &self.variables) catch |err| blk: {
+                        const ctx = conditions.RuntimeContext{
+                            .watch_mode = self.watch_mode,
+                            .dry_run = self.dry_run,
+                            .verbose = self.verbose,
+                        };
+                        const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch |err| blk: {
                             self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ condition, @errorName(err) });
                             break :blk false;
                         };
@@ -2220,6 +2286,123 @@ test "executor preserves invalid positional arg syntax" {
 }
 
 // =============================================================================
+// Whitespace handling in variable expansion tests
+// =============================================================================
+
+test "variable expansion does not trim whitespace - leading space" {
+    const source =
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Set a variable without leading space
+    try executor.variables.put("myvar", "hello");
+
+    // {{ myvar}} with leading space should NOT match "myvar"
+    const expanded = try executor.expandJakeVariables("{{ myvar}}");
+    defer executor.allocator.free(expanded);
+
+    // Should be preserved as-is since " myvar" doesn't match "myvar"
+    try std.testing.expectEqualStrings("{{ myvar}}", expanded);
+}
+
+test "variable expansion does not trim whitespace - trailing space" {
+    const source =
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    try executor.variables.put("myvar", "hello");
+
+    // {{myvar }} with trailing space should NOT match "myvar"
+    const expanded = try executor.expandJakeVariables("{{myvar }}");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("{{myvar }}", expanded);
+}
+
+test "variable expansion does not trim whitespace - both sides" {
+    const source =
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    try executor.variables.put("myvar", "hello");
+
+    // {{ myvar }} with spaces on both sides should NOT match "myvar"
+    const expanded = try executor.expandJakeVariables("{{ myvar }}");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("{{ myvar }}", expanded);
+}
+
+test "positional arg expansion does not trim whitespace" {
+    const source =
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Set positional args
+    const args = [_][]const u8{"world"};
+    executor.setPositionalArgs(&args);
+
+    // {{ $1 }} with spaces should NOT expand (space before $ breaks it)
+    const expanded = try executor.expandJakeVariables("{{ $1 }}");
+    defer executor.allocator.free(expanded);
+
+    // Should be preserved as-is
+    try std.testing.expectEqualStrings("{{ $1 }}", expanded);
+}
+
+test "function calls tolerate whitespace in arguments" {
+    const source =
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Function arguments ARE trimmed by the functions module
+    const expanded = try executor.expandJakeVariables("{{uppercase( hello )}}");
+    defer executor.allocator.free(expanded);
+
+    try std.testing.expectEqualStrings("HELLO", expanded);
+}
+
+// =============================================================================
 // @require directive tests
 // =============================================================================
 
@@ -2540,6 +2723,104 @@ test "@needs only checks once per command" {
     executor.dry_run = true;
 
     // Should succeed with multiple @needs for same command
+    try executor.execute("test");
+}
+
+test "@needs with custom hint shows hint on failure" {
+    const source =
+        \\task test:
+        \\    @needs jake_nonexistent_xyz123 "Install from https://example.com"
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should fail with custom hint
+    const err = executor.execute("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, err);
+}
+
+test "@needs with task reference shows run suggestion" {
+    const source =
+        \\task test:
+        \\    @needs jake_nonexistent_xyz123 -> install-it
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should fail and suggest running the install task
+    const err = executor.execute("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, err);
+}
+
+test "@needs with hint and task reference" {
+    const source =
+        \\task test:
+        \\    @needs jake_nonexistent_xyz123 "Google fuzzer" -> toolchain.install-fuzz
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should fail with both hint and task reference
+    const err = executor.execute("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, err);
+}
+
+test "@needs with hint still works when command exists" {
+    const source =
+        \\task test:
+        \\    @needs sh "Shell interpreter"
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should succeed - hint only shown on failure
+    try executor.execute("test");
+}
+
+test "@needs with task reference still works when command exists" {
+    const source =
+        \\task test:
+        \\    @needs sh -> install-shell
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should succeed - task reference only used on failure
     try executor.execute("test");
 }
 
@@ -4069,6 +4350,141 @@ test "stress: empty @each list produces no iterations" {
     try executor.execute("test");
 }
 
+// @export tests
+
+test "@export KEY=value sets environment variable" {
+    const source =
+        \\@export NODE_ENV=production
+        \\task test:
+        \\    echo "testing"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Verify the environment has the exported variable
+    try std.testing.expectEqualStrings("production", executor.environment.get("NODE_ENV").?);
+}
+
+test "@export KEY exports Jake variable to environment" {
+    const source =
+        \\version = "1.0.0"
+        \\@export version
+        \\task test:
+        \\    echo "testing"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Verify the Jake variable was exported to the environment
+    try std.testing.expectEqualStrings("1.0.0", executor.environment.get("version").?);
+}
+
+test "@export KEY value sets environment variable" {
+    const source =
+        \\@export MY_VAR myvalue
+        \\task test:
+        \\    echo "testing"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Verify the environment has the exported variable
+    try std.testing.expectEqualStrings("myvalue", executor.environment.get("MY_VAR").?);
+}
+
+test "@export builds correct env map for child process" {
+    const source =
+        \\@export NODE_ENV=production
+        \\@export DEBUG=true
+        \\task test:
+        \\    echo "testing"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Build the env map that would be passed to child processes
+    var env_map = try executor.environment.buildEnvMap(std.testing.allocator);
+    defer env_map.deinit();
+
+    // Verify exported variables are in the env map
+    try std.testing.expectEqualStrings("production", env_map.get("NODE_ENV").?);
+    try std.testing.expectEqualStrings("true", env_map.get("DEBUG").?);
+}
+
+test "@export KEY=\"value with spaces\" handles quoted values" {
+    const source =
+        \\@export MESSAGE="hello world"
+        \\task test:
+        \\    echo "testing"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Verify the environment has the exported variable without quotes
+    try std.testing.expectEqualStrings("hello world", executor.environment.get("MESSAGE").?);
+}
+
+test "@export nonexistent variable is silently ignored" {
+    const source =
+        \\@export NONEXISTENT
+        \\task test:
+        \\    echo "testing"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Nonexistent variable should not be in environment
+    try std.testing.expectEqual(@as(?[]const u8, null), executor.environment.get("NONEXISTENT"));
+}
+
+test "@export with quoted value using separate arg" {
+    const source =
+        \\@export MY_MESSAGE "hello world"
+        \\task test:
+        \\    echo "testing"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Verify the value has quotes stripped
+    try std.testing.expectEqualStrings("hello world", executor.environment.get("MY_MESSAGE").?);
+}
+
 test "stress: diamond dependency pattern" {
     // A depends on B and C, both depend on D
     // D should only run once
@@ -4152,4 +4568,104 @@ test "stress: 20+ recipes large project" {
     executor.dry_run = true;
 
     try executor.execute("all");
+}
+
+// =============================================================================
+// @cd directive tests
+// =============================================================================
+
+test "@cd directive is parsed and stored" {
+    const source =
+        \\task test:
+        \\    @cd /tmp
+        \\    echo "in tmp"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // Verify the recipe has a cd directive
+    const recipe = jakefile.recipes.get("test").?;
+    try std.testing.expectEqualStrings("/tmp", recipe.cd_dir.?);
+}
+
+test "@cd directive works in dry run" {
+    const source =
+        \\task test:
+        \\    @cd /tmp
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should succeed without error
+    try executor.execute("test");
+}
+
+// =============================================================================
+// @shell directive tests
+// =============================================================================
+
+test "@shell directive is parsed and stored" {
+    const source =
+        \\task test:
+        \\    @shell /bin/bash
+        \\    echo "using bash"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // Verify the recipe has a shell directive
+    const recipe = jakefile.recipes.get("test").?;
+    try std.testing.expectEqualStrings("/bin/bash", recipe.shell.?);
+}
+
+test "@shell directive works in dry run" {
+    const source =
+        \\task test:
+        \\    @shell /bin/sh
+        \\    echo "test"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    try executor.execute("test");
+}
+
+test "@cd and @shell combined" {
+    const source =
+        \\task test:
+        \\    @cd /tmp
+        \\    @shell /bin/sh
+        \\    echo "in tmp with sh"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    const recipe = jakefile.recipes.get("test").?;
+    try std.testing.expectEqualStrings("/tmp", recipe.cd_dir.?);
+    try std.testing.expectEqualStrings("/bin/sh", recipe.shell.?);
+
+    try executor.execute("test");
 }

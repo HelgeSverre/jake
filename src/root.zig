@@ -24,6 +24,7 @@ pub const Watcher = watch.Watcher;
 pub const ParallelExecutor = parallel.ParallelExecutor;
 pub const Environment = env.Environment;
 pub const ImportResolver = import_mod.ImportResolver;
+pub const ImportAllocations = import_mod.ImportAllocations;
 pub const resolveImports = import_mod.resolveImports;
 
 /// Parse a Jakefile from source
