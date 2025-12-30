@@ -340,6 +340,30 @@ task test-cli:
     sh -c '{{jake}} -f fixtures/cli/watch-feedback.jake -w build > {{out}} 2>&1 & pid=$!; sleep 1; kill $pid 2>/dev/null; exit 0'
     grep -q "Patterns:" {{out}} && grep -q "src/\*.zig" {{out}}
     echo "  Watch mode shows patterns being watched ............... PASS"
+    # --yes flag after recipe works
+    {{jake}} -f fixtures/directives/confirm.jake dangerous --yes > {{out}} 2>&1
+    grep -q "auto-confirmed" {{out}} && grep -q "Proceeding with dangerous operation" {{out}}
+    echo "  --yes flag after recipe works ......................... PASS"
+    # -y flag after recipe works
+    {{jake}} -f fixtures/directives/confirm.jake dangerous -y > {{out}} 2>&1
+    grep -q "auto-confirmed" {{out}}
+    echo "  -y flag after recipe works ............................ PASS"
+    # Combined flags after recipe work
+    {{jake}} -f fixtures/cli/verbose.jake hello -vy > {{out}} 2>&1
+    grep -q "echo" {{out}} && grep -q "Hello" {{out}}
+    echo "  Combined flags -vy after recipe work .................. PASS"
+    # --verbose after recipe works
+    {{jake}} -f fixtures/cli/verbose.jake hello --verbose > {{out}} 2>&1
+    grep -q "echo" {{out}} && grep -q "Hello" {{out}}
+    echo "  --verbose after recipe works .......................... PASS"
+    # --dry-run after recipe works
+    {{jake}} -f fixtures/cli/verbose.jake hello --dry-run > {{out}} 2>&1
+    grep -q "dry-run" {{out}}
+    echo "  --dry-run after recipe works .......................... PASS"
+    # Positional args with flags after recipe
+    {{jake}} -f fixtures/basic/hello.jake greet name=Bob --verbose > {{out}} 2>&1
+    grep -q "Hello, Bob" {{out}}
+    echo "  Positional args with flags after recipe work .......... PASS"
 
 # ============================================================================
 # Integration Tests
