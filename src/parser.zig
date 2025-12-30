@@ -26,6 +26,7 @@ pub const Recipe = struct {
     working_dir: ?[]const u8, // Working directory for recipe execution
     only_os: []const []const u8, // List of OSes this recipe runs on (e.g., ["linux", "macos"])
     quiet: bool, // Suppress command echoing for this recipe
+    needs: []const NeedsRequirement, // Recipe-level command requirements
 
     pub const Kind = enum {
         task, // Always runs
@@ -55,6 +56,13 @@ pub const Recipe = struct {
         each,
         ignore,
     };
+};
+
+/// Represents a recipe-level @needs requirement
+pub const NeedsRequirement = struct {
+    command: []const u8,
+    hint: ?[]const u8, // Optional install hint
+    install_task: ?[]const u8, // Optional -> task reference
 };
 
 pub const Variable = struct {
@@ -227,6 +235,7 @@ pub const Parser = struct {
     pending_only_os: std.ArrayListUnmanaged([]const u8),
     pending_quiet: bool,
     pending_doc_comment: ?[]const u8,
+    pending_needs: std.ArrayListUnmanaged(NeedsRequirement),
 
     pub fn init(allocator: std.mem.Allocator, lex: *Lexer) Parser {
         return .{
@@ -248,6 +257,7 @@ pub const Parser = struct {
             .pending_only_os = .empty,
             .pending_quiet = false,
             .pending_doc_comment = null,
+            .pending_needs = .empty,
         };
     }
 
@@ -263,6 +273,7 @@ pub const Parser = struct {
             self.allocator.free(recipe.post_hooks);
             self.allocator.free(recipe.aliases);
             self.allocator.free(recipe.only_os);
+            self.allocator.free(recipe.needs);
         }
         self.recipes.deinit(self.allocator);
         for (self.directives.items) |directive| {
@@ -275,6 +286,7 @@ pub const Parser = struct {
         self.global_on_error_hooks.deinit(self.allocator);
         self.pending_aliases.deinit(self.allocator);
         self.pending_only_os.deinit(self.allocator);
+        self.pending_needs.deinit(self.allocator);
     }
 
     fn advance(self: *Parser) void {
@@ -372,6 +384,13 @@ pub const Parser = struct {
         }
         const only_os = self.pending_only_os.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
         return only_os;
+    }
+
+    fn consumePendingNeeds(self: *Parser) ParseError![]const NeedsRequirement {
+        if (self.pending_needs.items.len == 0) {
+            return &[_]NeedsRequirement{};
+        }
+        return self.pending_needs.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
     }
 
     pub fn parseJakefile(self: *Parser) ParseError!Jakefile {
@@ -529,6 +548,49 @@ pub const Parser = struct {
             // Skip to end of line
             while (self.current.tag != .newline and self.current.tag != .eof) {
                 self.advance();
+            }
+            return;
+        }
+
+        // Handle @needs directive for recipe-level command requirements
+        // Syntax: @needs cmd1 cmd2 ...
+        //         @needs cmd "hint"
+        //         @needs cmd -> install-task
+        //         @needs cmd "hint" -> install-task
+        if (self.current.tag == .kw_needs) {
+            self.advance();
+
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                if (self.current.tag == .ident) {
+                    const cmd = self.slice(self.current);
+                    self.advance();
+
+                    var hint: ?[]const u8 = null;
+                    var install_task: ?[]const u8 = null;
+
+                    // Check for optional hint (string)
+                    if (self.current.tag == .string) {
+                        hint = stripQuotes(self.slice(self.current));
+                        self.advance();
+                    }
+
+                    // Check for optional -> task reference
+                    if (self.current.tag == .arrow) {
+                        self.advance();
+                        if (self.current.tag == .ident) {
+                            install_task = self.slice(self.current);
+                            self.advance();
+                        }
+                    }
+
+                    self.pending_needs.append(self.allocator, .{
+                        .command = cmd,
+                        .hint = hint,
+                        .install_task = install_task,
+                    }) catch return ParseError.OutOfMemory;
+                } else {
+                    self.advance(); // Skip commas, etc.
+                }
             }
             return;
         }
@@ -845,6 +907,7 @@ pub const Parser = struct {
         // Consume any pending metadata
         const aliases = try self.consumePendingAliases();
         const only_os = try self.consumePendingOnlyOs();
+        const needs = try self.consumePendingNeeds();
 
         self.recipes.append(self.allocator, .{
             .name = name,
@@ -865,6 +928,7 @@ pub const Parser = struct {
             .working_dir = working_dir,
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
+            .needs = needs,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1016,6 +1080,7 @@ pub const Parser = struct {
         // Consume any pending metadata
         const aliases = try self.consumePendingAliases();
         const only_os = try self.consumePendingOnlyOs();
+        const needs = try self.consumePendingNeeds();
 
         self.recipes.append(self.allocator, .{
             .name = name,
@@ -1036,6 +1101,7 @@ pub const Parser = struct {
             .working_dir = working_dir,
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
+            .needs = needs,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1158,6 +1224,7 @@ pub const Parser = struct {
         // Consume any pending metadata
         const aliases = try self.consumePendingAliases();
         const only_os = try self.consumePendingOnlyOs();
+        const needs = try self.consumePendingNeeds();
 
         // Use output as recipe name
         self.recipes.append(self.allocator, .{
@@ -1179,6 +1246,7 @@ pub const Parser = struct {
             .working_dir = working_dir,
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
+            .needs = needs,
         }) catch return ParseError.OutOfMemory;
     }
 };
@@ -2576,6 +2644,151 @@ test "parse @only-os directive (alias for @platform)" {
     try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].only_os.len);
     try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[0]);
     try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[1]);
+}
+
+// Recipe-level @needs tests
+
+test "parse recipe-level @needs simple command" {
+    const source =
+        \\@needs docker
+        \\task build:
+        \\    docker build .
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].needs.len);
+    try std.testing.expectEqualStrings("docker", jakefile.recipes[0].needs[0].command);
+    try std.testing.expectEqual(@as(?[]const u8, null), jakefile.recipes[0].needs[0].hint);
+    try std.testing.expectEqual(@as(?[]const u8, null), jakefile.recipes[0].needs[0].install_task);
+}
+
+test "parse recipe-level @needs with hint" {
+    const source =
+        \\@needs docker "Install Docker Desktop from docker.com"
+        \\task build:
+        \\    docker build .
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].needs.len);
+    try std.testing.expectEqualStrings("docker", jakefile.recipes[0].needs[0].command);
+    try std.testing.expectEqualStrings("Install Docker Desktop from docker.com", jakefile.recipes[0].needs[0].hint.?);
+    try std.testing.expectEqual(@as(?[]const u8, null), jakefile.recipes[0].needs[0].install_task);
+}
+
+test "parse recipe-level @needs with install task" {
+    const source =
+        \\@needs docker -> install-docker
+        \\task build:
+        \\    docker build .
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].needs.len);
+    try std.testing.expectEqualStrings("docker", jakefile.recipes[0].needs[0].command);
+    try std.testing.expectEqual(@as(?[]const u8, null), jakefile.recipes[0].needs[0].hint);
+    try std.testing.expectEqualStrings("install-docker", jakefile.recipes[0].needs[0].install_task.?);
+}
+
+test "parse recipe-level @needs with hint and install task" {
+    const source =
+        \\@needs docker "Docker is required" -> install-docker
+        \\task build:
+        \\    docker build .
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].needs.len);
+    try std.testing.expectEqualStrings("docker", jakefile.recipes[0].needs[0].command);
+    try std.testing.expectEqualStrings("Docker is required", jakefile.recipes[0].needs[0].hint.?);
+    try std.testing.expectEqualStrings("install-docker", jakefile.recipes[0].needs[0].install_task.?);
+}
+
+test "parse multiple recipe-level @needs directives accumulate" {
+    const source =
+        \\@needs docker
+        \\@needs npm "Install Node.js"
+        \\task build:
+        \\    docker build .
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].needs.len);
+    try std.testing.expectEqualStrings("docker", jakefile.recipes[0].needs[0].command);
+    try std.testing.expectEqualStrings("npm", jakefile.recipes[0].needs[1].command);
+    try std.testing.expectEqualStrings("Install Node.js", jakefile.recipes[0].needs[1].hint.?);
+}
+
+test "parse recipe-level @needs with multiple commands on same line" {
+    const source =
+        \\@needs docker npm node
+        \\task build:
+        \\    docker build .
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes[0].needs.len);
+    try std.testing.expectEqualStrings("docker", jakefile.recipes[0].needs[0].command);
+    try std.testing.expectEqualStrings("npm", jakefile.recipes[0].needs[1].command);
+    try std.testing.expectEqualStrings("node", jakefile.recipes[0].needs[2].command);
+}
+
+test "parse recipe-level @needs on file recipe" {
+    const source =
+        \\@needs gcc
+        \\file output.o: input.c
+        \\    gcc -c input.c -o output.o
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(Recipe.Kind.file, jakefile.recipes[0].kind);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].needs.len);
+    try std.testing.expectEqualStrings("gcc", jakefile.recipes[0].needs[0].command);
+}
+
+test "parse recipe-level @needs on simple recipe" {
+    const source =
+        \\@needs make
+        \\build:
+        \\    make all
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(Recipe.Kind.simple, jakefile.recipes[0].kind);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].needs.len);
+    try std.testing.expectEqualStrings("make", jakefile.recipes[0].needs[0].command);
 }
 
 test "parse @cd directive in task recipe" {
