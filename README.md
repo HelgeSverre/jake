@@ -45,7 +45,7 @@
 ### From Source
 
 ```bash
-# Requires Zig 0.14+
+# Requires Zig 0.15.2+
 git clone https://github.com/HelgeSverre/jake.git
 cd jake
 zig build -Doptimize=ReleaseFast
@@ -75,21 +75,21 @@ version = "1.0.0"
 
 # Default task - runs when you just type 'jake'
 @default
+@desc "Build the application"
 task build:
-    @description "Build the application"
     echo "Building {{app_name}} v{{version}}..."
     mkdir -p dist
     echo "Build complete!"
 
 # Task with dependencies - test runs build first
+@desc "Run all tests"
 task test: [build]
-    @description "Run all tests"
     echo "Running tests..."
     echo "All tests passed!"
 
 # Clean task
+@desc "Remove build artifacts"
 task clean:
-    @description "Remove build artifacts"
     rm -rf dist
 
 # Task with parameter
@@ -97,8 +97,8 @@ task greet name="World":
     echo "Hello, {{name}}!"
 
 # Conditional based on environment
+@desc "Deploy to production"
 task deploy: [build, test]
-    @description "Deploy to production"
     @confirm "Deploy to production?"
     @if env(CI)
         echo "Deploying from CI..."
@@ -115,8 +115,8 @@ file dist/bundle.js: src/*.js
 task all: [build, test, lint]
     echo "All tasks complete!"
 
+@desc "Check code style"
 task lint:
-    @description "Check code style"
     echo "Linting..."
 ```
 
@@ -301,7 +301,7 @@ Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT License - see [LICENSE](LICENSE.md)
 
 ---
 

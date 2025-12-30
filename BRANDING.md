@@ -186,7 +186,7 @@ Done in 2.35s
 [![CI](https://github.com/HelgeSverre/jake/actions/workflows/ci.yml/badge.svg)](https://github.com/HelgeSverre/jake/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/HelgeSverre/jake?style=flat-square)](https://github.com/HelgeSverre/jake/releases)
 [![Zig](https://img.shields.io/badge/lang-Zig-F7A41D?style=flat-square&logo=zig)](https://ziglang.org)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE.md)
 ```
 
 ---
