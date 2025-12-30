@@ -1418,6 +1418,26 @@ pub const Executor = struct {
         }
     }
 
+    /// Print space-separated recipe names (for shell completion/scripting)
+    pub fn printSummary(self: *Executor) void {
+        const stdout = compat.getStdOut();
+        var first = true;
+
+        for (self.jakefile.recipes) |*recipe| {
+            // Skip private recipes (names starting with '_')
+            if (recipe.name.len > 0 and recipe.name[0] == '_') {
+                continue;
+            }
+
+            if (!first) {
+                stdout.writeAll(" ") catch {};
+            }
+            stdout.writeAll(recipe.name) catch {};
+            first = false;
+        }
+        stdout.writeAll("\n") catch {};
+    }
+
     /// Print a single recipe with its metadata
     fn printRecipe(stdout: std.fs.File, recipe: *const Recipe) void {
         const kind_str = switch (recipe.kind) {

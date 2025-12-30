@@ -3,6 +3,7 @@ const jake = @import("jake");
 const compat = jake.compat;
 const build_options = @import("build_options");
 const args_mod = @import("args.zig");
+const completions = @import("completions.zig");
 
 const version = "0.2.0";
 
@@ -66,6 +67,52 @@ pub fn main() !void {
         return;
     }
 
+    // Handle completions (doesn't need Jakefile)
+    if (args.completions_enabled or args.install_completions) {
+        const stdout = getStdout();
+        const stderr = getStderr();
+
+        // Determine shell: explicit arg > auto-detect
+        const shell = blk: {
+            if (args.completions) |shell_name| {
+                break :blk completions.Shell.fromString(shell_name) orelse {
+                    stderr.writeAll(args_mod.ansi.err_prefix ++ "Unknown shell: ") catch {};
+                    stderr.writeAll(shell_name) catch {};
+                    stderr.writeAll("\nSupported shells: bash, zsh, fish\n") catch {};
+                    std.process.exit(1);
+                };
+            }
+            break :blk completions.detectShell() orelse {
+                stderr.writeAll(args_mod.ansi.err_prefix ++ "Could not detect shell from $SHELL\n") catch {};
+                stderr.writeAll("Specify shell explicitly: --completions bash|zsh|fish\n") catch {};
+                std.process.exit(1);
+            };
+        };
+
+        if (args.install_completions) {
+            // Install completions to user directory
+            const stdout_writer = FileWriter{ .file = stdout };
+            completions.install(allocator, shell, stdout_writer) catch |err| {
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to install completions: {s}\n", .{@errorName(err)}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+                std.process.exit(1);
+            };
+        } else {
+            // Print completion script to stdout (generate to buffer first, then write)
+            var script_buf: [16384]u8 = undefined;
+            var script_stream = std.io.fixedBufferStream(&script_buf);
+            completions.generate(script_stream.writer(), shell) catch |err| {
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to generate completions: {s}\n", .{@errorName(err)}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+                std.process.exit(1);
+            };
+            stdout.writeAll(script_stream.getWritten()) catch {};
+        }
+        return;
+    }
+
     // Load Jakefile
     var jakefile_data = loadJakefile(allocator, args.jakefile) catch |err| {
         const stderr = getStderr();
@@ -100,6 +147,12 @@ pub fn main() !void {
     // List recipes or run default if no recipe specified
     if (args.list or (args.recipe == null and raw_args.len == 1)) {
         executor.listRecipes(args.short);
+        return;
+    }
+
+    // Summary: space-separated recipe names for scripting/completions
+    if (args.summary) {
+        executor.printSummary();
         return;
     }
 

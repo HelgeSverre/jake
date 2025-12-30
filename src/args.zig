@@ -26,17 +26,20 @@ pub const Flag = struct {
 
 // Jake's flag definitions - single source of truth
 pub const flags = [_]Flag{
-    .{ .short = 'h', .long = "help", .desc = "Show this help message" },
-    .{ .short = 'V', .long = "version", .desc = "Show version" },
-    .{ .short = 'l', .long = "list", .desc = "List available recipes" },
-    .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing" },
-    .{ .short = 'v', .long = "verbose", .desc = "Show verbose output" },
-    .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts" },
-    .{ .short = 'f', .long = "jakefile", .desc = "Use specified Jakefile", .takes_value = .required, .value_name = "FILE" },
-    .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN" },
-    .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel (default: CPU count)", .takes_value = .optional, .value_name = "N" },
-    .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)" },
-    .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE" },
+    .{ .short = 'h', .long = "help", .desc = "Show this help message" }, // 0
+    .{ .short = 'V', .long = "version", .desc = "Show version" }, // 1
+    .{ .short = 'l', .long = "list", .desc = "List available recipes" }, // 2
+    .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing" }, // 3
+    .{ .short = 'v', .long = "verbose", .desc = "Show verbose output" }, // 4
+    .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts" }, // 5
+    .{ .short = 'f', .long = "jakefile", .desc = "Use specified Jakefile", .takes_value = .required, .value_name = "FILE" }, // 6
+    .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN" }, // 7
+    .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel (default: CPU count)", .takes_value = .optional, .value_name = "N" }, // 8
+    .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)" }, // 9
+    .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE" }, // 10
+    .{ .short = null, .long = "summary", .desc = "Print recipe names (space-separated, for scripts)" }, // 11
+    .{ .short = null, .long = "completions", .desc = "Print shell completion script", .takes_value = .optional, .value_name = "SHELL" }, // 12
+    .{ .short = null, .long = "install", .desc = "Install completions to user directory" }, // 13
 };
 
 pub const Args = struct {
@@ -54,6 +57,10 @@ pub const Args = struct {
     jobs: ?usize = null, // null = sequential
     recipe: ?[]const u8 = null,
     positional: []const []const u8 = &.{},
+    summary: bool = false, // Print recipe names space-separated
+    completions: ?[]const u8 = null, // Shell name for completions (bash/zsh/fish)
+    completions_enabled: bool = false, // True if --completions was passed
+    install_completions: bool = false, // Install completions to user directory
 
     /// Free allocated memory (positional args slice)
     pub fn deinit(self: *Args, allocator: std.mem.Allocator) void {
@@ -186,6 +193,10 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                 result.yes = true;
             } else if (std.mem.eql(u8, name, "short")) {
                 result.short = true;
+            } else if (std.mem.eql(u8, name, "summary")) {
+                result.summary = true;
+            } else if (std.mem.eql(u8, name, "install")) {
+                result.install_completions = true;
             }
         },
         .required => {
@@ -242,6 +253,19 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                     // No next arg, use CPU count
                     result.jobs = std.Thread.getCpuCount() catch 4;
                 }
+            } else if (std.mem.eql(u8, name, "completions")) {
+                result.completions_enabled = true;
+                if (inline_value) |v| {
+                    result.completions = v;
+                } else if (i.* + 1 < raw_args.len) {
+                    const next = raw_args[i.* + 1];
+                    // Check if next arg is a valid shell name
+                    if (isValidShell(next)) {
+                        i.* += 1;
+                        result.completions = next;
+                    }
+                    // Otherwise, completions stays null (auto-detect)
+                }
             }
         },
     }
@@ -255,6 +279,12 @@ fn isLikelyRecipeName(s: []const u8) bool {
         if (c == '*' or c == '?' or c == '[' or c == ']') return false;
     }
     return true;
+}
+
+fn isValidShell(s: []const u8) bool {
+    return std.mem.eql(u8, s, "bash") or
+        std.mem.eql(u8, s, "zsh") or
+        std.mem.eql(u8, s, "fish");
 }
 
 /// Print help text to writer, auto-generated from flags array
@@ -316,6 +346,8 @@ pub fn printHelp(writer: anytype) void {
         \\    jake -w build           Watch and re-run 'build' on changes
         \\    jake -w "src/**" build  Watch src/ and re-run 'build'
         \\    jake -j4 build          Run 'build' with 4 parallel jobs
+        \\    jake --completions bash Print bash completion script
+        \\    jake --completions --install  Install completions for current shell
         \\
     ) catch {};
 }
@@ -561,4 +593,59 @@ test "missing required value for --show" {
 test "missing required value for -s" {
     const result = parse(testing.allocator, &.{ "jake", "-s" });
     try expectError(error.MissingValue, result);
+}
+
+test "parse --summary flag" {
+    const args = try parse(testing.allocator, &.{ "jake", "--summary" });
+    try expect(args.summary == true);
+}
+
+test "parse --completions bash" {
+    const args = try parse(testing.allocator, &.{ "jake", "--completions", "bash" });
+    try expect(args.completions_enabled);
+    try expectEqualStrings("bash", args.completions.?);
+}
+
+test "parse --completions zsh" {
+    const args = try parse(testing.allocator, &.{ "jake", "--completions", "zsh" });
+    try expect(args.completions_enabled);
+    try expectEqualStrings("zsh", args.completions.?);
+}
+
+test "parse --completions fish" {
+    const args = try parse(testing.allocator, &.{ "jake", "--completions", "fish" });
+    try expect(args.completions_enabled);
+    try expectEqualStrings("fish", args.completions.?);
+}
+
+test "parse --completions=bash inline format" {
+    const args = try parse(testing.allocator, &.{ "jake", "--completions=bash" });
+    try expect(args.completions_enabled);
+    try expectEqualStrings("bash", args.completions.?);
+}
+
+test "parse --completions without shell auto-detects" {
+    const args = try parse(testing.allocator, &.{ "jake", "--completions" });
+    try expect(args.completions_enabled);
+    try expect(args.completions == null); // Will auto-detect from $SHELL
+}
+
+test "parse --completions --install" {
+    const args = try parse(testing.allocator, &.{ "jake", "--completions", "--install" });
+    try expect(args.completions_enabled);
+    try expect(args.install_completions);
+    try expect(args.completions == null); // Auto-detect
+}
+
+test "parse --completions bash --install" {
+    const args = try parse(testing.allocator, &.{ "jake", "--completions", "bash", "--install" });
+    try expect(args.completions_enabled);
+    try expect(args.install_completions);
+    try expectEqualStrings("bash", args.completions.?);
+}
+
+test "parse --install alone" {
+    const args = try parse(testing.allocator, &.{ "jake", "--install" });
+    try expect(args.install_completions);
+    try expect(!args.completions_enabled);
 }
