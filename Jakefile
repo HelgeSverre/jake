@@ -3,6 +3,7 @@
 
 @import "lib/build.jake"
 @import "lib/release.jake" as release
+@import "lib/web.jake" as web
 
 @dotenv
 
@@ -14,7 +15,7 @@ binary = "jake"
 @export version
 
 # Global hooks
-@pre echo "=== Jake Build System v{{version}} ==="
+@pre echo "=== Jake v{{version}} ==="
 @on_error echo "Build failed!"
 
 # Targeted hooks for release tasks
@@ -75,6 +76,18 @@ task fuzz-afl:
 @desc "Quick pre-commit checks"
 task check: [lint, test]
     echo "Pre-commit checks passed!"
+
+@group test
+@desc "Test shell completions (bash, zsh, fish)"
+task test-completions: [build]
+    ./tests/completions_test.sh
+
+@group test
+@desc "Test completions in Docker (isolated environment)"
+task test-completions-docker:
+    @needs docker
+    docker build -t jake-completions-test -f tests/Dockerfile.completions .
+    docker run --rm jake-completions-test
 
 # ============================================================================
 # Benchmarking & Profiling
@@ -398,37 +411,3 @@ task prune:
     @pre echo "Pruning build artifacts..."
     rm -rf zig-out .zig-cache .jake dist
     @post echo "All artifacts removed"
-
-# ============================================================================
-# Website (jakefile.dev)
-# ============================================================================
-
-@group site
-@desc "Start website dev server"
-task site-dev:
-    @cd site
-    @needs npm
-    npm run dev
-
-@group site
-@desc "Build website for production"
-task site-build:
-    @cd site
-    @needs npm
-    npm run build
-
-@group site
-@desc "Deploy website to Vercel"
-task site-deploy:
-    @description "Deploy jakefile.dev to production"
-    @cd site
-    @needs vc "Install Vercel CLI: npm i -g vercel"
-    @confirm "Deploy to production?"
-    vc --prod --yes
-
-@group site
-@desc "Preview website deployment"
-task site-preview:
-    @cd site
-    @needs vc "Install Vercel CLI: npm i -g vercel"
-    vc --yes
