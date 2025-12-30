@@ -61,40 +61,13 @@ task _install-tracy:
 # Fuzzing
 # ============================================================================
 
-@desc "Run all fuzzers (default 1000 iterations)"
+@desc "Run coverage-guided fuzz tests"
 @group perf
-task fuzz-all iterations="1000":
+task fuzz:
     @needs zig
-    @pre echo "Building fuzzing targets..."
-    zig build fuzz-parse -Doptimize=ReleaseSafe
-    zig build fuzz-lexer -Doptimize=ReleaseSafe
-    zig build fuzz-executor -Doptimize=ReleaseSafe
-    zig build fuzz-glob -Doptimize=ReleaseSafe
-    @pre echo "Running fuzzers ({{iterations}} iterations)..."
-    ./scripts/dumb-fuzz.sh {{iterations}}
-    @post echo "Fuzzing complete! Check findings/ for any crashes."
-
-@desc "Build all fuzzing targets"
-@group perf
-task fuzz-build:
-    @needs zig
-    @each fuzz-parse fuzz-lexer fuzz-executor fuzz-glob
-        echo "Building {{item}}..."
-        zig build {{item}} -Doptimize=ReleaseSafe
-    @end
-    echo "Fuzzing binaries in zig-out/bin/"
-
-@desc "Run AFL++ fuzzing (requires afl-fuzz)"
-@group perf
-task fuzz-afl:
-    @needs zig
-    @needs afl-fuzz "Install AFL++: brew install afl++ (macOS) or apt install afl++ (Linux)"
-    zig build fuzz-parse -Doptimize=ReleaseSafe
-    mkdir -p corpus findings
-    cp Jakefile corpus/main.jake 2>/dev/null || true
-    find samples -name "*.jake" -type f -exec cp {} corpus/ \; 2>/dev/null || true
-    echo "Starting AFL++ fuzzer... (Ctrl+C to stop)"
-    AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 afl-fuzz -n -i corpus -o findings -- ./zig-out/bin/jake-fuzz-parse @@
+    @pre echo "Running coverage-guided fuzz tests..."
+    zig build fuzz --fuzz
+    @post echo "Fuzzing complete!"
 
 # ============================================================================
 # Profiling & Memory Analysis
@@ -164,9 +137,8 @@ task baseline: [bench-json]
 # All-in-one
 # ============================================================================
 
-@desc "Run full performance suite (bench + fuzz + profile)"
+@desc "Run full performance suite (bench + fuzz)"
 @group perf
-task all: [bench-internal, fuzz-build]
+task all: [bench-internal, fuzz]
     echo "Performance suite complete!"
     echo "Run 'jake perf.profile' for profiling"
-    echo "Run 'jake perf.fuzz-all' to run fuzzers"

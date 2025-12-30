@@ -3,6 +3,9 @@ contact_links:
   - name: Documentation
     url: https://github.com/HelgeSverre/jake/blob/main/GUIDE.md
     about: Check the user guide for answers to common questions
+  - name: Syntax Reference
+    url: https://github.com/HelgeSverre/jake/blob/main/docs/SYNTAX.md
+    about: Complete Jakefile syntax documentation
   - name: Discussions
     url: https://github.com/HelgeSverre/jake/discussions
     about: Ask questions and discuss ideas with the community

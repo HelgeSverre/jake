@@ -2279,7 +2279,7 @@ Start with a simple `Jakefile`, grow it as your project grows, and never fight y
 **Resources:**
 - [Jake on GitHub](https://github.com/HelgeSverre/jake)
 - [Full User Guide](https://github.com/HelgeSverre/jake/blob/main/GUIDE.md)
-- [Sample Jakefiles](https://github.com/HelgeSverre/jake/tree/main/samples)
+- [E2E Test Jakefiles](https://github.com/HelgeSverre/jake/tree/main/tests/e2e)
 
 ---
 
