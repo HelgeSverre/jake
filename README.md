@@ -221,17 +221,21 @@ jake -w "src/**" build     # Watch specific patterns
 jake [OPTIONS] [RECIPE]
 
 OPTIONS:
-    -h, --help           Show help
-    -V, --version        Show version
-    -l, --list           List recipes
-        --short          Output one recipe per line (with -l)
-    -s, --show RECIPE    Show detailed recipe info
-    -n, --dry-run        Print without executing
-    -v, --verbose        Verbose output
-    -y, --yes            Auto-confirm prompts
-    -f, --jakefile FILE  Use specified Jakefile
-    -w, --watch          Watch and re-run
-    -j, --jobs N         Parallel jobs (default: CPU count)
+    -h, --help              Show help
+    -V, --version           Show version
+    -l, --list              List recipes
+        --short             Output one recipe per line (with -l)
+    -s, --show RECIPE       Show detailed recipe info
+    -n, --dry-run           Print without executing
+    -v, --verbose           Verbose output
+    -y, --yes               Auto-confirm prompts
+    -f, --jakefile FILE     Use specified Jakefile
+    -w, --watch             Watch and re-run
+    -j, --jobs N            Parallel jobs (default: CPU count)
+        --summary           Print recipe names (for scripting)
+        --completions SHELL Print shell completion script
+        --install           Install completions to user directory
+        --uninstall         Remove completions and config
 ```
 
 **Typo suggestions**: If you mistype a recipe name, jake suggests similar recipes:
@@ -240,6 +244,51 @@ $ jake buidl
 error: Recipe 'buidl' not found
 Did you mean: build?
 ```
+
+## Shell Completions
+
+Jake provides tab completion for recipe names and flags in bash, zsh, and fish.
+
+### Quick Install
+
+```bash
+# Auto-detect your shell and install completions
+jake --completions --install
+```
+
+### Manual Installation
+
+```bash
+# Generate completion script for your shell
+jake --completions bash > ~/.local/share/bash-completion/completions/jake
+jake --completions zsh > ~/.zsh/completions/_jake
+jake --completions fish > ~/.config/fish/completions/jake.fish
+```
+
+### Smart Detection
+
+The `--install` command automatically detects your environment:
+
+| Environment | Install Location | Config Needed |
+|-------------|------------------|---------------|
+| **Oh-My-Zsh** | `~/.oh-my-zsh/custom/completions/_jake` | None |
+| **Homebrew zsh** | `/opt/homebrew/share/zsh/site-functions/_jake` | None |
+| **Vanilla zsh** | `~/.zsh/completions/_jake` | Auto-patches `~/.zshrc` |
+| **Bash** | `~/.local/share/bash-completion/completions/jake` | None |
+| **Fish** | `~/.config/fish/completions/jake.fish` | None |
+
+### Uninstall
+
+```bash
+# Remove completions and any config changes
+jake --completions --uninstall
+```
+
+### What Gets Completed
+
+- **Recipe names** - dynamically loaded from your Jakefile
+- **Flags** - all CLI options with descriptions
+- **Flag values** - file paths for `-f`, shell names for `--completions`
 
 ## Documentation
 
