@@ -1,4 +1,4 @@
-# Zig
+# Zig build artifacts
 zig-out/
 zig-cache/
 .zig-cache/
@@ -6,28 +6,51 @@ zig-cache/
 # Jake cache
 .jake/
 
-# Build artifacts
+# Distribution / release binaries
+dist/
+
+# Build artifacts / compiled objects
 *.o
 *.a
 *.so
 *.dylib
+*.dll
+*.exe
+*.lib
 
-# Editor
+# Editor / IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.*.sw?
 
-# OS
+# OS generated
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Test/coverage artifacts
-test_*
-tests/e2e/output.txt
+# Test artifacts
 coverage-out/
 coverage-test/
+tests/e2e/output.txt
 
 # Fuzzing artifacts
 findings/
+corpus/
+*.tracy
+
+# Benchmark artifacts
+benchmark-results.txt
+.benchmark-baseline.txt
+
+# Environment files (may contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+*.log
