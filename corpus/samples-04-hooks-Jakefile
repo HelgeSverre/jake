@@ -1,0 +1,20 @@
+# Test: Pre/post hooks (global and recipe-level)
+
+@pre echo "[GLOBAL PRE] Starting jake..."
+@post echo "[GLOBAL POST] Jake finished!"
+
+task build:
+    @pre echo "[RECIPE PRE] Preparing build..."
+    echo "Building..."
+    @post echo "[RECIPE POST] Build cleanup..."
+
+@default
+task deploy: [build]
+    @pre echo "[RECIPE PRE] Preparing deploy..."
+    echo "Deploying..."
+    @post echo "[RECIPE POST] Deploy notification sent"
+
+task test:
+    @pre echo "[RECIPE PRE] Setting up tests..."
+    echo "Running tests..."
+    @post echo "[RECIPE POST] Test cleanup..."

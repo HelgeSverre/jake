@@ -1,0 +1,25 @@
+# Test: Environment variables
+
+@dotenv
+@dotenv ".env.local"
+@export BUILD_MODE=production
+
+task show-env:
+    echo "API_URL: $API_URL"
+    echo "DB_HOST: ${DB_HOST}"
+    echo "BUILD_MODE: $BUILD_MODE"
+    echo "SECRET_KEY: $SECRET_KEY"
+
+@default
+task deploy:
+    @if env(CI)
+        echo "Running in CI environment"
+    @else
+        echo "Running locally"
+    @end
+    echo "Deploying with API_URL=$API_URL"
+    echo "Database: ${DB_HOST}:${DB_PORT}"
+
+task check:
+    echo "Checking environment..."
+    echo "Mode: $BUILD_MODE"

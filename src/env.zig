@@ -448,3 +448,192 @@ test "set and get" {
     try std.testing.expectEqualStrings("qux", env.get("BAZ").?);
     try std.testing.expect(env.get("NONEXISTENT") == null or env.get("NONEXISTENT") != null); // May fall back to system env
 }
+
+// ============================================================================
+// Edge case tests
+// ============================================================================
+
+test "parse dotenv with empty value" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\EMPTY=
+        \\QUOTED_EMPTY=""
+        \\NONEMPTY=value
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("", env.get("EMPTY").?);
+    try std.testing.expectEqualStrings("", env.get("QUOTED_EMPTY").?);
+    try std.testing.expectEqualStrings("value", env.get("NONEMPTY").?);
+}
+
+test "parse dotenv skips malformed lines" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\VALID=yes
+        \\INVALID_NO_EQUALS
+        \\ALSO_VALID=yes
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("yes", env.get("VALID").?);
+    try std.testing.expectEqualStrings("yes", env.get("ALSO_VALID").?);
+}
+
+test "parse dotenv with multiple empty lines" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\A=1
+        \\
+        \\
+        \\B=2
+        \\
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("1", env.get("A").?);
+    try std.testing.expectEqualStrings("2", env.get("B").?);
+}
+
+test "parse dotenv with special characters in value" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\SPECIAL=!@#%^&*()_+-=[]{}|;:',.<>?/
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("!@#%^&*()_+-=[]{}|;:',.<>?/", env.get("SPECIAL").?);
+}
+
+test "parse dotenv with equals in value" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\EQUATION=1+1=2
+        \\URL=https://example.com?foo=bar&baz=qux
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("1+1=2", env.get("EQUATION").?);
+    try std.testing.expectEqualStrings("https://example.com?foo=bar&baz=qux", env.get("URL").?);
+}
+
+test "expand variable at end of string" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    try env.set("SUFFIX", "end");
+
+    const result = try env.expandCommand("at the $SUFFIX", std.testing.allocator);
+    defer std.testing.allocator.free(result);
+
+    try std.testing.expectEqualStrings("at the end", result);
+}
+
+test "expand variable at start of string" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    try env.set("PREFIX", "START");
+
+    const result = try env.expandCommand("$PREFIX of string", std.testing.allocator);
+    defer std.testing.allocator.free(result);
+
+    try std.testing.expectEqualStrings("START of string", result);
+}
+
+test "expand only variable in string" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    try env.set("ONLY", "value");
+
+    const result = try env.expandCommand("$ONLY", std.testing.allocator);
+    defer std.testing.allocator.free(result);
+
+    try std.testing.expectEqualStrings("value", result);
+}
+
+// ============================================================================
+// Escape sequence tests (documenting behavior per GUIDE.md)
+// ============================================================================
+
+test "backslash-n in value produces newline" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\MULTILINE=line1\nline2\nline3
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("line1\nline2\nline3", env.get("MULTILINE").?);
+}
+
+test "backslash-t in value produces tab" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\TABBED=col1\tcol2\tcol3
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("col1\tcol2\tcol3", env.get("TABBED").?);
+}
+
+test "backslash-r in value produces carriage return" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\CRLF=line1\r\nline2
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("line1\r\nline2", env.get("CRLF").?);
+}
+
+test "double backslash in value produces single backslash" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\PATH=C:\\Users\\Name
+    ;
+
+    try env.parseDotenv(content);
+
+    try std.testing.expectEqualStrings("C:\\Users\\Name", env.get("PATH").?);
+}
+
+test "unknown escape sequence preserved" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+
+    const content =
+        \\UNKNOWN=hello\xworld
+    ;
+
+    try env.parseDotenv(content);
+
+    // Unknown escapes like \x should be preserved as-is
+    try std.testing.expectEqualStrings("hello\\xworld", env.get("UNKNOWN").?);
+}

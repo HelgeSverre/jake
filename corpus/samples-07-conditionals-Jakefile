@@ -1,0 +1,48 @@
+# Test: Conditional logic
+
+task check-env:
+    @if env(CI)
+        echo "CI mode enabled"
+    @elif env(DEBUG)
+        echo "Debug mode enabled"
+    @else
+        echo "Normal mode"
+    @end
+
+task check-files:
+    @if exists(src/config.ts)
+        echo "Config file exists"
+    @else
+        echo "No config found, using defaults"
+    @end
+
+task check-platform:
+    @if exists(/bin/bash)
+        echo "Running on Unix-like system"
+    @else
+        echo "Running on Windows"
+    @end
+
+@default
+task install:
+    echo "Starting installation..."
+    @if env(PRODUCTION)
+        echo "Installing production dependencies only"
+    @elif env(DEVELOPMENT)
+        echo "Installing all dependencies including dev"
+    @else
+        echo "Installing standard dependencies"
+    @end
+    echo "Installation complete"
+
+task conditional-demo:
+    @if exists(Jakefile)
+        echo "Jakefile found in current directory"
+        @if env(VERBOSE)
+            echo "Verbose output enabled"
+        @else
+            echo "Quiet mode"
+        @end
+    @else
+        echo "No Jakefile found"
+    @end

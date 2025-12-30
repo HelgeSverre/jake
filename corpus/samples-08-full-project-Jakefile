@@ -1,0 +1,120 @@
+# Test: Full-featured project combining ALL jake features
+# This is the ultimate integration test
+
+@import "lib/common.jake"
+@import "lib/docker.jake" as docker
+
+@dotenv
+@export NODE_ENV=production
+
+@pre echo "=== JAKE BUILD SYSTEM ==="
+@post echo "=== BUILD COMPLETE ==="
+
+# Variables
+version = "1.0.0"
+app_name = "myapp"
+dist_dir = "dist"
+
+# Default target
+@default
+task build: [compile, bundle]
+    echo "Build v{{version}} complete!"
+
+# Compile TypeScript
+file dist/compiled.js: src/*.ts
+    @pre echo "Checking TypeScript..."
+    echo "Compiling TypeScript files..."
+    mkdir -p dist
+    cat src/*.ts > dist/compiled.js
+    @post echo "TypeScript compiled"
+
+# Bundle assets
+task bundle: [dist/compiled.js]
+    @if exists(dist/compiled.js)
+        echo "Bundling {{app_name}} assets..."
+        cp dist/compiled.js dist/bundle.js
+        echo "Bundle ready"
+    @else
+        echo "No compiled files to bundle"
+    @end
+
+# Testing with conditional
+task test: [compile]
+    @pre echo "Setting up test environment..."
+    @if env(CI)
+        echo "Running CI tests..."
+        echo "Test suite: full"
+    @elif env(QUICK_TEST)
+        echo "Running quick tests..."
+        echo "Test suite: smoke"
+    @else
+        echo "Running local tests..."
+        echo "Test suite: standard"
+    @end
+    @post echo "Tests complete"
+
+# Deploy pipeline
+task deploy: [build, test]
+    @pre echo "Pre-deploy checks..."
+    @if env(PRODUCTION)
+        echo "Deploying to PRODUCTION"
+        echo "Version: {{version}}"
+    @else
+        echo "Deploying to staging"
+    @end
+    @post echo "Deploy finished"
+
+# Docker tasks (from imported module)
+task docker-build: [build, docker.build]
+    echo "Docker image built for {{app_name}}"
+
+task docker-push: [docker-build, docker.push]
+    echo "Docker image pushed"
+
+# Parallel compilation targets
+task compile-all: [compile-frontend, compile-backend, compile-shared]
+    echo "All modules compiled"
+
+task compile-frontend:
+    echo "Compiling frontend module..."
+    sleep 0.05
+    echo "Frontend ready"
+
+task compile-backend:
+    echo "Compiling backend module..."
+    sleep 0.05
+    echo "Backend ready"
+
+task compile-shared:
+    echo "Compiling shared module..."
+    sleep 0.05
+    echo "Shared ready"
+
+# Clean with hooks
+task clean:
+    @pre echo "Preparing to clean..."
+    rm -rf dist/
+    rm -rf .jake/
+    echo "Cleaned build artifacts"
+    @post echo "Clean complete"
+
+# Full rebuild
+task rebuild: [clean, build]
+    echo "Rebuild complete"
+
+# Show info
+task info:
+    echo "App: {{app_name}}"
+    echo "Version: {{version}}"
+    echo "Node: $NODE_ENV"
+    @if exists(.env)
+        echo "Environment: .env loaded"
+    @else
+        echo "Environment: defaults"
+    @end
+
+# Multi-step pipeline
+task pipeline: [lint, test, build, docker-build]
+    @pre echo "Starting full pipeline..."
+    echo "Pipeline successful!"
+    @post echo "Pipeline complete"
