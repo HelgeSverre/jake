@@ -61,3 +61,5 @@ site/public/libs/
 
 # Zed extension build artifacts
 editors/zed-jake/extension.wasm
+
+node_modules

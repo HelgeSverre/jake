@@ -4,11 +4,85 @@
 
 ## NOW
 
-### Test Coverage Gaps
+### Args Library Improvements (`src/args.zig`)
 
-**System Functions (functions.zig):**
-- [ ] `home()` returns error when HOME unset
-- [ ] `shell_config()` with unknown shell falls back to profile
+Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yargs, Picocli, zig-clap.
+
+| # | Feature | Complexity | Effort | Impact | Tests |
+|---|---------|:----------:|:------:|:------:|:-----:|
+| 1 | "Did you mean?" suggestions | Low | 2-3h | High | 8-10 |
+| 2 | Environment variable fallback | Medium | 4-6h | High | 12-15 |
+| 3 | Double-dash (`--`) separator | Low | 1-2h | Medium | 5-6 |
+| 4 | Negatable flags (`--no-X`) | Medium | 3-4h | Medium | 10-12 |
+| 5 | Repeatable flags (`-vvv`) | Low | 2-3h | Medium | 8-10 |
+| 6 | Flag aliases | Low | 2-3h | Low | 6-8 |
+| 7 | Hidden flags | Low | 1h | Low | 3-4 |
+| 8 | Deprecated flag warnings | Low | 2h | Medium | 5-6 |
+| 9 | Mutually exclusive groups | Medium | 4-5h | Medium | 10-12 |
+| 10 | Required-together groups | Medium | 4-5h | Low | 8-10 |
+| 11 | Default values in help | Low | 1-2h | High | 4-5 |
+| 12 | Value validation callbacks | Medium | 3-4h | Medium | 8-10 |
+| 13 | Enum/choice restrictions | Medium | 3-4h | Medium | 8-10 |
+| 14 | Flag categories in help | Low | 2-3h | High | 4-5 |
+| 15 | NO_COLOR/CLICOLOR support | Low | 1-2h | Medium | 4-6 |
+| 16 | Compile-time validation | High | 6-8h | High | 6-8 |
+| 17 | Streaming parser | High | 8-12h | Low | 15-20 |
+| 18 | Better error messages | Medium | 4-6h | High | 10-12 |
+| 19 | Short flag value (`-fVAL`) | Medium | 3-4h | Medium | 8-10 |
+| 20 | Config file support | High | 10-15h | Medium | 15-20 |
+
+---
+
+#### Phase 1 - Quick Wins (~6h, ~20 tests)
+
+- [ ] **#11 Default values in help** - Show `(default: X)` in help text
+- [ ] **#3 Double-dash separator** - `--` stops flag parsing (POSIX standard)
+- [ ] **#7 Hidden flags** - `.hidden = true` excludes from help
+- [ ] **#15 NO_COLOR support** - Respect `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE` env vars
+
+---
+
+#### Phase 2 - High Impact (~12h, ~30 tests)
+
+- [ ] **#1 "Did you mean?" suggestions** - Levenshtein for unknown flags (reuse suggest.zig)
+  - `error: Unknown option: --vrsbose` → `Did you mean '--verbose'?`
+- [ ] **#14 Flag categories in help** - Group flags by category
+  ```
+  GENERAL OPTIONS:
+      -h, --help          Show help
+  EXECUTION OPTIONS:
+      -n, --dry-run       Print without executing
+  ```
+- [ ] **#8 Deprecated flag warnings** - `.deprecated = "Use --new instead"`
+- [ ] **#5 Repeatable/countable flags** - `-vvv` → `verbose_level = 3`
+
+---
+
+#### Phase 3 - Medium Effort (~18h, ~45 tests)
+
+- [ ] **#2 Environment variable fallback** - `.env = "JAKEFILE"` for flag defaults
+  - Precedence: CLI arg → env var → default
+- [ ] **#18 Better error messages** - Rich context with usage hint
+  ```
+  error: Invalid value for --jobs: "abc"
+         Expected a positive integer
+  Usage: jake --jobs [N] [RECIPE]
+  ```
+- [ ] **#4 Negatable boolean flags** - `--no-verbose` to explicitly disable
+- [ ] **#13 Enum/choice restrictions** - `.choices = &.{"json", "yaml", "toml"}`
+
+---
+
+#### Phase 4 - Advanced (~25h, ~45 tests)
+
+- [ ] **#16 Compile-time validation** - Verify Args struct matches flags array
+- [ ] **#9 Mutually exclusive groups** - `--list` and `--show` can't be used together
+- [ ] **#10 Required-together groups** - If `--username`, must also have `--password`
+- [ ] **#12 Value validation callbacks** - Custom validation functions
+- [ ] **#6 Flag aliases** - `.aliases = &.{"dryrun", "simulate"}` for `--dry-run`
+- [ ] **#19 Short flag value attachment** - `-fcustom.jake` (generalize `-j4`)
+- [ ] **#17 Streaming parser** - Process args incrementally for early exit
+- [ ] **#20 Config file support** - Load defaults from `.jakeconfig`
 
 ---
 
@@ -111,11 +185,11 @@
 
 ### Documentation
 
-- [ ] Cookbook: Common patterns (Docker, CI, monorepo)
-- [ ] Migration guide: Makefile to Jakefile
-- [ ] Migration guide: Justfile to Jakefile
+- [x] Cookbook: Common patterns (Docker, CI, monorepo)
+- [x] Migration guide: Makefile to Jakefile
+- [x] Migration guide: Justfile to Jakefile
 - [ ] Video tutorial / screencast
-- [ ] Man page (`man jake`)
+- [ ] Man page (`man jake`) (automatically generated from CLI docs)
 
 ---
 
@@ -226,6 +300,9 @@ Editor integrations exist for: VS Code, Vim/Neovim, Sublime, IntelliJ, Zed, Tree
 - [ ] Publish IntelliJ plugin to JetBrains Marketplace
 - [ ] Publish tree-sitter-jake, shiki-jake, prism-jake, highlightjs-jake to npm
 
+**Testing:**
+- [ ] Zed isolated testing with `zed --user-data-dir /tmp/zed-test` for extension development
+
 ---
 
 ### Language Server Protocol
@@ -245,3 +322,14 @@ Built into binary: `jake --lsp`
 - Shell alias detection via `type -t cmd`
 - Shell function detection
 - Version checking: `@needs node>=18`
+
+---
+
+### Optional Telemetry
+
+Opt-in anonymous usage telemetry via Sentry for crash reporting and usage analytics.
+
+- Disabled by default, enable with `JAKE_TELEMETRY=1`
+- Respect `DO_NOT_TRACK` env var
+- Track: crash reports, feature usage counts, OS/arch distribution
+- No PII, no Jakefile contents, no command arguments
