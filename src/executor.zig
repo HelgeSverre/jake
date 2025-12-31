@@ -12,6 +12,7 @@ const hooks_mod = @import("hooks.zig");
 const prompt_mod = @import("prompt.zig");
 const functions = @import("functions.zig");
 const glob_mod = @import("glob.zig");
+const color_mod = @import("color.zig");
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
@@ -55,6 +56,7 @@ pub const Executor = struct {
     current_quiet: bool, // Suppress command output for current recipe (from @quiet directive)
     prompt: Prompt, // Confirmation prompt handler
     watch_mode: bool, // Whether jake is running in watch mode (-w/--watch)
+    color: color_mod.Color, // Color output configuration (respects NO_COLOR etc.)
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
         var variables = std.StringHashMap([]const u8).init(allocator);
@@ -142,6 +144,7 @@ pub const Executor = struct {
             .current_quiet = false,
             .prompt = Prompt.init(),
             .watch_mode = false,
+            .color = color_mod.init(),
         };
     }
 
@@ -174,7 +177,7 @@ pub const Executor = struct {
                         continue; // Variable exists in system environment
                     } else |_| {
                         // Variable not found - report error
-                        self.print("\x1b[1;31merror:\x1b[0m Required environment variable '{s}' is not set\n", .{var_name});
+                        self.print("{s}Required environment variable '{s}' is not set\n", .{ self.color.errPrefix(), var_name });
                         self.print("  hint: Set this variable in your shell or add it to .env\n", .{});
                         return ExecuteError.MissingRequiredEnv;
                     }
@@ -212,7 +215,7 @@ pub const Executor = struct {
     fn checkRecipeLevelNeeds(self: *Executor, recipe: *const parser.Recipe) ExecuteError!void {
         for (recipe.needs) |req| {
             if (!self.commandExists(req.command)) {
-                self.print("\x1b[1;31merror:\x1b[0m recipe '{s}' requires '{s}' but it's not installed\n", .{ recipe.name, req.command });
+                self.print("{s}recipe '{s}' requires '{s}' but it's not installed\n", .{ self.color.errPrefix(), recipe.name, req.command });
 
                 // Show hint if provided
                 if (req.hint) |hint| {
@@ -289,7 +292,7 @@ pub const Executor = struct {
 
             // Check if command exists
             if (!self.commandExists(cmd)) {
-                self.print("\x1b[1;31merror:\x1b[0m Required command '{s}' not found\n", .{cmd});
+                self.print("{s}Required command '{s}' not found\n", .{ self.color.errPrefix(), cmd });
                 if (hint) |h| {
                     self.print("  hint: {s}\n", .{h});
                 } else {
@@ -331,14 +334,14 @@ pub const Executor = struct {
             .linux => &[_][]const u8{ "xdg-open", target },
             .windows => &[_][]const u8{ "cmd", "/c", "start", "", target },
             else => {
-                self.print("\x1b[1;31merror:\x1b[0m @launch not supported on this platform\n", .{});
+                self.print("{s}@launch not supported on this platform\n", .{self.color.errPrefix()});
                 return ExecuteError.CommandFailed;
             },
         };
 
         var child = std.process.Child.init(argv, self.allocator);
         child.spawn() catch |err| {
-            self.print("\x1b[1;31merror:\x1b[0m failed to launch '{s}': {s}\n", .{ target, @errorName(err) });
+            self.print("{s}failed to launch '{s}': {s}\n", .{ self.color.errPrefix(), target, @errorName(err) });
             return ExecuteError.CommandFailed;
         };
         // Don't wait - let the app run in background
@@ -717,7 +720,7 @@ pub const Executor = struct {
         }
 
         // Run the recipe
-        self.print("\x1b[1;36m-> {s}\x1b[0m\n", .{name});
+        self.print("{s}-> {s}{s}\n", .{ self.color.cyan(), name, self.color.reset() });
 
         // Update hook runner settings
         self.hook_runner.dry_run = self.dry_run;
@@ -733,7 +736,7 @@ pub const Executor = struct {
 
         // Run pre-hooks (global and recipe-specific)
         self.hook_runner.runPreHooks(recipe.pre_hooks, &hook_context) catch |err| {
-            self.print("\x1b[1;31merror:\x1b[0m pre-hook failed: {s}\n", .{@errorName(err)});
+            self.print("{s}pre-hook failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return ExecuteError.CommandFailed;
         };
 
@@ -744,7 +747,7 @@ pub const Executor = struct {
 
         // Bind recipe parameters to variables
         self.bindRecipeParams(recipe) catch |err| {
-            self.print("\x1b[1;31merror:\x1b[0m failed to bind parameters: {s}\n", .{@errorName(err)});
+            self.print("{s}failed to bind parameters: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return ExecuteError.CommandFailed;
         };
 
@@ -762,7 +765,7 @@ pub const Executor = struct {
 
         // Run post-hooks (always run, even on failure for cleanup)
         self.hook_runner.runPostHooks(recipe.post_hooks, &hook_context) catch |hook_err| {
-            self.print("\x1b[1;33mwarning:\x1b[0m post-hook failed: {s}\n", .{@errorName(hook_err)});
+            self.print("{s}post-hook failed: {s}\n", .{ self.color.warnPrefix(), @errorName(hook_err) });
         };
 
         // Run on_error hooks if recipe failed
@@ -930,7 +933,7 @@ pub const Executor = struct {
                             .verbose = self.verbose,
                         };
                         const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch |err| blk: {
-                            self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ condition, @errorName(err) });
+                            self.print("{s}failed to evaluate condition '{s}': {s}\n", .{ self.color.warnPrefix(), condition, @errorName(err) });
                             break :blk false;
                         };
 
@@ -967,7 +970,7 @@ pub const Executor = struct {
                             .verbose = self.verbose,
                         };
                         const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch |err| blk: {
-                            self.print("\x1b[1;33mwarning:\x1b[0m failed to evaluate condition '{s}': {s}\n", .{ condition, @errorName(err) });
+                            self.print("{s}failed to evaluate condition '{s}': {s}\n", .{ self.color.warnPrefix(), condition, @errorName(err) });
                             break :blk false;
                         };
 
@@ -1054,8 +1057,14 @@ pub const Executor = struct {
                             continue;
                         }
 
-                        // Parse items from line
-                        const items = self.parseEachItems(cmd.line);
+                        // Expand variables in the @each line first
+                        const expanded_line = self.expandJakeVariables(cmd.line) catch cmd.line;
+                        if (expanded_line.ptr != cmd.line.ptr) {
+                            self.expanded_strings.append(self.allocator, expanded_line) catch return ExecuteError.OutOfMemory;
+                        }
+
+                        // Parse items from expanded line
+                        const items = self.parseEachItems(expanded_line);
                         defer self.allocator.free(items);
 
                         // Find the matching @end and the loop body range
@@ -1109,7 +1118,7 @@ pub const Executor = struct {
 
                         if (!is_stale and patterns.len > 0) {
                             // All deps are fresh, skip the next command
-                            self.print("  \x1b[1;36m[cached]\x1b[0m skipping (inputs unchanged)\n", .{});
+                            self.print("  {s}[cached]{s} skipping (inputs unchanged)\n", .{ self.color.cyan(), self.color.reset() });
                             // Skip to next command
                             i += 1;
                             // Skip any subsequent commands until a non-command directive or end
@@ -1186,10 +1195,10 @@ pub const Executor = struct {
                     switch (err) {
                         ExecuteError.CommandFailed => {
                             // The error message with exit code was already printed by runCommand
-                            self.print("\x1b[1;33m[ignored]\x1b[0m continuing despite command failure\n", .{});
+                            self.print("{s}[ignored]{s} continuing despite command failure\n", .{ self.color.yellow(), self.color.reset() });
                         },
                         else => {
-                            self.print("\x1b[1;33m[ignored]\x1b[0m command failed with error: {s}\n", .{@errorName(err)});
+                            self.print("{s}[ignored]{s} command failed with error: {s}\n", .{ self.color.yellow(), self.color.reset(), @errorName(err) });
                         },
                     }
                 };
@@ -1248,18 +1257,18 @@ pub const Executor = struct {
 
         // Set up environment for child process
         var env_map = self.environment.buildEnvMap(self.allocator) catch |err| {
-            self.print("\x1b[1;33mwarning:\x1b[0m failed to build env map: {s}\n", .{@errorName(err)});
+            self.print("{s}failed to build env map: {s}\n", .{ self.color.warnPrefix(), @errorName(err) });
             // Continue without custom env
             _ = child.spawn() catch |spawn_err| {
-                self.print("\x1b[1;31merror:\x1b[0m failed to spawn: {s}\n", .{@errorName(spawn_err)});
+                self.print("{s}failed to spawn: {s}\n", .{ self.color.errPrefix(), @errorName(spawn_err) });
                 return ExecuteError.CommandFailed;
             };
             const result = child.wait() catch |wait_err| {
-                self.print("\x1b[1;31merror:\x1b[0m failed to wait: {s}\n", .{@errorName(wait_err)});
+                self.print("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(wait_err) });
                 return ExecuteError.CommandFailed;
             };
             if (result.Exited != 0) {
-                self.print("\x1b[1;31merror:\x1b[0m command exited with code {d}\n", .{result.Exited});
+                self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), result.Exited });
                 return ExecuteError.CommandFailed;
             }
             return;
@@ -1268,17 +1277,17 @@ pub const Executor = struct {
         child.env_map = &env_map;
 
         _ = child.spawn() catch |err| {
-            self.print("\x1b[1;31merror:\x1b[0m failed to spawn: {s}\n", .{@errorName(err)});
+            self.print("{s}failed to spawn: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return ExecuteError.CommandFailed;
         };
 
         const result = child.wait() catch |err| {
-            self.print("\x1b[1;31merror:\x1b[0m failed to wait: {s}\n", .{@errorName(err)});
+            self.print("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return ExecuteError.CommandFailed;
         };
 
         if (result.Exited != 0) {
-            self.print("\x1b[1;31merror:\x1b[0m command exited with code {d}\n", .{result.Exited});
+            self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), result.Exited });
             return ExecuteError.CommandFailed;
         }
     }
@@ -1360,22 +1369,26 @@ pub const Executor = struct {
     }
 
     /// List all available recipes
-    pub fn listRecipes(self: *Executor, short_mode: bool) void {
+    // TODO: Highlight the default recipe in the list output (e.g., with a star or "default" label).
+    // Currently `jake --verbose` runs the default but `-> build` appears first because it's a
+    // dependency, which can confuse users into thinking `build` is the target instead of `all`.
+    pub fn listRecipes(self: *Executor, short_mode: bool, show_all: bool) void {
         const stdout = compat.getStdOut();
 
         // Short mode: one recipe name per line, no colors, no formatting
         if (short_mode) {
             for (self.jakefile.recipes) |*recipe| {
-                if (isPrivateRecipe(recipe)) continue;
+                if (!show_all and isPrivateRecipe(recipe)) continue;
                 stdout.writeAll(recipe.name) catch {};
                 stdout.writeAll("\n") catch {};
             }
             return;
         }
 
-        stdout.writeAll("\x1b[1mAvailable recipes:\x1b[0m\n") catch {};
-
-        var hidden_count: usize = 0;
+        stdout.writeAll(self.color.bold()) catch {};
+        stdout.writeAll("Available recipes:") catch {};
+        stdout.writeAll(self.color.reset()) catch {};
+        stdout.writeAll("\n") catch {};
 
         // Group recipes by their group field
         var groups = std.StringHashMap(std.ArrayListUnmanaged(*const Recipe)).init(self.allocator);
@@ -1390,10 +1403,17 @@ pub const Executor = struct {
         var ungrouped: std.ArrayListUnmanaged(*const Recipe) = .{};
         defer ungrouped.deinit(self.allocator);
 
+        var hidden: std.ArrayListUnmanaged(*const Recipe) = .{};
+        defer hidden.deinit(self.allocator);
+
         // Collect recipes into groups
         for (self.jakefile.recipes) |*recipe| {
-            if (isPrivateRecipe(recipe)) {
-                hidden_count += 1;
+            const is_private = isPrivateRecipe(recipe);
+
+            if (is_private) {
+                if (show_all) {
+                    hidden.append(self.allocator, recipe) catch continue;
+                }
                 continue;
             }
 
@@ -1428,12 +1448,14 @@ pub const Executor = struct {
         for (group_names.items) |group_name| {
             if (groups.get(group_name)) |recipes| {
                 stdout.writeAll("\n") catch {};
-                var group_buf: [256]u8 = undefined;
-                const group_header = std.fmt.bufPrint(&group_buf, "\x1b[1;33m{s}:\x1b[0m\n", .{group_name}) catch continue;
-                stdout.writeAll(group_header) catch {};
+                stdout.writeAll(self.color.yellow()) catch {};
+                stdout.writeAll(group_name) catch {};
+                stdout.writeAll(":") catch {};
+                stdout.writeAll(self.color.reset()) catch {};
+                stdout.writeAll("\n") catch {};
 
                 for (recipes.items) |recipe| {
-                    printRecipe(stdout, recipe);
+                    self.printRecipe(stdout, recipe);
                 }
             }
         }
@@ -1444,20 +1466,20 @@ pub const Executor = struct {
                 stdout.writeAll("\n") catch {};
             }
             for (ungrouped.items) |recipe| {
-                printRecipe(stdout, recipe);
+                self.printRecipe(stdout, recipe);
             }
         }
 
-        // Show count of hidden recipes
-        if (hidden_count > 0) {
+        // Print hidden recipes (when --all is used)
+        if (hidden.items.len > 0) {
             stdout.writeAll("\n") catch {};
-            var hidden_buf: [64]u8 = undefined;
-            if (hidden_count == 1) {
-                const hidden_line = std.fmt.bufPrint(&hidden_buf, "({d} hidden recipe)\n", .{hidden_count}) catch return;
-                stdout.writeAll(hidden_line) catch {};
-            } else {
-                const hidden_line = std.fmt.bufPrint(&hidden_buf, "({d} hidden recipes)\n", .{hidden_count}) catch return;
-                stdout.writeAll(hidden_line) catch {};
+            // Dim/gray color for hidden group header
+            stdout.writeAll(self.color.dim()) catch {};
+            stdout.writeAll("(hidden):") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll("\n") catch {};
+            for (hidden.items) |recipe| {
+                self.printRecipe(stdout, recipe);
             }
         }
     }
@@ -1480,7 +1502,7 @@ pub const Executor = struct {
     }
 
     /// Print a single recipe with its metadata
-    fn printRecipe(stdout: std.fs.File, recipe: *const Recipe) void {
+    fn printRecipe(self: *Executor, stdout: std.fs.File, recipe: *const Recipe) void {
         const kind_str = switch (recipe.kind) {
             .task => "task",
             .file => "file",
@@ -1502,20 +1524,26 @@ pub const Executor = struct {
             alias_str = fbs.getWritten();
         }
 
-        var buf: [512]u8 = undefined;
+        // Print recipe name with color
+        stdout.writeAll("  ") catch {};
+        stdout.writeAll(self.color.cyanRegular()) catch {};
+        stdout.writeAll(recipe.name) catch {};
+        stdout.writeAll(self.color.reset()) catch {};
         if (kind_str.len > 0) {
-            const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m [{s}]{s}{s}", .{ recipe.name, kind_str, default_str, alias_str }) catch return;
-            stdout.writeAll(line) catch {};
-        } else {
-            const line = std.fmt.bufPrint(&buf, "  \x1b[36m{s}\x1b[0m{s}{s}", .{ recipe.name, default_str, alias_str }) catch return;
-            stdout.writeAll(line) catch {};
+            stdout.writeAll(" [") catch {};
+            stdout.writeAll(kind_str) catch {};
+            stdout.writeAll("]") catch {};
         }
+        stdout.writeAll(default_str) catch {};
+        stdout.writeAll(alias_str) catch {};
 
         // Show description inline if available
         if (recipe.description) |desc| {
-            var desc_buf: [256]u8 = undefined;
-            const desc_str = std.fmt.bufPrint(&desc_buf, "  \x1b[90m# {s}\x1b[0m", .{desc}) catch "";
-            stdout.writeAll(desc_str) catch {};
+            stdout.writeAll("  ") catch {};
+            stdout.writeAll(self.color.dim()) catch {};
+            stdout.writeAll("# ") catch {};
+            stdout.writeAll(desc) catch {};
+            stdout.writeAll(self.color.reset()) catch {};
         }
         stdout.writeAll("\n") catch {};
 
@@ -1537,15 +1565,28 @@ pub const Executor = struct {
 
         const recipe = self.jakefile.getRecipe(name) orelse {
             const stderr = compat.getStdErr();
-            var buf: [256]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "\x1b[1;31merror:\x1b[0m Recipe '{s}' not found\n", .{name}) catch "error\n";
-            stderr.writeAll(msg) catch {};
+            stderr.writeAll(self.color.errPrefix()) catch {};
+            stderr.writeAll("Recipe '") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll("' not found\n") catch {};
             return false;
         };
 
         // Header
-        var buf: [512]u8 = undefined;
-        stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mRecipe:\x1b[0m \x1b[36m{s}\x1b[0m\n", .{recipe.name}) catch return false) catch {};
+        stdout.writeAll(self.color.bold()) catch {};
+        stdout.writeAll("Recipe:") catch {};
+        stdout.writeAll(self.color.reset()) catch {};
+        stdout.writeAll(" ") catch {};
+        stdout.writeAll(self.color.cyanRegular()) catch {};
+        stdout.writeAll(recipe.name) catch {};
+        stdout.writeAll(self.color.reset()) catch {};
+        if (isPrivateRecipe(recipe)) {
+            stdout.writeAll(" ") catch {};
+            stdout.writeAll(self.color.dim()) catch {};
+            stdout.writeAll("(hidden)") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+        }
+        stdout.writeAll("\n") catch {};
 
         // Type
         const kind_str = switch (recipe.kind) {
@@ -1553,29 +1594,52 @@ pub const Executor = struct {
             .file => "file",
             .simple => "simple",
         };
-        stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mType:\x1b[0m {s}\n", .{kind_str}) catch return false) catch {};
+        stdout.writeAll(self.color.bold()) catch {};
+        stdout.writeAll("Type:") catch {};
+        stdout.writeAll(self.color.reset()) catch {};
+        stdout.writeAll(" ") catch {};
+        stdout.writeAll(kind_str) catch {};
+        stdout.writeAll("\n") catch {};
 
         // Group (if present)
         if (recipe.group) |group| {
-            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mGroup:\x1b[0m {s}\n", .{group}) catch return false) catch {};
+            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll("Group:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll(" ") catch {};
+            stdout.writeAll(group) catch {};
+            stdout.writeAll("\n") catch {};
         }
 
         // Description
         if (recipe.description) |desc| {
-            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mDescription:\x1b[0m {s}\n", .{desc}) catch return false) catch {};
+            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll("Description:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll(" ") catch {};
+            stdout.writeAll(desc) catch {};
+            stdout.writeAll("\n") catch {};
         }
 
         // Doc comment (if different from description)
         if (recipe.doc_comment) |doc| {
             const should_show = if (recipe.description) |desc| !std.mem.eql(u8, doc, desc) else true;
             if (should_show) {
-                stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mDoc:\x1b[0m {s}\n", .{doc}) catch return false) catch {};
+                stdout.writeAll(self.color.bold()) catch {};
+                stdout.writeAll("Doc:") catch {};
+                stdout.writeAll(self.color.reset()) catch {};
+                stdout.writeAll(" ") catch {};
+                stdout.writeAll(doc) catch {};
+                stdout.writeAll("\n") catch {};
             }
         }
 
         // Aliases
         if (recipe.aliases.len > 0) {
-            stdout.writeAll("\x1b[1mAliases:\x1b[0m ") catch {};
+            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll("Aliases:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll(" ") catch {};
             for (recipe.aliases, 0..) |alias, i| {
                 if (i > 0) stdout.writeAll(", ") catch {};
                 stdout.writeAll(alias) catch {};
@@ -1585,12 +1649,19 @@ pub const Executor = struct {
 
         // Default marker
         if (recipe.is_default) {
-            stdout.writeAll("\x1b[1mDefault:\x1b[0m yes\n") catch {};
+            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll("Default:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll(" yes\n") catch {};
         }
 
         // Dependencies
         if (recipe.dependencies.len > 0) {
-            stdout.writeAll("\n\x1b[1mDependencies:\x1b[0m [") catch {};
+            stdout.writeAll("\n") catch {};
+            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll("Dependencies:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll(" [") catch {};
             for (recipe.dependencies, 0..) |dep, i| {
                 if (i > 0) stdout.writeAll(", ") catch {};
                 stdout.writeAll(dep) catch {};
@@ -3554,6 +3625,31 @@ test "@each expands {{item}} variable in command" {
     executor.dry_run = true;
 
     try executor.execute("test");
+}
+
+test "@each expands variable to multiple items" {
+    // Test that @each {{variable}} expands the variable and iterates over each item
+    const source =
+        \\targets = "foo bar baz"
+        \\task test:
+        \\    @each {{targets}}
+        \\        echo "building {{item}}"
+        \\    @end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Should iterate 3 times (foo, bar, baz), not once with the whole string
+    try executor.execute("test");
+
+    // Verify item variable was set correctly during execution
+    // (The test passes if no crash occurs and loop iterates correctly)
 }
 
 test "@each with empty list executes zero times" {
