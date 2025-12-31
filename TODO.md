@@ -8,44 +8,49 @@
 
 Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yargs, Picocli, zig-clap.
 
-| # | Feature | Complexity | Effort | Impact | Tests |
-|---|---------|:----------:|:------:|:------:|:-----:|
-| 1 | "Did you mean?" suggestions | Low | 2-3h | High | 8-10 |
-| 2 | Environment variable fallback | Medium | 4-6h | High | 12-15 |
-| 3 | Double-dash (`--`) separator | Low | 1-2h | Medium | 5-6 |
-| 4 | Negatable flags (`--no-X`) | Medium | 3-4h | Medium | 10-12 |
-| 5 | Repeatable flags (`-vvv`) | Low | 2-3h | Medium | 8-10 |
-| 6 | Flag aliases | Low | 2-3h | Low | 6-8 |
-| 7 | Hidden flags | Low | 1h | Low | 3-4 |
-| 8 | Deprecated flag warnings | Low | 2h | Medium | 5-6 |
-| 9 | Mutually exclusive groups | Medium | 4-5h | Medium | 10-12 |
-| 10 | Required-together groups | Medium | 4-5h | Low | 8-10 |
-| 11 | Default values in help | Low | 1-2h | High | 4-5 |
-| 12 | Value validation callbacks | Medium | 3-4h | Medium | 8-10 |
-| 13 | Enum/choice restrictions | Medium | 3-4h | Medium | 8-10 |
-| 14 | Flag categories in help | Low | 2-3h | High | 4-5 |
-| 15 | NO_COLOR/CLICOLOR support | Low | 1-2h | Medium | 4-6 |
-| 16 | Compile-time validation | High | 6-8h | High | 6-8 |
-| 17 | Streaming parser | High | 8-12h | Low | 15-20 |
-| 18 | Better error messages | Medium | 4-6h | High | 10-12 |
-| 19 | Short flag value (`-fVAL`) | Medium | 3-4h | Medium | 8-10 |
-| 20 | Config file support | High | 10-15h | Medium | 15-20 |
+| #  | Feature                       | Complexity | Effort | Impact | Tests |
+|----|-------------------------------|:----------:|:------:|:------:|:-----:|
+| 1  | "Did you mean?" suggestions   |    Low     |  2-3h  |  High  | 8-10  |
+| 2  | Environment variable fallback |   Medium   |  4-6h  |  High  | 12-15 |
+| 3  | Double-dash (`--`) separator  |    Low     |  1-2h  | Medium |  5-6  |
+| 4  | Negatable flags (`--no-X`)    |   Medium   |  3-4h  | Medium | 10-12 |
+| 5  | Repeatable flags (`-vvv`)     |    Low     |  2-3h  | Medium | 8-10  |
+| 6  | Flag aliases                  |    Low     |  2-3h  |  Low   |  6-8  |
+| 7  | Hidden flags                  |    Low     |   1h   |  Low   |  3-4  |
+| 8  | Deprecated flag warnings      |    Low     |   2h   | Medium |  5-6  |
+| 9  | Mutually exclusive groups     |   Medium   |  4-5h  | Medium | 10-12 |
+| 10 | Required-together groups      |   Medium   |  4-5h  |  Low   | 8-10  |
+| 11 | Default values in help        |    Low     |  1-2h  |  High  |  4-5  |
+| 12 | Value validation callbacks    |   Medium   |  3-4h  | Medium | 8-10  |
+| 13 | Enum/choice restrictions      |   Medium   |  3-4h  | Medium | 8-10  |
+| 14 | Flag categories in help       |    Low     |  2-3h  |  High  |  4-5  |
+| 15 | NO_COLOR/CLICOLOR support     |    Low     |  1-2h  | Medium |  4-6  |
+| 16 | Compile-time validation       |    High    |  6-8h  |  High  |  6-8  |
+| 17 | Streaming parser              |    High    | 8-12h  |  Low   | 15-20 |
+| 18 | Better error messages         |   Medium   |  4-6h  |  High  | 10-12 |
+| 19 | Short flag value (`-fVAL`)    |   Medium   |  3-4h  | Medium | 8-10  |
+| 20 | Config file support           |    High    | 10-15h | Medium | 15-20 |
 
 ---
 
-#### Phase 1 - Quick Wins (~6h, ~20 tests)
+#### Phase 1 - Quick Wins (~6h, ~20 tests) ✓ DONE
 
-- [ ] **#11 Default values in help** - Show `(default: X)` in help text
-- [ ] **#3 Double-dash separator** - `--` stops flag parsing (POSIX standard)
-- [ ] **#7 Hidden flags** - `.hidden = true` excludes from help
-- [ ] **#15 NO_COLOR support** - Respect `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE` env vars
+- [x] **#11 Default values in help** - Show `(default: X)` in help text
+- [x] **#3 Double-dash separator** - `--` stops flag parsing (POSIX standard)
+- [x] **#7 Hidden flags** - `.hidden = true` excludes from help
+- [x] **#15 NO_COLOR support** - Respect `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE` env vars
+    - Created `src/color.zig` with runtime Color struct and writer methods
+    - Created `src/context.zig` for shared execution context
+    - Replaced hardcoded ANSI codes in executor.zig, parallel.zig, hooks.zig, watch.zig
+    - **Remaining:** Early error messages in `args.zig` and `main.zig` use comptime `ansi.err_prefix` - would need
+      refactoring to use runtime color detection
 
 ---
 
 #### Phase 2 - High Impact (~12h, ~30 tests)
 
 - [ ] **#1 "Did you mean?" suggestions** - Levenshtein for unknown flags (reuse suggest.zig)
-  - `error: Unknown option: --vrsbose` → `Did you mean '--verbose'?`
+    - `error: Unknown option: --vrsbose` → `Did you mean '--verbose'?`
 - [ ] **#14 Flag categories in help** - Group flags by category
   ```
   GENERAL OPTIONS:
@@ -61,7 +66,7 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 #### Phase 3 - Medium Effort (~18h, ~45 tests)
 
 - [ ] **#2 Environment variable fallback** - `.env = "JAKEFILE"` for flag defaults
-  - Precedence: CLI arg → env var → default
+    - Precedence: CLI arg → env var → default
 - [ ] **#18 Better error messages** - Rich context with usage hint
   ```
   error: Invalid value for --jobs: "abc"
@@ -91,31 +96,32 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 ### CLI Commands
 
 - [ ] `jake upgrade` - Self-update from GitHub releases
-  - Check version against latest release tag
-  - Detect OS/arch, download appropriate binary
-  - Optional signature verification (minisign)
-  - `--check` flag to only check for updates
+    - Check version against latest release tag
+    - Detect OS/arch, download appropriate binary
+    - Optional signature verification (minisign)
+    - `--check` flag to only check for updates
 
 ---
 
 - [ ] `jake init` - Scaffold Jakefile from templates
-  - Auto-detect project type (Node, Go, Rust, Python)
-  - `--template=node` for explicit selection
+    - Auto-detect project type (Node, Go, Rust, Python)
+    - `--template=node` for explicit selection
 
 ---
 
-- [ ] `jake fmt` - Auto-format Jakefile
-  - Consistent 4-space indentation
-  - Align `=` in variable definitions
-  - Sort imports alphabetically
-  - `--check` flag for CI
+- [x] `jake fmt` - Auto-format Jakefile
+    - [x] Consistent 4-space indentation
+    - [x] Align `=` in variable definitions
+    - [ ] Sort imports alphabetically (deferred to v2)
+    - [x] `--check` flag for CI
+    - [x] `--dump` flag for stdout output
 
 ---
 
 - [ ] `--json` flag - Machine-readable output
-  - `--list --json` - recipes as JSON array
-  - `--dry-run --json` - execution plan as JSON
-  - `--vars --json` - resolved variables as JSON
+    - `--list --json` - recipes as JSON array
+    - `--dry-run --json` - execution plan as JSON
+    - `--vars --json` - resolved variables as JSON
 
 ---
 
@@ -204,17 +210,17 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 ### Deferred Refactoring
 
 - [ ] executor.zig modularization (see REFACTOR.md)
-  - Extract platform.zig (~40 lines)
-  - Extract system.zig (~30 lines)
-  - Extract expansion.zig (~80 lines)
-  - Extract directive_parser.zig (~200 lines)
-  - Extract display.zig (~360 lines)
+    - Extract platform.zig (~40 lines)
+    - Extract system.zig (~30 lines)
+    - Extract expansion.zig (~80 lines)
+    - Extract directive_parser.zig (~200 lines)
+    - Extract display.zig (~360 lines)
 
 ---
 
 ## IDEA
 
-### Remote Cache Support
+### Remote Cache Support (unlikely to be useful)
 
 HTTP/S3 backend for CI/CD cache sharing. Cache key = sha256(recipe + inputs + command).
 
@@ -240,7 +246,7 @@ task build:
     npm run build
 ```
 
-Runtime detection: podman > docker > nerdctl. Auto-mount pwd, forward @export vars.
+Runtime detection: podman > docker > nerdctl. Auto-mount pwd (or a specified path), forward @export vars.
 
 ---
 
@@ -257,6 +263,10 @@ task build:
 ```
 
 CLI: `jake build --package=core`, `jake build --changed`, `jake --list-packages`
+
+
+> TODO: needs more details and though into how workflows would look like, what directives are needed, and how it differs
+> from regular mode, what scopes and inheritance should be etc.
 
 ---
 
@@ -292,15 +302,18 @@ task dev:
 Editor integrations exist for: VS Code, Vim/Neovim, Sublime, IntelliJ, Zed, Tree-sitter, Highlight.js, Prism.js, Shiki.
 
 **Blocked on repo being public:**
+
 - [ ] Zed extension (uses `path` to tree-sitter grammar in monorepo)
-- [ ] GitHub Linguist upstream (submit PR to github-linguist/linguist)
+- [x] GitHub Linguist upstream (submit PR to github-linguist/linguist)
 
 **Publishing:**
+
 - [ ] Publish VS Code extension to Marketplace
 - [ ] Publish IntelliJ plugin to JetBrains Marketplace
 - [ ] Publish tree-sitter-jake, shiki-jake, prism-jake, highlightjs-jake to npm
 
 **Testing:**
+
 - [ ] Zed isolated testing with `zed --user-data-dir /tmp/zed-test` for extension development
 
 ---
