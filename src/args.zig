@@ -782,8 +782,13 @@ test "parse --install alone" {
 
 test "all global boolean flags work after recipe" {
     var args = try parse(testing.allocator, &.{
-        "jake", "build",
-        "-h", "-V", "-l", "-a", "-n", "-v", "-y", "--short", "--summary", "--install", "--uninstall",
+        "jake",        "build",
+        "-h",          "-V",
+        "-l",          "-a",
+        "-n",          "-v",
+        "-y",          "--short",
+        "--summary",   "--install",
+        "--uninstall",
     });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
