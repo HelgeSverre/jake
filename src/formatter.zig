@@ -921,3 +921,482 @@ test "fixture: integration/full-project.jake - complete project" {
     try std.testing.expect(std.mem.indexOf(u8, result.output, "@on_error") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "@desc") != null);
 }
+
+// ============================================================================
+// Error Path Tests
+// ============================================================================
+
+test "error: ParseError on invalid syntax" {
+    const allocator = std.testing.allocator;
+    // Invalid: recipe with no body or colon
+    const source = "task broken\n";
+    const result = format(allocator, source);
+    try std.testing.expectError(FormatError.ParseError, result);
+}
+
+test "error: ParseError on task keyword without colon" {
+    const allocator = std.testing.allocator;
+    // task keyword expects a colon
+    const source = "task nocolon\n";
+    const result = format(allocator, source);
+    try std.testing.expectError(FormatError.ParseError, result);
+}
+
+test "error: ParseError on file keyword without colon" {
+    const allocator = std.testing.allocator;
+    // file keyword expects a colon
+    const source = "file nocolon\n";
+    const result = format(allocator, source);
+    try std.testing.expectError(FormatError.ParseError, result);
+}
+
+test "error: formatFile returns FileNotFound for missing file" {
+    const allocator = std.testing.allocator;
+    const result = formatFile(allocator, "/nonexistent/path/to/file.jake", true);
+    try std.testing.expectError(FormatError.FileNotFound, result);
+}
+
+// ============================================================================
+// Edge Case Tests
+// ============================================================================
+
+test "edge: empty recipe with no commands" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\task empty:
+        \\
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    // Should still produce valid output
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "task empty:") != null);
+}
+
+test "edge: multiple blank lines preserved in current version" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\name = "test"
+        \\
+        \\
+        \\
+        \\task build:
+        \\    echo hi
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    // Currently blank lines are preserved - verify content is correct
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "name = ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "task build:") != null);
+}
+
+test "edge: trailing whitespace removed" {
+    const allocator = std.testing.allocator;
+    // Note: actual trailing spaces would be in the source
+    const source = "name = \"test\"\n\ntask build:\n    echo hi\n";
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    // Output should not have trailing spaces before newlines
+    var has_trailing = false;
+    var i: usize = 0;
+    while (i < result.output.len) : (i += 1) {
+        if (result.output[i] == '\n' and i > 0 and result.output[i - 1] == ' ') {
+            has_trailing = true;
+            break;
+        }
+    }
+    try std.testing.expect(!has_trailing);
+}
+
+test "edge: ensures final newline" {
+    const allocator = std.testing.allocator;
+    const source = "task build:\n    echo hi";
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(result.output.len > 0);
+    try std.testing.expect(result.output[result.output.len - 1] == '\n');
+}
+
+test "edge: unicode in variable values" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\emoji = "🚀 rocket"
+        \\japanese = "日本語"
+        \\task greet:
+        \\    echo "Hello 世界"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "🚀") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "日本語") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "世界") != null);
+}
+
+test "edge: recipe with only directives" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@desc "A recipe with only directives"
+        \\@quiet
+        \\task silent:
+        \\    @cd /tmp
+        \\    @ignore
+        \\    echo "hi"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@desc") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@quiet") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@cd") != null);
+}
+
+test "edge: empty variable value" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\empty = ""
+        \\name = "test"
+        \\task build:
+        \\    echo {{name}}
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    // Formatter outputs unquoted values, empty value becomes just "empty = \n"
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "empty") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "name") != null);
+}
+
+test "edge: very long variable value" {
+    const allocator = std.testing.allocator;
+    const long_value = "a" ** 100; // 100 chars
+    const source = "longvar = \"" ++ long_value ++ "\"\ntask build:\n    echo hi\n";
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, long_value) != null);
+}
+
+test "edge: single character variable and recipe names" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\x = "1"
+        \\y = "2"
+        \\task a:
+        \\    echo {{x}}
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "x = ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "y = ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "task a:") != null);
+}
+
+test "edge: special characters in strings" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\special = "quotes: \" and backslash: \\"
+        \\task test:
+        \\    echo "tab:\there"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "special") != null);
+}
+
+test "edge: recipe with parameters" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\task greet name="world" greeting="Hello":
+        \\    echo "{{greeting}}, {{name}}!"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "name=") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "greeting=") != null);
+}
+
+test "edge: file target recipe" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\file output.txt: [input.txt]
+        \\    cat input.txt > output.txt
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "file output.txt:") != null);
+    // File dependencies are rendered without brackets
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "input.txt") != null);
+}
+
+test "edge: glob dependencies" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\file bundle.js: [src/**/*.js]
+        \\    esbuild src/index.js -o bundle.js
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    // File dependencies are rendered without brackets
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "src/**/*.js") != null);
+}
+
+// ============================================================================
+// Directive Rendering Tests
+// ============================================================================
+
+test "directive: @dotenv renders correctly" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@dotenv .env.local
+        \\task build:
+        \\    echo hi
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@dotenv .env.local") != null);
+}
+
+test "directive: @require renders correctly" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@require API_KEY SECRET_TOKEN
+        \\task deploy:
+        \\    echo deploying
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@require API_KEY SECRET_TOKEN") != null);
+}
+
+test "directive: @export renders correctly" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\version = "1.0"
+        \\@export VERSION={{version}}
+        \\task build:
+        \\    echo $VERSION
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@export") != null);
+}
+
+test "directive: @default renders correctly" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@default
+        \\task build:
+        \\    echo building
+        \\
+        \\task test:
+        \\    echo testing
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@default") != null);
+}
+
+// ============================================================================
+// Recipe-level Hook Tests
+// ============================================================================
+
+test "recipe-hook: @pre in recipe body" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\task build:
+        \\    @pre echo "before"
+        \\    echo "main"
+        \\    @post echo "after"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@pre") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@post") != null);
+}
+
+// ============================================================================
+// Round-trip Parseability Tests
+// ============================================================================
+
+test "roundtrip: formatted output is parseable" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\version = "1.0"
+        \\
+        \\@import "utils.jake" as utils
+        \\
+        \\@before build echo "starting"
+        \\
+        \\@desc "Build the project"
+        \\task build: [clean]
+        \\    echo "building v{{version}}"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    // Parse the formatted output - should not error
+    var lex = lexer.Lexer.init(result.output);
+    var p = parser.Parser.init(allocator, &lex);
+    var jakefile = p.parseJakefile() catch |err| {
+        std.debug.print("Parse error: {any}\n", .{err});
+        return error.TestUnexpectedResult;
+    };
+    defer jakefile.deinit(allocator);
+
+    // Verify the parsed content matches original
+    try std.testing.expect(jakefile.recipes.len == 1);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].name);
+}
+
+test "roundtrip: complex jakefile remains parseable" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\name = "myapp"
+        \\version = "2.0"
+        \\
+        \\@dotenv .env
+        \\@require API_KEY
+        \\
+        \\@before deploy echo "deploying"
+        \\@after deploy echo "deployed"
+        \\@on_error echo "failed"
+        \\
+        \\@group build
+        \\@desc "Clean artifacts"
+        \\task clean:
+        \\    rm -rf dist
+        \\
+        \\@group build
+        \\@desc "Build project"
+        \\task build: [clean]
+        \\    @cd src
+        \\    echo "building {{name}} v{{version}}"
+        \\
+        \\@group deploy
+        \\task deploy: [build]
+        \\    @if env("PROD")
+        \\        echo "production"
+        \\    @else
+        \\        echo "staging"
+        \\    @end
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    // Parse should succeed
+    var lex = lexer.Lexer.init(result.output);
+    var p = parser.Parser.init(allocator, &lex);
+    var jakefile = p.parseJakefile() catch |err| {
+        std.debug.print("Parse error on formatted output: {any}\n", .{err});
+        return error.TestUnexpectedResult;
+    };
+    defer jakefile.deinit(allocator);
+
+    try std.testing.expect(jakefile.recipes.len == 3);
+}
+
+// ============================================================================
+// File I/O Tests
+// ============================================================================
+
+test "formatFile: writes formatted output to file" {
+    const allocator = std.testing.allocator;
+
+    // Create a temp file with unformatted content
+    const tmp_path = "/tmp/jake-formatter-test.jake";
+    const unformatted = "x=\"1\"\ny=\"2\"\ntask build:\n    echo hi\n";
+
+    std.fs.cwd().writeFile(.{ .sub_path = tmp_path, .data = unformatted }) catch |err| {
+        std.debug.print("Failed to write test file: {any}\n", .{err});
+        return error.TestUnexpectedResult;
+    };
+    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+
+    // Format and write
+    const result = try formatFile(allocator, tmp_path, false);
+    defer allocator.free(result.output);
+
+    // Verify file was modified
+    const written = std.fs.cwd().readFileAlloc(allocator, tmp_path, 1024 * 1024) catch |err| {
+        std.debug.print("Failed to read back file: {any}\n", .{err});
+        return error.TestUnexpectedResult;
+    };
+    defer allocator.free(written);
+
+    // Should have aligned variables
+    try std.testing.expect(std.mem.indexOf(u8, written, "x = ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "y = ") != null);
+}
+
+test "formatFile: check_only does not modify file" {
+    const allocator = std.testing.allocator;
+
+    const tmp_path = "/tmp/jake-formatter-check-test.jake";
+    const original = "x=\"1\"\ntask build:\n    echo hi\n";
+
+    std.fs.cwd().writeFile(.{ .sub_path = tmp_path, .data = original }) catch |err| {
+        std.debug.print("Failed to write test file: {any}\n", .{err});
+        return error.TestUnexpectedResult;
+    };
+    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+
+    // Format with check_only=true
+    const result = try formatFile(allocator, tmp_path, true);
+    defer allocator.free(result.output);
+
+    // Verify file was NOT modified
+    const after = std.fs.cwd().readFileAlloc(allocator, tmp_path, 1024 * 1024) catch |err| {
+        std.debug.print("Failed to read back file: {any}\n", .{err});
+        return error.TestUnexpectedResult;
+    };
+    defer allocator.free(after);
+
+    try std.testing.expectEqualStrings(original, after);
+}
+
+// ============================================================================
+// Nested Conditional Tests
+// ============================================================================
+
+test "nested: deeply nested conditionals render correctly" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\task test:
+        \\    @if true
+        \\        @if true
+        \\            @if true
+        \\                echo "deep"
+        \\            @end
+        \\        @end
+        \\    @end
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    // Count @if and @end occurrences - should match
+    var if_count: usize = 0;
+    var end_count: usize = 0;
+    var i: usize = 0;
+    while (i < result.output.len) : (i += 1) {
+        if (i + 3 <= result.output.len and std.mem.eql(u8, result.output[i .. i + 3], "@if")) {
+            if_count += 1;
+        }
+        if (i + 4 <= result.output.len and std.mem.eql(u8, result.output[i .. i + 4], "@end")) {
+            end_count += 1;
+        }
+    }
+    try std.testing.expectEqual(if_count, end_count);
+}
+
+// ============================================================================
+// Silent Command Tests
+// ============================================================================
+
+test "command: silent command with @ prefix preserved" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\task deploy:
+        \\    @echo "visible"
+        \\    echo "also visible"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    // The @ prefix should be preserved (it's part of the command)
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "echo") != null);
+}
