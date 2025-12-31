@@ -1,61 +1,20 @@
 # Jake
 
-**A modern command runner with file-based dependency tracking**
+[![CI](https://github.com/HelgeSverre/jake/actions/workflows/ci.yml/badge.svg)](https://github.com/HelgeSverre/jake/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/HelgeSverre/jake?style=flat-square)](https://github.com/HelgeSverre/jake/releases)
+![Zig](https://img.shields.io/badge/lang-Zig-F7A41D?style=flat-square&logo=zig)
+![MIT License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 
-<p align="center">
-  <a href="https://github.com/HelgeSverre/jake/actions/workflows/ci.yml"><img src="https://github.com/HelgeSverre/jake/actions/workflows/ci.yml/badge.svg?v=1767148270" alt="CI"></a>
-  <a href="https://github.com/HelgeSverre/jake/releases"><img src="https://img.shields.io/github/v/release/HelgeSverre/jake?style=flat-square&v=1767148270" alt="Release"></a>
-  <img src="https://img.shields.io/badge/lang-Zig-F7A41D?style=flat-square&logo=zig&v=1767148270" alt="Zig">
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square&v=1767148270" alt="MIT License">
-</p>
+![Jake](https://jakefile.dev/og-image.png)
+
+The best of **Make** and **Just**, combined. Clean syntax, parallel execution, glob patterns, and smart rebuilds.
+
+**[Documentation](https://jakefile.dev)** · **[Installation](#installation)** · **[Quick Start](#quick-start)** · **[User Guide](GUIDE.md)** · **[Cookbook](https://www.jakefile.dev/examples/benchmarking/)**
 
 > [!WARNING]
 > This project is still a work in progress and not yet production ready.
 
-<img src="https://jakefile.dev/og-image.png" alt="Jake">
-
-The best of **Make** and **Just**, combined. Clean syntax, parallel execution, glob patterns, and smart rebuilds.
-
-**[Documentation](https://jakefile.dev)** · **[Installation](#installation)** · **[Quick Start](#quick-start)**
-
 ---
-
-## Why Jake?
-
-| Feature | Make | Just | Jake |
-|---------|------|------|------|
-| File-based dependencies | ✅ | ❌ | ✅ |
-| Clean syntax | ❌ | ✅ | ✅ |
-| Parallel execution | ✅ | ❌ | ✅ |
-| Glob patterns | ❌ | ❌ | ✅ |
-| Import system | ❌ | ✅ | ✅ |
-| Conditionals | ❌ | ✅ | ✅ |
-| Pre/post hooks | ❌ | ❌ | ✅ |
-| .env loading | ❌ | ✅ | ✅ |
-
-## Installation
-
-### Pre-built Binaries
-
-Download from [Releases](https://github.com/HelgeSverre/jake/releases):
-
-| Platform | Download |
-|----------|----------|
-| Linux x86_64 | `jake-linux-x86_64` |
-| Linux ARM64 | `jake-linux-aarch64` |
-| macOS Intel | `jake-macos-x86_64` |
-| macOS Apple Silicon | `jake-macos-aarch64` |
-| Windows | `jake-windows-x86_64.exe` |
-
-### From Source
-
-```bash
-# Requires Zig 0.15.2+
-git clone https://github.com/HelgeSverre/jake.git
-cd jake
-zig build -Doptimize=ReleaseFast
-cp zig-out/bin/jake ~/.local/bin/
-```
 
 ## Quick Start
 
@@ -98,6 +57,17 @@ jake -w build     # Watch mode - rebuild on changes
 jake -j4 all      # Parallel execution
 ```
 
+## Installation
+
+```shell
+# Requires Zig 0.15.2+
+git clone https://github.com/HelgeSverre/jake.git
+cd jake
+zig build -Doptimize=ReleaseFast --prefix ~/.local
+```
+
+Or find prebuilt binaries on the [Releases](https://github.com/HelgeSverre/jake/releases) page.
+
 ## Features
 
 - **[Task recipes](GUIDE.md#task-recipes)** - Define commands with parameters and dependencies
@@ -128,6 +98,7 @@ OPTIONS:
 ```
 
 **Typo suggestions:** Mistype a recipe name? Jake suggests corrections:
+
 ```
 $ jake buidl
 error: Recipe 'buidl' not found
@@ -157,6 +128,4 @@ MIT License - see [LICENSE](LICENSE.md)
 
 ---
 
-<p align="center">
-  Built with Zig · Inspired by Make & Just
-</p>
+*Built with Zig · Inspired by Make & Just*
