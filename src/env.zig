@@ -722,3 +722,30 @@ test "single quote at start only treated as literal" {
 
     try std.testing.expectEqualStrings("'value", env.get("SINGLE_START").?);
 }
+
+// ============================================================================
+// Fuzz Testing
+// ============================================================================
+
+test "fuzz dotenv parsing" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            var env = Environment.init(std.testing.allocator);
+            defer env.deinit();
+
+            // Parse arbitrary input as .env content - should never crash
+            env.parseDotenv(input) catch {
+                // Parse errors are expected for invalid input
+                return;
+            };
+
+            // If parsing succeeded, we should be able to iterate vars without crashing
+            var iter = env.vars.iterator();
+            while (iter.next()) |entry| {
+                // Just access key/value to ensure they're valid
+                _ = entry.key_ptr.*;
+                _ = entry.value_ptr.*;
+            }
+        }
+    }.testOne, .{});
+}

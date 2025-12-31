@@ -4,11 +4,16 @@
 const std = @import("std");
 const suggest = @import("suggest.zig");
 
-// ANSI escape codes for colored output
+// ANSI escape codes for colored output (matches brand.astro)
 pub const ansi = struct {
-    pub const red = "\x1b[1;31m";
     pub const reset = "\x1b[0m";
+    pub const bold = "\x1b[1m";
+    pub const red = "\x1b[1;31m";
+    pub const jake_rose = "\x1b[38;2;244;63;94m"; // #f43f5e brand color
+    pub const muted = "\x1b[38;2;113;113;122m"; // #71717a - tagline, placeholders
+    pub const secondary = "\x1b[90m"; // gray - section headers
     pub const err_prefix = red ++ "error:" ++ reset ++ " ";
+    pub const logo = "{j}";
 };
 
 pub const ValueMode = enum {
@@ -363,76 +368,86 @@ fn isValidShell(s: []const u8) bool {
 
 /// Print help text to writer, auto-generated from flags array
 pub fn printHelp(writer: anytype) void {
-    writer.writeAll(
-        \\jake - A modern command runner with dependency tracking
-        \\
-        \\USAGE:
-        \\    jake [OPTIONS] [RECIPE] [ARGS...]
-        \\    jake upgrade [--check] [--no-verify]
-        \\
-        \\COMMANDS:
-        \\    upgrade             Update jake to the latest version
-        \\
-        \\OPTIONS:
-        \\
-    ) catch {};
+    // {j} in Jake Rose, jake in bold
+    writer.writeAll(ansi.jake_rose ++ ansi.logo ++ ansi.reset) catch {};
+    writer.writeAll(" " ++ ansi.bold ++ "jake" ++ ansi.reset ++ " - Modern command running\n") catch {};
+    // Tagline in muted gray
+    writer.writeAll(ansi.muted ++ "The best of Make and Just, combined.\n\n" ++ ansi.reset) catch {};
+    // USAGE header in secondary gray
+    writer.writeAll(ansi.secondary ++ "USAGE:" ++ ansi.reset ++ "\n") catch {};
+    // Usage lines with muted placeholders
+    writer.writeAll("  jake " ++ ansi.muted ++ "[OPTIONS] [RECIPE] [ARGS...]" ++ ansi.reset ++ "\n") catch {};
+    writer.writeAll("  jake upgrade " ++ ansi.muted ++ "[--check] [--no-verify]" ++ ansi.reset ++ "\n\n") catch {};
+    // COMMANDS header
+    writer.writeAll(ansi.secondary ++ "COMMANDS:" ++ ansi.reset ++ "\n") catch {};
+    writer.writeAll("  upgrade             Update jake to the latest version\n\n") catch {};
+    // OPTIONS header
+    writer.writeAll(ansi.secondary ++ "OPTIONS:" ++ ansi.reset ++ "\n") catch {};
 
     // Auto-generate options from flags array
     for (flags) |flag| {
         // Skip hidden flags
         if (flag.hidden) continue;
 
-        // Format: "    -X, --long-name VALUE  Description"
-        writer.writeAll("    ") catch {};
+        // Format: "  -X, --long-name VALUE  Description"
+        writer.writeAll("  ") catch {};
 
-        // Short flag
+        // Short flag in Jake Rose (comma not colored)
         if (flag.short) |s| {
-            writer.print("-{c}, ", .{s}) catch {};
+            writer.writeAll(ansi.jake_rose) catch {};
+            writer.print("-{c}", .{s}) catch {};
+            writer.writeAll(ansi.reset ++ ", ") catch {};
         } else {
             writer.writeAll("    ") catch {};
         }
 
-        // Long flag
-        writer.print("--{s}", .{flag.long}) catch {};
+        // Long flag in Jake Rose
+        writer.writeAll(ansi.jake_rose ++ "--") catch {};
+        writer.writeAll(flag.long) catch {};
+        writer.writeAll(ansi.reset) catch {};
 
-        // Value placeholder
+        // Value placeholder in muted
         if (flag.value_name) |name| {
+            writer.writeAll(" " ++ ansi.muted) catch {};
             if (flag.takes_value == .optional) {
-                writer.print(" [{s}]", .{name}) catch {};
+                writer.print("[{s}]", .{name}) catch {};
             } else {
-                writer.print(" {s}", .{name}) catch {};
+                writer.writeAll(name) catch {};
             }
+            writer.writeAll(ansi.reset) catch {};
         }
 
         // Padding to align descriptions (target column ~24)
-        const used = 4 + 4 + 2 + flag.long.len + if (flag.value_name) |n| n.len + 3 else 0;
-        const pad = if (used < 28) 28 - used else 2;
+        const used = 2 + 4 + 2 + flag.long.len + if (flag.value_name) |n| n.len + 3 else 0;
+        const pad = if (used < 26) 26 - used else 2;
         for (0..pad) |_| {
             writer.writeAll(" ") catch {};
         }
 
-        // Description with optional default value
+        // Description (regular white)
         writer.print("{s}", .{flag.desc}) catch {};
         if (flag.default_display) |default| {
+            writer.writeAll(ansi.muted) catch {};
             writer.print(" (default: {s})", .{default}) catch {};
+            writer.writeAll(ansi.reset) catch {};
         }
         writer.writeAll("\n") catch {};
     }
 
+    // EXAMPLES header in secondary gray
+    writer.writeAll("\n" ++ ansi.secondary ++ "EXAMPLES:" ++ ansi.reset ++ "\n") catch {};
     writer.writeAll(
-        \\
-        \\EXAMPLES:
-        \\    jake                    Run default recipe (or list if none)
-        \\    jake build              Run the 'build' recipe
-        \\    jake -n deploy          Dry-run the 'deploy' recipe
-        \\    jake -l                 List all recipes
-        \\    jake -l --short         List recipes (one per line, for scripting)
-        \\    jake -s build           Show detailed info for 'build' recipe
-        \\    jake -w build           Watch and re-run 'build' on changes
-        \\    jake -w "src/**" build  Watch src/ and re-run 'build'
-        \\    jake -j4 build          Run 'build' with 4 parallel jobs
-        \\    jake --completions bash Print bash completion script
-        \\    jake --completions --install  Install completions for current shell
+        \\  jake                    Run default recipe (or list if none)
+        \\  jake build              Run the 'build' recipe
+        \\  jake -n deploy          Dry-run the 'deploy' recipe
+        \\  jake -l                 List all recipes
+        \\  jake -l --short         List recipes (one per line, for scripting)
+        \\  jake -s build           Show detailed info for 'build' recipe
+        \\  jake -w build           Watch and re-run 'build' on changes
+        \\  jake -w "src/**" build  Watch src/ and re-run 'build'
+        \\  jake -j4 build          Run 'build' with 4 parallel jobs
+        \\  jake --completions bash Print bash completion script
+        \\  jake --completions --install  Install completions for current shell
         \\
     ) catch {};
 }
@@ -688,9 +703,16 @@ test "printHelp generates correct output" {
     var stream = std.io.fixedBufferStream(&buf);
     printHelp(stream.writer());
     const output = stream.getWritten();
-    try expect(std.mem.indexOf(u8, output, "-h, --help") != null);
-    try expect(std.mem.indexOf(u8, output, "-f, --jakefile") != null);
+    // Check key elements are present (with ANSI codes between flags)
+    try expect(std.mem.indexOf(u8, output, "-h") != null);
+    try expect(std.mem.indexOf(u8, output, "--help") != null);
+    try expect(std.mem.indexOf(u8, output, "-f") != null);
+    try expect(std.mem.indexOf(u8, output, "--jakefile") != null);
     try expect(std.mem.indexOf(u8, output, "FILE") != null);
+    // Check branded elements
+    try expect(std.mem.indexOf(u8, output, ansi.logo) != null);
+    try expect(std.mem.indexOf(u8, output, "USAGE:") != null);
+    try expect(std.mem.indexOf(u8, output, "OPTIONS:") != null);
 }
 
 test "combined short flags -vn" {
@@ -1109,4 +1131,46 @@ test "formatFlagSuggestion formats correctly" {
     var buf: [128]u8 = undefined;
     const result = formatFlagSuggestion(&buf, "verbose");
     try expectEqualStrings("Did you mean '--verbose'?\n", result);
+}
+
+// ============================================================================
+// Fuzz Testing
+// ============================================================================
+
+test "fuzz argument parsing" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            const allocator = std.testing.allocator;
+
+            // Split fuzzed input by null bytes to create argv-like array
+            var args_list: std.ArrayListUnmanaged([]const u8) = .empty;
+            defer args_list.deinit(allocator);
+
+            // Add a program name (required by parser)
+            args_list.append(allocator, "jake") catch return;
+
+            // Split input by null bytes and newlines to simulate arguments
+            var iter = std.mem.splitAny(u8, input, &[_]u8{ 0, '\n', ' ' });
+            while (iter.next()) |part| {
+                if (part.len > 0 and part.len < 256) {
+                    args_list.append(allocator, part) catch return;
+                }
+            }
+
+            // Try to parse - errors are expected for invalid input
+            var result = parse(allocator, args_list.items) catch {
+                return;
+            };
+            defer result.deinit(allocator);
+        }
+    }.testOne, .{});
+}
+
+test "fuzz findSimilarFlag" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            // Should never crash on any input
+            _ = findSimilarFlag(input);
+        }
+    }.testOne, .{});
 }

@@ -375,7 +375,7 @@ pub const ParallelExecutor = struct {
             const needs_run = self.checkFileTarget(recipe) catch true;
             if (!needs_run) {
                 if (self.verbose) {
-                    self.printSynchronized("{s}jake: '{s}' is up to date{s}\n", .{ self.color.dim(), recipe.name, self.color.reset() });
+                    self.printSynchronized("{s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), recipe.name, self.color.reset() });
                 }
                 return true;
             }
@@ -750,9 +750,25 @@ pub const ParallelExecutor = struct {
             compat.getStdErr().writeAll(stderr_buf[0..stderr_len]) catch {};
         }
 
-        if (result.Exited != 0) {
-            self.printSynchronized("{s}command exited with code {d}\n", .{ self.color.errPrefix(), result.Exited });
-            return false;
+        switch (result) {
+            .Exited => |code| {
+                if (code != 0) {
+                    self.printSynchronized("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
+                    return false;
+                }
+            },
+            .Signal => |sig| {
+                self.printSynchronized("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
+                return false;
+            },
+            .Stopped => |sig| {
+                self.printSynchronized("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
+                return false;
+            },
+            .Unknown => |code| {
+                self.printSynchronized("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
+                return false;
+            },
         }
 
         return true;
@@ -810,9 +826,25 @@ pub const ParallelExecutor = struct {
             compat.getStdErr().writeAll(stderr_buf[0..stderr_len]) catch {};
         }
 
-        if (result.Exited != 0) {
-            self.printSynchronized("{s}command exited with code {d}\n", .{ self.color.errPrefix(), result.Exited });
-            return false;
+        switch (result) {
+            .Exited => |code| {
+                if (code != 0) {
+                    self.printSynchronized("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
+                    return false;
+                }
+            },
+            .Signal => |sig| {
+                self.printSynchronized("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
+                return false;
+            },
+            .Stopped => |sig| {
+                self.printSynchronized("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
+                return false;
+            },
+            .Unknown => |code| {
+                self.printSynchronized("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
+                return false;
+            },
         }
 
         return true;

@@ -29,6 +29,7 @@ pub const Recipe = struct {
     only_os: []const []const u8, // List of OSes this recipe runs on (e.g., ["linux", "macos"])
     quiet: bool, // Suppress command echoing for this recipe
     needs: []const NeedsRequirement, // Recipe-level command requirements
+    timeout_seconds: ?u64, // Timeout in seconds, null = no timeout
 
     pub const Kind = enum {
         task, // Always runs
@@ -194,6 +195,8 @@ pub const ParseError = error{
     UnexpectedEof,
     InvalidSyntax,
     OutOfMemory,
+    InvalidTimeoutFormat,
+    InvalidTimeoutValue,
 };
 
 /// Detailed error information with location
@@ -265,6 +268,7 @@ pub const Parser = struct {
     pending_quiet: bool,
     pending_doc_comment: ?[]const u8,
     pending_needs: std.ArrayListUnmanaged(NeedsRequirement),
+    pending_timeout: ?u64,
 
     pub fn init(allocator: std.mem.Allocator, lex: *Lexer) Parser {
         return .{
@@ -288,6 +292,7 @@ pub const Parser = struct {
             .pending_quiet = false,
             .pending_doc_comment = null,
             .pending_needs = .empty,
+            .pending_timeout = null,
         };
     }
 
@@ -434,6 +439,13 @@ pub const Parser = struct {
         return quiet;
     }
 
+    /// Consume and return pending timeout, clearing it for the next recipe
+    fn consumePendingTimeout(self: *Parser) ?u64 {
+        const timeout = self.pending_timeout;
+        self.pending_timeout = null;
+        return timeout;
+    }
+
     /// Consume and return pending doc comment, clearing it for the next recipe
     fn consumePendingDocComment(self: *Parser) ?[]const u8 {
         const doc = self.pending_doc_comment;
@@ -455,6 +467,38 @@ pub const Parser = struct {
             return &[_]NeedsRequirement{};
         }
         return self.pending_needs.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+    }
+
+    /// Parse timeout value from string (e.g., "30s", "5m", "2h")
+    /// Returns timeout in seconds
+    fn parseTimeoutValue(self: *Parser, value_str: []const u8) ParseError!u64 {
+        _ = self;
+        if (value_str.len < 2) {
+            return ParseError.InvalidTimeoutFormat;
+        }
+
+        // Extract numeric part and unit suffix
+        const unit = value_str[value_str.len - 1];
+        const num_str = value_str[0 .. value_str.len - 1];
+
+        // Parse numeric value
+        const num = std.fmt.parseInt(u64, num_str, 10) catch {
+            return ParseError.InvalidTimeoutFormat;
+        };
+
+        if (num == 0) {
+            return ParseError.InvalidTimeoutValue;
+        }
+
+        // Convert to seconds based on unit
+        const seconds: u64 = switch (unit) {
+            's' => num,
+            'm' => num * 60,
+            'h' => num * 3600,
+            else => return ParseError.InvalidTimeoutFormat,
+        };
+
+        return seconds;
     }
 
     pub fn parseJakefile(self: *Parser) ParseError!Jakefile {
@@ -612,6 +656,58 @@ pub const Parser = struct {
         if (self.current.tag == .kw_quiet) {
             self.advance();
             self.pending_quiet = true;
+
+            // Skip to end of line
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                self.advance();
+            }
+            return;
+        }
+
+        // Handle @timeout directive for recipe timeout
+        // Syntax: @timeout 30s | @timeout 5m | @timeout 2h
+        if (self.current.tag == .kw_timeout) {
+            self.advance();
+
+            // Expect timeout value (ident like "30s" or number + unit like "30" + "s")
+            var timeout_str: []const u8 = undefined;
+            
+            if (self.current.tag == .ident) {
+                // Case 1: "30s" tokenized as single ident (unlikely but handle it)
+                timeout_str = self.slice(self.current);
+                self.advance();
+            } else if (self.current.tag == .number) {
+                // Case 2: "30" + "s" tokenized as number + ident
+                const num_start = self.current.loc.start;
+                self.advance();
+                
+                // Next token should be the unit (s, m, h)
+                if (self.current.tag == .ident) {
+                    const unit_end = self.current.loc.end;
+                    // Concatenate number + unit from source
+                    timeout_str = self.source[num_start..unit_end];
+                    self.advance();
+                } else {
+                    self.setError("Expected time unit (s, m, or h) after number", .ident);
+                    return ParseError.InvalidTimeoutFormat;
+                }
+            } else {
+                self.setError("Expected timeout value (e.g., 30s, 5m, 2h)", null);
+                return ParseError.InvalidTimeoutFormat;
+            }
+
+            // Parse timeout value
+            const timeout_seconds = self.parseTimeoutValue(timeout_str) catch |err| {
+                const msg = switch (err) {
+                    ParseError.InvalidTimeoutFormat => "Invalid timeout format. Expected format: 30s, 5m, or 2h",
+                    ParseError.InvalidTimeoutValue => "Timeout must be a positive value",
+                    else => "Failed to parse timeout",
+                };
+                self.setError(msg, null);
+                return ParseError.InvalidTimeoutFormat;
+            };
+
+            self.pending_timeout = timeout_seconds;
 
             // Skip to end of line
             while (self.current.tag != .newline and self.current.tag != .eof) {
@@ -1006,6 +1102,7 @@ pub const Parser = struct {
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
             .needs = needs,
+            .timeout_seconds = self.consumePendingTimeout(),
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1189,6 +1286,7 @@ pub const Parser = struct {
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
             .needs = needs,
+            .timeout_seconds = self.consumePendingTimeout(),
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1336,6 +1434,7 @@ pub const Parser = struct {
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
             .needs = needs,
+            .timeout_seconds = self.consumePendingTimeout(),
         }) catch return ParseError.OutOfMemory;
     }
 };
@@ -3365,6 +3464,125 @@ test "parser tracks comment positions" {
     try std.testing.expect(jakefile.comments.len >= 2);
     try std.testing.expect(jakefile.comments[0].line == 1); // Line 1 (1-indexed)
     try std.testing.expect(jakefile.comments[1].line == 3); // Line 3 (after blank line)
+}
+
+// --- @timeout directive tests ---
+
+test "parse @timeout with valid seconds" {
+    const source =
+        \\@timeout 30s
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(?u64, 30), jakefile.recipes[0].timeout_seconds);
+}
+
+test "parse @timeout with valid minutes" {
+    const source =
+        \\@timeout 5m
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(?u64, 300), jakefile.recipes[0].timeout_seconds);
+}
+
+test "parse @timeout with valid hours" {
+    const source =
+        \\@timeout 2h
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(?u64, 7200), jakefile.recipes[0].timeout_seconds);
+}
+
+test "parse @timeout with invalid unit returns error" {
+    const source =
+        \\@timeout 30x
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    const result = p.parseJakefile();
+
+    try std.testing.expectError(ParseError.InvalidTimeoutFormat, result);
+}
+
+test "parse @timeout with zero value returns error" {
+    const source =
+        \\@timeout 0s
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    const result = p.parseJakefile();
+
+    try std.testing.expectError(ParseError.InvalidTimeoutFormat, result);
+}
+
+test "parse @timeout with minimum valid value" {
+    const source =
+        \\@timeout 1s
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(?u64, 1), jakefile.recipes[0].timeout_seconds);
+}
+
+test "parse @timeout with large value" {
+    const source =
+        \\@timeout 86400s
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // 86400 seconds = 24 hours
+    try std.testing.expectEqual(@as(?u64, 86400), jakefile.recipes[0].timeout_seconds);
+}
+
+test "parse @timeout only applies to next recipe" {
+    const source =
+        \\@timeout 30s
+        \\task first:
+        \\    echo "first"
+        \\
+        \\task second:
+        \\    echo "second"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(?u64, 30), jakefile.recipes[0].timeout_seconds);
+    try std.testing.expectEqual(@as(?u64, null), jakefile.recipes[1].timeout_seconds);
 }
 
 // --- Fuzz Testing ---

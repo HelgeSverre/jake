@@ -73,6 +73,7 @@ pub const ImportResolver = struct {
         dependencies: std.ArrayListUnmanaged([]const []const u8),
         needs: std.ArrayListUnmanaged([]const NeedsRequirement),
         imports: std.ArrayListUnmanaged([]const ImportDirective),
+        comments: std.ArrayListUnmanaged([]const parser_mod.CommentNode),
     },
 
     pub fn init(allocator: std.mem.Allocator) ImportResolver {
@@ -92,6 +93,7 @@ pub const ImportResolver = struct {
                 .dependencies = .{},
                 .needs = .{},
                 .imports = .{},
+                .comments = .{},
             },
         };
     }
@@ -158,6 +160,12 @@ pub const ImportResolver = struct {
             self.allocator.free(slice);
         }
         self.replaced_slices.imports.deinit(self.allocator);
+
+        // Free comments slices from imported Jakefiles
+        for (self.replaced_slices.comments.items) |slice| {
+            self.allocator.free(slice);
+        }
+        self.replaced_slices.comments.deinit(self.allocator);
 
         // Free loaded_sources and allocated_names if they weren't extracted.
         // After extractPersistentAllocations(), these arrays will be empty.
@@ -356,6 +364,10 @@ pub const ImportResolver = struct {
         if (imported.imports.len > 0) {
             self.replaced_slices.imports.append(self.allocator, imported.imports) catch return ImportError.OutOfMemory;
         }
+        // Track imported file's comments slice (not merged, just needs to be freed)
+        if (imported.comments.len > 0) {
+            self.replaced_slices.comments.append(self.allocator, imported.comments) catch return ImportError.OutOfMemory;
+        }
 
         // Note: We intentionally do NOT track needs slices in replaced_slices.
         // The needs arrays are shallow-copied when recipes are merged, and
@@ -552,6 +564,7 @@ test "isImportedRecipe finds matching recipe" {
             .working_dir = null,
             .quiet = false,
             .needs = &.{},
+            .timeout_seconds = null,
         },
         .{
             .name = "test",
@@ -575,6 +588,7 @@ test "isImportedRecipe finds matching recipe" {
             .working_dir = null,
             .quiet = false,
             .needs = &.{},
+            .timeout_seconds = null,
         },
     };
 

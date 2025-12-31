@@ -210,9 +210,25 @@ pub const HookRunner = struct {
             return HookError.WaitFailed;
         };
 
-        if (result.Exited != 0) {
-            self.printHook("{s}@{s} hook exited with code {d}\n", .{ self.color.errPrefix(), @tagName(hook.kind), result.Exited });
-            return HookError.HookFailed;
+        switch (result) {
+            .Exited => |code| {
+                if (code != 0) {
+                    self.printHook("{s}@{s} hook exited with code {d}\n", .{ self.color.errPrefix(), @tagName(hook.kind), code });
+                    return HookError.HookFailed;
+                }
+            },
+            .Signal => |sig| {
+                self.printHook("{s}@{s} hook killed by signal {d}\n", .{ self.color.errPrefix(), @tagName(hook.kind), sig });
+                return HookError.HookFailed;
+            },
+            .Stopped => |sig| {
+                self.printHook("{s}@{s} hook stopped by signal {d}\n", .{ self.color.errPrefix(), @tagName(hook.kind), sig });
+                return HookError.HookFailed;
+            },
+            .Unknown => |code| {
+                self.printHook("{s}@{s} hook terminated with unknown status {d}\n", .{ self.color.errPrefix(), @tagName(hook.kind), code });
+                return HookError.HookFailed;
+            },
         }
     }
 

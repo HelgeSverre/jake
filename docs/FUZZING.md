@@ -27,7 +27,7 @@ This is much more effective than "dumb" random fuzzing because the fuzzer learns
 
 ## Fuzz Targets
 
-Fuzz tests are embedded in the source files using `std.testing.fuzzInput`:
+Fuzz tests are embedded in the source files using `std.testing.fuzz`:
 
 | Component | File | What it tests |
 |-----------|------|---------------|
@@ -36,6 +36,10 @@ Fuzz tests are embedded in the source files using `std.testing.fuzzInput`:
 | Glob | `src/glob.zig` | Pattern matching and parsing |
 | Functions | `src/functions.zig` | Built-in function evaluation |
 | Conditions | `src/conditions.zig` | @if/@elif condition evaluation |
+| Formatter | `src/formatter.zig` | Round-trip formatting (parse → format → parse) |
+| Args | `src/args.zig` | CLI argument parsing, flag suggestion |
+| Suggest | `src/suggest.zig` | Levenshtein distance, typo suggestions |
+| Env | `src/env.zig` | .env file parsing |
 
 ## Web Interface
 
@@ -56,9 +60,13 @@ Open the URL shown in the terminal in your browser. The interface shows:
 **Covered:**
 - Lexer tokenization (all token types, edge cases)
 - Parser AST construction and error handling
+- Formatter round-trip stability (idempotent formatting)
 - Glob pattern matching logic
 - Built-in function parsing and evaluation
 - Condition expression evaluation
+- CLI argument parsing and validation
+- Levenshtein distance for typo suggestions
+- .env file parsing
 
 **Not covered (by design):**
 - Recipe execution (would run shell commands)

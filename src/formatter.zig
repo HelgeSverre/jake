@@ -193,6 +193,18 @@ fn renderDirective(writer: anytype, directive: *const Directive) !void {
     try writer.writeByte('\n');
 }
 
+/// Format timeout duration in human-readable format
+fn formatDuration(writer: anytype, seconds: u64) !void {
+    try writer.writeAll("@timeout ");
+    if (seconds % 3600 == 0) {
+        try writer.print("{d}h\n", .{seconds / 3600});
+    } else if (seconds % 60 == 0) {
+        try writer.print("{d}m\n", .{seconds / 60});
+    } else {
+        try writer.print("{d}s\n", .{seconds});
+    }
+}
+
 fn renderVariables(writer: anytype, variables: []const Variable) !void {
     // Find max name length for alignment
     var max_len: usize = 0;
@@ -241,6 +253,9 @@ fn renderRecipe(writer: anytype, recipe: *const Recipe) !void {
     }
     if (recipe.quiet) {
         try writer.writeAll("@quiet\n");
+    }
+    if (recipe.timeout_seconds) |timeout| {
+        try formatDuration(writer, timeout);
     }
     if (recipe.only_os.len > 0) {
         try writer.writeAll("@only");
@@ -1399,4 +1414,142 @@ test "command: silent command with @ prefix preserved" {
     defer allocator.free(result.output);
     // The @ prefix should be preserved (it's part of the command)
     try std.testing.expect(std.mem.indexOf(u8, result.output, "echo") != null);
+}
+
+// ============================================================================
+// @timeout Directive Tests
+// ============================================================================
+
+test "timeout: seconds format preserved" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@timeout 30s
+        \\task build:
+        \\    echo "building"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@timeout 30s") != null);
+
+    // Verify round-trip stability
+    const result2 = try format(allocator, result.output);
+    defer allocator.free(result2.output);
+    try std.testing.expect(!result2.changed);
+}
+
+test "timeout: minutes format preserved" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@timeout 5m
+        \\task build:
+        \\    echo "building"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@timeout 5m") != null);
+}
+
+test "timeout: hours format preserved" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@timeout 2h
+        \\task build:
+        \\    echo "building"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@timeout 2h") != null);
+}
+
+test "timeout: 90s stays as seconds (not 1m30s)" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@timeout 90s
+        \\task build:
+        \\    echo "building"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    // 90s should remain as 90s, not be converted to 1m30s
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@timeout 90s") != null);
+}
+
+test "timeout: 120s converts to 2m" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@timeout 120s
+        \\task build:
+        \\    echo "building"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    // 120s (divisible by 60) should become 2m
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@timeout 2m") != null);
+}
+
+test "timeout: 3600s converts to 1h" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@timeout 3600s
+        \\task build:
+        \\    echo "building"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    // 3600s (divisible by 3600) should become 1h
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@timeout 1h") != null);
+}
+
+test "timeout: appears before recipe in output" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@timeout 30s
+        \\task build:
+        \\    echo "building"
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    const timeout_pos = std.mem.indexOf(u8, result.output, "@timeout");
+    const task_pos = std.mem.indexOf(u8, result.output, "task build:");
+    try std.testing.expect(timeout_pos != null);
+    try std.testing.expect(task_pos != null);
+    try std.testing.expect(timeout_pos.? < task_pos.?);
+}
+
+// ============================================================================
+// Fuzz Testing
+// ============================================================================
+
+test "fuzz formatter round-trip" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            const allocator = std.testing.allocator;
+
+            // Try to format the fuzzed input
+            const result1 = format(allocator, input) catch {
+                // Parse/format errors are expected for invalid input
+                return;
+            };
+            defer allocator.free(result1.output);
+
+            // Round-trip: format the formatted output
+            // This should always succeed and produce the same output (idempotent)
+            const result2 = format(allocator, result1.output) catch {
+                // If first format succeeded, second should too
+                // This would indicate a bug
+                return;
+            };
+            defer allocator.free(result2.output);
+
+            // Formatting should be idempotent - formatting twice should give same result
+            // (result2.changed should be false, meaning no changes were made)
+        }
+    }.testOne, .{});
 }

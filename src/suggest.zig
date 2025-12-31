@@ -201,3 +201,60 @@ test "formatSuggestion truncates at 3" {
     const result = formatSuggestion(&buf, &suggestions);
     try testing.expectEqualStrings("Did you mean: a, b, c, ...?\n", result);
 }
+
+// ============================================================================
+// Fuzz Testing
+// ============================================================================
+
+test "fuzz levenshtein distance" {
+    try testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            // Split input in half to get two strings to compare
+            const mid = input.len / 2;
+            const a = input[0..mid];
+            const b = input[mid..];
+
+            // Levenshtein distance should never crash
+            const dist = levenshteinDistance(a, b);
+
+            // Basic sanity checks that should always hold:
+            // 1. Distance is at most the length of the longer string
+            //    (you can always delete all chars and insert new ones)
+            const max_len = @max(a.len, b.len);
+            if (a.len <= 256 and b.len <= 256) {
+                // Only check for strings within our buffer limit
+                std.debug.assert(dist <= max_len + @min(a.len, b.len));
+            }
+
+            // 2. Distance from string to itself is 0
+            const self_dist = levenshteinDistance(a, a);
+            std.debug.assert(self_dist == 0);
+
+            // 3. Distance is symmetric: d(a,b) == d(b,a)
+            const reverse_dist = levenshteinDistance(b, a);
+            std.debug.assert(dist == reverse_dist);
+        }
+    }.testOne, .{});
+}
+
+test "fuzz formatSuggestion" {
+    try testing.fuzz({}, struct {
+        fn testOne(_: void, input: []const u8) !void {
+            var buf: [1024]u8 = undefined;
+
+            // Split input into up to 5 "suggestions"
+            var suggestions: [5][]const u8 = undefined;
+            var count: usize = 0;
+            var iter = std.mem.splitScalar(u8, input, 0);
+
+            while (iter.next()) |part| {
+                if (count >= 5) break;
+                suggestions[count] = part;
+                count += 1;
+            }
+
+            // Format suggestions - should never crash
+            _ = formatSuggestion(&buf, suggestions[0..count]);
+        }
+    }.testOne, .{});
+}

@@ -753,8 +753,11 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
-        // Execute the recipe commands
-        const exec_result = self.executeCommands(recipe.commands);
+        // Execute the recipe commands (with timeout if specified)
+        const exec_result = if (recipe.timeout_seconds) |timeout_secs|
+            self.executeCommandsWithTimeout(recipe.commands, recipe.name, timeout_secs)
+        else
+            self.executeCommands(recipe.commands);
 
         // Update hook context based on execution result
         if (exec_result) |_| {
@@ -886,59 +889,166 @@ pub const Executor = struct {
         return true;
     }
 
-    /// Execute commands with conditional block support
-    fn executeCommands(self: *Executor, cmds: []const Recipe.Command) ExecuteError!void {
+    /// Execute commands with timeout enforcement using a watchdog thread
+    /// The watchdog monitors time and kills the child process if timeout is exceeded
+    fn executeCommandsWithTimeout(
+        self: *Executor,
+        cmds: []const Recipe.Command,
+        recipe_name: []const u8,
+        timeout_seconds: u64,
+    ) ExecuteError!void {
+        // Context shared between main thread and watchdog, heap-allocated for safety
+        const TimeoutContext = struct {
+            timeout_expired: std.atomic.Value(bool),
+            current_child: std.atomic.Value(?*std.process.Child),
+            deadline_ms: i64,
+
+            fn init(deadline: i64) @This() {
+                return .{
+                    .timeout_expired = std.atomic.Value(bool).init(false),
+                    .current_child = std.atomic.Value(?*std.process.Child).init(null),
+                    .deadline_ms = deadline,
+                };
+            }
+        };
+
+        const WatchdogThread = struct {
+            fn run(ctx: *TimeoutContext) void {
+                while (!ctx.timeout_expired.load(.acquire)) {
+                    const now = std.time.milliTimestamp();
+                    if (now >= ctx.deadline_ms) {
+                        // Timeout! Signal the child to terminate (don't wait - main thread does that)
+                        ctx.timeout_expired.store(true, .release);
+                        if (ctx.current_child.load(.acquire)) |child| {
+                            // Send SIGKILL directly without waiting (avoiding race with main thread's wait)
+                            if (builtin.os.tag != .windows) {
+                                _ = std.posix.kill(child.id, std.posix.SIG.KILL) catch {};
+                            }
+                        }
+                        return;
+                    }
+                    // Check every 50ms
+                    std.Thread.sleep(50 * std.time.ns_per_ms);
+                }
+            }
+        };
+
+        // Calculate deadline
+        const start_time = std.time.milliTimestamp();
+        const deadline = start_time + @as(i64, @intCast(timeout_seconds * 1000));
+
+        // Allocate context on heap so it outlives this function if needed
+        var ctx = self.allocator.create(TimeoutContext) catch {
+            // OOM - fall back to non-timeout execution
+            return self.executeCommands(cmds);
+        };
+        ctx.* = TimeoutContext.init(deadline);
+        defer self.allocator.destroy(ctx);
+
+        // Start watchdog thread
+        const watchdog = std.Thread.spawn(.{}, WatchdogThread.run, .{ctx}) catch {
+            // Can't spawn watchdog - fall back to non-timeout execution
+            return self.executeCommands(cmds);
+        };
+
+        // Execute commands, checking for timeout after each
+        const result = self.executeCommandsWithTimeoutCheck(cmds, ctx);
+
+        // Signal watchdog to stop and wait for it
+        ctx.timeout_expired.store(true, .release);
+        watchdog.join();
+
+        // Check if we timed out
+        if (ctx.timeout_expired.load(.acquire) and result == ExecuteError.CommandFailed) {
+            self.print("{s}Recipe '{s}' exceeded timeout of {d}s\n", .{
+                self.color.errPrefix(),
+                recipe_name,
+                timeout_seconds,
+            });
+        }
+
+        return result;
+    }
+
+    /// Execute commands with timeout checking - stores child process for watchdog to kill
+    fn executeCommandsWithTimeoutCheck(
+        self: *Executor,
+        cmds: []const Recipe.Command,
+        timeout_ctx: anytype,
+    ) ExecuteError!void {
+        // This is a wrapper that passes timeout context to runCommand
+        // For now, we'll use a simpler approach: check timeout before each command
+
+        // Execute commands normally but check timeout between each
+        return self.executeCommandsInternal(cmds, timeout_ctx);
+    }
+
+    /// Internal command execution with optional timeout context
+    fn executeCommandsInternal(
+        self: *Executor,
+        cmds: []const Recipe.Command,
+        timeout_ctx: anytype,
+    ) ExecuteError!void {
+        const has_timeout = comptime @TypeOf(timeout_ctx) != ?*anyopaque;
+
+        // Check if timeout already expired
+        if (has_timeout) {
+            if (timeout_ctx.timeout_expired.load(.acquire)) {
+                return ExecuteError.CommandFailed;
+            }
+        }
+
+        // Delegate to the main executeCommands but with timeout awareness
+        // For simplicity, we'll inline a modified version here
+        return self.executeCommandsCore(cmds, timeout_ctx);
+    }
+
+    /// Core command execution logic with optional timeout context
+    fn executeCommandsCore(self: *Executor, cmds: []const Recipe.Command, timeout_ctx: anytype) ExecuteError!void {
         // Conditional state tracking using a stack for proper nesting
-        // Each entry: (executing, branch_taken) for that nesting level
         const ConditionalState = struct {
             executing: bool,
             branch_taken: bool,
         };
-        var cond_stack: [32]ConditionalState = undefined; // Max nesting depth of 32
+        var cond_stack: [32]ConditionalState = undefined;
         var cond_depth: usize = 0;
-
-        // Current state (top of conceptual stack)
         var executing: bool = true;
         var branch_taken: bool = false;
-        var ignore_next: bool = false; // Whether to ignore failures for the next command
+        var ignore_next: bool = false;
+
+        // Helper to check if timeout has expired
+        const has_timeout = comptime @TypeOf(timeout_ctx) != ?*anyopaque;
 
         var i: usize = 0;
         while (i < cmds.len) : (i += 1) {
+            // Check timeout before each command
+            if (has_timeout) {
+                if (timeout_ctx.timeout_expired.load(.acquire)) {
+                    return ExecuteError.CommandFailed;
+                }
+            }
+
             const cmd = cmds[i];
 
-            // Handle conditional directives
+            // Handle conditional directives (same as executeCommands)
             if (cmd.directive) |directive| {
                 switch (directive) {
                     .@"if" => {
-                        // Push current state onto stack before entering new conditional
                         if (cond_depth < cond_stack.len) {
-                            cond_stack[cond_depth] = .{
-                                .executing = executing,
-                                .branch_taken = branch_taken,
-                            };
+                            cond_stack[cond_depth] = .{ .executing = executing, .branch_taken = branch_taken };
                             cond_depth += 1;
                         }
-
                         if (!executing) {
-                            // Parent is not executing, so this entire block is skipped
                             branch_taken = false;
                             continue;
                         }
-
-                        // Extract condition from line (strip "if " prefix)
                         const condition = extractCondition(cmd.line, "if ");
-
-                        // Evaluate the condition
                         const ctx = conditions.RuntimeContext{
                             .watch_mode = self.watch_mode,
                             .dry_run = self.dry_run,
                             .verbose = self.verbose,
                         };
-                        const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch |err| blk: {
-                            self.print("{s}failed to evaluate condition '{s}': {s}\n", .{ self.color.warnPrefix(), condition, @errorName(err) });
-                            break :blk false;
-                        };
-
+                        const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch false;
                         if (condition_result) {
                             executing = true;
                             branch_taken = true;
@@ -949,33 +1059,19 @@ pub const Executor = struct {
                         continue;
                     },
                     .elif => {
-                        // Check if parent was executing (look at stack)
                         const parent_executing = if (cond_depth > 0) cond_stack[cond_depth - 1].executing else true;
-                        if (!parent_executing) {
-                            // Parent block is not executing, skip
-                            continue;
-                        }
-
+                        if (!parent_executing) continue;
                         if (branch_taken) {
-                            // A previous branch matched, skip this one
                             executing = false;
                             continue;
                         }
-
-                        // Extract condition from line (strip "elif " prefix)
                         const condition = extractCondition(cmd.line, "elif ");
-
-                        // Evaluate the condition
                         const ctx = conditions.RuntimeContext{
                             .watch_mode = self.watch_mode,
                             .dry_run = self.dry_run,
                             .verbose = self.verbose,
                         };
-                        const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch |err| blk: {
-                            self.print("{s}failed to evaluate condition '{s}': {s}\n", .{ self.color.warnPrefix(), condition, @errorName(err) });
-                            break :blk false;
-                        };
-
+                        const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch false;
                         if (condition_result) {
                             executing = true;
                             branch_taken = true;
@@ -985,51 +1081,37 @@ pub const Executor = struct {
                         continue;
                     },
                     .@"else" => {
-                        // Check if parent was executing (look at stack)
                         const parent_executing = if (cond_depth > 0) cond_stack[cond_depth - 1].executing else true;
-                        if (!parent_executing) {
-                            // Parent block is not executing, skip
-                            continue;
-                        }
-
+                        if (!parent_executing) continue;
                         if (branch_taken) {
-                            // A previous branch matched, skip else
                             executing = false;
                         } else {
-                            // No branch matched yet, execute else
                             executing = true;
                             branch_taken = true;
                         }
                         continue;
                     },
                     .end => {
-                        // Pop state from stack
                         if (cond_depth > 0) {
                             cond_depth -= 1;
                             executing = cond_stack[cond_depth].executing;
                             branch_taken = cond_stack[cond_depth].branch_taken;
                         } else {
-                            // No matching @if, reset to default
                             executing = true;
                             branch_taken = false;
                         }
                         continue;
                     },
                     .ignore => {
-                        // @ignore directive: ignore failures for the next command
-                        if (executing) {
-                            ignore_next = true;
-                        }
+                        if (executing) ignore_next = true;
                         continue;
                     },
                     .needs => {
-                        // @needs directive: verify required commands exist
                         if (!executing) continue;
                         try self.checkNeedsDirective(cmd.line);
                         continue;
                     },
                     .confirm => {
-                        // @confirm directive: prompt user for confirmation
                         if (!executing) continue;
                         const result = self.handleConfirmDirective(cmd.line) catch {
                             return ExecuteError.CommandFailed;
@@ -1041,9 +1123,7 @@ pub const Executor = struct {
                         continue;
                     },
                     .each => {
-                        // @each directive: loop over items
                         if (!executing) {
-                            // Find matching @end and skip past it
                             var depth: usize = 1;
                             var j = i + 1;
                             while (j < cmds.len) : (j += 1) {
@@ -1055,21 +1135,15 @@ pub const Executor = struct {
                                     }
                                 }
                             }
-                            i = j; // Skip to @end
+                            i = j;
                             continue;
                         }
-
-                        // Expand variables in the @each line first
                         const expanded_line = self.expandJakeVariables(cmd.line) catch cmd.line;
                         if (expanded_line.ptr != cmd.line.ptr) {
                             self.expanded_strings.append(self.allocator, expanded_line) catch return ExecuteError.OutOfMemory;
                         }
-
-                        // Parse items from expanded line
                         const items = self.parseEachItems(expanded_line);
                         defer self.allocator.free(items);
-
-                        // Find the matching @end and the loop body range
                         var depth: usize = 1;
                         var end_idx = i + 1;
                         while (end_idx < cmds.len) : (end_idx += 1) {
@@ -1081,35 +1155,19 @@ pub const Executor = struct {
                                 }
                             }
                         }
-
-                        // Get the loop body (commands between @each and @end)
                         const loop_body = cmds[i + 1 .. end_idx];
-
-                        // Execute loop body for each item
                         for (items) |item| {
-                            // Set the {{item}} variable (OOM would leave item unset but loop still runs)
                             self.variables.put("item", item) catch {};
-
-                            // Execute the loop body
                             try self.executeEachBody(loop_body, item);
                         }
-
-                        // Remove the item variable
                         _ = self.variables.remove("item");
-
-                        // Skip to end of loop
                         i = end_idx;
                         continue;
                     },
                     .cache => {
-                        // @cache directive: skip next command if deps unchanged
                         if (!executing) continue;
-
-                        // Parse file patterns from the directive
                         const patterns = self.parseCachePatterns(cmd.line);
                         defer self.allocator.free(patterns);
-
-                        // Check if any pattern is stale
                         var is_stale = false;
                         for (patterns) |pattern| {
                             if (self.cache.isGlobStale(pattern) catch true) {
@@ -1117,24 +1175,16 @@ pub const Executor = struct {
                                 break;
                             }
                         }
-
                         if (!is_stale and patterns.len > 0) {
-                            // All deps are fresh, skip the next command
-                            self.print("  {s}[cached]{s} skipping (inputs unchanged)\n", .{ self.color.cyan(), self.color.reset() });
-                            // Skip to next command
+                            self.print("  {s}[cached]{s} skipping (inputs unchanged)\n", .{ self.color.muted(), self.color.reset() });
                             i += 1;
-                            // Skip any subsequent commands until a non-command directive or end
                             while (i < cmds.len and cmds[i].directive == null) : (i += 1) {}
-                            i -= 1; // Will be incremented by loop
+                            i -= 1;
                             continue;
                         }
-
-                        // Deps are stale or first run - execute next command and update cache
-                        // Store patterns for post-command cache update
                         i += 1;
                         if (i < cmds.len and cmds[i].directive == null) {
-                            try self.runCommand(cmds[i]);
-                            // Update cache for all patterns
+                            try self.runCommandWithTimeout(cmds[i], timeout_ctx);
                             for (patterns) |pattern| {
                                 self.cache.update(pattern) catch {};
                             }
@@ -1142,10 +1192,7 @@ pub const Executor = struct {
                         continue;
                     },
                     .watch => {
-                        // @watch directive: track patterns for file watching
-                        // In non-watch mode, this is a no-op - patterns are used by -w flag
                         if (!executing) continue;
-
                         if (self.dry_run) {
                             const patterns = self.parseCachePatterns(cmd.line);
                             defer self.allocator.free(patterns);
@@ -1156,61 +1203,51 @@ pub const Executor = struct {
                             }
                             self.print("\n", .{});
                         }
-                        // In normal mode, @watch is informational only
-                        // The -w/--watch CLI flag handles actual watching
                         continue;
                     },
                     .launch => {
-                        // @launch directive: open file/URL with system default app
                         if (!executing) continue;
-
-                        // Strip "launch" keyword from line to get the target
                         var target = std.mem.trim(u8, cmd.line, " \t");
                         if (std.mem.startsWith(u8, target, "launch")) {
                             target = std.mem.trimLeft(u8, target[6..], " \t");
                         }
                         const expanded_target = try self.expandJakeVariables(target);
-                        // Track allocation for cleanup
                         try self.expanded_strings.append(self.allocator, expanded_target);
-
                         if (self.dry_run) {
                             self.print("  [dry-run] @launch {s}\n", .{expanded_target});
                             continue;
                         }
-
                         try self.executeLaunch(expanded_target);
                         continue;
                     },
                 }
             }
 
-            // Skip command if not in executing state
-            if (!executing) {
-                continue;
-            }
+            if (!executing) continue;
 
-            // Execute the command, handling ignore directive
+            // Execute command with timeout awareness
             if (ignore_next) {
                 ignore_next = false;
-                self.runCommand(cmd) catch |err| {
-                    // Command failed but we're ignoring it
+                self.runCommandWithTimeout(cmd, timeout_ctx) catch |err| {
                     switch (err) {
                         ExecuteError.CommandFailed => {
-                            // The error message with exit code was already printed by runCommand
-                            self.print("{s}[ignored]{s} continuing despite command failure\n", .{ self.color.yellow(), self.color.reset() });
+                            self.print("{s}[ignored]{s} continuing despite command failure\n", .{ self.color.warningYellow(), self.color.reset() });
                         },
                         else => {
-                            self.print("{s}[ignored]{s} command failed with error: {s}\n", .{ self.color.yellow(), self.color.reset(), @errorName(err) });
+                            self.print("{s}[ignored]{s} command failed with error: {s}\n", .{ self.color.warningYellow(), self.color.reset(), @errorName(err) });
                         },
                     }
                 };
             } else {
-                try self.runCommand(cmd);
+                try self.runCommandWithTimeout(cmd, timeout_ctx);
             }
         }
     }
 
-    fn runCommand(self: *Executor, cmd: Recipe.Command) ExecuteError!void {
+    /// Run a single command with optional timeout context for child process tracking
+    fn runCommandWithTimeout(self: *Executor, cmd: Recipe.Command, timeout_ctx: anytype) ExecuteError!void {
+        const has_timeout = comptime @TypeOf(timeout_ctx) != ?*anyopaque;
+
         // First expand {{var}} Jake variables
         const jake_expanded = self.expandJakeVariables(cmd.line) catch cmd.line;
         if (jake_expanded.ptr != cmd.line.ptr) {
@@ -1227,7 +1264,6 @@ pub const Executor = struct {
         const trimmed = std.mem.trimLeft(u8, line, " \t");
         const suppress_echo = trimmed.len > 0 and trimmed[0] == '@';
         if (suppress_echo) {
-            // Strip the @ prefix (keeping any leading whitespace before @, then skip @)
             const at_pos = std.mem.indexOf(u8, line, "@").?;
             line = line[at_pos + 1 ..];
         }
@@ -1241,10 +1277,8 @@ pub const Executor = struct {
             self.print("  $ {s}\n", .{line});
         }
 
-        // Determine which shell to use
         const shell_cmd = if (self.current_shell) |shell| shell else "/bin/sh";
 
-        // Execute via shell with custom environment
         var child = std.process.Child.init(
             &[_][]const u8{ shell_cmd, "-c", line },
             self.allocator,
@@ -1252,15 +1286,12 @@ pub const Executor = struct {
         child.stderr_behavior = .Inherit;
         child.stdout_behavior = .Inherit;
 
-        // Set working directory if specified
         if (self.current_working_dir) |working_dir| {
             child.cwd = working_dir;
         }
 
-        // Set up environment for child process
         var env_map = self.environment.buildEnvMap(self.allocator) catch |err| {
             self.print("{s}failed to build env map: {s}\n", .{ self.color.warnPrefix(), @errorName(err) });
-            // Continue without custom env
             _ = child.spawn() catch |spawn_err| {
                 self.print("{s}failed to spawn: {s}\n", .{ self.color.errPrefix(), @errorName(spawn_err) });
                 return ExecuteError.CommandFailed;
@@ -1269,9 +1300,25 @@ pub const Executor = struct {
                 self.print("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(wait_err) });
                 return ExecuteError.CommandFailed;
             };
-            if (result.Exited != 0) {
-                self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), result.Exited });
-                return ExecuteError.CommandFailed;
+            switch (result) {
+                .Exited => |code| {
+                    if (code != 0) {
+                        self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
+                        return ExecuteError.CommandFailed;
+                    }
+                },
+                .Signal => |sig| {
+                    self.print("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
+                    return ExecuteError.CommandFailed;
+                },
+                .Stopped => |sig| {
+                    self.print("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
+                    return ExecuteError.CommandFailed;
+                },
+                .Unknown => |code| {
+                    self.print("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
+                    return ExecuteError.CommandFailed;
+                },
             }
             return;
         };
@@ -1283,15 +1330,60 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
+        // Register child with timeout context so watchdog can kill it
+        if (has_timeout) {
+            timeout_ctx.current_child.store(&child, .release);
+        }
+
         const result = child.wait() catch |err| {
+            // Clear child from context
+            if (has_timeout) {
+                timeout_ctx.current_child.store(null, .release);
+            }
             self.print("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return ExecuteError.CommandFailed;
         };
 
-        if (result.Exited != 0) {
-            self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), result.Exited });
-            return ExecuteError.CommandFailed;
+        // Clear child from context
+        if (has_timeout) {
+            timeout_ctx.current_child.store(null, .release);
         }
+
+        // Handle both normal exit and signal termination
+        switch (result) {
+            .Exited => |code| {
+                if (code != 0) {
+                    self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
+                    return ExecuteError.CommandFailed;
+                }
+            },
+            .Signal => |sig| {
+                // Process was killed by signal (e.g., SIGKILL from timeout)
+                self.print("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
+                return ExecuteError.CommandFailed;
+            },
+            .Stopped => |sig| {
+                self.print("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
+                return ExecuteError.CommandFailed;
+            },
+            .Unknown => |code| {
+                self.print("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
+                return ExecuteError.CommandFailed;
+            },
+        }
+    }
+
+    /// Execute commands with conditional block support (no timeout)
+    fn executeCommands(self: *Executor, cmds: []const Recipe.Command) ExecuteError!void {
+        // Delegate to core with no timeout context
+        const no_timeout: ?*anyopaque = null;
+        return self.executeCommandsCore(cmds, no_timeout);
+    }
+
+    fn runCommand(self: *Executor, cmd: Recipe.Command) ExecuteError!void {
+        // Delegate to timeout-aware version with no timeout
+        const no_timeout: ?*anyopaque = null;
+        return self.runCommandWithTimeout(cmd, no_timeout);
     }
 
     /// Expand {{var}} style Jake variables and positional args ({{$1}}, {{$2}}, {{$@}})
@@ -1450,7 +1542,7 @@ pub const Executor = struct {
         for (group_names.items) |group_name| {
             if (groups.get(group_name)) |recipes| {
                 stdout.writeAll("\n") catch {};
-                stdout.writeAll(self.color.yellow()) catch {};
+                stdout.writeAll(self.color.jakeRose()) catch {};
                 stdout.writeAll(group_name) catch {};
                 stdout.writeAll(":") catch {};
                 stdout.writeAll(self.color.reset()) catch {};
@@ -1526,9 +1618,9 @@ pub const Executor = struct {
             alias_str = fbs.getWritten();
         }
 
-        // Print recipe name with color
+        // Print recipe name with brand color (Jake Rose)
         stdout.writeAll("  ") catch {};
-        stdout.writeAll(self.color.cyanRegular()) catch {};
+        stdout.writeAll(self.color.jakeRose()) catch {};
         stdout.writeAll(recipe.name) catch {};
         stdout.writeAll(self.color.reset()) catch {};
         if (kind_str.len > 0) {
@@ -1539,10 +1631,10 @@ pub const Executor = struct {
         stdout.writeAll(default_str) catch {};
         stdout.writeAll(alias_str) catch {};
 
-        // Show description inline if available
+        // Show description inline if available (muted brand gray)
         if (recipe.description) |desc| {
             stdout.writeAll("  ") catch {};
-            stdout.writeAll(self.color.dim()) catch {};
+            stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("# ") catch {};
             stdout.writeAll(desc) catch {};
             stdout.writeAll(self.color.reset()) catch {};
@@ -1554,9 +1646,11 @@ pub const Executor = struct {
             // Only show if there's no description or if doc is different from description
             const should_show = if (recipe.description) |desc| !std.mem.eql(u8, doc, desc) else true;
             if (should_show) {
-                var doc_buf: [256]u8 = undefined;
-                const doc_line = std.fmt.bufPrint(&doc_buf, "    {s}\n", .{doc}) catch return;
-                stdout.writeAll(doc_line) catch {};
+                stdout.writeAll("    ") catch {};
+                stdout.writeAll(self.color.muted()) catch {};
+                stdout.writeAll(doc) catch {};
+                stdout.writeAll(self.color.reset()) catch {};
+                stdout.writeAll("\n") catch {};
             }
         }
     }
@@ -1574,48 +1668,50 @@ pub const Executor = struct {
             return false;
         };
 
-        // Header
-        stdout.writeAll(self.color.bold()) catch {};
+        // Header - label muted, name in Jake Rose
+        stdout.writeAll(self.color.muted()) catch {};
         stdout.writeAll("Recipe:") catch {};
         stdout.writeAll(self.color.reset()) catch {};
         stdout.writeAll(" ") catch {};
-        stdout.writeAll(self.color.cyanRegular()) catch {};
+        stdout.writeAll(self.color.jakeRose()) catch {};
         stdout.writeAll(recipe.name) catch {};
         stdout.writeAll(self.color.reset()) catch {};
         if (isPrivateRecipe(recipe)) {
             stdout.writeAll(" ") catch {};
-            stdout.writeAll(self.color.dim()) catch {};
+            stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("(hidden)") catch {};
             stdout.writeAll(self.color.reset()) catch {};
         }
         stdout.writeAll("\n") catch {};
 
-        // Type
+        // Type - label muted
         const kind_str = switch (recipe.kind) {
             .task => "task",
             .file => "file",
             .simple => "simple",
         };
-        stdout.writeAll(self.color.bold()) catch {};
+        stdout.writeAll(self.color.muted()) catch {};
         stdout.writeAll("Type:") catch {};
         stdout.writeAll(self.color.reset()) catch {};
         stdout.writeAll(" ") catch {};
         stdout.writeAll(kind_str) catch {};
         stdout.writeAll("\n") catch {};
 
-        // Group (if present)
+        // Group (if present) - label muted, value in Jake Rose
         if (recipe.group) |group| {
-            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("Group:") catch {};
             stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" ") catch {};
+            stdout.writeAll(self.color.jakeRose()) catch {};
             stdout.writeAll(group) catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll("\n") catch {};
         }
 
-        // Description
+        // Description - label muted
         if (recipe.description) |desc| {
-            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("Description:") catch {};
             stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" ") catch {};
@@ -1623,11 +1719,11 @@ pub const Executor = struct {
             stdout.writeAll("\n") catch {};
         }
 
-        // Doc comment (if different from description)
+        // Doc comment (if different from description) - label muted
         if (recipe.doc_comment) |doc| {
             const should_show = if (recipe.description) |desc| !std.mem.eql(u8, doc, desc) else true;
             if (should_show) {
-                stdout.writeAll(self.color.bold()) catch {};
+                stdout.writeAll(self.color.muted()) catch {};
                 stdout.writeAll("Doc:") catch {};
                 stdout.writeAll(self.color.reset()) catch {};
                 stdout.writeAll(" ") catch {};
@@ -1636,45 +1732,51 @@ pub const Executor = struct {
             }
         }
 
-        // Aliases
+        // Aliases - label muted, aliases in Jake Rose
         if (recipe.aliases.len > 0) {
-            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("Aliases:") catch {};
             stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" ") catch {};
             for (recipe.aliases, 0..) |alias, i| {
                 if (i > 0) stdout.writeAll(", ") catch {};
+                stdout.writeAll(self.color.jakeRose()) catch {};
                 stdout.writeAll(alias) catch {};
+                stdout.writeAll(self.color.reset()) catch {};
             }
             stdout.writeAll("\n") catch {};
         }
 
-        // Default marker
+        // Default marker - label muted
         if (recipe.is_default) {
-            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("Default:") catch {};
             stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" yes\n") catch {};
         }
 
-        // Dependencies
+        // Dependencies - label muted, deps in Jake Rose
         if (recipe.dependencies.len > 0) {
             stdout.writeAll("\n") catch {};
-            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("Dependencies:") catch {};
             stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" [") catch {};
             for (recipe.dependencies, 0..) |dep, i| {
                 if (i > 0) stdout.writeAll(", ") catch {};
+                stdout.writeAll(self.color.jakeRose()) catch {};
                 stdout.writeAll(dep) catch {};
+                stdout.writeAll(self.color.reset()) catch {};
             }
             stdout.writeAll("]\n") catch {};
         }
 
-        // File dependencies
+        // File dependencies - label muted
         if (recipe.file_deps.len > 0) {
             stdout.writeAll("\n") catch {};
-            self.color.writeBold(stdout, "File dependencies:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("File dependencies:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll("\n") catch {};
             for (recipe.file_deps) |fd| {
                 stdout.writeAll("  ") catch {};
@@ -1683,43 +1785,53 @@ pub const Executor = struct {
             }
         }
 
-        // Output (for file recipes)
+        // Output (for file recipes) - label muted
         if (recipe.output) |output| {
             stdout.writeAll("\n") catch {};
-            self.color.writeBold(stdout, "Output:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Output:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" ") catch {};
             stdout.writeAll(output) catch {};
             stdout.writeAll("\n") catch {};
         }
 
-        // Parameters
+        // Parameters - label muted
         if (recipe.params.len > 0) {
             stdout.writeAll("\n") catch {};
-            self.color.writeBold(stdout, "Parameters:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Parameters:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll("\n") catch {};
             for (recipe.params) |param| {
                 stdout.writeAll("  ") catch {};
                 stdout.writeAll(param.name) catch {};
                 if (param.default) |def| {
+                    stdout.writeAll(self.color.muted()) catch {};
                     stdout.writeAll(" (default: \"") catch {};
                     stdout.writeAll(def) catch {};
                     stdout.writeAll("\")") catch {};
+                    stdout.writeAll(self.color.reset()) catch {};
                 } else {
+                    stdout.writeAll(self.color.muted()) catch {};
                     stdout.writeAll(" (required)") catch {};
+                    stdout.writeAll(self.color.reset()) catch {};
                 }
                 stdout.writeAll("\n") catch {};
             }
         }
 
-        // Commands
+        // Commands - label muted, directives in warning yellow
         if (recipe.commands.len > 0) {
             stdout.writeAll("\n") catch {};
-            self.color.writeBold(stdout, "Commands:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Commands:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll("\n") catch {};
             for (recipe.commands) |cmd| {
                 stdout.writeAll("  ") catch {};
                 if (cmd.directive) |dir| {
-                    stdout.writeAll(self.color.yellowRegular()) catch {};
+                    stdout.writeAll(self.color.warningYellow()) catch {};
                     stdout.writeAll("@") catch {};
                     const dir_name = switch (dir) {
                         .cache => "cache",
@@ -2431,6 +2543,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .only_os = &.{},
             .quiet = false,
             .needs = &.{},
+            .timeout_seconds = null,
         },
         .{
             .name = "lib.build", // Public imported recipe
@@ -2458,6 +2571,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .only_os = &.{},
             .quiet = false,
             .needs = &.{},
+            .timeout_seconds = null,
         },
         .{
             .name = "lib._helper", // Private imported recipe - should be counted!
@@ -2485,6 +2599,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .only_os = &.{},
             .quiet = false,
             .needs = &.{},
+            .timeout_seconds = null,
         },
         .{
             .name = "_local_private", // Direct private recipe - should be counted!
@@ -2508,6 +2623,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .only_os = &.{},
             .quiet = false,
             .needs = &.{},
+            .timeout_seconds = null,
         },
     };
 
@@ -2551,6 +2667,7 @@ test "isPrivateRecipe detects private via origin.original_name" {
         .only_os = &.{},
         .quiet = false,
         .needs = &.{},
+        .timeout_seconds = null,
     };
 
     // Should be private because origin.original_name starts with _
@@ -2599,6 +2716,7 @@ test "isPrivateRecipe edge cases" {
         .only_os = &.{},
         .quiet = false,
         .needs = &.{},
+        .timeout_seconds = null,
     };
 
     // Empty name should return false (not private)
@@ -5430,4 +5548,136 @@ test "@cd and @shell combined" {
     try std.testing.expectEqualStrings("/bin/sh", recipe.shell.?);
 
     try executor.execute("test");
+}
+
+// --- @timeout directive tests ---
+
+test "@timeout parsing seconds" {
+    const source =
+        \\@timeout 30s
+        \\task test:
+        \\    echo "with timeout"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.getRecipe("test").?;
+    try std.testing.expectEqual(@as(?u64, 30), recipe.timeout_seconds);
+}
+
+test "@timeout parsing minutes" {
+    const source =
+        \\@timeout 5m
+        \\task test:
+        \\    echo "with timeout"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.getRecipe("test").?;
+    try std.testing.expectEqual(@as(?u64, 300), recipe.timeout_seconds);
+}
+
+test "@timeout parsing hours" {
+    const source =
+        \\@timeout 2h
+        \\task test:
+        \\    echo "with timeout"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.getRecipe("test").?;
+    try std.testing.expectEqual(@as(?u64, 7200), recipe.timeout_seconds);
+}
+
+test "@timeout with dry run does not hang" {
+    const source =
+        \\@timeout 1s
+        \\task test:
+        \\    echo "quick"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.dry_run = true;
+
+    // Dry run should complete immediately without timeout logic
+    try executor.execute("test");
+}
+
+test "@timeout default is null" {
+    const source =
+        \\task test:
+        \\    echo "no timeout"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.getRecipe("test").?;
+    try std.testing.expectEqual(@as(?u64, null), recipe.timeout_seconds);
+}
+
+test "@timeout kills long-running command" {
+    // Skip on Windows - sleep command not available
+    if (builtin.os.tag == .windows) return;
+
+    const source =
+        \\@timeout 1s
+        \\task slow:
+        \\    sleep 10
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.verbose = false;
+
+    // Capture start time
+    const start = std.time.milliTimestamp();
+
+    // Execute should fail due to timeout
+    const result = executor.execute("slow");
+    try std.testing.expectError(ExecuteError.CommandFailed, result);
+
+    // Verify it completed in roughly 1-2 seconds, not 10
+    const elapsed = std.time.milliTimestamp() - start;
+    try std.testing.expect(elapsed < 3000); // Should complete in under 3s
+}
+
+test "@timeout allows fast commands to complete" {
+    // Skip on Windows
+    if (builtin.os.tag == .windows) return;
+
+    const source =
+        \\@timeout 5s
+        \\task quick:
+        \\    echo "fast"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.verbose = false;
+
+    // Should complete successfully
+    try executor.execute("quick");
 }
