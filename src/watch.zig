@@ -8,6 +8,7 @@ const compat = @import("compat.zig");
 const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
 const glob_mod = @import("glob.zig");
+const color_mod = @import("color.zig");
 
 const Jakefile = parser.Jakefile;
 const Executor = executor_mod.Executor;
@@ -33,6 +34,7 @@ pub const Watcher = struct {
     verbose: bool,
     dry_run: bool,
     last_change_time: i128,
+    color: color_mod.Color,
 
     const POLL_INTERVAL_MS: u64 = 500;
     const DEBOUNCE_MS: u64 = 100;
@@ -49,6 +51,7 @@ pub const Watcher = struct {
             .verbose = false,
             .dry_run = false,
             .last_change_time = 0,
+            .color = color_mod.init(),
         };
     }
 
@@ -272,11 +275,11 @@ pub const Watcher = struct {
         // Resolve initial patterns
         try self.resolvePatterns();
 
-        self.print("\x1b[1;34m[watch]\x1b[0m Watching {d} file(s) for changes...\n", .{self.resolved_files.items.len});
+        self.print("{s}[watch]{s} Watching {d} file(s) for changes...\n", .{ self.color.blue(), self.color.reset(), self.resolved_files.items.len });
 
         // Show the patterns being watched
         if (self.watch_patterns.items.len > 0) {
-            self.print("\x1b[1;34m[watch]\x1b[0m Patterns: ", .{});
+            self.print("{s}[watch]{s} Patterns: ", .{ self.color.blue(), self.color.reset() });
             for (self.watch_patterns.items, 0..) |pattern, i| {
                 if (i > 0) self.print(", ", .{});
                 self.print("{s}", .{pattern});
@@ -290,7 +293,7 @@ pub const Watcher = struct {
             }
         }
 
-        self.print("\x1b[1;34m[watch]\x1b[0m Press Ctrl+C to stop\n", .{});
+        self.print("{s}[watch]{s} Press Ctrl+C to stop\n", .{ self.color.blue(), self.color.reset() });
         self.print("\n", .{});
 
         // Initial execution
@@ -306,7 +309,7 @@ pub const Watcher = struct {
             // Check for changes
             if (try self.checkForChanges()) |changed_file| {
                 if (!pending_change) {
-                    self.print("\x1b[1;33m[watch]\x1b[0m Change detected: {s}\n", .{changed_file});
+                    self.print("{s}[watch]{s} Change detected: {s}\n", .{ self.color.yellow(), self.color.reset(), changed_file });
                     pending_change = true;
                     change_detected_time = std.time.nanoTimestamp();
                 } else {
@@ -330,7 +333,7 @@ pub const Watcher = struct {
 
     /// Execute the recipe (handles errors gracefully for watch mode)
     fn executeRecipe(self: *Watcher, recipe_name: []const u8) void {
-        self.print("\x1b[1;34m[watch]\x1b[0m Running '{s}'...\n", .{recipe_name});
+        self.print("{s}[watch]{s} Running '{s}'...\n", .{ self.color.blue(), self.color.reset(), recipe_name });
         self.print("\n", .{});
 
         var exec = Executor.init(self.allocator, self.jakefile);
@@ -341,13 +344,13 @@ pub const Watcher = struct {
 
         exec.execute(recipe_name) catch |err| {
             const err_name = @errorName(err);
-            self.print("\x1b[1;31m[watch]\x1b[0m Recipe failed: {s}\n", .{err_name});
-            self.print("\x1b[1;34m[watch]\x1b[0m Waiting for changes...\n", .{});
+            self.print("{s}[watch]{s} Recipe failed: {s}\n", .{ self.color.red(), self.color.reset(), err_name });
+            self.print("{s}[watch]{s} Waiting for changes...\n", .{ self.color.blue(), self.color.reset() });
             return;
         };
 
-        self.print("\n\x1b[1;32m[watch]\x1b[0m Recipe completed successfully\n", .{});
-        self.print("\x1b[1;34m[watch]\x1b[0m Waiting for changes...\n", .{});
+        self.print("\n{s}[watch]{s} Recipe completed successfully\n", .{ self.color.green(), self.color.reset() });
+        self.print("{s}[watch]{s} Waiting for changes...\n", .{ self.color.blue(), self.color.reset() });
     }
 
     fn print(self: *Watcher, comptime fmt: []const u8, args: anytype) void {
