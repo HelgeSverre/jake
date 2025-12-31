@@ -68,6 +68,12 @@ export default defineConfig({
                   ],
               },
               {
+                  label: 'Integrations',
+                  items: [
+                      { label: 'JS Syntax Highlighters', slug: 'guides/js-syntax-highlighters' },
+                  ],
+              },
+              {
                   label: 'Migration Guides',
                   items: [
                       { label: 'From Make', slug: 'guides/migrating-from-make' },
