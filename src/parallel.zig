@@ -596,8 +596,12 @@ pub const ParallelExecutor = struct {
                             continue;
                         }
 
-                        // Parse items from line
-                        const items = self.parseEachItems(cmd.line);
+                        // Expand variables in the @each line first
+                        const expanded_line = self.expandVariables(cmd.line) catch cmd.line;
+                        defer if (expanded_line.ptr != cmd.line.ptr) self.allocator.free(expanded_line);
+
+                        // Parse items from expanded line
+                        const items = self.parseEachItems(expanded_line);
                         if (items.len == 0) continue;
                         defer self.allocator.free(items);
 

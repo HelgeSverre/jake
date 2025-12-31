@@ -53,8 +53,8 @@ task tracy: [tracy-build]
     @post echo "Open with: tracy trace.tracy"
 
 # Private helper to install Tracy profiler
+@quiet
 task _install-tracy:
-    @quiet
     brew install tracy
 
 # ============================================================================

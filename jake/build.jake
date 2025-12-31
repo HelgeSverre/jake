@@ -44,6 +44,7 @@ task clean:
     rm -rf zig-out
     rm -rf .zig-cache
     rm -rf .jake
+    rm -rf ./dist
     @post echo "Clean complete"
 
 @group build
@@ -99,6 +100,8 @@ task coverage-clean:
 @desc "Install jake to ~/.local/bin"
 task install: [build-release]
     mkdir -p {{home()}}/.local/bin
-    cp zig-out/bin/jake {{local_bin("jake")}}
+    # Use atomic replacement to avoid macOS code signature invalidation
+    cp zig-out/bin/jake {{local_bin("jake")}}.new
+    mv {{local_bin("jake")}}.new {{local_bin("jake")}}
     echo "Installed to {{local_bin("jake")}}"
     echo "Make sure ~/.local/bin is in your PATH"
