@@ -6,7 +6,7 @@ out = "/tmp/jake-e2e-output.txt"
 
 @default
 @desc "Run all e2e tests"
-task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-cli, test-integration]
+task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-cli, test-integration, test-traverse]
     echo ""
     echo "All e2e tests passed!"
 
@@ -270,6 +270,15 @@ task test-functions:
     {{jake}} -f fixtures/functions/variables.jake check-var > {{out}} 2>&1
     grep -q "Value: exported_value" {{out}}
     echo "  Jake variables expand in commands ..................... PASS"
+    # home() leaves template unexpanded when HOME is unset
+    @ignore
+    env -u HOME {{jake}} -f fixtures/functions/env-edge-cases.jake test-home > {{out}} 2>&1 || true
+    grep -q '{' {{out}} && grep -q 'home()' {{out}}
+    echo "  home() unexpanded when HOME unset ..................... PASS"
+    # shell_config() falls back to .profile for unknown shells
+    SHELL=/bin/unknownshell {{jake}} -f fixtures/functions/env-edge-cases.jake test-shell-config > {{out}} 2>&1
+    grep -q ".profile" {{out}}
+    echo "  shell_config() falls back to .profile for unknown shell PASS"
 
 # ============================================================================
 # Import Tests
@@ -389,3 +398,24 @@ task test-integration:
     {{jake}} -f fixtures/integration/full-project.jake -j2 release > {{out}} 2>&1
     grep -q "Cleaning" {{out}} && grep -q "Releasing v2.0.0" {{out}}
     echo "  Full project: release with parallel deps .............. PASS"
+
+# ============================================================================
+# Directory Traversal Tests
+# ============================================================================
+
+@quiet
+task test-traverse:
+    echo ""
+    echo "Directory Traversal Tests"
+    # Get absolute path to jake binary before any cwd changes
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm -rf /tmp/jake-traverse-test; mkdir -p /tmp/jake-traverse-test/subdir/nested; printf 'task hello:\n    echo "Found parent Jakefile"\n' > /tmp/jake-traverse-test/Jakefile; (cd /tmp/jake-traverse-test/subdir/nested && "$JAKE_ABS" hello > {{out}} 2>&1); grep -q "Found parent Jakefile" {{out}}; echo "  Finds Jakefile in parent directory .................... PASS"
+    # Test: local Jakefile takes precedence
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; printf 'task local:\n    echo "Local Jakefile wins"\n' > /tmp/jake-traverse-test/subdir/nested/Jakefile; (cd /tmp/jake-traverse-test/subdir/nested && "$JAKE_ABS" local > {{out}} 2>&1); grep -q "Local Jakefile wins" {{out}}; echo "  Local Jakefile takes precedence ....................... PASS"
+    # Test: -f flag bypasses traversal
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm /tmp/jake-traverse-test/subdir/nested/Jakefile; (cd /tmp/jake-traverse-test/subdir/nested && "$JAKE_ABS" -f /tmp/jake-traverse-test/Jakefile hello > {{out}} 2>&1); grep -q "Found parent Jakefile" {{out}}; echo "  -f flag bypasses traversal ............................ PASS"
+    # Test: shows proper error when no Jakefile found
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm -rf /tmp/jake-no-jakefile; mkdir -p /tmp/jake-no-jakefile; (cd /tmp/jake-no-jakefile && "$JAKE_ABS" hello > {{out}} 2>&1 || true); grep -q "No Jakefile found" {{out}}; grep -q "parent directories" {{out}}; echo "  Shows proper error when no Jakefile found ............. PASS"
+    # Test: runs in Jakefile's directory (relative paths work)
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; printf 'task check-dir:\n    test -f Jakefile && echo "Running in Jakefile dir"\n' > /tmp/jake-traverse-test/Jakefile; (cd /tmp/jake-traverse-test/subdir/nested && "$JAKE_ABS" check-dir > {{out}} 2>&1); grep -q "Running in Jakefile dir" {{out}}; echo "  Runs in Jakefile directory (relative paths work) ...... PASS"
+    # Cleanup
+    rm -rf /tmp/jake-traverse-test /tmp/jake-no-jakefile

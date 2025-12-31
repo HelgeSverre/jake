@@ -9,6 +9,29 @@ This document defines the official terminology and syntax highlighting standards
 | `Jakefile` | Main project file (no extension) |
 | `*.jake` | Module/library files |
 
+### Jakefile Discovery
+
+When you run `jake` without the `-f` flag, it searches for a `Jakefile` in the following order:
+
+1. **Current directory** - Checks for `Jakefile` in the current working directory
+2. **Parent directories** - If not found, traverses up the directory tree, checking each parent directory until a `Jakefile` is found or the filesystem root is reached
+
+When a `Jakefile` is found in a parent directory, Jake automatically changes to that directory before executing. This means all relative paths in your Jakefile are resolved relative to where the Jakefile is located, not where you ran the command.
+
+```bash
+# Example: Running from a subdirectory
+cd ~/project/src/components
+jake build  # Finds and uses ~/project/Jakefile, runs in ~/project/
+```
+
+To use a specific Jakefile, use the `-f` flag:
+
+```bash
+jake -f path/to/custom.jake build
+```
+
+When using `-f`, the directory traversal is skipped and the specified path is used directly.
+
 ---
 
 ## Syntax Components

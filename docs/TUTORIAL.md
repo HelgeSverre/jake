@@ -120,6 +120,8 @@ Hello from Jake!
 
 That's it. No tabs vs. spaces headaches. No `.PHONY` declarations. Just define a task and run it.
 
+> **Pro Tip:** You can run `jake` from any subdirectory of your project. Jake automatically searches parent directories for a `Jakefile` and runs from that directory. This means `jake build` works whether you're in `~/project/` or `~/project/src/components/`.
+
 ### Adding a Default Task
 
 ```jake

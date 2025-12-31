@@ -127,7 +127,8 @@ pub fn main() !void {
         const stderr = getStderr();
         if (err == error.FileNotFound) {
             stderr.writeAll(args_mod.ansi.err_prefix ++ "No Jakefile found\n") catch {};
-            stderr.writeAll("Create a file named 'Jakefile' in the current directory.\n") catch {};
+            stderr.writeAll("Searched current directory and all parent directories.\n") catch {};
+            stderr.writeAll("Create a file named 'Jakefile' or specify one with -f.\n") catch {};
         } else {
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to load Jakefile: {s}\n", .{@errorName(err)}) catch "error\n";
@@ -154,8 +155,9 @@ pub fn main() !void {
     };
 
     // List recipes or run default if no recipe specified
-    if (args.list or (args.recipe == null and raw_args.len == 1)) {
-        executor.listRecipes(args.short);
+    // --short implies listing (it's a listing format option)
+    if (args.list or args.short or (args.recipe == null and raw_args.len == 1)) {
+        executor.listRecipes(args.short, args.all);
         return;
     }
 
@@ -267,8 +269,79 @@ const JakefileWithSource = struct {
     }
 };
 
+/// Searches for a Jakefile starting from the current directory and traversing up
+/// to parent directories. Returns the path to the found Jakefile.
+/// Only traverses if the path is the default "Jakefile" - explicit paths are used as-is.
+fn findJakefile(allocator: std.mem.Allocator, requested_path: []const u8) !struct { path: []const u8, dir: ?[]const u8 } {
+    // If user specified an explicit path (not just "Jakefile"), use it directly
+    if (!std.mem.eql(u8, requested_path, "Jakefile")) {
+        return .{ .path = requested_path, .dir = null };
+    }
+
+    // Try current directory first
+    if (std.fs.cwd().openFile("Jakefile", .{})) |file| {
+        file.close();
+        return .{ .path = "Jakefile", .dir = null };
+    } else |_| {}
+
+    // Get absolute path to current directory
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = std.fs.cwd().realpath(".", &path_buf) catch return error.FileNotFound;
+
+    // Use a separate buffer for the current directory we're checking
+    var current_buf: [std.fs.max_path_bytes]u8 = undefined;
+    @memcpy(current_buf[0..cwd.len], cwd);
+    var current_dir: []const u8 = current_buf[0..cwd.len];
+
+    // Traverse up the directory tree
+    while (true) {
+        // Get parent directory
+        const parent = std.fs.path.dirname(current_dir) orelse break;
+        if (parent.len == 0 or std.mem.eql(u8, parent, current_dir)) break;
+
+        // Try to open Jakefile in parent
+        var parent_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const jakefile_path = std.fmt.bufPrint(&parent_buf, "{s}/Jakefile", .{parent}) catch break;
+
+        if (std.fs.cwd().openFile(jakefile_path, .{})) |file| {
+            file.close();
+            // Found it - return the path and the directory to change to
+            const path_copy = allocator.dupe(u8, jakefile_path) catch return error.OutOfMemory;
+            const dir_copy = allocator.dupe(u8, parent) catch {
+                allocator.free(path_copy);
+                return error.OutOfMemory;
+            };
+            return .{ .path = path_copy, .dir = dir_copy };
+        } else |_| {}
+
+        // parent is already a prefix slice of current_buf, just update the length
+        current_dir = current_buf[0..parent.len];
+    }
+
+    return error.FileNotFound;
+}
+
 fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !JakefileWithSource {
-    const file = try std.fs.cwd().openFile(path, .{});
+    // Find the Jakefile, potentially traversing up directories
+    const found = try findJakefile(allocator, path);
+    defer if (found.dir) |dir| allocator.free(dir);
+    const jakefile_path = found.path;
+    defer if (found.dir != null) allocator.free(jakefile_path);
+
+    // Change to the Jakefile's directory if we found it in a parent
+    if (found.dir) |dir| {
+        std.posix.chdir(dir) catch |err| {
+            const stderr = getStderr();
+            var buf: [512]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to change to directory '{s}': {s}\n", .{ dir, @errorName(err) }) catch "error\n";
+            stderr.writeAll(msg) catch {};
+            return error.FileNotFound;
+        };
+    }
+
+    // Now open using just the filename since we've changed directory
+    const actual_path = if (found.dir != null) "Jakefile" else jakefile_path;
+    const file = try std.fs.cwd().openFile(actual_path, .{});
     defer file.close();
 
     const source = try file.readToEndAlloc(allocator, 1024 * 1024);
