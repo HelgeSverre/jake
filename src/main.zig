@@ -5,6 +5,8 @@ const build_options = @import("build_options");
 const args_mod = jake.args;
 const completions = jake.completions;
 const upgrade = jake.upgrade;
+const init = jake.init;
+const color_mod = jake.color;
 
 const version = build_options.version;
 
@@ -44,6 +46,9 @@ pub fn main() !void {
     if (raw_args.len > 1 and std.mem.eql(u8, raw_args[1], "upgrade")) {
         return handleUpgrade(allocator, raw_args[2..]);
     }
+    if (raw_args.len > 1 and std.mem.eql(u8, raw_args[1], "init")) {
+        return handleInit(allocator, raw_args[2..]);
+    }
 
     // Parse arguments using args module
     var args = args_mod.parse(allocator, raw_args) catch |err| {
@@ -55,15 +60,18 @@ pub fn main() !void {
     defer args.deinit(allocator);
 
     if (args.version) {
-        var buf: [256]u8 = undefined;
-        const msg = std.fmt.bufPrint(&buf, "jake {s} ({s}{s} {s} {s})\n", .{
-            version,
-            build_options.git_hash,
-            build_options.git_dirty,
-            build_options.build_date,
-            build_options.optimize_mode,
-        }) catch "jake " ++ version ++ "\n";
-        try getStdout().writeAll(msg);
+        const stdout = getStdout();
+        const color = color_mod.init();
+        // {j} logo in Jake Rose
+        stdout.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
+        stdout.writeAll(color_mod.symbols.logo) catch {};
+        stdout.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+        // jake in regular, version in gray
+        stdout.writeAll(" jake ") catch {};
+        stdout.writeAll(if (color.enabled) color_mod.codes.gray else "") catch {};
+        stdout.writeAll(version) catch {};
+        stdout.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+        stdout.writeAll("\n") catch {};
         return;
     }
 
@@ -510,6 +518,80 @@ fn printUpgradeHelp() void {
         \\    jake upgrade --check   Check if update is available
         \\
     ) catch {};
+}
+
+/// Handle the `jake init` subcommand
+fn handleInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var options = init.Options{};
+
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "-f") or std.mem.eql(u8, arg, "--force")) {
+            options.force = true;
+        } else if ((std.mem.startsWith(u8, arg, "-t") or std.mem.startsWith(u8, arg, "--template"))) {
+            const value = if (std.mem.startsWith(u8, arg, "-t")) arg[2..] else std.mem.trimLeft(u8, arg[10..], " =");
+            if (std.mem.eql(u8, value, "blank")) {
+                options.template = .blank;
+            } else if (std.mem.eql(u8, value, "starter")) {
+                options.template = .starter;
+            } else {
+                const stderr = getStderr();
+                stderr.writeAll(args_mod.ansi.err_prefix ++ "Unknown template: ") catch {};
+                stderr.writeAll(value) catch {};
+                stderr.writeAll("\nAvailable templates: starter, blank\n") catch {};
+                printInitHelp();
+                std.process.exit(1);
+            }
+        } else if (std.mem.startsWith(u8, arg, "-p") or std.mem.startsWith(u8, arg, "--path")) {
+            const value = if (std.mem.startsWith(u8, arg, "-p")) arg[2..] else std.mem.trimLeft(u8, arg[6..], " =");
+            if (value.len == 0) {
+                const stderr = getStderr();
+                stderr.writeAll(args_mod.ansi.err_prefix ++ "Missing value for --path\n") catch {};
+                printInitHelp();
+                std.process.exit(1);
+            }
+            options.path = value;
+        } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+            printInitHelp();
+            return;
+        } else if (arg.len > 0 and arg[0] == '-') {
+            const stderr = getStderr();
+            stderr.writeAll(args_mod.ansi.err_prefix ++ "Unknown option: ") catch {};
+            stderr.writeAll(arg) catch {};
+            stderr.writeAll("\n") catch {};
+            printInitHelp();
+            std.process.exit(1);
+        } else {
+            const stderr = getStderr();
+            stderr.writeAll(args_mod.ansi.err_prefix ++ "Unexpected argument: ") catch {};
+            stderr.writeAll(arg) catch {};
+            stderr.writeAll("\n") catch {};
+            printInitHelp();
+            std.process.exit(1);
+        }
+    }
+
+    const stdout_writer = FileWriter{ .file = getStdout() };
+    const stderr = getStderr();
+
+    init.run(allocator, options, stdout_writer) catch |err| {
+        switch (err) {
+            error.FileExists => {
+                stderr.writeAll(args_mod.ansi.err_prefix ++ "Jakefile already exists\n") catch {};
+                stderr.writeAll("Use --force to overwrite.\n") catch {};
+            },
+            else => {
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Init failed: {s}\n", .{@errorName(err)}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+            },
+        }
+        std.process.exit(1);
+    };
+}
+
+fn printInitHelp() void {
+    const stdout = getStdout();
+    init.printHelp(stdout) catch {};
 }
 
 test "main does not crash" {

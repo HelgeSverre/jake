@@ -50,6 +50,7 @@ pub const symbols = struct {
     pub const success = "✓";
     pub const failure = "✗";
     pub const warning = "~";
+    pub const logo = "{j}";
 };
 
 // ============================================================================
@@ -121,14 +122,39 @@ pub const Color = struct {
         return if (self.enabled) "\x1b[0m" else "";
     }
 
-    /// Error prefix with color: "error: " in red
-    pub fn errPrefix(self: Color) []const u8 {
-        return if (self.enabled) "\x1b[1;31merror:\x1b[0m " else "error: ";
+    // Brand colors (24-bit true color) - see docs/CLI_DESIGN.md
+    pub fn jakeRose(self: Color) []const u8 {
+        return if (self.enabled) codes.jake_rose else "";
     }
 
-    /// Warning prefix with color: "warning: " in yellow
+    pub fn muted(self: Color) []const u8 {
+        return if (self.enabled) codes.muted_gray else "";
+    }
+
+    pub fn successGreen(self: Color) []const u8 {
+        return if (self.enabled) codes.success_green else "";
+    }
+
+    pub fn errorRed(self: Color) []const u8 {
+        return if (self.enabled) codes.error_red else "";
+    }
+
+    pub fn warningYellow(self: Color) []const u8 {
+        return if (self.enabled) codes.warning_yellow else "";
+    }
+
+    pub fn infoBlue(self: Color) []const u8 {
+        return if (self.enabled) codes.info_blue else "";
+    }
+
+    /// Error prefix with color: "error: " in brand red (#ef4444)
+    pub fn errPrefix(self: Color) []const u8 {
+        return if (self.enabled) codes.error_red ++ "error:" ++ codes.reset ++ " " else "error: ";
+    }
+
+    /// Warning prefix with color: "warning: " in brand yellow (#eab308)
     pub fn warnPrefix(self: Color) []const u8 {
-        return if (self.enabled) "\x1b[1;33mwarning:\x1b[0m " else "warning: ";
+        return if (self.enabled) codes.warning_yellow ++ "warning:" ++ codes.reset ++ " " else "warning: ";
     }
 
     // =========================================================================
@@ -421,7 +447,8 @@ test "Color.reset returns empty string when disabled" {
 
 test "Color.errPrefix returns colored prefix when enabled" {
     const color = withEnabled(true);
-    try std.testing.expectEqualStrings("\x1b[1;31merror:\x1b[0m ", color.errPrefix());
+    // Uses brand error color #ef4444
+    try std.testing.expectEqualStrings(codes.error_red ++ "error:" ++ codes.reset ++ " ", color.errPrefix());
 }
 
 test "Color.errPrefix returns plain prefix when disabled" {
@@ -585,8 +612,8 @@ test "Theme returns plain text when colors disabled" {
 test "Theme.errPrefix returns colored or plain prefix" {
     const enabled_theme = Theme.withColor(withEnabled(true));
     const disabled_theme = Theme.withColor(withEnabled(false));
-
-    try std.testing.expectEqualStrings("\x1b[1;31merror:\x1b[0m ", enabled_theme.errPrefix());
+    // Uses brand error color #ef4444
+    try std.testing.expectEqualStrings(codes.error_red ++ "error:" ++ codes.reset ++ " ", enabled_theme.errPrefix());
     try std.testing.expectEqualStrings("error: ", disabled_theme.errPrefix());
 }
 

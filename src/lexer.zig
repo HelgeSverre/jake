@@ -51,6 +51,7 @@ pub const Token = struct {
         kw_platform, // preferred name for OS filtering
         kw_alias,
         kw_quiet,
+        kw_timeout,
         kw_launch,
         kw_before,
         kw_after,
@@ -406,6 +407,8 @@ pub const Lexer = struct {
             .kw_alias
         else if (std.mem.eql(u8, text, "quiet"))
             .kw_quiet
+        else if (std.mem.eql(u8, text, "timeout"))
+            .kw_timeout
         else if (std.mem.eql(u8, text, "launch"))
             .kw_launch
         else if (std.mem.eql(u8, text, "before"))
@@ -598,7 +601,7 @@ test "lexer tab column tracking" {
 // --- Token Types: All Keywords ---
 
 test "lexer all keywords" {
-    const source = "task file default if elif else end import as dotenv require watch cache needs confirm each pre post export cd shell ignore group desc only only-os alias quiet launch";
+    const source = "task file default if elif else end import as dotenv require watch cache needs confirm each pre post export cd shell ignore group desc only only-os alias quiet timeout launch";
     var lex = Lexer.init(source);
 
     try std.testing.expectEqual(Token.Tag.kw_task, lex.next().tag);
@@ -629,6 +632,7 @@ test "lexer all keywords" {
     try std.testing.expectEqual(Token.Tag.kw_only_os, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_alias, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_quiet, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.kw_timeout, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_launch, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
 }

@@ -277,11 +277,11 @@ pub const Watcher = struct {
         // Resolve initial patterns
         try self.resolvePatterns();
 
-        self.print("{s}[watch]{s} Watching {d} file(s) for changes...\n", .{ self.color.blue(), self.color.reset(), self.resolved_files.items.len });
+        self.print("{s}[watch]{s} Watching {d} file(s) for changes...\n", .{ self.color.muted(), self.color.reset(), self.resolved_files.items.len });
 
         // Show the patterns being watched
         if (self.watch_patterns.items.len > 0) {
-            self.print("{s}[watch]{s} Patterns: ", .{ self.color.blue(), self.color.reset() });
+            self.print("{s}[watch]{s} Patterns: ", .{ self.color.muted(), self.color.reset() });
             for (self.watch_patterns.items, 0..) |pattern, i| {
                 if (i > 0) self.print(", ", .{});
                 self.print("{s}", .{pattern});
@@ -295,7 +295,7 @@ pub const Watcher = struct {
             }
         }
 
-        self.print("{s}[watch]{s} Press Ctrl+C to stop\n", .{ self.color.blue(), self.color.reset() });
+        self.print("{s}[watch]{s} Press Ctrl+C to stop\n", .{ self.color.muted(), self.color.reset() });
         self.print("\n", .{});
 
         // Initial execution
@@ -311,7 +311,7 @@ pub const Watcher = struct {
             // Check for changes
             if (try self.checkForChanges()) |changed_file| {
                 if (!pending_change) {
-                    self.print("{s}[watch]{s} Change detected: {s}\n", .{ self.color.yellow(), self.color.reset(), changed_file });
+                    self.print("{s}[watch]{s} Change detected: {s}\n", .{ self.color.warningYellow(), self.color.reset(), changed_file });
                     pending_change = true;
                     change_detected_time = std.time.nanoTimestamp();
                 } else {
@@ -335,7 +335,13 @@ pub const Watcher = struct {
 
     /// Execute the recipe (handles errors gracefully for watch mode)
     fn executeRecipe(self: *Watcher, recipe_name: []const u8) void {
-        self.print("{s}[watch]{s} Running '{s}'...\n", .{ self.color.blue(), self.color.reset(), recipe_name });
+        self.print("{s}[watch]{s} Running '{s}{s}{s}'...\n", .{
+            self.color.muted(),
+            self.color.reset(),
+            self.color.jakeRose(),
+            recipe_name,
+            self.color.reset(),
+        });
         self.print("\n", .{});
 
         var exec = Executor.init(self.allocator, self.jakefile);
@@ -346,13 +352,13 @@ pub const Watcher = struct {
 
         exec.execute(recipe_name) catch |err| {
             const err_name = @errorName(err);
-            self.print("{s}[watch]{s} Recipe failed: {s}\n", .{ self.color.red(), self.color.reset(), err_name });
-            self.print("{s}[watch]{s} Waiting for changes...\n", .{ self.color.blue(), self.color.reset() });
+            self.print("{s}[watch]{s} Recipe failed: {s}\n", .{ self.color.errorRed(), self.color.reset(), err_name });
+            self.print("{s}[watch]{s} Waiting for changes...\n", .{ self.color.muted(), self.color.reset() });
             return;
         };
 
-        self.print("\n{s}[watch]{s} Recipe completed successfully\n", .{ self.color.green(), self.color.reset() });
-        self.print("{s}[watch]{s} Waiting for changes...\n", .{ self.color.blue(), self.color.reset() });
+        self.print("\n{s}[watch]{s} Recipe completed successfully\n", .{ self.color.successGreen(), self.color.reset() });
+        self.print("{s}[watch]{s} Waiting for changes...\n", .{ self.color.muted(), self.color.reset() });
     }
 
     fn print(self: *Watcher, comptime fmt: []const u8, args: anytype) void {

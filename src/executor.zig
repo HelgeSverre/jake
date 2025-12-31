@@ -721,7 +721,8 @@ pub const Executor = struct {
             }
         }
 
-        // Run the recipe
+        // Run the recipe - capture start time for duration display
+        const start_time = std.time.nanoTimestamp();
         self.print("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(name) });
 
         // Update hook runner settings
@@ -739,6 +740,7 @@ pub const Executor = struct {
         // Run pre-hooks (global and recipe-specific)
         self.hook_runner.runPreHooks(recipe.pre_hooks, &hook_context) catch |err| {
             self.print("{s}pre-hook failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
+            self.printCompletionStatus(name, false, start_time);
             return ExecuteError.CommandFailed;
         };
 
@@ -750,6 +752,7 @@ pub const Executor = struct {
         // Bind recipe parameters to variables
         self.bindRecipeParams(recipe) catch |err| {
             self.print("{s}failed to bind parameters: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
+            self.printCompletionStatus(name, false, start_time);
             return ExecuteError.CommandFailed;
         };
 
@@ -780,8 +783,10 @@ pub const Executor = struct {
 
         // Return the original error if recipe execution failed
         if (exec_result) |_| {
-            // Success - continue
+            // Success - print completion with timing
+            self.printCompletionStatus(name, true, start_time);
         } else |err| {
+            self.printCompletionStatus(name, false, start_time);
             return err;
         }
 
@@ -1455,6 +1460,47 @@ pub const Executor = struct {
         compat.getStdErr().writeAll(msg) catch {};
     }
 
+    /// Print completion status with timing (per brand guide Style A)
+    /// Success: ✓ recipe_name (duration)
+    /// Failure: ✗ recipe_name (duration)
+    fn printCompletionStatus(self: *Executor, name: []const u8, success: bool, start_time: i128) void {
+        const end_time = std.time.nanoTimestamp();
+        const duration_ns = end_time - start_time;
+        const duration_ms = @divFloor(duration_ns, 1_000_000);
+        const duration_s = @as(f64, @floatFromInt(duration_ms)) / 1000.0;
+
+        const stderr = compat.getStdErr();
+        if (success) {
+            // ✓ recipe_name (duration) - all in success green, duration muted
+            stderr.writeAll(self.color.successGreen()) catch {};
+            stderr.writeAll(color_mod.symbols.success) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(self.color.muted()) catch {};
+            var buf: [32]u8 = undefined;
+            const duration_str = std.fmt.bufPrint(&buf, "({d:.1}s)", .{duration_s}) catch "(?)";
+            stderr.writeAll(duration_str) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        } else {
+            // ✗ recipe_name (duration) - all in error red, duration muted
+            stderr.writeAll(self.color.errorRed()) catch {};
+            stderr.writeAll(color_mod.symbols.failure) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(self.color.muted()) catch {};
+            var buf: [32]u8 = undefined;
+            const duration_str = std.fmt.bufPrint(&buf, "({d:.1}s)", .{duration_s}) catch "(?)";
+            stderr.writeAll(duration_str) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        }
+    }
+
     /// Check if a recipe is private (should be hidden from listings)
     /// Uses origin.original_name for imported recipes, otherwise uses name
     fn isPrivateRecipe(recipe: *const Recipe) bool {
@@ -1855,34 +1901,46 @@ pub const Executor = struct {
             }
         }
 
-        // Hooks
+        // Hooks - label muted, hook keywords in success green
         if (recipe.pre_hooks.len > 0 or recipe.post_hooks.len > 0) {
             stdout.writeAll("\n") catch {};
-            self.color.writeBold(stdout, "Hooks:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Hooks:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll("\n") catch {};
             for (recipe.pre_hooks) |hook| {
                 stdout.writeAll("  ") catch {};
-                self.color.writeGreen(stdout, "@pre:") catch {};
+                stdout.writeAll(self.color.successGreen()) catch {};
+                stdout.writeAll("@pre:") catch {};
+                stdout.writeAll(self.color.reset()) catch {};
                 stdout.writeAll(" ") catch {};
                 stdout.writeAll(hook.command) catch {};
                 stdout.writeAll("\n") catch {};
             }
             for (recipe.post_hooks) |hook| {
                 stdout.writeAll("  ") catch {};
-                self.color.writeGreen(stdout, "@post:") catch {};
+                stdout.writeAll(self.color.successGreen()) catch {};
+                stdout.writeAll("@post:") catch {};
+                stdout.writeAll(self.color.reset()) catch {};
                 stdout.writeAll(" ") catch {};
                 stdout.writeAll(hook.command) catch {};
                 stdout.writeAll("\n") catch {};
             }
         }
 
-        // Recipe-level @needs
+        // Recipe-level @needs - label muted, @needs in warning yellow
         if (recipe.needs.len > 0) {
             stdout.writeAll("\n") catch {};
-            self.color.writeBold(stdout, "Requirements:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Requirements:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll("\n") catch {};
             for (recipe.needs) |need| {
-                stdout.writeAll("  @needs ") catch {};
+                stdout.writeAll("  ") catch {};
+                stdout.writeAll(self.color.warningYellow()) catch {};
+                stdout.writeAll("@needs") catch {};
+                stdout.writeAll(self.color.reset()) catch {};
+                stdout.writeAll(" ") catch {};
                 stdout.writeAll(need.command) catch {};
                 if (need.hint) |hint| {
                     stdout.writeAll(" \"") catch {};
@@ -1893,10 +1951,12 @@ pub const Executor = struct {
             }
         }
 
-        // Platform constraints
+        // Platform constraints - label muted
         if (recipe.only_os.len > 0) {
             stdout.writeAll("\n") catch {};
-            self.color.writeBold(stdout, "Platform:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Platform:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" ") catch {};
             for (recipe.only_os, 0..) |os, i| {
                 if (i > 0) stdout.writeAll(", ") catch {};
@@ -1905,25 +1965,31 @@ pub const Executor = struct {
             stdout.writeAll("\n") catch {};
         }
 
-        // Working directory
+        // Working directory - label muted
         if (recipe.working_dir) |wd| {
-            self.color.writeBold(stdout, "Working directory:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Working directory:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" ") catch {};
             stdout.writeAll(wd) catch {};
             stdout.writeAll("\n") catch {};
         }
 
-        // Shell
+        // Shell - label muted
         if (recipe.shell) |shell| {
-            self.color.writeBold(stdout, "Shell:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Shell:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" ") catch {};
             stdout.writeAll(shell) catch {};
             stdout.writeAll("\n") catch {};
         }
 
-        // Quiet mode
+        // Quiet mode - label muted
         if (recipe.quiet) {
-            self.color.writeBold(stdout, "Quiet:") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Quiet:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" yes\n") catch {};
         }
 

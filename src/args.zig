@@ -8,11 +8,11 @@ const suggest = @import("suggest.zig");
 pub const ansi = struct {
     pub const reset = "\x1b[0m";
     pub const bold = "\x1b[1m";
-    pub const red = "\x1b[1;31m";
     pub const jake_rose = "\x1b[38;2;244;63;94m"; // #f43f5e brand color
     pub const muted = "\x1b[38;2;113;113;122m"; // #71717a - tagline, placeholders
     pub const secondary = "\x1b[90m"; // gray - section headers
-    pub const err_prefix = red ++ "error:" ++ reset ++ " ";
+    pub const error_red = "\x1b[38;2;239;68;68m"; // #ef4444 - brand error color
+    pub const err_prefix = error_red ++ "error:" ++ reset ++ " ";
     pub const logo = "{j}";
 };
 

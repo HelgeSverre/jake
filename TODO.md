@@ -148,7 +148,7 @@ task backup:
 
 ### New Directives
 
-- [ ] `@timeout 30s` - Kill recipe if exceeds time limit
+- [x] `@timeout 30s` - Kill recipe if exceeds time limit (with proper process termination)
 - [ ] `@retry 3` - Retry failed commands N times
 - [ ] `@env-file .env.local` - Load env file for specific recipe
 - [ ] `@silent` - Suppress all output (vs @quiet which hides command echo)

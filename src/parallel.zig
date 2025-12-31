@@ -381,11 +381,13 @@ pub const ParallelExecutor = struct {
             }
         }
 
-        // Print recipe header
+        // Print recipe header and capture start time
+        const start_time = std.time.nanoTimestamp();
         self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
 
         // Execute commands with directive handling
         if (!self.executeRecipeCommands(recipe.commands)) {
+            self.printCompletionStatus(recipe.name, false, start_time);
             return false;
         }
 
@@ -396,6 +398,7 @@ pub const ParallelExecutor = struct {
             }
         }
 
+        self.printCompletionStatus(recipe.name, true, start_time);
         return true;
     }
 
@@ -927,6 +930,48 @@ pub const ParallelExecutor = struct {
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
         compat.getStdErr().writeAll(msg) catch {};
+    }
+
+    /// Print completion status with timing (per brand guide Style A)
+    /// Success: ✓ recipe_name (duration)
+    /// Failure: ✗ recipe_name (duration)
+    fn printCompletionStatus(self: *ParallelExecutor, name: []const u8, success: bool, start_time: i128) void {
+        const end_time = std.time.nanoTimestamp();
+        const duration_ns = end_time - start_time;
+        const duration_ms = @divFloor(duration_ns, 1_000_000);
+        const duration_s = @as(f64, @floatFromInt(duration_ms)) / 1000.0;
+
+        self.output_mutex.lock();
+        defer self.output_mutex.unlock();
+
+        const stderr = compat.getStdErr();
+        if (success) {
+            stderr.writeAll(self.color.successGreen()) catch {};
+            stderr.writeAll(color_mod.symbols.success) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(self.color.muted()) catch {};
+            var buf: [32]u8 = undefined;
+            const duration_str = std.fmt.bufPrint(&buf, "({d:.1}s)", .{duration_s}) catch "(?)";
+            stderr.writeAll(duration_str) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        } else {
+            stderr.writeAll(self.color.errorRed()) catch {};
+            stderr.writeAll(color_mod.symbols.failure) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(self.color.muted()) catch {};
+            var buf: [32]u8 = undefined;
+            const duration_str = std.fmt.bufPrint(&buf, "({d:.1}s)", .{duration_s}) catch "(?)";
+            stderr.writeAll(duration_str) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        }
     }
 
     /// Execute sequentially (for single-threaded or dry-run mode)
