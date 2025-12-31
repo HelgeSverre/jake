@@ -1671,7 +1671,9 @@ pub const Executor = struct {
 
         // File dependencies
         if (recipe.file_deps.len > 0) {
-            stdout.writeAll("\n\x1b[1mFile dependencies:\x1b[0m\n") catch {};
+            stdout.writeAll("\n") catch {};
+            self.color.writeBold(stdout, "File dependencies:") catch {};
+            stdout.writeAll("\n") catch {};
             for (recipe.file_deps) |fd| {
                 stdout.writeAll("  ") catch {};
                 stdout.writeAll(fd) catch {};
@@ -1681,12 +1683,18 @@ pub const Executor = struct {
 
         // Output (for file recipes)
         if (recipe.output) |output| {
-            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mOutput:\x1b[0m {s}\n", .{output}) catch return false) catch {};
+            stdout.writeAll("\n") catch {};
+            self.color.writeBold(stdout, "Output:") catch {};
+            stdout.writeAll(" ") catch {};
+            stdout.writeAll(output) catch {};
+            stdout.writeAll("\n") catch {};
         }
 
         // Parameters
         if (recipe.params.len > 0) {
-            stdout.writeAll("\n\x1b[1mParameters:\x1b[0m\n") catch {};
+            stdout.writeAll("\n") catch {};
+            self.color.writeBold(stdout, "Parameters:") catch {};
+            stdout.writeAll("\n") catch {};
             for (recipe.params) |param| {
                 stdout.writeAll("  ") catch {};
                 stdout.writeAll(param.name) catch {};
@@ -1703,11 +1711,14 @@ pub const Executor = struct {
 
         // Commands
         if (recipe.commands.len > 0) {
-            stdout.writeAll("\n\x1b[1mCommands:\x1b[0m\n") catch {};
+            stdout.writeAll("\n") catch {};
+            self.color.writeBold(stdout, "Commands:") catch {};
+            stdout.writeAll("\n") catch {};
             for (recipe.commands) |cmd| {
                 stdout.writeAll("  ") catch {};
                 if (cmd.directive) |dir| {
-                    stdout.writeAll("\x1b[33m@") catch {};
+                    stdout.writeAll(self.color.yellowRegular()) catch {};
+                    stdout.writeAll("@") catch {};
                     const dir_name = switch (dir) {
                         .cache => "cache",
                         .needs => "needs",
@@ -1722,7 +1733,8 @@ pub const Executor = struct {
                         .launch => "launch",
                     };
                     stdout.writeAll(dir_name) catch {};
-                    stdout.writeAll("\x1b[0m ") catch {};
+                    stdout.writeAll(self.color.reset()) catch {};
+                    stdout.writeAll(" ") catch {};
                 }
                 stdout.writeAll(cmd.line) catch {};
                 stdout.writeAll("\n") catch {};
@@ -1731,14 +1743,20 @@ pub const Executor = struct {
 
         // Hooks
         if (recipe.pre_hooks.len > 0 or recipe.post_hooks.len > 0) {
-            stdout.writeAll("\n\x1b[1mHooks:\x1b[0m\n") catch {};
+            stdout.writeAll("\n") catch {};
+            self.color.writeBold(stdout, "Hooks:") catch {};
+            stdout.writeAll("\n") catch {};
             for (recipe.pre_hooks) |hook| {
-                stdout.writeAll("  \x1b[32m@pre:\x1b[0m ") catch {};
+                stdout.writeAll("  ") catch {};
+                self.color.writeGreen(stdout, "@pre:") catch {};
+                stdout.writeAll(" ") catch {};
                 stdout.writeAll(hook.command) catch {};
                 stdout.writeAll("\n") catch {};
             }
             for (recipe.post_hooks) |hook| {
-                stdout.writeAll("  \x1b[32m@post:\x1b[0m ") catch {};
+                stdout.writeAll("  ") catch {};
+                self.color.writeGreen(stdout, "@post:") catch {};
+                stdout.writeAll(" ") catch {};
                 stdout.writeAll(hook.command) catch {};
                 stdout.writeAll("\n") catch {};
             }
@@ -1746,7 +1764,9 @@ pub const Executor = struct {
 
         // Recipe-level @needs
         if (recipe.needs.len > 0) {
-            stdout.writeAll("\n\x1b[1mRequirements:\x1b[0m\n") catch {};
+            stdout.writeAll("\n") catch {};
+            self.color.writeBold(stdout, "Requirements:") catch {};
+            stdout.writeAll("\n") catch {};
             for (recipe.needs) |need| {
                 stdout.writeAll("  @needs ") catch {};
                 stdout.writeAll(need.command) catch {};
@@ -1761,7 +1781,9 @@ pub const Executor = struct {
 
         // Platform constraints
         if (recipe.only_os.len > 0) {
-            stdout.writeAll("\n\x1b[1mPlatform:\x1b[0m ") catch {};
+            stdout.writeAll("\n") catch {};
+            self.color.writeBold(stdout, "Platform:") catch {};
+            stdout.writeAll(" ") catch {};
             for (recipe.only_os, 0..) |os, i| {
                 if (i > 0) stdout.writeAll(", ") catch {};
                 stdout.writeAll(os) catch {};
@@ -1771,17 +1793,24 @@ pub const Executor = struct {
 
         // Working directory
         if (recipe.working_dir) |wd| {
-            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mWorking directory:\x1b[0m {s}\n", .{wd}) catch return false) catch {};
+            self.color.writeBold(stdout, "Working directory:") catch {};
+            stdout.writeAll(" ") catch {};
+            stdout.writeAll(wd) catch {};
+            stdout.writeAll("\n") catch {};
         }
 
         // Shell
         if (recipe.shell) |shell| {
-            stdout.writeAll(std.fmt.bufPrint(&buf, "\x1b[1mShell:\x1b[0m {s}\n", .{shell}) catch return false) catch {};
+            self.color.writeBold(stdout, "Shell:") catch {};
+            stdout.writeAll(" ") catch {};
+            stdout.writeAll(shell) catch {};
+            stdout.writeAll("\n") catch {};
         }
 
         // Quiet mode
         if (recipe.quiet) {
-            stdout.writeAll("\x1b[1mQuiet:\x1b[0m yes\n") catch {};
+            self.color.writeBold(stdout, "Quiet:") catch {};
+            stdout.writeAll(" yes\n") catch {};
         }
 
         return true;
@@ -4008,6 +4037,7 @@ test "parseCachePatterns parses space-separated patterns" {
         .global_pre_hooks = &.{},
         .global_post_hooks = &.{},
         .global_on_error_hooks = &.{},
+        .comments = &.{},
         .source = "",
     };
 
@@ -4108,6 +4138,7 @@ test "parseCachePatterns works for watch patterns" {
         .global_pre_hooks = &.{},
         .global_post_hooks = &.{},
         .global_on_error_hooks = &.{},
+        .comments = &.{},
         .source = "",
     };
 
