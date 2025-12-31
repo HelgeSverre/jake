@@ -18,6 +18,8 @@ pub const args = @import("args.zig");
 pub const conditions = @import("conditions.zig");
 pub const prompt = @import("prompt.zig");
 pub const completions = @import("completions.zig");
+pub const color = @import("color.zig");
+pub const context = @import("context.zig");
 
 pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;
@@ -30,6 +32,8 @@ pub const Environment = env.Environment;
 pub const ImportResolver = import_mod.ImportResolver;
 pub const ImportAllocations = import_mod.ImportAllocations;
 pub const resolveImports = import_mod.resolveImports;
+pub const Color = color.Color;
+pub const Context = context.Context;
 
 /// Parse a Jakefile from source
 pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Jakefile {
@@ -67,6 +71,8 @@ comptime {
     _ = conditions;
     _ = prompt;
     _ = completions;
+    _ = color;
+    _ = context;
 }
 
 test "basic lexer test" {
