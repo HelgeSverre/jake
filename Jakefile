@@ -18,7 +18,6 @@ JAKE_FUZZ_PORT = "4455"
 @export version
 
 # Global hooks
-@pre echo "=== Jake v{{version}} ==="
 @on_error echo "Build failed!"
 
 # Targeted hooks for release tasks
