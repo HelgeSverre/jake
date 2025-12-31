@@ -671,7 +671,7 @@ pub const Parser = struct {
 
             // Expect timeout value (ident like "30s" or number + unit like "30" + "s")
             var timeout_str: []const u8 = undefined;
-            
+
             if (self.current.tag == .ident) {
                 // Case 1: "30s" tokenized as single ident (unlikely but handle it)
                 timeout_str = self.slice(self.current);
@@ -680,7 +680,7 @@ pub const Parser = struct {
                 // Case 2: "30" + "s" tokenized as number + ident
                 const num_start = self.current.loc.start;
                 self.advance();
-                
+
                 // Next token should be the unit (s, m, h)
                 if (self.current.tag == .ident) {
                     const unit_end = self.current.loc.end;
