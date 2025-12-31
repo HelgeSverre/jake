@@ -12,3 +12,7 @@ Cargo.lock
 
 # Editor
 .vscode/
+
+# Zed extension build artifacts
+grammars/
+target/

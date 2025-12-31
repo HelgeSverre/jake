@@ -1,12 +1,21 @@
-[package]
-name = "jake"
-version = "0.1.0"
-description = "Jake task runner language support for Zed"
+id = "jake"
+name = "Jake"
+version = "0.2.2"
+schema_version = 1
+description = "Jake task runner language support."
 repository = "https://github.com/HelgeSverre/jake"
-authors = ["Jake Contributors"]
-license = "MIT"
+authors = ["Helge Sverre <helge.sverre@gmail.com>"]
 
 [grammars.jake]
-repository = "https://github.com/HelgeSverre/jake"
+# For release: use HTTPS with pinned commit
+# repository = "https://github.com/HelgeSverre/jake"
+# rev = "<commit-sha>"
+
+# For local development: use file:// URL
+repository = "file:///Users/helge/code/jake"
+rev = "ba0d4d373438f7f3d46644338f54ad607bd29580"
 path = "editors/tree-sitter-jake"
-rev = "main"
+
+[slash_commands.jake]
+description = "Run a Jake recipe"
+requires_argument = true

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://zed.dev/schema/icon_themes/v0.3.0.json",
+  "name": "Jake Icons",
+  "author": "Helge Sverre",
+  "themes": [
+    {
+      "name": "Jake Icons",
+      "appearance": "dark",
+      "file_stems": {
+        "Jakefile": "jake",
+        "jakefile": "jake",
+        "JAKEFILE": "jake"
+      },
+      "file_suffixes": {
+        "jake": "jake"
+      },
+      "file_icons": {
+        "jake": { "path": "./icons/jake.svg" }
+      }
+    },
+    {
+      "name": "Jake Icons Light",
+      "appearance": "light",
+      "file_stems": {
+        "Jakefile": "jake",
+        "jakefile": "jake",
+        "JAKEFILE": "jake"
+      },
+      "file_suffixes": {
+        "jake": "jake"
+      },
+      "file_icons": {
+        "jake": { "path": "./icons/jake.svg" }
+      }
+    }
+  ]
+}

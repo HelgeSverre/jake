@@ -315,26 +315,22 @@ task helix-uninstall:
 # ============================================================================
 
 @group editors
-@desc "Install Zed extension for local development"
-task zed-install:
-    @needs zed "Zed editor (https://zed.dev)"
-    mkdir -p ~/.config/zed/extensions/jake
-    cp -r editors/zed-jake/* ~/.config/zed/extensions/jake/
-    echo "Zed extension installed to ~/.config/zed/extensions/jake/"
-    echo "Restart Zed to activate the extension"
+@desc "Build Zed extension (WASM compilation)"
+task zed-build:
+    @needs cargo
+    @cd editors/zed-jake
+        cargo build --target wasm32-wasip1 --release
+    echo "Zed extension built"
+    echo ""
+    echo "To install: In Zed, go to Extensions → Install Dev Extension"
+    echo "            Select: editors/zed-jake"
 
 @group editors
-@desc "Open current directory in Zed"
-task zed-run:
-    @needs zed
-    zed .
-
-@group editors
-@desc "Uninstall Zed extension"
-task zed-uninstall:
+@desc "Clean Zed extension build artifacts"
+task zed-clean:
     @ignore
-    rm -rf ~/.config/zed/extensions/jake
-    echo "Zed extension uninstalled"
+    rm -rf editors/zed-jake/target editors/zed-jake/grammars
+    echo "Zed extension cleaned"
 
 # ============================================================================
 # All Editors
@@ -390,25 +386,37 @@ task status:
     @end
     echo ""
     echo "Web Syntax Highlighters:"
-    @if exists(editors/prism-jake/prism-jake.js)
+    @if exists(editors/prism-jake/index.js)
         echo "  Prism.js:     OK (editors/prism-jake/)"
     @else
         echo "  Prism.js:     NOT CREATED"
     @end
-    @if exists(editors/highlightjs-jake/jake.js)
+    @if exists(editors/highlightjs-jake/src/languages/jake.js)
         echo "  highlight.js: OK (editors/highlightjs-jake/)"
     @else
         echo "  highlight.js: NOT CREATED"
     @end
-    @if exists(editors/shiki-jake/index.js)
+    @if exists(editors/shiki-jake/jake.tmLanguage.json)
         echo "  Shiki:        OK (editors/shiki-jake/)"
     @else
         echo "  Shiki:        NOT CREATED"
     @end
 
 @group editors
-@desc "Open syntax highlighter test page in browser (serves on port 3333)"
-task syntax-test:
-    @cd editors
-        (sleep 1 && {{launch(http://localhost:3333/syntax-test.html)}}) &
-        python3 -m http.server 3333
+@desc "Open syntax highlighting demo in browser"
+task highlighting-demo:
+    @launch editors/highlighting-demo.html
+
+@group editors
+@desc "Build minified JS syntax highlighter libraries for CDN"
+task build-highlighters:
+    @needs npx
+    mkdir -p site/public/libs
+    # Minify prism-jake (index.js)
+    npx terser editors/prism-jake/index.js -o site/public/libs/prism-jake.min.js -c -m
+    # Minify highlightjs-jake (src/languages/jake.js)
+    npx terser editors/highlightjs-jake/src/languages/jake.js -o site/public/libs/highlightjs-jake.min.js -c -m
+    # Copy shiki grammar (JSON doesn't need minification)
+    cp editors/shiki-jake/jake.tmLanguage.json site/public/libs/shiki-jake.tmLanguage.json
+    echo "Built JS highlighter libs to site/public/libs/"
+

@@ -1,0 +1,8 @@
+[
+  {
+    "label": "jake $ZED_CUSTOM_recipe_name",
+    "command": "jake",
+    "args": ["$ZED_CUSTOM_recipe_name"],
+    "tags": ["jake-recipe"]
+  }
+]

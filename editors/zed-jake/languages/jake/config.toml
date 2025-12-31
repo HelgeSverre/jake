@@ -1,7 +1,24 @@
+# Required
 name = "Jake"
 grammar = "jake"
+
+# File matching - .jake files
 path_suffixes = ["jake"]
-file_types = [{ glob = "Jakefile" }, { glob = "*.jake" }]
+# Match Jakefile by first line comment pattern
+first_line_pattern = "^#.*[Jj]ake"
+
+# Comments
 line_comments = ["# "]
+
+# Brackets and auto-closing
+brackets = [
+  { start = "{{", end = "}}", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = true },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+  { start = "'", end = "'", close = true, newline = false, not_in = ["string", "comment"] },
+]
+
+# Formatting
 tab_size = 4
 hard_tabs = false

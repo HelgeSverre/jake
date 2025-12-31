@@ -17,15 +17,15 @@
 
 ; Dependencies
 (dependency
-  name: (dependency_name) @function.call)
+  name: (dependency_name) @function)
 
 ; Function calls in expressions
 (function_call
-  name: (identifier) @function.builtin)
+  name: (identifier) @function)
 
 ; Condition functions
 (condition_function
-  name: _ @function.builtin)
+  name: _ @function)
 
 ; Variables - assignments
 (assignment
@@ -37,19 +37,19 @@
 
 ; Parameters
 (parameter
-  name: (identifier) @variable.parameter)
+  name: (identifier) @variable)
 
 ; Imports
 (import_statement
   path: (string) @string
-  namespace: (identifier) @namespace)
+  namespace: (identifier) @type)
 
 ; Recipe attributes (directives above recipes)
 (recipe_attribute
   name: (identifier) @constant)
 
 ; Shell variables
-(shell_variable) @variable.builtin
+(shell_variable) @variable.special
 
 ; Operators
 [
@@ -80,41 +80,38 @@
 (command_prefix) @operator
 
 ; Numbers
-(number) @constant.numeric
+(number) @number
 
 ; Glob patterns
 (glob_pattern) @string.special
 
 ; Shebang
-(shebang) @keyword.directive
-
-; Errors
-(numeric_error) @error
+(shebang) @keyword
 
 ; Directive nodes - highlight the whole directive
-(if_directive) @keyword.control
-(elif_directive) @keyword.control
-(else_directive) @keyword.control
-(end_directive) @keyword.control
-(each_directive) @keyword.control
+(if_directive) @keyword
+(elif_directive) @keyword
+(else_directive) @keyword
+(end_directive) @keyword
+(each_directive) @keyword
 
-(cd_directive) @keyword.directive
-(cache_directive) @keyword.directive
-(watch_directive) @keyword.directive
-(confirm_directive) @keyword.directive
-(ignore_directive) @keyword.directive
-(shell_directive) @keyword.directive
-(body_needs_directive) @keyword.directive
-(body_require_directive) @keyword.directive
-(body_export_directive) @keyword.directive
-(body_hook) @keyword.directive
+(cd_directive) @keyword
+(cache_directive) @keyword
+(watch_directive) @keyword
+(confirm_directive) @keyword
+(ignore_directive) @keyword
+(shell_directive) @keyword
+(body_needs_directive) @keyword
+(body_require_directive) @keyword
+(body_export_directive) @keyword
+(body_hook) @keyword
 
 ; Global directives
-(dotenv_directive) @keyword.directive
-(require_directive) @keyword.directive
-(export_directive) @keyword.directive
-(default_directive) @keyword.directive
-(global_hook) @keyword.directive
+(dotenv_directive) @keyword
+(require_directive) @keyword
+(export_directive) @keyword
+(default_directive) @keyword
+(global_hook) @keyword
 
 ; Import statement
-(import_statement) @keyword.control.import
+(import_statement) @keyword
