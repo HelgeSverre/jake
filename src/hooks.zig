@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const compat = @import("compat.zig");
+const color_mod = @import("color.zig");
 
 /// Represents a single hook (pre, post, or on_error execution)
 pub const Hook = struct {
@@ -49,6 +50,7 @@ pub const HookRunner = struct {
     global_on_error_hooks: std.ArrayListUnmanaged(Hook),
     dry_run: bool,
     verbose: bool,
+    color: color_mod.Color,
 
     pub fn init(allocator: std.mem.Allocator) HookRunner {
         return .{
@@ -58,6 +60,7 @@ pub const HookRunner = struct {
             .global_on_error_hooks = .empty,
             .dry_run = false,
             .verbose = false,
+            .color = color_mod.init(),
         };
     }
 
@@ -196,17 +199,17 @@ pub const HookRunner = struct {
         child.stdout_behavior = .Inherit;
 
         _ = child.spawn() catch |err| {
-            self.printHook("\x1b[1;31merror:\x1b[0m hook spawn failed: {s}\n", .{@errorName(err)});
+            self.printHook("{s}hook spawn failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return HookError.SpawnFailed;
         };
 
         const result = child.wait() catch |err| {
-            self.printHook("\x1b[1;31merror:\x1b[0m hook wait failed: {s}\n", .{@errorName(err)});
+            self.printHook("{s}hook wait failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return HookError.WaitFailed;
         };
 
         if (result.Exited != 0) {
-            self.printHook("\x1b[1;31merror:\x1b[0m @{s} hook exited with code {d}\n", .{ @tagName(hook.kind), result.Exited });
+            self.printHook("{s}@{s} hook exited with code {d}\n", .{ self.color.errPrefix(), @tagName(hook.kind), result.Exited });
             return HookError.HookFailed;
         }
     }
