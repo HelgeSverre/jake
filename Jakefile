@@ -6,6 +6,7 @@
 @import "jake/web.jake" as web
 @import "jake/perf.jake" as perf
 @import "jake/editors.jake" as editors
+@import "jake/ai.jake" as ai
 
 @dotenv
 
