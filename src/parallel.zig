@@ -13,6 +13,7 @@ const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
 const cache_mod = @import("cache.zig");
 const conditions = @import("conditions.zig");
+const color_mod = @import("color.zig");
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
@@ -96,6 +97,7 @@ pub const ParallelExecutor = struct {
     verbose: bool,
     variables: std.StringHashMap([]const u8),
     cache: cache_mod.Cache,
+    color: color_mod.Color,
 
     // Synchronization primitives
     mutex: std.Thread.Mutex,
@@ -126,6 +128,7 @@ pub const ParallelExecutor = struct {
             .verbose = false,
             .variables = variables,
             .cache = cache_mod.Cache.init(allocator),
+            .color = color_mod.init(),
             .mutex = .{},
             .condition = .{},
             .output_mutex = .{},
@@ -370,14 +373,14 @@ pub const ParallelExecutor = struct {
             const needs_run = self.checkFileTarget(recipe) catch true;
             if (!needs_run) {
                 if (self.verbose) {
-                    self.printSynchronized("\x1b[90mjake: '{s}' is up to date\x1b[0m\n", .{recipe.name});
+                    self.printSynchronized("{s}jake: '{s}' is up to date{s}\n", .{ self.color.dim(), recipe.name, self.color.reset() });
                 }
                 return true;
             }
         }
 
         // Print recipe header
-        self.printSynchronized("\x1b[1;36m-> {s}\x1b[0m\n", .{recipe.name});
+        self.printSynchronized("{s}-> {s}{s}\n", .{ self.color.cyan(), recipe.name, self.color.reset() });
 
         // Execute commands with directive handling
         if (!self.executeRecipeCommands(recipe.commands)) {
@@ -422,7 +425,7 @@ pub const ParallelExecutor = struct {
     fn checkRecipeLevelNeeds(self: *ParallelExecutor, recipe: *const Recipe) bool {
         for (recipe.needs) |req| {
             if (!commandExists(req.command)) {
-                self.printSynchronized("\x1b[1;31merror:\x1b[0m recipe '{s}' requires '{s}' but it's not installed\n", .{ recipe.name, req.command });
+                self.printSynchronized("{s}recipe '{s}' requires '{s}' but it's not installed\n", .{ self.color.errPrefix(), recipe.name, req.command });
 
                 // Show hint if provided
                 if (req.hint) |hint| {
@@ -719,7 +722,7 @@ pub const ParallelExecutor = struct {
         child.stdout_behavior = .Pipe;
 
         _ = child.spawn() catch |err| {
-            self.printSynchronized("\x1b[1;31merror:\x1b[0m failed to spawn: {s}\n", .{@errorName(err)});
+            self.printSynchronized("{s}failed to spawn: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return false;
         };
 
@@ -730,7 +733,7 @@ pub const ParallelExecutor = struct {
         const stderr_len = if (child.stderr) |stderr| stderr.read(&stderr_buf) catch 0 else 0;
 
         const result = child.wait() catch |err| {
-            self.printSynchronized("\x1b[1;31merror:\x1b[0m failed to wait: {s}\n", .{@errorName(err)});
+            self.printSynchronized("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return false;
         };
 
@@ -746,7 +749,7 @@ pub const ParallelExecutor = struct {
         }
 
         if (result.Exited != 0) {
-            self.printSynchronized("\x1b[1;31merror:\x1b[0m command exited with code {d}\n", .{result.Exited});
+            self.printSynchronized("{s}command exited with code {d}\n", .{ self.color.errPrefix(), result.Exited });
             return false;
         }
 
@@ -777,7 +780,7 @@ pub const ParallelExecutor = struct {
         child.stdout_behavior = .Pipe;
 
         _ = child.spawn() catch |err| {
-            self.printSynchronized("\x1b[1;31merror:\x1b[0m failed to spawn: {s}\n", .{@errorName(err)});
+            self.printSynchronized("{s}failed to spawn: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return false;
         };
 
@@ -789,7 +792,7 @@ pub const ParallelExecutor = struct {
         const stderr_len = if (child.stderr) |stderr| stderr.read(&stderr_buf) catch 0 else 0;
 
         const result = child.wait() catch |err| {
-            self.printSynchronized("\x1b[1;31merror:\x1b[0m failed to wait: {s}\n", .{@errorName(err)});
+            self.printSynchronized("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return false;
         };
 
@@ -806,7 +809,7 @@ pub const ParallelExecutor = struct {
         }
 
         if (result.Exited != 0) {
-            self.printSynchronized("\x1b[1;31merror:\x1b[0m command exited with code {d}\n", .{result.Exited});
+            self.printSynchronized("{s}command exited with code {d}\n", .{ self.color.errPrefix(), result.Exited });
             return false;
         }
 
