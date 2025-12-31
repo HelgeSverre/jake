@@ -70,6 +70,7 @@ export default defineConfig({
               {
                   label: 'Integrations',
                   items: [
+                      { label: 'Editor Support', slug: 'guides/editor-support' },
                       { label: 'JS Syntax Highlighters', slug: 'guides/js-syntax-highlighters' },
                   ],
               },
