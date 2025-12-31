@@ -4,6 +4,7 @@ const compat = jake.compat;
 const build_options = @import("build_options");
 const args_mod = jake.args;
 const completions = jake.completions;
+const upgrade = jake.upgrade;
 
 const version = build_options.version;
 
@@ -38,6 +39,11 @@ pub fn main() !void {
 
     const raw_args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, raw_args);
+
+    // Check for subcommands before parsing (they don't follow flag patterns)
+    if (raw_args.len > 1 and std.mem.eql(u8, raw_args[1], "upgrade")) {
+        return handleUpgrade(allocator, raw_args[2..]);
+    }
 
     // Parse arguments using args module
     var args = args_mod.parse(allocator, raw_args) catch |err| {
@@ -118,6 +124,52 @@ pub fn main() !void {
                 std.process.exit(1);
             };
             stdout.writeAll(script_stream.getWritten()) catch {};
+        }
+        return;
+    }
+
+    // Handle formatter (reads Jakefile directly, doesn't need executor)
+    if (args.fmt or args.dump) {
+        const formatter = jake.formatter;
+        const stderr = getStderr();
+
+        const result = formatter.formatFile(allocator, args.jakefile, args.check or args.dump) catch |err| {
+            var buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Format failed: {s}\n", .{@errorName(err)}) catch "error\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        };
+        defer allocator.free(result.output);
+
+        const stdout = getStdout();
+
+        if (args.dump) {
+            // Output formatted Jakefile to stdout
+            stdout.writeAll(result.output) catch {};
+        } else if (args.check) {
+            // Check mode: exit 1 if changes needed
+            if (result.changed) {
+                stderr.writeAll(args.jakefile) catch {};
+                stderr.writeAll(" needs formatting\n") catch {};
+                std.process.exit(1);
+            } else {
+                stdout.writeAll(args.jakefile) catch {};
+                stdout.writeAll(" is correctly formatted\n") catch {};
+            }
+        } else {
+            // Format in-place
+            if (result.changed) {
+                // Write the formatted output
+                std.fs.cwd().writeFile(.{ .sub_path = args.jakefile, .data = result.output }) catch |err| {
+                    var buf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to write: {s}\n", .{@errorName(err)}) catch "error\n";
+                    stderr.writeAll(msg) catch {};
+                    std.process.exit(1);
+                };
+                stdout.writeAll("Formatted ") catch {};
+                stdout.writeAll(args.jakefile) catch {};
+                stdout.writeAll("\n") catch {};
+            }
         }
         return;
     }
@@ -375,6 +427,89 @@ fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !JakefileWithSou
         .allocator = allocator,
         .import_allocations = import_allocations,
     };
+}
+
+/// Handle the `jake upgrade` subcommand
+fn handleUpgrade(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var options = upgrade.Options{};
+
+    // Parse upgrade-specific flags
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--check")) {
+            options.check_only = true;
+        } else if (std.mem.eql(u8, arg, "--no-verify")) {
+            options.skip_verify = true;
+        } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
+            options.verbose = true;
+        } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+            printUpgradeHelp();
+            return;
+        } else if (arg.len > 0 and arg[0] == '-') {
+            const stderr = getStderr();
+            stderr.writeAll(args_mod.ansi.err_prefix ++ "Unknown option: ") catch {};
+            stderr.writeAll(arg) catch {};
+            stderr.writeAll("\n") catch {};
+            printUpgradeHelp();
+            std.process.exit(1);
+        }
+    }
+
+    const stdout_writer = FileWriter{ .file = getStdout() };
+    const stderr = getStderr();
+
+    upgrade.run(allocator, version, options, stdout_writer) catch |err| {
+        switch (err) {
+            error.AlreadyLatest => {
+                var buf: [64]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "jake {s} is already the latest version.\n", .{version}) catch "Already up to date.\n";
+                stdout_writer.writeAll(msg) catch {};
+                return;
+            },
+            error.NetworkError => {
+                stderr.writeAll(args_mod.ansi.err_prefix ++ "Network error - check your connection\n") catch {};
+            },
+            error.HttpError => {
+                stderr.writeAll(args_mod.ansi.err_prefix ++ "Failed to reach GitHub\n") catch {};
+            },
+            error.ChecksumMismatch => {
+                stderr.writeAll(args_mod.ansi.err_prefix ++ "Checksum verification failed\n") catch {};
+                stderr.writeAll("Use --no-verify to skip (not recommended)\n") catch {};
+            },
+            error.PermissionDenied => {
+                stderr.writeAll(args_mod.ansi.err_prefix ++ "Permission denied - try running with elevated privileges\n") catch {};
+            },
+            error.NoReleaseFound => {
+                stderr.writeAll(args_mod.ansi.err_prefix ++ "No release found for your platform\n") catch {};
+            },
+            else => {
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Upgrade failed: {s}\n", .{@errorName(err)}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+            },
+        }
+        std.process.exit(1);
+    };
+}
+
+fn printUpgradeHelp() void {
+    const stdout = getStdout();
+    stdout.writeAll(
+        \\jake upgrade - Update jake to the latest version
+        \\
+        \\USAGE:
+        \\    jake upgrade [OPTIONS]
+        \\
+        \\OPTIONS:
+        \\    --check       Check for updates without installing
+        \\    --no-verify   Skip SHA256 checksum verification
+        \\    -v, --verbose Show verbose output
+        \\    -h, --help    Show this help message
+        \\
+        \\EXAMPLES:
+        \\    jake upgrade           Download and install latest version
+        \\    jake upgrade --check   Check if update is available
+        \\
+    ) catch {};
 }
 
 test "main does not crash" {
