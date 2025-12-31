@@ -76,7 +76,7 @@ Or find prebuilt binaries on the [Releases](https://github.com/HelgeSverre/jake/
 - **[Imports](GUIDE.md#imports)** - Split Jakefiles into modules with namespacing
 - **[Conditionals](GUIDE.md#conditionals)** - Branch on environment or context
 - **[Hooks](GUIDE.md#hooks)** - Pre/post execution callbacks
-- **[Validation](GUIDE.md#validation)** - Require commands and env vars before running
+- **[Validation](GUIDE.md#command-directives)** - Require commands (`@needs`) and env vars (`@require`)
 
 ## CLI Reference
 
@@ -87,6 +87,7 @@ OPTIONS:
   -h, --help              Show help
   -V, --version           Show version
   -l, --list              List recipes
+  -a, --all               Include hidden recipes (with -l)
   -s, --show RECIPE       Show detailed recipe info
   -n, --dry-run           Print without executing
   -v, --verbose           Verbose output
@@ -95,7 +96,12 @@ OPTIONS:
   -w, --watch             Watch and re-run on changes
   -j, --jobs N            Parallel jobs (default: CPU count)
       --completions SHELL Generate shell completions
+      --install/--uninstall  Manage shell completions
+      --fmt               Format Jakefile (--check, --dump)
+      --short/--summary   Machine-readable recipe listing
 ```
+
+See [CLI Reference](GUIDE.md#cli-reference) for full details.
 
 **Typo suggestions:** Mistype a recipe name? Jake suggests corrections:
 

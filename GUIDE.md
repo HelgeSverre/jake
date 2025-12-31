@@ -586,11 +586,17 @@ task deploy:
 |-----------------|---------------------------------------------------|
 | `env(VAR)`      | True if environment variable is set and non-empty |
 | `exists(path)`  | True if file or directory exists                  |
+| `command(name)` | True if command exists in PATH                    |
 | `eq(a, b)`      | True if strings are equal                         |
 | `neq(a, b)`     | True if strings are not equal                     |
 | `is_watching()` | True if running in watch mode (`-w`)              |
 | `is_dry_run()`  | True if running in dry-run mode (`-n`)            |
 | `is_verbose()`  | True if running in verbose mode (`-v`)            |
+| `is_macos()`    | True if running on macOS                          |
+| `is_linux()`    | True if running on Linux                          |
+| `is_windows()`  | True if running on Windows                        |
+| `is_unix()`     | True if running on Unix-like OS                   |
+| `is_platform(name)` | True if running on the specified platform     |
 
 ### Runtime State Conditions
 

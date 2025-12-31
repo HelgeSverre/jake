@@ -39,6 +39,11 @@ task deploy:
 | `is_watching()` | True if running in watch mode (`-w`)              |
 | `is_dry_run()`  | True if running in dry-run mode (`-n`)            |
 | `is_verbose()`  | True if running in verbose mode (`-v`)            |
+| `is_macos()`    | True if running on macOS                          |
+| `is_linux()`    | True if running on Linux                          |
+| `is_windows()`  | True if running on Windows                        |
+| `is_unix()`     | True if running on Unix-like OS (Linux, macOS, BSD) |
+| `is_platform(name)` | True if running on the specified platform     |
 
 ## Runtime State Conditions
 
@@ -118,5 +123,49 @@ Works with absolute paths too:
 task check:
     @if command(/usr/local/bin/custom-tool)
         /usr/local/bin/custom-tool run
+    @end
+```
+
+## Platform Detection
+
+Run platform-specific commands:
+
+```jake
+task install:
+    @if is_macos()
+        brew install ripgrep
+    @elif is_linux()
+        apt-get install ripgrep
+    @elif is_windows()
+        choco install ripgrep
+    @end
+
+task open:
+    @if is_macos()
+        open https://jakefile.dev
+    @elif is_linux()
+        xdg-open https://jakefile.dev
+    @elif is_windows()
+        start https://jakefile.dev
+    @end
+```
+
+Use `is_unix()` for commands that work on all Unix-like systems:
+
+```jake
+task permissions:
+    @if is_unix()
+        chmod +x ./script.sh
+    @end
+```
+
+Use `is_platform()` for flexible platform matching:
+
+```jake
+task build:
+    @if is_platform(freebsd)
+        gmake build
+    @else
+        make build
     @end
 ```
