@@ -35,6 +35,7 @@ pub const Watcher = struct {
     dry_run: bool,
     last_change_time: i128,
     color: color_mod.Color,
+    theme: color_mod.Theme,
 
     const POLL_INTERVAL_MS: u64 = 500;
     const DEBOUNCE_MS: u64 = 100;
@@ -52,6 +53,7 @@ pub const Watcher = struct {
             .dry_run = false,
             .last_change_time = 0,
             .color = color_mod.init(),
+            .theme = color_mod.Theme.init(),
         };
     }
 

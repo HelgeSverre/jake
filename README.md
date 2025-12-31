@@ -103,12 +103,16 @@ OPTIONS:
 
 See [CLI Reference](GUIDE.md#cli-reference) for full details.
 
-**Typo suggestions:** Mistype a recipe name? Jake suggests corrections:
+**Typo suggestions:** Mistype a recipe or flag? Jake suggests corrections:
 
 ```
 $ jake buidl
 error: Recipe 'buidl' not found
 Did you mean: build?
+
+$ jake --vrsbose
+error: Unknown option: --vrsbose
+Did you mean '--verbose'?
 ```
 
 ## Shell Completions

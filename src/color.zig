@@ -56,21 +56,15 @@ pub const symbols = struct {
 // ColoredText - Formattable wrapper for std.fmt
 // ============================================================================
 
-/// A text string wrapped with color codes, usable with std.fmt {}
+/// A text string wrapped with color codes, usable with std.fmt {f}
 pub const ColoredText = struct {
     prefix: []const u8,
     text: []const u8,
     suffix: []const u8,
 
-    /// Format implementation for std.fmt - outputs prefix + text + suffix
-    pub fn format(
-        self: ColoredText,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
+    /// Format implementation for std.fmt {f} - outputs prefix + text + suffix
+    /// Note: Zig 0.15+ uses simplified format signature with just writer
+    pub fn format(self: ColoredText, writer: anytype) !void {
         try writer.writeAll(self.prefix);
         try writer.writeAll(self.text);
         try writer.writeAll(self.suffix);
@@ -297,34 +291,34 @@ pub const Theme = struct {
     // Semantic styles - return ColoredText for std.fmt {}
     // =========================================================================
 
-    /// Error text (red) - for failures and errors
+    /// Error text - for failures and errors (brand: #ef4444)
     pub fn err(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.bold_red);
+        return self.color.styled(text, codes.error_red);
     }
 
-    /// Warning text (yellow) - for warnings and skipped items
+    /// Warning text - for warnings and skipped items (brand: #eab308)
     pub fn warning(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.bold_yellow);
+        return self.color.styled(text, codes.warning_yellow);
     }
 
-    /// Success text (green) - for completion and checkmarks
+    /// Success text - for completion and checkmarks (brand: #22c55e)
     pub fn success(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.bold_green);
+        return self.color.styled(text, codes.success_green);
     }
 
-    /// Info text (blue) - for informational messages
+    /// Info text - for informational messages (brand: #60a5fa)
     pub fn info(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.bold_blue);
+        return self.color.styled(text, codes.info_blue);
     }
 
-    /// Recipe name in headers (cyan bold) - for "→ recipe_name"
+    /// Recipe name in headers - for "→ recipe_name" (brand: #f43f5e Jake Rose)
     pub fn recipeHeader(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.bold_cyan);
+        return self.color.styled(text, codes.jake_rose);
     }
 
-    /// Recipe name in listings (cyan) - for recipe lists
+    /// Recipe name in listings - for recipe lists (brand: #f43f5e Jake Rose)
     pub fn recipeName(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.cyan);
+        return self.color.styled(text, codes.jake_rose);
     }
 
     /// Section header (bold) - for "Available recipes:"
@@ -332,9 +326,9 @@ pub const Theme = struct {
         return self.color.styled(text, codes.bold);
     }
 
-    /// Group header (yellow bold) - for group names in listings
+    /// Group header - for group names in listings (brand: #f43f5e Jake Rose)
     pub fn group(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.bold_yellow);
+        return self.color.styled(text, codes.jake_rose);
     }
 
     /// Hidden marker (dim) - for "(hidden)" labels
@@ -342,19 +336,19 @@ pub const Theme = struct {
         return self.color.styled(text, codes.dim_white);
     }
 
-    /// Muted text (gray) - for comments, descriptions, secondary text
+    /// Muted text - for comments, descriptions, secondary text (brand: #71717a)
     pub fn muted(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.gray);
+        return self.color.styled(text, codes.muted_gray);
     }
 
-    /// Directive keyword (yellow) - for @needs, @confirm, etc.
+    /// Directive keyword - for @needs, @confirm, etc. (brand: #eab308)
     pub fn directive(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.yellow);
+        return self.color.styled(text, codes.warning_yellow);
     }
 
-    /// Hook label (green) - for @pre, @post labels
+    /// Hook label - for @pre, @post labels (brand: #22c55e)
     pub fn hook(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.green);
+        return self.color.styled(text, codes.success_green);
     }
 
     // =========================================================================
@@ -371,33 +365,33 @@ pub const Theme = struct {
         return self.color.warnPrefix();
     }
 
-    /// Watch mode prefix: "[watch] " in blue
+    /// Watch mode prefix: "[watch] " (brand: #60a5fa Info Blue)
     pub fn watchPrefix(self: Theme) []const u8 {
-        return if (self.color.enabled) codes.bold_blue ++ "[watch]" ++ codes.reset ++ " " else "[watch] ";
+        return if (self.color.enabled) codes.info_blue ++ "[watch]" ++ codes.reset ++ " " else "[watch] ";
     }
 
-    /// Dry-run prefix: "[dry-run] " in blue
+    /// Dry-run prefix: "[dry-run] " (brand: #60a5fa Info Blue)
     pub fn dryRunPrefix(self: Theme) []const u8 {
-        return if (self.color.enabled) codes.bold_blue ++ "[dry-run]" ++ codes.reset ++ " " else "[dry-run] ";
+        return if (self.color.enabled) codes.info_blue ++ "[dry-run]" ++ codes.reset ++ " " else "[dry-run] ";
     }
 
     // =========================================================================
     // Symbol helpers
     // =========================================================================
 
-    /// Success symbol with color: "✓" in green
+    /// Success symbol with color: "✓" (brand: #22c55e)
     pub fn successSymbol(self: Theme) []const u8 {
-        return if (self.color.enabled) codes.bold_green ++ symbols.success ++ codes.reset else symbols.success;
+        return if (self.color.enabled) codes.success_green ++ symbols.success ++ codes.reset else symbols.success;
     }
 
-    /// Failure symbol with color: "✗" in red
+    /// Failure symbol with color: "✗" (brand: #ef4444)
     pub fn failureSymbol(self: Theme) []const u8 {
-        return if (self.color.enabled) codes.bold_red ++ symbols.failure ++ codes.reset else symbols.failure;
+        return if (self.color.enabled) codes.error_red ++ symbols.failure ++ codes.reset else symbols.failure;
     }
 
-    /// Arrow symbol with color: "→" in cyan
+    /// Arrow symbol with color: "→" (brand: #60a5fa Info Blue)
     pub fn arrowSymbol(self: Theme) []const u8 {
-        return if (self.color.enabled) codes.bold_cyan ++ symbols.arrow ++ codes.reset else symbols.arrow;
+        return if (self.color.enabled) codes.info_blue ++ symbols.arrow ++ codes.reset else symbols.arrow;
     }
 };
 
@@ -504,7 +498,7 @@ test "ColoredText formats with prefix and suffix when enabled" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format("", .{}, stream.writer());
+    try ct.format(stream.writer());
 
     try std.testing.expectEqualStrings("\x1b[1;31merror\x1b[0m", stream.getWritten());
 }
@@ -515,7 +509,7 @@ test "ColoredText formats plain text when disabled" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format("", .{}, stream.writer());
+    try ct.format(stream.writer());
 
     try std.testing.expectEqualStrings("error", stream.getWritten());
 }
@@ -539,28 +533,30 @@ test "Theme.init creates theme with color detection" {
     _ = theme.err("test");
 }
 
-test "Theme.err returns ColoredText with red styling" {
+test "Theme.err returns ColoredText with brand error color" {
     const color = withEnabled(true);
     const theme = Theme.withColor(color);
     const ct = theme.err("error message");
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format("", .{}, stream.writer());
+    try ct.format(stream.writer());
 
-    try std.testing.expectEqualStrings("\x1b[1;31merror message\x1b[0m", stream.getWritten());
+    // Brand error red: #ef4444 = rgb(239, 68, 68)
+    try std.testing.expectEqualStrings(codes.error_red ++ "error message" ++ codes.reset, stream.getWritten());
 }
 
-test "Theme.success returns ColoredText with green styling" {
+test "Theme.success returns ColoredText with brand success color" {
     const color = withEnabled(true);
     const theme = Theme.withColor(color);
     const ct = theme.success("done");
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format("", .{}, stream.writer());
+    try ct.format(stream.writer());
 
-    try std.testing.expectEqualStrings("\x1b[1;32mdone\x1b[0m", stream.getWritten());
+    // Brand success green: #22c55e = rgb(34, 197, 94)
+    try std.testing.expectEqualStrings(codes.success_green ++ "done" ++ codes.reset, stream.getWritten());
 }
 
 test "Theme.hidden returns ColoredText with dim styling" {
@@ -570,7 +566,7 @@ test "Theme.hidden returns ColoredText with dim styling" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format("", .{}, stream.writer());
+    try ct.format(stream.writer());
 
     try std.testing.expectEqualStrings("\x1b[2;37m(hidden)\x1b[0m", stream.getWritten());
 }
@@ -582,7 +578,7 @@ test "Theme returns plain text when colors disabled" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format("", .{}, stream.writer());
+    try ct.format(stream.writer());
     try std.testing.expectEqualStrings("error", stream.getWritten());
 }
 

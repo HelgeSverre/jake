@@ -57,6 +57,7 @@ pub const Executor = struct {
     prompt: Prompt, // Confirmation prompt handler
     watch_mode: bool, // Whether jake is running in watch mode (-w/--watch)
     color: color_mod.Color, // Color output configuration (respects NO_COLOR etc.)
+    theme: color_mod.Theme, // Semantic color theme (error, warning, recipe, etc.)
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
         var variables = std.StringHashMap([]const u8).init(allocator);
@@ -145,6 +146,7 @@ pub const Executor = struct {
             .prompt = Prompt.init(),
             .watch_mode = false,
             .color = color_mod.init(),
+            .theme = color_mod.Theme.init(),
         };
     }
 
@@ -720,7 +722,7 @@ pub const Executor = struct {
         }
 
         // Run the recipe
-        self.print("{s}-> {s}{s}\n", .{ self.color.cyan(), name, self.color.reset() });
+        self.print("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(name) });
 
         // Update hook runner settings
         self.hook_runner.dry_run = self.dry_run;

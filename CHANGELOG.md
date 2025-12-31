@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **"Did you mean?" Suggestions**
+  - Unknown flag typos now suggest similar flags
+  - `--vrsbose` → `Did you mean '--verbose'?`
+  - Uses Levenshtein distance from `suggest.zig`
+
+### Fixed
+
+- Color.zig `Theme.init()` now correctly initializes color detection
+- ColoredText format method updated for Zig 0.15 compatibility
+
 ## [0.4.0] - 2025-12-30
 
 ### Added

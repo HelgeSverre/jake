@@ -51,6 +51,7 @@ pub const HookRunner = struct {
     dry_run: bool,
     verbose: bool,
     color: color_mod.Color,
+    theme: color_mod.Theme,
 
     pub fn init(allocator: std.mem.Allocator) HookRunner {
         return .{
@@ -61,6 +62,7 @@ pub const HookRunner = struct {
             .dry_run = false,
             .verbose = false,
             .color = color_mod.init(),
+            .theme = color_mod.Theme.init(),
         };
     }
 

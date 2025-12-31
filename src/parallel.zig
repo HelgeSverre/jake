@@ -98,6 +98,7 @@ pub const ParallelExecutor = struct {
     variables: std.StringHashMap([]const u8),
     cache: cache_mod.Cache,
     color: color_mod.Color,
+    theme: color_mod.Theme,
 
     // Synchronization primitives
     mutex: std.Thread.Mutex,
@@ -129,6 +130,7 @@ pub const ParallelExecutor = struct {
             .variables = variables,
             .cache = cache_mod.Cache.init(allocator),
             .color = color_mod.init(),
+            .theme = color_mod.Theme.init(),
             .mutex = .{},
             .condition = .{},
             .output_mutex = .{},
@@ -380,7 +382,7 @@ pub const ParallelExecutor = struct {
         }
 
         // Print recipe header
-        self.printSynchronized("{s}-> {s}{s}\n", .{ self.color.cyan(), recipe.name, self.color.reset() });
+        self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
 
         // Execute commands with directive handling
         if (!self.executeRecipeCommands(recipe.commands)) {

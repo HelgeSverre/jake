@@ -2,6 +2,7 @@
 // Defines flags once, auto-generates help, catches unknown flags
 
 const std = @import("std");
+const suggest = @import("suggest.zig");
 
 // ANSI escape codes for colored output
 pub const ansi = struct {
@@ -436,12 +437,61 @@ pub fn printHelp(writer: anytype) void {
     ) catch {};
 }
 
+/// Find similar flag names for "Did you mean?" suggestions.
+/// Returns the best match if within threshold, null otherwise.
+pub fn findSimilarFlag(unknown: []const u8) ?[]const u8 {
+    // Strip leading dashes to get the flag name
+    const name = if (std.mem.startsWith(u8, unknown, "--"))
+        unknown[2..]
+    else if (unknown.len > 1 and unknown[0] == '-')
+        unknown[1..]
+    else
+        unknown;
+
+    if (name.len == 0) return null;
+
+    var best_match: ?[]const u8 = null;
+    var best_distance: usize = std.math.maxInt(usize);
+
+    // Maximum distance threshold: 2 for short names, 3 for longer names
+    const max_distance: usize = if (name.len <= 4) 2 else 3;
+
+    for (flags) |flag| {
+        // Skip hidden flags
+        if (flag.hidden) continue;
+
+        // Check long flag name
+        const dist = suggest.levenshteinDistance(name, flag.long);
+        if (dist > 0 and dist <= max_distance and dist < best_distance) {
+            best_distance = dist;
+            best_match = flag.long;
+        }
+    }
+
+    return best_match;
+}
+
+/// Format a flag suggestion with proper prefix
+fn formatFlagSuggestion(buf: []u8, suggestion: []const u8) []const u8 {
+    var fbs = std.io.fixedBufferStream(buf);
+    const writer = fbs.writer();
+    writer.print("Did you mean '--{s}'?\n", .{suggestion}) catch return "";
+    return fbs.getWritten();
+}
+
 /// Print error message for parse failure
 pub fn printError(writer: anytype, err: ParseError, arg: []const u8) void {
     switch (err) {
         error.UnknownFlag => {
             writer.print(ansi.err_prefix ++ "Unknown option: {s}\n", .{arg}) catch {};
-            writer.writeAll("Run 'jake --help' for usage.\n") catch {};
+            // Try to suggest similar flags
+            if (findSimilarFlag(arg)) |similar| {
+                var buf: [128]u8 = undefined;
+                const suggestion = formatFlagSuggestion(&buf, similar);
+                writer.writeAll(suggestion) catch {};
+            } else {
+                writer.writeAll("Run 'jake --help' for usage.\n") catch {};
+            }
         },
         error.MissingValue => {
             writer.print(ansi.err_prefix ++ "Option '{s}' requires a value\n", .{arg}) catch {};
@@ -990,4 +1040,73 @@ test "Flag struct has hidden and default_display fields" {
         .default_display = "some-value",
     };
     try expectEqualStrings("some-value", flag_with_default.default_display.?);
+}
+
+// ============================================================================
+// "Did you mean?" suggestion tests
+// ============================================================================
+
+test "findSimilarFlag suggests --verbose for --vrsbose" {
+    const suggestion = findSimilarFlag("--vrsbose");
+    try expect(suggestion != null);
+    try expectEqualStrings("verbose", suggestion.?);
+}
+
+test "findSimilarFlag suggests --verbose for --verbos" {
+    const suggestion = findSimilarFlag("--verbos");
+    try expect(suggestion != null);
+    try expectEqualStrings("verbose", suggestion.?);
+}
+
+test "findSimilarFlag suggests --help for --hlep" {
+    const suggestion = findSimilarFlag("--hlep");
+    try expect(suggestion != null);
+    try expectEqualStrings("help", suggestion.?);
+}
+
+test "findSimilarFlag suggests --dry-run for --dryrun" {
+    const suggestion = findSimilarFlag("--dryrun");
+    try expect(suggestion != null);
+    try expectEqualStrings("dry-run", suggestion.?);
+}
+
+test "findSimilarFlag suggests --list for --lsit" {
+    const suggestion = findSimilarFlag("--lsit");
+    try expect(suggestion != null);
+    try expectEqualStrings("list", suggestion.?);
+}
+
+test "findSimilarFlag suggests --jakefile for --jakeifle" {
+    const suggestion = findSimilarFlag("--jakeifle");
+    try expect(suggestion != null);
+    try expectEqualStrings("jakefile", suggestion.?);
+}
+
+test "findSimilarFlag returns null for completely different flag" {
+    const suggestion = findSimilarFlag("--xyzabc123");
+    try expect(suggestion == null);
+}
+
+test "findSimilarFlag returns null for empty flag" {
+    const suggestion = findSimilarFlag("--");
+    try expect(suggestion == null);
+}
+
+test "findSimilarFlag handles single dash prefix" {
+    // -verbos should still suggest verbose
+    const suggestion = findSimilarFlag("-verbos");
+    try expect(suggestion != null);
+    try expectEqualStrings("verbose", suggestion.?);
+}
+
+test "findSimilarFlag suggests --watch for --wtach" {
+    const suggestion = findSimilarFlag("--wtach");
+    try expect(suggestion != null);
+    try expectEqualStrings("watch", suggestion.?);
+}
+
+test "formatFlagSuggestion formats correctly" {
+    var buf: [128]u8 = undefined;
+    const result = formatFlagSuggestion(&buf, "verbose");
+    try expectEqualStrings("Did you mean '--verbose'?\n", result);
 }
