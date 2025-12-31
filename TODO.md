@@ -127,9 +127,20 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 
 ### List Filtering
 
-- [ ] `--group GROUP` - Filter recipes to specified group
-- [ ] `--filter PATTERN` - Filter recipes by glob pattern
+- [ ] `--group GROUP` - Filter recipes to specified group (aka, show only "dev" commands with `jake --group dev`, etc.)
+- [ ] `--filter PATTERN` - Filter recipes by glob pattern: `jake --filter "test*"` shows all recipes starting with "test"
+- [ ] `--type TYPE` - Filter recipes by type: `jake --type file` or `jake --type task` or `jake --type simple` (?)
 - [ ] `--groups` - List available group names
+
+---
+
+### Remote commands (task runs on ssh server, ala laravel envoy)
+
+```
+task backup:
+    @remote 
+
+```
 
 ---
 
@@ -145,14 +156,23 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 
 ### New Functions
 
-- [ ] `git_branch()` - Current git branch name
-- [ ] `git_hash()` - Short commit hash (7 chars)
-- [ ] `git_dirty()` - Returns "dirty" if uncommitted changes
-- [ ] `timestamp()` - Current Unix timestamp
-- [ ] `datetime(format)` - Formatted date/time string
+- [ ] `git_branch()` - Current git branch name (e.g. `main`, `feature/x`)
+- [ ] `git_hash()` - Short commit hash (7 chars), e.g. `a1b2c3d`
+- [ ] `git_dirty()` - Returns "dirty" if uncommitted changes (or true/false?)
+- [ ] `git_author_name()` - Current git author name
+- [ ] `git_author_email()` - Current git author email
+- [ ] `git_tag()` - Current git tag (or empty string)
+- [ ] `uuid()` - Generate a random UUIDv4
+- [ ] `unix()` - Shorthand/alias for `timestamp()`
+- [ ] `kebab()` - Example Text -> example-text 
+- [ ] `snake()` - Example Text -> example_text 
+- [ ] `upper()` - Example Text -> EXAMPLE TEXT 
+- [ ] `lower()` - Example Text -> example text 
+- [ ] `timestamp()` - Current Unix timestamp (seconds since epoch, 1970-01-01 eg: `1700000000` -> `Tue Nov 14 2023 22:13:20 GMT+0000`)
+- [ ] `datetime(format)` - Formatted date/time string (Which format patterns? PHP, JS, Python?)
 - [ ] `read_file(path)` - Read file contents into variable
 - [ ] `json(file, path)` - Extract JSON value
-- [ ] `env_or(name, default)` - Get env var with fallback
+- [ ] `env_or(name, default)` - Get env var with fallback (maybe)
 
 ---
 
@@ -172,11 +192,256 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 
 - [ ] GitHub Actions matrix testing (Linux, macOS, Windows)
 - [ ] Automated release workflow (build binaries on tag)
-- [ ] Homebrew formula (`brew install jake`)
-- [ ] AUR package for Arch Linux
-- [ ] Scoop manifest for Windows
-- [ ] Nix flake
-- [ ] Docker image
+
+---
+
+#### Homebrew Formula
+
+Custom tap approach (homebrew-core requires source builds and 500+ stars).
+
+**Repository:** `github.com/<user>/homebrew-tap`
+
+**Files needed:**
+- `Formula/jake.rb` - Ruby formula with platform conditionals
+
+**Formula structure:**
+```ruby
+class Jake < Formula
+  desc "Modern command runner/build system written in Zig"
+  homepage "https://github.com/<user>/jake"
+  version "X.Y.Z"
+  license "MIT"
+
+  # Platform-specific binaries
+  if OS.mac? && Hardware::CPU.intel?
+    url "https://github.com/<user>/jake/releases/download/vX.Y.Z/jake-macos-x86_64.tar.gz"
+    sha256 "..."
+  end
+  if OS.mac? && Hardware::CPU.arm?
+    url "https://github.com/<user>/jake/releases/download/vX.Y.Z/jake-macos-aarch64.tar.gz"
+    sha256 "..."
+  end
+  if OS.linux? && Hardware::CPU.intel?
+    url "https://github.com/<user>/jake/releases/download/vX.Y.Z/jake-linux-x86_64.tar.gz"
+    sha256 "..."
+  end
+  if OS.linux? && Hardware::CPU.arm?
+    url "https://github.com/<user>/jake/releases/download/vX.Y.Z/jake-linux-aarch64.tar.gz"
+    sha256 "..."
+  end
+
+  def install
+    bin.install "jake"
+    bash_completion.install "completions/jake.bash" => "jake"
+    zsh_completion.install "completions/_jake"
+    fish_completion.install "completions/jake.fish"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/jake --version")
+  end
+end
+```
+
+**User installation:** `brew install <user>/tap/jake`
+
+**Checklist:**
+- [ ] Create `homebrew-tap` repository
+- [ ] Add `Formula/jake.rb`
+- [ ] Include shell completions in release tarballs
+- [ ] Add GitHub Action to auto-update formula on release
+- [ ] Document in README
+
+---
+
+#### AUR Package (Arch Linux)
+
+Binary package with `-bin` suffix convention.
+
+**Package name:** `jake-bin`
+
+**Files needed:**
+- `PKGBUILD` - Build script
+- `.SRCINFO` - Generated metadata (via `makepkg --printsrcinfo > .SRCINFO`)
+- `LICENSE` - 0BSD for the PKGBUILD itself
+
+**PKGBUILD structure:**
+```bash
+# Maintainer: Name <email>
+pkgname=jake-bin
+pkgver=X.Y.Z
+pkgrel=1
+pkgdesc="Modern command runner/build system written in Zig"
+arch=('x86_64' 'aarch64')
+url="https://github.com/<user>/jake"
+license=('MIT')
+depends=('glibc')
+provides=('jake')
+conflicts=('jake' 'jake-git')
+
+source_x86_64=("${url}/releases/download/v${pkgver}/jake-linux-x86_64.tar.gz")
+source_aarch64=("${url}/releases/download/v${pkgver}/jake-linux-aarch64.tar.gz")
+sha256sums_x86_64=('...')
+sha256sums_aarch64=('...')
+
+package() {
+    install -Dm755 jake "$pkgdir/usr/bin/jake"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    # Shell completions
+    install -Dm644 completions/jake.bash "$pkgdir/usr/share/bash-completion/completions/jake"
+    install -Dm644 completions/_jake "$pkgdir/usr/share/zsh/site-functions/_jake"
+    install -Dm644 completions/jake.fish "$pkgdir/usr/share/fish/vendor_completions.d/jake.fish"
+}
+```
+
+**Publishing:**
+1. Create AUR account, add SSH key
+2. `git clone ssh://aur@aur.archlinux.org/jake-bin.git`
+3. Add PKGBUILD, generate .SRCINFO
+4. `git push`
+
+**Checklist:**
+- [ ] Create AUR account
+- [ ] Add SSH key to AUR profile
+- [ ] Create and test PKGBUILD locally (`makepkg -si`)
+- [ ] Push to AUR
+- [ ] Monitor for out-of-date flags
+
+---
+
+#### Scoop Manifest (Windows)
+
+Custom bucket approach (Main bucket requires 500+ stars/150+ forks).
+
+**Repository:** `github.com/<user>/scoop-jake` (or `jake-bucket`)
+
+**Files needed:**
+- `bucket/jake.json` - JSON manifest
+
+**Manifest structure:**
+```json
+{
+  "version": "X.Y.Z",
+  "description": "Modern command runner/build system written in Zig",
+  "homepage": "https://github.com/<user>/jake",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/<user>/jake/releases/download/vX.Y.Z/jake-windows-x86_64.zip",
+      "hash": "sha256:..."
+    },
+    "arm64": {
+      "url": "https://github.com/<user>/jake/releases/download/vX.Y.Z/jake-windows-aarch64.zip",
+      "hash": "sha256:..."
+    }
+  },
+  "bin": "jake.exe",
+  "checkver": "github",
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/<user>/jake/releases/download/v$version/jake-windows-x86_64.zip"
+      },
+      "arm64": {
+        "url": "https://github.com/<user>/jake/releases/download/v$version/jake-windows-aarch64.zip"
+      }
+    }
+  }
+}
+```
+
+**User installation:**
+```powershell
+scoop bucket add jake https://github.com/<user>/scoop-jake
+scoop install jake
+```
+
+**Checklist:**
+- [ ] Create bucket repo from `ScoopInstaller/BucketTemplate`
+- [ ] Enable GitHub Actions (for auto-updates)
+- [ ] Add `bucket/jake.json`
+- [ ] Add `scoop-bucket` topic for discoverability
+- [ ] Document in README
+
+---
+
+#### Nix Flake
+
+Build from source using `zig.hook` (preferred for nixpkgs).
+
+**Files needed:**
+- `flake.nix` - In jake repository root
+
+**Flake structure:**
+```nix
+{
+  description = "Jake - Modern command runner/build system";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+      in {
+        packages.default = pkgs.stdenv.mkDerivation {
+          pname = "jake";
+          version = self.shortRev or "dirty";
+          src = ./.;
+
+          nativeBuildInputs = [ pkgs.zig.hook ];
+          zigBuildFlags = [ "-Doptimize=ReleaseFast" ];
+          dontUseZigCheck = true;
+
+          postInstall = ''
+            mkdir -p $out/share/bash-completion/completions
+            $out/bin/jake --completions bash > $out/share/bash-completion/completions/jake
+            mkdir -p $out/share/zsh/site-functions
+            $out/bin/jake --completions zsh > $out/share/zsh/site-functions/_jake
+            mkdir -p $out/share/fish/vendor_completions.d
+            $out/bin/jake --completions fish > $out/share/fish/vendor_completions.d/jake.fish
+          '';
+
+          meta = with pkgs.lib; {
+            description = "Modern command runner/build system";
+            homepage = "https://github.com/<user>/jake";
+            license = licenses.mit;
+            mainProgram = "jake";
+            platforms = platforms.unix;
+          };
+        };
+
+        devShells.default = pkgs.mkShell {
+          buildInputs = [ pkgs.zig pkgs.zls ];
+        };
+      }
+    );
+}
+```
+
+**User installation:** `nix run github:<user>/jake` or `nix profile install github:<user>/jake`
+
+**For nixpkgs submission (later):**
+1. Add yourself to `maintainers/maintainer-list.nix`
+2. Create `pkgs/by-name/ja/jake/package.nix`
+3. PR title: `jake: init at X.Y.Z`
+
+**Checklist:**
+- [ ] Add `flake.nix` to repository
+- [ ] Test with `nix build` and `nix run`
+- [ ] Document in README
+- [ ] Later: Submit to nixpkgs when project matures
+
+---
+
+#### Docker Image (Deferred)
+
+- [ ] Create minimal Dockerfile
+- [ ] Publish to GitHub Container Registry
+- [ ] Auto-build on release
 
 ---
 
