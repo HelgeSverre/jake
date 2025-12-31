@@ -22,6 +22,8 @@ pub const Flag = struct {
     desc: []const u8, // Description for help text
     takes_value: ValueMode = .none,
     value_name: ?[]const u8 = null, // e.g., "FILE", "N"
+    default_display: ?[]const u8 = null, // Shown in help: "(default: X)"
+    hidden: bool = false, // Hidden from help output
 };
 
 // Jake's flag definitions - single source of truth
@@ -30,12 +32,13 @@ pub const flags = [_]Flag{
     .{ .short = 'h', .long = "help", .desc = "Show this help message" },
     .{ .short = 'V', .long = "version", .desc = "Show version" },
     .{ .short = 'l', .long = "list", .desc = "List available recipes" },
+    .{ .short = 'a', .long = "all", .desc = "Show all recipes including hidden (use with -l)" },
     .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing" },
     .{ .short = 'v', .long = "verbose", .desc = "Show verbose output" },
     .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts" },
-    .{ .short = 'f', .long = "jakefile", .desc = "Use specified Jakefile", .takes_value = .required, .value_name = "FILE" },
+    .{ .short = 'f', .long = "jakefile", .desc = "Use specified Jakefile", .takes_value = .required, .value_name = "FILE", .default_display = "Jakefile" },
     .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN" },
-    .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel (default: CPU count)", .takes_value = .optional, .value_name = "N" },
+    .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel", .takes_value = .optional, .value_name = "N", .default_display = "CPU count" },
     .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)" },
     .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE" },
     .{ .short = null, .long = "summary", .desc = "Print recipe names (space-separated, for scripts)" },
@@ -48,6 +51,7 @@ pub const Args = struct {
     help: bool = false,
     version: bool = false,
     list: bool = false,
+    all: bool = false,
     dry_run: bool = false,
     verbose: bool = false,
     yes: bool = false,
@@ -91,35 +95,48 @@ pub fn parse(allocator: std.mem.Allocator, raw_args: []const []const u8) ParseEr
     while (i < raw_args.len) : (i += 1) {
         const arg = raw_args[i];
 
+        // Double-dash separator: stop flag parsing, treat rest as positional
+        if (std.mem.eql(u8, arg, "--")) {
+            i += 1;
+            while (i < raw_args.len) : (i += 1) {
+                if (result.recipe == null) {
+                    result.recipe = raw_args[i];
+                } else {
+                    positional_list.append(allocator, raw_args[i]) catch {};
+                }
+            }
+            break;
+        }
+
         // Once we have a recipe, check if this is a global flag before treating as positional
         if (result.recipe != null) {
-            // Allow global boolean flags (--yes, --verbose, --dry-run, etc.) after recipe
+            // Allow global flags (boolean or optional without value) after recipe
             if (arg.len > 0 and arg[0] == '-') {
                 if (arg.len > 1 and arg[1] == '-') {
-                    // Long flag: check if it's a known boolean flag
+                    // Long flag: check if it's a known flag that doesn't require a value
                     const long_name = arg[2..];
                     if (matchLongFlag(long_name)) |flag_idx| {
-                        if (flags[flag_idx].takes_value == .none) {
+                        if (flags[flag_idx].takes_value != .required) {
                             try setFlag(&result, flag_idx, null, raw_args, &i);
                             continue;
                         }
                     }
                 } else {
-                    // Short flag: check if all chars are known boolean flags
+                    // Short flag: check if all chars are known flags that don't require values
                     const short_chars = arg[1..];
-                    var all_boolean = true;
+                    var all_non_required = true;
                     for (short_chars) |c| {
                         if (matchShortFlag(c)) |flag_idx| {
-                            if (flags[flag_idx].takes_value != .none) {
-                                all_boolean = false;
+                            if (flags[flag_idx].takes_value == .required) {
+                                all_non_required = false;
                                 break;
                             }
                         } else {
-                            all_boolean = false;
+                            all_non_required = false;
                             break;
                         }
                     }
-                    if (all_boolean and short_chars.len > 0) {
+                    if (all_non_required and short_chars.len > 0) {
                         for (short_chars) |c| {
                             if (matchShortFlag(c)) |flag_idx| {
                                 try setFlag(&result, flag_idx, null, raw_args, &i);
@@ -225,6 +242,8 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                 result.version = true;
             } else if (std.mem.eql(u8, name, "list")) {
                 result.list = true;
+            } else if (std.mem.eql(u8, name, "all")) {
+                result.all = true;
             } else if (std.mem.eql(u8, name, "dry-run")) {
                 result.dry_run = true;
             } else if (std.mem.eql(u8, name, "verbose")) {
@@ -343,6 +362,9 @@ pub fn printHelp(writer: anytype) void {
 
     // Auto-generate options from flags array
     for (flags) |flag| {
+        // Skip hidden flags
+        if (flag.hidden) continue;
+
         // Format: "    -X, --long-name VALUE  Description"
         writer.writeAll("    ") catch {};
 
@@ -372,8 +394,12 @@ pub fn printHelp(writer: anytype) void {
             writer.writeAll(" ") catch {};
         }
 
-        // Description
-        writer.print("{s}\n", .{flag.desc}) catch {};
+        // Description with optional default value
+        writer.print("{s}", .{flag.desc}) catch {};
+        if (flag.default_display) |default| {
+            writer.print(" (default: {s})", .{default}) catch {};
+        }
+        writer.writeAll("\n") catch {};
     }
 
     writer.writeAll(
@@ -568,10 +594,11 @@ test "value flags after recipe are positional" {
 }
 
 test "all boolean flags" {
-    const args = try parse(testing.allocator, &.{ "jake", "-h", "-V", "-l", "-n", "-v", "-y" });
+    const args = try parse(testing.allocator, &.{ "jake", "-h", "-V", "-l", "-a", "-n", "-v", "-y" });
     try expect(args.help);
     try expect(args.version);
     try expect(args.list);
+    try expect(args.all);
     try expect(args.dry_run);
     try expect(args.verbose);
     try expect(args.yes);
@@ -629,6 +656,28 @@ test "parse --list --short combination" {
     const args = try parse(testing.allocator, &.{ "jake", "--list", "--short" });
     try expect(args.list == true);
     try expect(args.short == true);
+}
+
+test "parse --all flag" {
+    const args = try parse(testing.allocator, &.{ "jake", "--all" });
+    try expect(args.all == true);
+}
+
+test "parse -a flag" {
+    const args = try parse(testing.allocator, &.{ "jake", "-a" });
+    try expect(args.all == true);
+}
+
+test "parse --list --all combination" {
+    const args = try parse(testing.allocator, &.{ "jake", "--list", "--all" });
+    try expect(args.list == true);
+    try expect(args.all == true);
+}
+
+test "parse -la combined flags" {
+    const args = try parse(testing.allocator, &.{ "jake", "-la" });
+    try expect(args.list == true);
+    try expect(args.all == true);
 }
 
 test "parse -s (show) with recipe name" {
@@ -718,13 +767,14 @@ test "parse --install alone" {
 test "all global boolean flags work after recipe" {
     var args = try parse(testing.allocator, &.{
         "jake", "build",
-        "-h", "-V", "-l", "-n", "-v", "-y", "--short", "--summary", "--install", "--uninstall",
+        "-h", "-V", "-l", "-a", "-n", "-v", "-y", "--short", "--summary", "--install", "--uninstall",
     });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
     try expect(args.help);
     try expect(args.version);
     try expect(args.list);
+    try expect(args.all);
     try expect(args.dry_run);
     try expect(args.verbose);
     try expect(args.yes);
@@ -836,11 +886,87 @@ test "recipe that looks like a flag" {
     try expectEqualStrings("some-recipe", args.recipe.?);
 }
 
-test "double-dash separator not special" {
-    // Just verify -- is treated normally (as unknown flag error or positional based on context)
-    var args = try parse(testing.allocator, &.{ "jake", "build", "--" });
+test "double-dash separator stops flag parsing" {
+    // -- stops flag parsing, everything after becomes positional
+    var args = try parse(testing.allocator, &.{ "jake", "build", "--", "--verbose", "-n" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
-    // "--" after recipe becomes positional (not a known flag)
-    try expectEqual(@as(usize, 1), args.positional.len);
+    // --verbose and -n become positional, not parsed as flags
+    try expectEqual(@as(usize, 2), args.positional.len);
+    try expectEqualStrings("--verbose", args.positional[0]);
+    try expectEqualStrings("-n", args.positional[1]);
+    try expect(!args.verbose); // Not parsed as flag
+    try expect(!args.dry_run); // Not parsed as flag
+}
+
+test "double-dash before recipe sets recipe from rest" {
+    var args = try parse(testing.allocator, &.{ "jake", "--", "--help" });
+    defer args.deinit(testing.allocator);
+    // --help becomes recipe name, not parsed as help flag
+    try expectEqualStrings("--help", args.recipe.?);
+    try expect(!args.help);
+}
+
+test "double-dash with recipe and positional" {
+    var args = try parse(testing.allocator, &.{ "jake", "-v", "--", "build", "arg1", "arg2" });
+    defer args.deinit(testing.allocator);
+    try expect(args.verbose); // -v before -- is parsed
+    try expectEqualStrings("build", args.recipe.?);
+    try expectEqual(@as(usize, 2), args.positional.len);
+    try expectEqualStrings("arg1", args.positional[0]);
+    try expectEqualStrings("arg2", args.positional[1]);
+}
+
+// ============================================================================
+// Hidden Flag and Default Display Tests
+// ============================================================================
+
+test "printHelp includes default values" {
+    var buf: [8192]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    printHelp(stream.writer());
+    const output = stream.getWritten();
+    // Check that default values are shown
+    try expect(std.mem.indexOf(u8, output, "(default: Jakefile)") != null);
+    try expect(std.mem.indexOf(u8, output, "(default: CPU count)") != null);
+}
+
+test "printHelp excludes hidden flags" {
+    // Verify that hidden flags are not in help output
+    // Currently no flags are hidden, but the mechanism is in place
+    var buf: [8192]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    printHelp(stream.writer());
+    const output = stream.getWritten();
+    // All current flags should be visible (none are hidden)
+    try expect(std.mem.indexOf(u8, output, "--help") != null);
+    try expect(std.mem.indexOf(u8, output, "--version") != null);
+    try expect(std.mem.indexOf(u8, output, "--jakefile") != null);
+}
+
+test "Flag struct has hidden and default_display fields" {
+    // Verify the Flag struct has the new fields with correct defaults
+    const test_flag = Flag{
+        .short = 't',
+        .long = "test",
+        .desc = "Test flag",
+    };
+    try expect(!test_flag.hidden);
+    try expect(test_flag.default_display == null);
+
+    const hidden_flag = Flag{
+        .short = null,
+        .long = "secret",
+        .desc = "Secret flag",
+        .hidden = true,
+    };
+    try expect(hidden_flag.hidden);
+
+    const flag_with_default = Flag{
+        .short = 'd',
+        .long = "default",
+        .desc = "Flag with default",
+        .default_display = "some-value",
+    };
+    try expectEqualStrings("some-value", flag_with_default.default_display.?);
 }
