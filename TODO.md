@@ -197,55 +197,28 @@ task backup:
 
 ---
 
-#### Install Script (macOS/Linux)
+#### Install Script (macOS/Linux) ✓ DONE
 
 Simple curl-to-shell installer covering ~90% of users.
 
-**File:** `install.sh` (hosted at repo root or website)
+**File:** `site/public/install.sh` (served at jakefile.dev/install.sh)
 
-```bash
-#!/bin/sh
-set -e
+**Features:**
+- Multi-platform: Linux, macOS, FreeBSD
+- Multi-arch: x86_64, aarch64, armv7
+- curl/wget fallback
+- Colored terminal output
+- Binary verification before install
+- PATH detection with shell-specific suggestions (bash/zsh/fish)
+- Configurable via `JAKE_VERSION` and `JAKE_INSTALL` env vars
 
-REPO="<user>/jake"
-INSTALL_DIR="${JAKE_INSTALL_DIR:-$HOME/.local/bin}"
-
-# Detect OS and arch
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH=$(uname -m)
-case "$ARCH" in
-  x86_64|amd64) ARCH="x86_64" ;;
-  arm64|aarch64) ARCH="aarch64" ;;
-  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
-esac
-
-# Map OS names
-case "$OS" in
-  darwin) OS="macos" ;;
-  linux) OS="linux" ;;
-  *) echo "Unsupported OS: $OS"; exit 1 ;;
-esac
-
-# Get latest version
-VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
-VERSION="${VERSION#v}"
-
-# Download and install
-URL="https://github.com/$REPO/releases/download/v$VERSION/jake-$OS-$ARCH.tar.gz"
-echo "Downloading jake v$VERSION for $OS-$ARCH..."
-mkdir -p "$INSTALL_DIR"
-curl -sL "$URL" | tar xz -C "$INSTALL_DIR"
-echo "Installed jake to $INSTALL_DIR/jake"
-echo "Make sure $INSTALL_DIR is in your PATH"
-```
-
-**User installation:** `curl -fsSL https://jake.build/install.sh | sh`
+**User installation:** `curl -fsSL jakefile.dev/install.sh | sh`
 
 **Checklist:**
-- [ ] Create `install.sh`
-- [ ] Host at predictable URL (repo raw or website)
+- [x] Create `install.sh`
+- [x] Host at predictable URL (site/public/)
 - [ ] Test on macOS (Intel + ARM) and Linux
-- [ ] Document in README
+- [x] Document in README
 
 ---
 
