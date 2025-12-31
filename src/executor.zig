@@ -1613,8 +1613,8 @@ pub const Executor = struct {
         // Print hidden recipes (when --all is used)
         if (hidden.items.len > 0) {
             stdout.writeAll("\n") catch {};
-            // Dim/gray color for hidden group header
-            stdout.writeAll(self.color.dim()) catch {};
+            // Muted color for hidden group header
+            stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("(hidden):") catch {};
             stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll("\n") catch {};

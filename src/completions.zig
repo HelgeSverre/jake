@@ -5,6 +5,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const args_mod = @import("args.zig");
+const color_mod = @import("color.zig");
 
 /// Shell types supported for completion generation
 pub const Shell = enum {
@@ -250,6 +251,7 @@ fn patchZshrc(allocator: std.mem.Allocator, writer: anytype) !bool {
 /// Uninstall completion and config block
 pub fn uninstall(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !void {
     const home = getHomeDir() orelse return error.NoHomeDir;
+    const color = color_mod.init();
 
     // Remove completion file
     switch (shell) {
@@ -258,10 +260,16 @@ pub fn uninstall(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !v
             const path = std.fmt.bufPrint(&path_buf, "{s}/.local/share/bash-completion/completions/jake", .{home}) catch return;
             std.fs.cwd().deleteFile(path) catch |err| {
                 if (err != error.FileNotFound) {
-                    try writer.print("Warning: Could not remove {s}: {s}\n", .{ path, @errorName(err) });
+                    try writer.writeAll(color.warningYellow());
+                    try writer.writeAll("Warning:");
+                    try writer.writeAll(color.reset());
+                    try writer.print(" Could not remove {s}: {s}\n", .{ path, @errorName(err) });
                 }
             };
-            try writer.print("Removed bash completions from: {s}\n", .{path});
+            try writer.writeAll(color.successGreen());
+            try writer.writeAll(color_mod.symbols.success);
+            try writer.writeAll(color.reset());
+            try writer.print(" Removed bash completions from: {s}\n", .{path});
         },
         .zsh => {
             // Try all possible zsh locations
@@ -274,7 +282,10 @@ pub fn uninstall(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !v
                 var path_buf: [512]u8 = undefined;
                 const path = std.fmt.bufPrint(&path_buf, "{s}{s}", .{ home, suffix }) catch continue;
                 std.fs.cwd().deleteFile(path) catch continue;
-                try writer.print("Removed zsh completions from: {s}\n", .{path});
+                try writer.writeAll(color.successGreen());
+                try writer.writeAll(color_mod.symbols.success);
+                try writer.writeAll(color.reset());
+                try writer.print(" Removed zsh completions from: {s}\n", .{path});
             }
 
             // Also try Homebrew paths (may fail due to permissions)
@@ -285,7 +296,10 @@ pub fn uninstall(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !v
 
             for (brew_paths) |path| {
                 std.fs.cwd().deleteFile(path) catch continue;
-                try writer.print("Removed zsh completions from: {s}\n", .{path});
+                try writer.writeAll(color.successGreen());
+                try writer.writeAll(color_mod.symbols.success);
+                try writer.writeAll(color.reset());
+                try writer.print(" Removed zsh completions from: {s}\n", .{path});
             }
 
             // Remove config block from .zshrc
@@ -306,7 +320,10 @@ pub fn uninstall(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !v
                 try file.writeAll(cleaned);
                 try file.setEndPos(cleaned.len);
 
-                try writer.writeAll("Removed jake config block from ~/.zshrc\n");
+                try writer.writeAll(color.successGreen());
+                try writer.writeAll(color_mod.symbols.success);
+                try writer.writeAll(color.reset());
+                try writer.writeAll(" Removed jake config block from ~/.zshrc\n");
             }
         },
         .fish => {
@@ -314,19 +331,29 @@ pub fn uninstall(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !v
             const path = std.fmt.bufPrint(&path_buf, "{s}/.config/fish/completions/jake.fish", .{home}) catch return;
             std.fs.cwd().deleteFile(path) catch |err| {
                 if (err != error.FileNotFound) {
-                    try writer.print("Warning: Could not remove {s}: {s}\n", .{ path, @errorName(err) });
+                    try writer.writeAll(color.warningYellow());
+                    try writer.writeAll("Warning:");
+                    try writer.writeAll(color.reset());
+                    try writer.print(" Could not remove {s}: {s}\n", .{ path, @errorName(err) });
                 }
             };
-            try writer.print("Removed fish completions from: {s}\n", .{path});
+            try writer.writeAll(color.successGreen());
+            try writer.writeAll(color_mod.symbols.success);
+            try writer.writeAll(color.reset());
+            try writer.print(" Removed fish completions from: {s}\n", .{path});
         },
     }
 
-    try writer.writeAll("\nUninstallation complete. Restart your shell to apply changes.\n");
+    try writer.writeAll("\n");
+    try writer.writeAll(color.muted());
+    try writer.writeAll("Uninstallation complete. Restart your shell to apply changes.\n");
+    try writer.writeAll(color.reset());
 }
 
 /// Install completion script with smart environment detection
 pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !void {
     const home = getHomeDir() orelse return error.NoHomeDir;
+    const color = color_mod.init();
 
     // Generate the completion script to memory
     var script_buf: [16384]u8 = undefined;
@@ -348,10 +375,16 @@ pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !voi
             defer file.close();
             try file.writeAll(script);
 
-            try writer.print("Installed bash completions to: {s}\n", .{path});
-            try writer.writeAll("\nRestart your shell or run: source ");
+            try writer.writeAll(color.successGreen());
+            try writer.writeAll(color_mod.symbols.success);
+            try writer.writeAll(color.reset());
+            try writer.print(" Installed bash completions to: {s}\n", .{path});
+            try writer.writeAll("\n");
+            try writer.writeAll(color.muted());
+            try writer.writeAll("Restart your shell or run: source ");
             try writer.writeAll(path);
             try writer.writeAll("\n");
+            try writer.writeAll(color.reset());
         },
         .zsh => {
             const zsh_info = try getZshInstallPath(allocator);
@@ -378,8 +411,13 @@ pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !voi
                 // Failed to write to preferred location
                 if (err == error.AccessDenied and zsh_info.env == .homebrew) {
                     // Homebrew path needs sudo, fall back to user directory
-                    try writer.print("Note: {s} requires elevated permissions.\n", .{zsh_info.path});
+                    try writer.writeAll(color.warningYellow());
+                    try writer.writeAll("Note:");
+                    try writer.writeAll(color.reset());
+                    try writer.print(" {s} requires elevated permissions.\n", .{zsh_info.path});
+                    try writer.writeAll(color.muted());
                     try writer.writeAll("Falling back to user directory...\n\n");
+                    try writer.writeAll(color.reset());
 
                     // Fall back to ~/.zsh/completions
                     var fallback_buf: [512]u8 = undefined;
@@ -392,39 +430,63 @@ pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !voi
                     defer file.close();
                     try file.writeAll(script);
 
-                    try writer.print("Installed zsh completions to: {s}\n", .{fallback_path});
+                    try writer.writeAll(color.successGreen());
+                    try writer.writeAll(color_mod.symbols.success);
+                    try writer.writeAll(color.reset());
+                    try writer.print(" Installed zsh completions to: {s}\n", .{fallback_path});
 
                     // Patch .zshrc for vanilla install
                     if (try patchZshrc(allocator, writer)) {
-                        try writer.writeAll("\nModified ~/.zshrc to include completion setup.\n");
+                        try writer.writeAll("\n");
+                        try writer.writeAll(color.muted());
+                        try writer.writeAll("Modified ~/.zshrc to include completion setup.\n");
+                        try writer.writeAll(color.reset());
                     }
                 } else {
                     return err;
                 }
             } else {
-                try writer.print("Installed zsh completions to: {s}\n", .{zsh_info.path});
+                try writer.writeAll(color.successGreen());
+                try writer.writeAll(color_mod.symbols.success);
+                try writer.writeAll(color.reset());
+                try writer.print(" Installed zsh completions to: {s}\n", .{zsh_info.path});
 
                 switch (zsh_info.env) {
                     .oh_my_zsh => {
-                        try writer.writeAll("\nOh-My-Zsh detected - completions will be loaded automatically.\n");
+                        try writer.writeAll("\n");
+                        try writer.writeAll(color.muted());
+                        try writer.writeAll("Oh-My-Zsh detected - completions will be loaded automatically.\n");
+                        try writer.writeAll(color.reset());
                     },
                     .homebrew => {
-                        try writer.writeAll("\nHomebrew zsh detected - completions will be loaded automatically.\n");
+                        try writer.writeAll("\n");
+                        try writer.writeAll(color.muted());
+                        try writer.writeAll("Homebrew zsh detected - completions will be loaded automatically.\n");
+                        try writer.writeAll(color.reset());
                     },
                     .vanilla => {
                         // Need to patch .zshrc
                         if (try patchZshrc(allocator, writer)) {
-                            try writer.writeAll("\nModified ~/.zshrc to include completion setup.\n");
+                            try writer.writeAll("\n");
+                            try writer.writeAll(color.muted());
+                            try writer.writeAll("Modified ~/.zshrc to include completion setup.\n");
+                            try writer.writeAll(color.reset());
                         } else {
-                            try writer.writeAll("\nAdd to your ~/.zshrc:\n");
+                            try writer.writeAll("\n");
+                            try writer.writeAll(color.muted());
+                            try writer.writeAll("Add to your ~/.zshrc:\n");
                             try writer.writeAll("  fpath=(~/.zsh/completions $fpath)\n");
                             try writer.writeAll("  autoload -Uz compinit && compinit\n");
+                            try writer.writeAll(color.reset());
                         }
                     },
                 }
             }
 
-            try writer.writeAll("\nRestart your shell to enable completions.\n");
+            try writer.writeAll("\n");
+            try writer.writeAll(color.muted());
+            try writer.writeAll("Restart your shell to enable completions.\n");
+            try writer.writeAll(color.reset());
         },
         .fish => {
             var path_buf: [512]u8 = undefined;
@@ -439,8 +501,14 @@ pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !voi
             defer file.close();
             try file.writeAll(script);
 
-            try writer.print("Installed fish completions to: {s}\n", .{path});
-            try writer.writeAll("\nFish auto-loads completions - restart your shell to enable.\n");
+            try writer.writeAll(color.successGreen());
+            try writer.writeAll(color_mod.symbols.success);
+            try writer.writeAll(color.reset());
+            try writer.print(" Installed fish completions to: {s}\n", .{path});
+            try writer.writeAll("\n");
+            try writer.writeAll(color.muted());
+            try writer.writeAll("Fish auto-loads completions - restart your shell to enable.\n");
+            try writer.writeAll(color.reset());
         },
     }
 }

@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const color_mod = @import("color.zig");
 
 // ============================================================================
 // Error Types
@@ -440,13 +441,21 @@ pub fn run(
     options: Options,
     writer: anytype,
 ) !void {
+    const color = color_mod.init();
+
     // Parse current version
     const current_version = Version.parse(current_version_str) catch {
-        writer.writeAll("Warning: Could not parse current version\n") catch {};
+        writer.writeAll(color.warningYellow()) catch {};
+        writer.writeAll("Warning:") catch {};
+        writer.writeAll(color.reset()) catch {};
+        writer.writeAll(" Could not parse current version\n") catch {};
         return error.VersionParseError;
     };
 
-    writer.writeAll("Checking for updates...\n") catch {};
+    writer.writeAll(color.muted()) catch {};
+    writer.writeAll("Checking for updates...") catch {};
+    writer.writeAll(color.reset()) catch {};
+    writer.writeAll("\n") catch {};
 
     // Fetch latest release info
     var release = try fetchGitHubRelease(allocator);
@@ -458,8 +467,14 @@ pub fn run(
     const current_str = current_version.format(&current_buf);
     const latest_str = release.version.format(&latest_buf);
 
-    writer.print("Current version: {s}\n", .{current_str}) catch {};
-    writer.print("Latest version:  {s}\n", .{latest_str}) catch {};
+    writer.writeAll(color.muted()) catch {};
+    writer.writeAll("Current version:") catch {};
+    writer.writeAll(color.reset()) catch {};
+    writer.print(" {s}\n", .{current_str}) catch {};
+    writer.writeAll(color.muted()) catch {};
+    writer.writeAll("Latest version: ") catch {};
+    writer.writeAll(color.reset()) catch {};
+    writer.print(" {s}\n", .{latest_str}) catch {};
 
     // Check if update is needed
     if (!release.version.isNewerThan(current_version)) {
@@ -468,7 +483,11 @@ pub fn run(
 
     // Check-only mode
     if (options.check_only) {
-        writer.writeAll("\nUpdate available! Run 'jake upgrade' to install.\n") catch {};
+        writer.writeAll("\n") catch {};
+        writer.writeAll(color.infoBlue()) catch {};
+        writer.writeAll("Update available!") catch {};
+        writer.writeAll(color.reset()) catch {};
+        writer.writeAll(" Run 'jake upgrade' to install.\n") catch {};
         return;
     }
 
@@ -485,28 +504,48 @@ pub fn run(
 
     // Verify checksum (unless skipped)
     if (!options.skip_verify) {
-        writer.writeAll("Verifying checksum... ") catch {};
+        writer.writeAll(color.muted()) catch {};
+        writer.writeAll("Verifying checksum...") catch {};
+        writer.writeAll(color.reset()) catch {};
+        writer.writeAll(" ") catch {};
 
         if (try fetchChecksum(allocator, release.checksum_url)) |expected| {
             const valid = try verifyChecksum(tmp_path, expected);
             if (!valid) {
                 // Clean up temp file
                 std.fs.cwd().deleteFile(tmp_path) catch {};
+                writer.writeAll(color.errorRed()) catch {};
                 writer.writeAll("FAILED\n") catch {};
+                writer.writeAll(color.reset()) catch {};
                 return error.ChecksumMismatch;
             }
-            writer.writeAll("done\n") catch {};
+            writer.writeAll(color.successGreen()) catch {};
+            writer.writeAll(color_mod.symbols.success) catch {};
+            writer.writeAll(color.reset()) catch {};
+            writer.writeAll("\n") catch {};
         } else {
+            writer.writeAll(color.muted()) catch {};
             writer.writeAll("skipped (no checksum available)\n") catch {};
+            writer.writeAll(color.reset()) catch {};
         }
     }
 
     // Replace binary
-    writer.writeAll("Installing... ") catch {};
+    writer.writeAll(color.muted()) catch {};
+    writer.writeAll("Installing...") catch {};
+    writer.writeAll(color.reset()) catch {};
+    writer.writeAll(" ") catch {};
     try replaceBinary(allocator, tmp_path);
-    writer.writeAll("done\n") catch {};
+    writer.writeAll(color.successGreen()) catch {};
+    writer.writeAll(color_mod.symbols.success) catch {};
+    writer.writeAll(color.reset()) catch {};
+    writer.writeAll("\n") catch {};
 
-    writer.print("\nSuccessfully upgraded to jake {s}!\n", .{latest_str}) catch {};
+    writer.writeAll("\n") catch {};
+    writer.writeAll(color.successGreen()) catch {};
+    writer.writeAll(color_mod.symbols.success) catch {};
+    writer.writeAll(color.reset()) catch {};
+    writer.print(" Successfully upgraded to jake {s}!\n", .{latest_str}) catch {};
 }
 
 // ============================================================================
