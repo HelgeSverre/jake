@@ -20,6 +20,8 @@ pub const prompt = @import("prompt.zig");
 pub const completions = @import("completions.zig");
 pub const color = @import("color.zig");
 pub const context = @import("context.zig");
+pub const formatter = @import("formatter.zig");
+pub const upgrade = @import("upgrade.zig");
 
 pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;
@@ -73,6 +75,8 @@ comptime {
     _ = completions;
     _ = color;
     _ = context;
+    _ = formatter;
+    _ = upgrade;
 }
 
 test "basic lexer test" {
