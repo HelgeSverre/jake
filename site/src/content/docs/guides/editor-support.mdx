@@ -1,0 +1,136 @@
+---
+title: Editor Support
+description: Syntax highlighting and language support for Jake in code editors and IDEs.
+---
+
+Jake has syntax highlighting support for most popular code editors. Some plugins are ready to use, others are in development.
+
+## Status Overview
+
+| Editor             | Status    | Installation |
+|--------------------|-----------|--------------|
+| **VS Code**        | Available | Marketplace  |
+| **JetBrains IDEs** | Planned   | -            |
+| **Vim / Neovim**   | Planned   | -            |
+| **Sublime Text**   | Planned   | -            |
+| **Zed**            | Planned   | -            |
+| **Helix**          | Planned   | -            |
+| **Emacs**          | Planned   | -            |
+| **Nova**           | Planned   | -            |
+
+
+
+
+## VS Code
+
+Full syntax highlighting with TextMate grammar.
+
+**Install from Marketplace:**
+Search for "Jake" in the VS Code extensions panel.
+
+```bash
+# TODO: create install command
+```
+
+**Status:** Published to VS Code Marketplace
+
+---
+
+## JetBrains IDEs
+
+Works with IntelliJ IDEA, WebStorm, PhpStorm, PyCharm, GoLand, RustRover, and other JetBrains IDEs.
+
+```bash
+# TODO: create install command
+```
+
+**Status:** Planned
+
+---
+
+## Vim / Neovim
+
+Traditional Vim syntax highlighting.
+
+```bash
+# TODO: create install command
+```
+
+**Status:** Planned
+
+---
+
+## Sublime Text
+
+TextMate-based syntax highlighting for Sublime Text.
+
+```bash
+# TODO: create install command
+```
+
+**Status:** Planned
+
+---
+
+## Zed
+
+Native Zed extension with Tree-sitter grammar.
+
+```bash
+# TODO: create install command
+```
+
+**Status:** Planned
+
+---
+
+## Helix
+
+Tree-sitter based highlighting for Helix editor.
+
+```bash
+# TODO: create install command
+```
+
+**Status:** Planned
+
+---
+
+## Emacs
+
+Major mode with syntax highlighting.
+
+```bash
+# TODO: create install command
+```
+
+**Status:** Planned
+
+---
+
+## Tree-sitter Grammar
+
+The Tree-sitter grammar powers Zed, Helix, and can be used in other Tree-sitter compatible editors.
+
+**Location:** `editors/tree-sitter-jake/`
+
+---
+
+## Contributing
+
+Editor plugins are located in the `editors/` directory:
+
+```
+editors/
+├── vscode-jake/        # VS Code extension
+├── intellij-jake/      # JetBrains plugin
+├── vim-jake/           # Vim/Neovim syntax
+├── sublime-jake/       # Sublime Text package
+├── zed-jake/           # Zed extension
+├── tree-sitter-jake/   # Tree-sitter grammar
+├── highlightjs-jake/   # highlight.js plugin
+├── prism-jake/         # Prism.js plugin
+└── shiki-jake/         # Shiki grammar
+```
+
+See the [GitHub repository](https://github.com/helgesverre/jake) for contribution guidelines.
