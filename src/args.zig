@@ -45,6 +45,9 @@ pub const flags = [_]Flag{
     .{ .short = null, .long = "completions", .desc = "Print shell completion script", .takes_value = .optional, .value_name = "SHELL" },
     .{ .short = null, .long = "install", .desc = "Install completions to user directory" },
     .{ .short = null, .long = "uninstall", .desc = "Remove completions and config" },
+    .{ .short = null, .long = "fmt", .desc = "Format Jakefile" },
+    .{ .short = null, .long = "check", .desc = "Check formatting (exit 1 if changes needed)" },
+    .{ .short = null, .long = "dump", .desc = "Output formatted Jakefile to stdout" },
 };
 
 pub const Args = struct {
@@ -68,6 +71,9 @@ pub const Args = struct {
     completions_enabled: bool = false, // True if --completions was passed
     install_completions: bool = false, // Install completions to user directory
     uninstall_completions: bool = false, // Uninstall completions
+    fmt: bool = false, // Format Jakefile
+    check: bool = false, // Check formatting without writing
+    dump: bool = false, // Output formatted Jakefile to stdout
 
     /// Free allocated memory (positional args slice)
     pub fn deinit(self: *Args, allocator: std.mem.Allocator) void {
@@ -258,6 +264,12 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                 result.install_completions = true;
             } else if (std.mem.eql(u8, name, "uninstall")) {
                 result.uninstall_completions = true;
+            } else if (std.mem.eql(u8, name, "fmt")) {
+                result.fmt = true;
+            } else if (std.mem.eql(u8, name, "check")) {
+                result.check = true;
+            } else if (std.mem.eql(u8, name, "dump")) {
+                result.dump = true;
             }
         },
         .required => {
@@ -355,6 +367,10 @@ pub fn printHelp(writer: anytype) void {
         \\
         \\USAGE:
         \\    jake [OPTIONS] [RECIPE] [ARGS...]
+        \\    jake upgrade [--check] [--no-verify]
+        \\
+        \\COMMANDS:
+        \\    upgrade             Update jake to the latest version
         \\
         \\OPTIONS:
         \\
