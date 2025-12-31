@@ -21,6 +21,7 @@ dist/
 # Editor / IDE
 .vscode/
 .idea/
+.zed/
 *.swp
 *.swo
 *~
@@ -54,3 +55,9 @@ benchmark-results.txt
 *.tmp
 *.temp
 *.log
+
+# Generated site assets
+site/public/libs/
+
+# Zed extension build artifacts
+editors/zed-jake/extension.wasm
