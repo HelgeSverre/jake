@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jake Syntax Highlighting</title>
+
+    <!-- Fira Code font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Prism.js -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/katorlys/prism-theme-github/themes/prism-theme-github-dark.css">
+    <script>window.Prism = window.Prism || {}; Prism.manual = true;</script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+
+    <!-- highlight.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+
+    <!-- Jake language definitions -->
+    <script defer src="prism-jake/prism-jake.js"></script>
+    <script defer src="highlightjs-jake/jake.js"></script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #fafafa;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 48px 24px;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+
+        header svg { flex-shrink: 0; }
+
+        header h1 {
+            font-family: 'Fira Code', monospace;
+            font-size: 24px;
+            font-weight: 600;
+            color: #fafafa;
+        }
+
+        .subtitle {
+            color: #71717a;
+            font-size: 14px;
+            margin-bottom: 48px;
+        }
+
+        .subtitle code {
+            font-family: 'Fira Code', monospace;
+            background: #1a1a1a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        /* Sections */
+        .section {
+            margin-bottom: 32px;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .section-header h2 {
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            font-weight: 500;
+            color: #71717a;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .status {
+            font-family: 'Fira Code', monospace;
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .status.ok { background: #22c55e; color: #fff; }
+        .status.error { background: #ef4444; color: #fff; }
+
+        /* Code blocks */
+        .code-block {
+            background: #0f0f0f;
+            border: 1px solid #27272a;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .code-block pre {
+            margin: 0;
+            padding: 20px;
+            overflow-x: auto;
+            background: transparent !important;
+        }
+
+        .code-block code {
+            font-family: 'Fira Code', monospace !important;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .note {
+            font-family: 'Fira Code', monospace;
+            font-size: 11px;
+            color: #52525b;
+            margin-top: 8px;
+        }
+
+        /* Shiki output styling */
+        #shiki-output pre {
+            margin: 0;
+            padding: 20px;
+            overflow-x: auto;
+            border-radius: 0;
+        }
+
+        #shiki-output code {
+            font-family: 'Fira Code', monospace !important;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="161 -493 3278 2223" width="32" height="32">
+                <g fill="#f43f5e" transform="scale(1,-1) translate(0,-1237)">
+                    <path d="M933 1680V1460Q842 1460 791.0 1434.5Q740 1409 747 1333L778 1038Q790 926 753.5 857.0Q717 788 642.5 751.5Q568 715 467 700Q574 684 648.0 648.0Q722 612 756.0 544.0Q790 476 778 362L747 67Q740 -9 791.0 -34.5Q842 -60 933 -60V-280Q657 -280 545.5 -196.5Q434 -113 455 89L485 375Q493 451 459.5 494.0Q426 537 361.0 554.5Q296 572 211 572V828Q295 828 360.0 845.5Q425 863 459.0 906.0Q493 949 485 1025L455 1309Q433 1515 545.0 1597.5Q657 1680 933 1680Z"/>
+                    <path d="M740 1618Q822 1618 874.0 1567.0Q926 1516 926 1440Q926 1364 874.0 1312.5Q822 1261 740 1261Q657 1261 604.5 1312.5Q552 1364 552 1440Q552 1516 604.5 1567.0Q657 1618 740 1618ZM945 1062V308Q945 78 859.5 -70.5Q774 -219 605.5 -306.5Q437 -394 189 -443L139 -202Q300 -165 409.0 -110.0Q518 -55 573.5 39.5Q629 134 629 288V846H247V1062Z" transform="translate(1200,0)"/>
+                    <path d="M267 1680Q543 1680 654.5 1597.0Q766 1514 745 1311L715 1025Q707 949 741.0 906.0Q775 863 839.5 845.5Q904 828 989 828V572Q905 572 840.0 554.5Q775 537 741.0 494.0Q707 451 715 375L745 91Q768 -114 655.5 -197.0Q543 -280 267 -280V-60Q359 -60 410.0 -34.5Q461 -9 453 67L422 362Q410 475 446.5 543.5Q483 612 558.0 648.5Q633 685 734 700Q627 716 552.5 752.0Q478 788 444.0 856.5Q410 925 422 1038L453 1333Q461 1409 409.5 1434.5Q358 1460 267 1460Z" transform="translate(2400,0)"/>
+                </g>
+            </svg>
+            <h1>Syntax Highlighting</h1>
+        </header>
+        <p class="subtitle">Comparing highlight.js, Shiki, and Prism.js with github-dark theme. Works from <code>file://</code></p>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>highlight.js</h2>
+                <span id="hljs-status" class="status">...</span>
+            </div>
+            <div class="code-block">
+                <pre><code id="hljs-code" class="hljs"></code></pre>
+            </div>
+            <p class="note">highlightjs-jake/jake.js</p>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>Shiki</h2>
+                <span id="shiki-status" class="status">...</span>
+            </div>
+            <div class="code-block" id="shiki-output">
+                <pre><code id="shiki-code"></code></pre>
+            </div>
+            <p class="note">shiki-jake/jake.tmLanguage.json (embedded)</p>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>Prism.js</h2>
+                <span id="prism-status" class="status">...</span>
+            </div>
+            <div class="code-block">
+                <pre class="syntax-jake"><code id="prism-code"></code></pre>
+            </div>
+            <p class="note">prism-jake/prism-jake.js</p>
+        </div>
+    </div>
+
+    <script id="jake-sample" type="text/plain"># Jake task runner example
+VERSION = "1.0.0"
+BIN = local_bin("jake")
+
+@import "jake/build.jake" as build
+
+@dotenv .env.local
+@require API_KEY DATABASE_URL
+@export NODE_ENV = "production"
+
+@group build
+@desc "Build the project"
+task build: [clean, prepare]
+    @needs gcc make
+    @if env(DEBUG)
+        echo "Debug mode: {{VERSION}}"
+    @else
+        echo "Release mode"
+    @end
+    @each src/*.c
+        gcc -c {{$1}} -o {{$1}}.o
+    @end
+    make -j4
+
+@group install
+@desc "Install to local bin"
+task install:
+    @confirm "Install jake to {{BIN}}?"
+    @cd dist
+        cp jake {{BIN}}
+    echo "Installed to {{BIN}}"
+
+file dist/app.js: [compile]
+    @cache src/**/*.ts
+    npm run build</script>
+
+    <script id="jake-grammar" type="application/json">{"$schema":"https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json","name":"jake","scopeName":"source.jake","patterns":[{"include":"#comments"},{"include":"#imports"},{"include":"#global-directives"},{"include":"#variables"},{"include":"#recipes"}],"repository":{"comments":{"name":"comment.line.number-sign.jake","match":"#.*$"},"imports":{"patterns":[{"name":"meta.import.jake","match":"^(@import)\\s+(\"[^\"]*\"|'[^']*')(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?","captures":{"1":{"name":"keyword.control.import.jake"},"2":{"name":"string.quoted.jake"},"3":{"name":"keyword.control.as.jake"},"4":{"name":"entity.name.namespace.jake"}}}]},"global-directives":{"patterns":[{"name":"meta.directive.dotenv.jake","match":"^(@dotenv)(?:\\s+(\"[^\"]*\"|'[^']*'|[^\\s#]+))?","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"string.unquoted.jake"}}},{"name":"meta.directive.require.jake","match":"^(@require)\\s+(.+)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"variable.other.constant.jake"}}},{"name":"meta.directive.export.jake","match":"^(@export)\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*=\\s*(.*))?$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"variable.other.constant.jake"},"3":{"name":"string.unquoted.jake"}}},{"name":"meta.directive.hook.jake","match":"^(@(?:pre|post|on_error))\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"patterns":[{"include":"#shell-content"}]}}},{"name":"meta.directive.hook-targeted.jake","match":"^(@(?:before|after))\\s+([a-zA-Z_][a-zA-Z0-9_-]*)\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"entity.name.function.jake"},"3":{"patterns":[{"include":"#shell-content"}]}}},{"name":"meta.directive.default.jake","match":"^(@default)\\s*$","captures":{"1":{"name":"keyword.control.directive.jake"}}}]},"variables":{"patterns":[{"name":"meta.variable.jake","match":"^([a-zA-Z_][a-zA-Z0-9_]*)\\s*(=|:=)\\s*(.*)$","captures":{"1":{"name":"variable.other.jake"},"2":{"name":"keyword.operator.assignment.jake"},"3":{"patterns":[{"include":"#value-content"}]}}}]},"recipes":{"patterns":[{"name":"meta.recipe.file.jake","begin":"^(file)\\s+([^:]+):\\s*(.*)$","beginCaptures":{"1":{"name":"keyword.control.recipe.jake"},"2":{"name":"entity.name.function.jake"},"3":{"name":"string.unquoted.dependency.jake"}},"end":"^(?=\\S)","patterns":[{"include":"#recipe-body"}]},{"name":"meta.recipe.task.jake","begin":"^(task)\\s+([a-zA-Z_][a-zA-Z0-9_-]*)([^:]*):\\s*(?:\\[([^\\]]*)\\])?","beginCaptures":{"1":{"name":"keyword.control.recipe.jake"},"2":{"name":"entity.name.function.jake"},"3":{"patterns":[{"include":"#parameters"}]},"4":{"patterns":[{"include":"#dependency-list"}]}},"end":"^(?=\\S)","patterns":[{"include":"#recipe-body"}]},{"name":"meta.recipe.simple.jake","begin":"^([a-zA-Z_][a-zA-Z0-9_-]*):\\s*(?:\\[([^\\]]*)\\])?\\s*$","beginCaptures":{"1":{"name":"entity.name.function.jake"},"2":{"patterns":[{"include":"#dependency-list"}]}},"end":"^(?=\\S)","patterns":[{"include":"#recipe-body"}]}]},"parameters":{"patterns":[{"match":"([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(\"[^\"]*\"|'[^']*'|[^\\s,]+)","captures":{"1":{"name":"variable.parameter.jake"},"2":{"name":"string.quoted.jake"}}},{"match":"([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s|:|,|$)","name":"variable.parameter.jake"}]},"dependency-list":{"patterns":[{"match":"[a-zA-Z_][a-zA-Z0-9_:-]*","name":"entity.name.function.dependency.jake"}]},"recipe-body":{"patterns":[{"include":"#comments"},{"include":"#recipe-directives"},{"include":"#shell-line"}]},"recipe-directives":{"patterns":[{"name":"meta.directive.conditional.jake","match":"^\\s*(@(?:if|elif))\\s+(.*)$","captures":{"1":{"name":"keyword.control.conditional.jake"},"2":{"patterns":[{"include":"#condition-expression"}]}}},{"name":"keyword.control.conditional.jake","match":"^\\s*@(?:else|end)\\b"},{"name":"meta.directive.each.jake","match":"^\\s*(@each)\\s+(.*)$","captures":{"1":{"name":"keyword.control.loop.jake"},"2":{"patterns":[{"include":"#value-content"}]}}},{"name":"meta.directive.needs.jake","match":"^\\s*(@needs)\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"string.unquoted.command.jake"}}},{"name":"meta.directive.confirm.jake","match":"^\\s*(@confirm)(?:\\s+(\"[^\"]*\"|'[^']*'|.*))?$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"string.quoted.jake"}}},{"name":"meta.directive.cache.jake","match":"^\\s*(@cache)\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"string.unquoted.path.jake"}}},{"name":"meta.directive.watch.jake","match":"^\\s*(@watch)\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"string.unquoted.path.jake"}}},{"name":"meta.directive.cd.jake","match":"^\\s*(@cd)\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"string.unquoted.path.jake"}}},{"name":"meta.directive.shell.jake","match":"^\\s*(@shell)\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"string.unquoted.shell.jake"}}},{"name":"meta.directive.group.jake","match":"^\\s*(@group)\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"string.unquoted.group.jake"}}},{"name":"meta.directive.desc.jake","match":"^\\s*(@(?:desc|description))\\s+(\"[^\"]*\"|'[^']*'|.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"string.quoted.jake"}}},{"name":"meta.directive.alias.jake","match":"^\\s*(@alias)\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"entity.name.function.alias.jake"}}},{"name":"keyword.control.directive.jake","match":"^\\s*@(?:quiet|ignore)\\b"},{"name":"meta.directive.platform.jake","match":"^\\s*(@(?:only|only-os|platform))\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"constant.language.platform.jake"}}},{"name":"meta.directive.require.jake","match":"^\\s*(@require)\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"variable.other.constant.jake"}}},{"name":"meta.directive.export.jake","match":"^\\s*(@export)\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s*=\\s*(.*))?$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"name":"variable.other.constant.jake"},"3":{"patterns":[{"include":"#value-content"}]}}},{"name":"meta.directive.hook.jake","match":"^\\s*(@(?:pre|post))\\s+(.*)$","captures":{"1":{"name":"keyword.control.directive.jake"},"2":{"patterns":[{"include":"#shell-content"}]}}}]},"condition-expression":{"patterns":[{"match":"\\b(env|exists|eq|neq|is_watching|is_dry_run|is_verbose)\\s*\\(","captures":{"1":{"name":"support.function.condition.jake"}}},{"include":"#strings"},{"include":"#jake-variables"},{"match":"[a-zA-Z_][a-zA-Z0-9_]*","name":"variable.other.jake"}]},"shell-line":{"patterns":[{"name":"meta.shell-line.jake","begin":"^(\\s+)(?!@|#)","end":"$","patterns":[{"include":"#shell-content"}]}]},"shell-content":{"patterns":[{"include":"#jake-variables"},{"include":"#shell-variables"},{"include":"#strings"}]},"value-content":{"patterns":[{"include":"#jake-variables"},{"include":"#shell-variables"},{"include":"#strings"}]},"jake-variables":{"patterns":[{"name":"meta.variable.interpolation.jake","begin":"\\{\\{","beginCaptures":{"0":{"name":"punctuation.definition.variable.begin.jake"}},"end":"\\}\\}","endCaptures":{"0":{"name":"punctuation.definition.variable.end.jake"}},"patterns":[{"match":"\\b(dirname|basename|extension|without_extension|without_extensions|absolute_path|abs_path|uppercase|lowercase|trim|home|local_bin|shell_config|env|exists|eq|neq|is_watching|is_dry_run|is_verbose)\\s*\\(","captures":{"1":{"name":"support.function.jake"}}},{"match":"[a-zA-Z_][a-zA-Z0-9_]*","name":"variable.other.bracket.jake"}],"contentName":"variable.other.bracket.jake"}]},"shell-variables":{"patterns":[{"match":"\\$\\{[a-zA-Z_][a-zA-Z0-9_]*\\}","name":"variable.language.environment.jake"},{"match":"\\$[a-zA-Z_][a-zA-Z0-9_]*","name":"variable.language.environment.jake"},{"match":"\\$[0-9@]","name":"variable.language.positional.jake"}]},"strings":{"patterns":[{"name":"string.quoted.double.jake","begin":"\"","end":"\"","patterns":[{"include":"#jake-variables"},{"include":"#shell-variables"},{"match":"\\\\[nrt\"'\\\\]","name":"constant.character.escape.jake"}]},{"name":"string.quoted.single.jake","begin":"'","end":"'","patterns":[{"match":"\\\\[nrt\"'\\\\]","name":"constant.character.escape.jake"}]}]}}}</script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var sampleCode = document.getElementById('jake-sample').textContent;
+
+            // highlight.js
+            try {
+                if (typeof hljsDefineJake === 'function' && !hljs.getLanguage('jake')) {
+                    hljs.registerLanguage('jake', hljsDefineJake);
+                }
+                if (hljs.getLanguage('jake')) {
+                    document.getElementById('hljs-code').innerHTML = hljs.highlight(sampleCode, {language: 'jake'}).value;
+                    document.getElementById('hljs-status').textContent = 'OK';
+                    document.getElementById('hljs-status').className = 'status ok';
+                } else {
+                    throw new Error('Language not registered');
+                }
+            } catch (e) {
+                document.getElementById('hljs-status').textContent = e.message;
+                document.getElementById('hljs-status').className = 'status error';
+                document.getElementById('hljs-code').textContent = sampleCode;
+            }
+
+            // Shiki
+            (async function() {
+                try {
+                    const shiki = await import('https://esm.sh/shiki@3.20.0');
+                    const grammar = JSON.parse(document.getElementById('jake-grammar').textContent);
+                    const highlighter = await shiki.createHighlighter({
+                        themes: ['github-dark'],
+                        langs: [{name: 'jake', scopeName: grammar.scopeName, ...grammar}]
+                    });
+                    document.getElementById('shiki-output').innerHTML = highlighter.codeToHtml(sampleCode, {lang: 'jake', theme: 'github-dark'});
+                    document.getElementById('shiki-status').textContent = 'OK';
+                    document.getElementById('shiki-status').className = 'status ok';
+                } catch (e) {
+                    document.getElementById('shiki-status').textContent = e.message;
+                    document.getElementById('shiki-status').className = 'status error';
+                    document.getElementById('shiki-code').textContent = sampleCode;
+                }
+            })();
+
+            // Prism.js
+            try {
+                if (Prism.languages.jake) {
+                    document.getElementById('prism-code').innerHTML = Prism.highlight(sampleCode, Prism.languages.jake, 'jake');
+                    document.getElementById('prism-status').textContent = 'OK';
+                    document.getElementById('prism-status').className = 'status ok';
+                } else {
+                    throw new Error('Language not registered');
+                }
+            } catch (e) {
+                document.getElementById('prism-status').textContent = e.message;
+                document.getElementById('prism-status').className = 'status error';
+                document.getElementById('prism-code').textContent = sampleCode;
+            }
+        });
+    </script>
+</body>
+</html>

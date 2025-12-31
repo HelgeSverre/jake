@@ -2,18 +2,32 @@
   "name": "prism-jake",
   "version": "0.1.0",
   "description": "Prism.js syntax highlighting for Jake task runner",
-  "main": "prism-jake.js",
-  "keywords": ["prism", "prismjs", "syntax", "highlighting", "jake", "jakefile", "task-runner"],
+  "main": "index.js",
+  "keywords": [
+    "prism",
+    "prismjs",
+    "syntax",
+    "highlighting",
+    "jake",
+    "jakefile",
+    "task-runner",
+    "build-system"
+  ],
   "author": "Jake Contributors",
   "license": "MIT",
+  "homepage": "https://jakefile.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HelgeSverre/jake"
+    "url": "https://github.com/HelgeSverre/jake",
+    "directory": "editors/prism-jake"
+  },
+  "bugs": {
+    "url": "https://github.com/HelgeSverre/jake/issues"
   },
   "peerDependencies": {
     "prismjs": ">=1.0.0"
   },
   "files": [
-    "prism-jake.js"
+    "index.js"
   ]
 }

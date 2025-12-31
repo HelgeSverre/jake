@@ -1,15 +1,35 @@
 {
   "name": "shiki-jake",
   "version": "0.1.0",
-  "description": "Shiki syntax highlighting for Jake task runner",
+  "description": "Shiki/TextMate grammar for Jake task runner",
+  "type": "module",
   "main": "index.js",
   "types": "index.d.ts",
-  "keywords": ["shiki", "syntax", "highlighting", "jake", "jakefile", "task-runner", "textmate"],
+  "exports": {
+    ".": "./index.js",
+    "./jake.tmLanguage.json": "./jake.tmLanguage.json"
+  },
+  "keywords": [
+    "shiki",
+    "textmate",
+    "grammar",
+    "syntax",
+    "highlighting",
+    "jake",
+    "jakefile",
+    "task-runner",
+    "build-system"
+  ],
   "author": "Jake Contributors",
   "license": "MIT",
+  "homepage": "https://jakefile.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HelgeSverre/jake"
+    "url": "https://github.com/HelgeSverre/jake",
+    "directory": "editors/shiki-jake"
+  },
+  "bugs": {
+    "url": "https://github.com/HelgeSverre/jake/issues"
   },
   "peerDependencies": {
     "shiki": ">=1.0.0"

@@ -2,18 +2,34 @@
   "name": "highlightjs-jake",
   "version": "0.1.0",
   "description": "highlight.js syntax highlighting for Jake task runner",
-  "main": "jake.js",
-  "keywords": ["highlight.js", "highlightjs", "syntax", "highlighting", "jake", "jakefile", "task-runner"],
+  "main": "src/languages/jake.js",
+  "keywords": [
+    "highlight.js",
+    "highlightjs",
+    "hljs",
+    "syntax",
+    "highlighting",
+    "jake",
+    "jakefile",
+    "task-runner",
+    "build-system"
+  ],
   "author": "Jake Contributors",
   "license": "MIT",
+  "homepage": "https://jakefile.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HelgeSverre/jake"
+    "url": "https://github.com/HelgeSverre/jake",
+    "directory": "editors/highlightjs-jake"
+  },
+  "bugs": {
+    "url": "https://github.com/HelgeSverre/jake/issues"
   },
   "peerDependencies": {
     "highlight.js": ">=11.0.0"
   },
   "files": [
-    "jake.js"
+    "src",
+    "dist"
   ]
 }
