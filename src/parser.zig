@@ -99,6 +99,21 @@ pub const ImportDirective = struct {
     prefix: ?[]const u8,
 };
 
+/// Represents a comment in the source file (for formatting preservation)
+pub const CommentNode = struct {
+    text: []const u8, // Comment text including #
+    line: usize, // Line number (0-indexed)
+    column: usize, // Column number (0-indexed)
+    kind: Kind,
+
+    pub const Kind = enum {
+        standalone, // Comment on its own line
+        inline_cmd, // Comment after a command on same line
+        inline_var, // Comment after a variable on same line
+        inline_recipe, // Comment after a recipe header on same line
+    };
+};
+
 pub const Jakefile = struct {
     variables: []const Variable,
     recipes: []const Recipe,
@@ -107,6 +122,7 @@ pub const Jakefile = struct {
     global_pre_hooks: []const Hook, // Global @pre hooks run before any recipe
     global_post_hooks: []const Hook, // Global @post hooks run after any recipe
     global_on_error_hooks: []const Hook, // Global @on_error hooks run when a recipe fails
+    comments: []const CommentNode, // All comments for formatting preservation
     source: []const u8,
 
     pub fn deinit(self: *Jakefile, allocator: std.mem.Allocator) void {
@@ -131,6 +147,7 @@ pub const Jakefile = struct {
         allocator.free(self.global_pre_hooks);
         allocator.free(self.global_post_hooks);
         allocator.free(self.global_on_error_hooks);
+        allocator.free(self.comments);
     }
 
     pub fn getRecipe(self: *const Jakefile, name: []const u8) ?*const Recipe {
@@ -233,6 +250,7 @@ pub const Parser = struct {
     global_pre_hooks: std.ArrayListUnmanaged(Hook),
     global_post_hooks: std.ArrayListUnmanaged(Hook),
     global_on_error_hooks: std.ArrayListUnmanaged(Hook),
+    comments: std.ArrayListUnmanaged(CommentNode),
 
     // Last error information for detailed reporting
     last_error: ?ErrorInfo,
@@ -261,6 +279,7 @@ pub const Parser = struct {
             .global_pre_hooks = .empty,
             .global_post_hooks = .empty,
             .global_on_error_hooks = .empty,
+            .comments = .empty,
             .last_error = null,
             .pending_aliases = .empty,
             .pending_group = null,
@@ -295,6 +314,7 @@ pub const Parser = struct {
         self.global_pre_hooks.deinit(self.allocator);
         self.global_post_hooks.deinit(self.allocator);
         self.global_on_error_hooks.deinit(self.allocator);
+        self.comments.deinit(self.allocator);
         self.pending_aliases.deinit(self.allocator);
         self.pending_only_os.deinit(self.allocator);
         self.pending_needs.deinit(self.allocator);
@@ -309,6 +329,19 @@ pub const Parser = struct {
         return self.last_error;
     }
 
+    /// Capture a comment token into the comments list
+    fn captureComment(self: *Parser, kind: CommentNode.Kind) void {
+        if (self.current.tag != .comment) return;
+
+        const comment_text = self.slice(self.current);
+        self.comments.append(self.allocator, .{
+            .text = comment_text,
+            .line = self.current.loc.line,
+            .column = self.current.loc.column,
+            .kind = kind,
+        }) catch {};
+    }
+
     fn skipNewlines(self: *Parser) void {
         var saw_blank_line = false;
 
@@ -320,7 +353,10 @@ pub const Parser = struct {
                 }
                 saw_blank_line = true;
             } else if (self.current.tag == .comment) {
-                // Capture comment as potential doc comment for next recipe
+                // Capture all comments for formatting preservation
+                self.captureComment(.standalone);
+
+                // Also track as potential doc comment for next recipe
                 // Only comments immediately before a recipe (no blank lines) are kept
                 const comment_text = self.slice(self.current);
                 if (comment_text.len > 1 and comment_text[0] == '#') {
@@ -435,6 +471,9 @@ pub const Parser = struct {
                 .kw_task => try self.parseTaskRecipe(),
                 .kw_file => try self.parseFileRecipe(),
                 .comment => {
+                    // Capture all comments for formatting preservation
+                    self.captureComment(.standalone);
+
                     // Store comment as potential doc comment for next recipe
                     // Only kept if immediately before recipe (no blank lines)
                     const comment_text = self.slice(self.current);
@@ -458,6 +497,7 @@ pub const Parser = struct {
             .global_pre_hooks = self.global_pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .global_post_hooks = self.global_post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .global_on_error_hooks = self.global_on_error_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+            .comments = self.comments.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
             .source = self.source,
         };
     }
@@ -3281,6 +3321,50 @@ test "parse multiple parameters with mixed defaults" {
     try std.testing.expectEqualStrings("default", jakefile.recipes[0].params[1].default.?);
     try std.testing.expectEqualStrings("c", jakefile.recipes[0].params[2].name);
     try std.testing.expect(jakefile.recipes[0].params[2].default == null);
+}
+
+// --- Comment Capture Tests ---
+
+test "parser captures standalone comments" {
+    const source =
+        \\# Header comment
+        \\name = "test"
+        \\
+        \\# Section comment
+        \\# Another comment
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // Should capture all standalone comments
+    try std.testing.expect(jakefile.comments.len >= 3);
+
+    // Verify first comment
+    try std.testing.expectEqualStrings("# Header comment", jakefile.comments[0].text);
+    try std.testing.expect(jakefile.comments[0].kind == .standalone);
+    try std.testing.expect(jakefile.comments[0].line == 1); // Lines are 1-indexed
+}
+
+test "parser tracks comment positions" {
+    const source =
+        \\# First line comment
+        \\
+        \\# Third line comment
+        \\task test:
+        \\    echo "test"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expect(jakefile.comments.len >= 2);
+    try std.testing.expect(jakefile.comments[0].line == 1); // Line 1 (1-indexed)
+    try std.testing.expect(jakefile.comments[1].line == 3); // Line 3 (after blank line)
 }
 
 // --- Fuzz Testing ---
