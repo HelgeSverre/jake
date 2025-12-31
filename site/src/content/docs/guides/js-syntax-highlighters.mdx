@@ -12,7 +12,7 @@ Jake provides syntax highlighting plugins for three popular JavaScript libraries
 
 | Library | Best For | Size | Notes |
 |---------|----------|------|-------|
-| **highlight.js** | Most websites | ~2KB | Simple API, many themes |
+| **highlight.js** | Most websites | ~2KB | Simple API, widely supported |
 | **Shiki** | Static sites, VS Code accuracy | ~8KB grammar | TextMate grammar, best accuracy |
 | **Prism.js** | Existing Prism sites | ~1.5KB | Lightweight, extensible |
 
@@ -79,26 +79,7 @@ Then use in your HTML:
 
 ### Shiki
 
-Shiki is ideal for static site generators and build-time highlighting:
-
-```js
-import { createHighlighter } from 'shiki';
-import { Jakefile } from 'shiki-jake';
-
-// Create highlighter with Jake language
-const highlighter = await createHighlighter({
-  themes: ['github-dark'],
-  langs: [Jakefile.grammar]
-});
-
-// Highlight code
-const html = highlighter.codeToHtml(code, {
-  lang: 'jake',
-  theme: 'github-dark'
-});
-```
-
-Or load the grammar from CDN:
+Shiki is ideal for static site generators and build-time highlighting. Load the grammar from CDN:
 
 ```js
 import { createHighlighter } from 'shiki';
@@ -115,6 +96,12 @@ const highlighter = await createHighlighter({
     scopeName: 'source.jake',
     ...grammar
   }]
+});
+
+// Highlight code
+const html = highlighter.codeToHtml(code, {
+  lang: 'jake',
+  theme: 'github-dark'
 });
 ```
 
@@ -135,56 +122,6 @@ await Jakefile.register(highlighter);
 createHighlighter({ langs: [Jakefile.grammar] });
 ```
 
-## Available Themes
-
-All three libraries support popular dark themes:
-
-| Theme | highlight.js | Prism.js | Shiki |
-|-------|-------------|----------|-------|
-| GitHub Dark | `github-dark` | `prism-theme-github-dark` | `github-dark` |
-| Dracula | `dracula` | `prism-dracula` | `dracula` |
-| One Dark | `atom-one-dark` | `prism-one-dark` | `one-dark-pro` |
-| Nord | `nord` | `prism-nord` | `nord` |
-
-## Framework Integration
-
-### Astro / Starlight
-
-For Astro sites using Starlight, you can configure the Jake grammar in `ec.config.mjs`. See the [Jake documentation site source](https://github.com/helgesverre/jake) for an example.
-
-### Next.js / React
-
-Use Shiki with `@shikijs/rehype` for MDX content:
-
-```js
-// next.config.js
-import { createHighlighter } from 'shiki';
-import { Jakefile } from 'shiki-jake';
-
-// Add to your rehype config
-const shikiConfig = {
-  theme: 'github-dark',
-  langs: [Jakefile.grammar]
-};
-```
-
-### Vue / Nuxt
-
-Use highlight.js with `@highlightjs/vue-plugin`:
-
-```vue
-<script setup>
-import hljs from 'highlight.js/lib/core';
-import { Jakefile } from 'highlightjs-jake';
-
-Jakefile.register(hljs);
-</script>
-
-<template>
-  <highlightjs language="jake" :code="code" />
-</template>
-```
-
 ## CDN URLs
 
 | File | URL | Size |
@@ -192,17 +129,6 @@ Jakefile.register(hljs);
 | highlight.js plugin | `https://jakefile.dev/libs/highlightjs-jake.min.js` | ~2KB |
 | Prism.js plugin | `https://jakefile.dev/libs/prism-jake.min.js` | ~1.5KB |
 | Shiki grammar | `https://jakefile.dev/libs/shiki-jake.tmLanguage.json` | ~8KB |
-
-## npm Packages
-
-Coming soon:
-
-```bash
-# Not yet published
-npm install prism-jake
-npm install highlightjs-jake
-npm install shiki-jake
-```
 
 ## Source Code
 
