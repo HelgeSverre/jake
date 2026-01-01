@@ -88,6 +88,7 @@ src/
 ### Jake Modules
 
 Reusable Jakefile modules in `jake/`:
+
 - `build.jake` - Core build, test, and install tasks
 - `release.jake` - Cross-platform release builds
 - `perf.jake` - Performance and profiling tasks
@@ -97,6 +98,7 @@ Reusable Jakefile modules in `jake/`:
 ### Key Data Structures
 
 The `Jakefile` struct in parser.zig is the main AST:
+
 - `variables`: Variable assignments
 - `recipes`: Task/file/simple recipe definitions with dependencies, parameters, commands
 - `directives`: @dotenv, @export, @require statements
@@ -105,27 +107,28 @@ The `Jakefile` struct in parser.zig is the main AST:
 
 ### CLI Flags
 
-| Flag | Description |
-|------|-------------|
-| `-h, --help` | Show help message |
-| `-V, --version` | Show version |
-| `-l, --list` | List available recipes |
-| `-n, --dry-run` | Print commands without executing |
-| `-v, --verbose` | Show verbose output |
-| `-y, --yes` | Auto-confirm all @confirm prompts |
-| `-f, --jakefile FILE` | Use specified Jakefile |
-| `-w, --watch [PATTERN]` | Watch files and re-run on changes |
-| `-j, --jobs [N]` | Run N recipes in parallel (default: CPU count) |
-| `-s, --show RECIPE` | Show detailed recipe information |
-| `--short` | Output one recipe name per line (for scripting) |
-| `--summary` | Print recipe names space-separated |
-| `--completions [SHELL]` | Print shell completion script |
-| `--install` | Install completions to user directory |
-| `--uninstall` | Remove completions and config |
+| Flag                    | Description                                     |
+| ----------------------- | ----------------------------------------------- |
+| `-h, --help`            | Show help message                               |
+| `-V, --version`         | Show version                                    |
+| `-l, --list`            | List available recipes                          |
+| `-n, --dry-run`         | Print commands without executing                |
+| `-v, --verbose`         | Show verbose output                             |
+| `-y, --yes`             | Auto-confirm all @confirm prompts               |
+| `-f, --jakefile FILE`   | Use specified Jakefile                          |
+| `-w, --watch [PATTERN]` | Watch files and re-run on changes               |
+| `-j, --jobs [N]`        | Run N recipes in parallel (default: CPU count)  |
+| `-s, --show RECIPE`     | Show detailed recipe information                |
+| `--short`               | Output one recipe name per line (for scripting) |
+| `--summary`             | Print recipe names space-separated              |
+| `--completions [SHELL]` | Print shell completion script                   |
+| `--install`             | Install completions to user directory           |
+| `--uninstall`           | Remove completions and config                   |
 
 ### Built-in Functions
 
 Available in variable expansion `{{function(arg)}}`:
+
 - `uppercase(s)`, `lowercase(s)`, `trim(s)` - String manipulation
 - `dirname(path)`, `basename(path)` - Path components
 - `extension(path)`, `without_extension(path)`, `without_extensions(path)` - File extensions
@@ -154,6 +157,7 @@ Available in variable expansion `{{function(arg)}}`:
 ## Documentation
 
 See the `docs/` directory for detailed guides:
+
 - `SYNTAX.md` - Complete Jakefile syntax reference
 - `TUTORIAL.md` - Getting started tutorial
 - `PROFILING.md` - Performance profiling guide
@@ -173,6 +177,7 @@ When adding or modifying user-facing behavior, update ALL relevant documentation
 4. **`TODO.md`** - Mark completed features and update test counts
 
 **Checklist for new features:**
+
 - [ ] Add to relevant docs/ file
 - [ ] Add to relevant site/ documentation
 - [ ] Add usage example to TUTORIAL.md if applicable
@@ -211,6 +216,7 @@ This is implemented in `build.zig` via `getGitVersion()` and passed to `main.zig
 4. **Push**: `git push origin main && git push origin vX.Y.Z`
 
 The GitHub Actions workflow (`.github/workflows/release.yml`) automatically:
+
 - Builds binaries for all platforms (Linux, macOS, Windows × x86_64/aarch64)
 - Generates checksums
 - Creates a GitHub release with assets

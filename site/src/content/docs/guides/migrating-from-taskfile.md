@@ -10,26 +10,26 @@ Taskfile (taskfile.dev) is a popular YAML-based task runner. Jake provides simil
 
 ## Syntax Comparison
 
-| Taskfile | Jake |
-|----------|------|
-| `version: '3'` | Not needed |
-| `tasks:` block | Top-level recipes |
-| `desc:` | `@desc` or doc comment |
-| `cmds:` array | Indented commands |
-| `deps:` | `[dependencies]` |
-| `vars:` | Variable assignments |
-| `dotenv:` | `@dotenv` |
-| `sources:`/`generates:` | File recipe |
-| `includes:` | `@import` |
-| `preconditions:` | `@needs`, `@require` |
-| `prompt:` | `@confirm` |
+| Taskfile                | Jake                   |
+| ----------------------- | ---------------------- |
+| `version: '3'`          | Not needed             |
+| `tasks:` block          | Top-level recipes      |
+| `desc:`                 | `@desc` or doc comment |
+| `cmds:` array           | Indented commands      |
+| `deps:`                 | `[dependencies]`       |
+| `vars:`                 | Variable assignments   |
+| `dotenv:`               | `@dotenv`              |
+| `sources:`/`generates:` | File recipe            |
+| `includes:`             | `@import`              |
+| `preconditions:`        | `@needs`, `@require`   |
+| `prompt:`               | `@confirm`             |
 
 ## Basic Task Conversion
 
 ### Taskfile
 
 ```yaml
-version: '3'
+version: "3"
 
 tasks:
   build:
@@ -53,7 +53,7 @@ task build:
 ### Taskfile
 
 ```yaml
-version: '3'
+version: "3"
 
 vars:
   APP_NAME: myapp
@@ -141,9 +141,9 @@ Jake uses checksum-based tracking like Taskfile, but with a cleaner syntax.
 ### Taskfile
 
 ```yaml
-version: '3'
+version: "3"
 
-dotenv: ['.env', '.env.local']
+dotenv: [".env", ".env.local"]
 
 env:
   DEBUG: true
@@ -172,7 +172,7 @@ task serve:
 ### Taskfile
 
 ```yaml
-version: '3'
+version: "3"
 
 includes:
   docker:
@@ -264,7 +264,7 @@ tasks:
     vars:
       IMAGES: nginx postgres redis
     cmds:
-      - for: { var: IMAGES, split: ' ' }
+      - for: { var: IMAGES, split: " " }
         cmd: docker build -t {{.ITEM}} .
 ```
 
@@ -335,9 +335,9 @@ task install:
 ### Before (Taskfile.yml)
 
 ```yaml
-version: '3'
+version: "3"
 
-dotenv: ['.env']
+dotenv: [".env"]
 
 vars:
   APP_NAME: myapp
@@ -354,7 +354,7 @@ tasks:
       - src/**/*.go
       - go.mod
     generates:
-      - '{{.BUILD_DIR}}/{{.APP_NAME}}'
+      - "{{.BUILD_DIR}}/{{.APP_NAME}}"
     cmds:
       - mkdir -p {{.BUILD_DIR}}
       - go build -o {{.BUILD_DIR}}/{{.APP_NAME}}
@@ -423,16 +423,16 @@ task deploy: [test]
 
 ## CLI Comparison
 
-| Taskfile | Jake |
-|----------|------|
-| `task` | `jake` |
-| `task build` | `jake build` |
-| `task --list` | `jake --list` |
-| `task --dry` | `jake -n` |
-| `task --watch` | `jake -w` |
-| `task --parallel t1 t2` | `jake -j t1 t2` |
-| `task --force` | Delete cache, re-run |
-| `task VAR=value` | `jake var=value` |
+| Taskfile                | Jake                 |
+| ----------------------- | -------------------- |
+| `task`                  | `jake`               |
+| `task build`            | `jake build`         |
+| `task --list`           | `jake --list`        |
+| `task --dry`            | `jake -n`            |
+| `task --watch`          | `jake -w`            |
+| `task --parallel t1 t2` | `jake -j t1 t2`      |
+| `task --force`          | Delete cache, re-run |
+| `task VAR=value`        | `jake var=value`     |
 
 ## Key Differences
 

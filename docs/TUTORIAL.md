@@ -1,6 +1,6 @@
 # The Complete Guide to Jakefiles: From Chaos to Workflow Mastery
 
-*Tame your build system, automate everything, and actually enjoy your development workflows.*
+_Tame your build system, automate everything, and actually enjoy your development workflows._
 
 ---
 
@@ -33,7 +33,7 @@
 
 ## Why Jake? The Build Tool You Didn't Know You Needed {#why-jake}
 
-Let's be honest: build tools are not exciting. But a *bad* build tool? That's hours of your life you'll never get back, staring at cryptic error messages or waiting for unnecessary rebuilds.
+Let's be honest: build tools are not exciting. But a _bad_ build tool? That's hours of your life you'll never get back, staring at cryptic error messages or waiting for unnecessary rebuilds.
 
 **Make** has been around since 1976. It's powerful, battle-tested, and... arcane. Tab vs. spaces matters. `$@` and `$<` are "intuitive." Error messages feel like riddles from a sphinx.
 
@@ -41,17 +41,17 @@ Let's be honest: build tools are not exciting. But a *bad* build tool? That's ho
 
 **Jake** asks: "Why not both?"
 
-| Feature | Make | Just | Jake |
-|---------|:----:|:----:|:----:|
-| File-based dependencies | Yes | No | Yes |
-| Clean, readable syntax | No | Yes | Yes |
-| Parallel execution | Yes | No | Yes |
-| Glob patterns (`**/*.ts`) | No | No | Yes |
-| Import system | No | Yes | Yes |
-| Conditionals | No | Yes | Yes |
-| Pre/post hooks | No | No | Yes |
-| `.env` loading | No | Yes | Yes |
-| Helpful error messages | No | Yes | Yes |
+| Feature                   | Make | Just | Jake |
+| ------------------------- | :--: | :--: | :--: |
+| File-based dependencies   | Yes  |  No  | Yes  |
+| Clean, readable syntax    |  No  | Yes  | Yes  |
+| Parallel execution        | Yes  |  No  | Yes  |
+| Glob patterns (`**/*.ts`) |  No  |  No  | Yes  |
+| Import system             |  No  | Yes  | Yes  |
+| Conditionals              |  No  | Yes  | Yes  |
+| Pre/post hooks            |  No  |  No  | Yes  |
+| `.env` loading            |  No  | Yes  | Yes  |
+| Helpful error messages    |  No  | Yes  | Yes  |
 
 Jake gives you Make's power with Just's ergonomics, then adds features neither has. Let's dive in.
 
@@ -148,7 +148,7 @@ Running tests...
 All tests passed!
 ```
 
-> **Key Insight:** Dependencies in `[brackets]` run *before* the task. Jake figures out the right order, skips duplicates, and can even run independent tasks in parallel.
+> **Key Insight:** Dependencies in `[brackets]` run _before_ the task. Jake figures out the right order, skips duplicates, and can even run independent tasks in parallel.
 
 ---
 
@@ -158,7 +158,7 @@ Jake has three fundamental building blocks. Understanding when to use each is th
 
 ### Task Recipes: "Do This Every Time"
 
-Use `task` for commands that should *always* execute when called:
+Use `task` for commands that should _always_ execute when called:
 
 ```jake
 task clean:
@@ -184,6 +184,7 @@ file dist/bundle.js: src/index.ts src/utils.ts src/app.ts
 ```
 
 This only runs if:
+
 - `dist/bundle.js` doesn't exist, OR
 - Any of the source files are newer than `dist/bundle.js`
 
@@ -198,9 +199,10 @@ file dist/bundle.js: src/**/*.ts
     esbuild src/index.ts --bundle --outfile=dist/bundle.js
 ```
 
-The `**` matches any directory depth. If *any* TypeScript file in `src/` changes, the bundle rebuilds.
+The `**` matches any directory depth. If _any_ TypeScript file in `src/` changes, the bundle rebuilds.
 
 Supported patterns:
+
 - `*` - Match any characters except `/`
 - `**` - Match any characters including `/` (recursive)
 - `?` - Match single character
@@ -1164,8 +1166,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install Jake
         run: |
@@ -1846,15 +1848,15 @@ task release | r | rel:
 
 ### From Make
 
-| Make | Jake |
-|------|------|
-| `target: deps` | `task target: [deps]` |
-| `$(VAR)` | `{{VAR}}` |
+| Make             | Jake                       |
+| ---------------- | -------------------------- |
+| `target: deps`   | `task target: [deps]`      |
+| `$(VAR)`         | `{{VAR}}`                  |
 | `.PHONY: target` | `task target:` (automatic) |
-| Tab required | 4 spaces or tab |
-| `$@` (target) | Use explicit name |
-| `$<` (first dep) | Use explicit name |
-| `%.o: %.c` | Write explicit rules |
+| Tab required     | 4 spaces or tab            |
+| `$@` (target)    | Use explicit name          |
+| `$<` (first dep) | Use explicit name          |
+| `%.o: %.c`       | Write explicit rules       |
 
 **Before (Makefile):**
 
@@ -1907,14 +1909,14 @@ task clean:
 
 ### From Just
 
-| Just | Jake |
-|------|------|
-| `recipe:` | `task recipe:` |
-| `{{var}}` | `{{var}}` (same!) |
-| `set dotenv-load` | `@dotenv` |
+| Just              | Jake               |
+| ----------------- | ------------------ |
+| `recipe:`         | `task recipe:`     |
+| `{{var}}`         | `{{var}}` (same!)  |
+| `set dotenv-load` | `@dotenv`          |
 | `@recipe` (quiet) | `@quiet` decorator |
-| `[group: 'x']` | `@group x` |
-| `[confirm]` | `@confirm` |
+| `[group: 'x']`    | `@group x`         |
+| `[confirm]`       | `@confirm`         |
 
 **Before (justfile):**
 
@@ -2274,15 +2276,16 @@ Start with a simple `Jakefile`, grow it as your project grows, and never fight y
 
 ---
 
-*Happy automating!*
+_Happy automating!_
 
 ---
 
 **Resources:**
+
 - [Jake on GitHub](https://github.com/HelgeSverre/jake)
 - [Full User Guide](https://github.com/HelgeSverre/jake/blob/main/GUIDE.md)
 - [E2E Test Jakefiles](https://github.com/HelgeSverre/jake/tree/main/tests/e2e)
 
 ---
 
-*Jake v0.3.0 - MIT License*
+_Jake v0.3.0 - MIT License_

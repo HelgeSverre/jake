@@ -10,13 +10,13 @@ Invoke (pyinvoke.org) is a Python library for managing shell tasks. Jake provide
 
 ## Syntax Comparison
 
-| Invoke | Jake |
-|--------|------|
-| `tasks.py` | `Jakefile` |
-| `@task` decorator | `task name:` |
-| `c.run("cmd")` | Direct command |
-| `@task(pre=[dep])` | `[dep]` |
-| `invoke task` | `jake task` |
+| Invoke             | Jake           |
+| ------------------ | -------------- |
+| `tasks.py`         | `Jakefile`     |
+| `@task` decorator  | `task name:`   |
+| `c.run("cmd")`     | Direct command |
+| `@task(pre=[dep])` | `[dep]`        |
+| `invoke task`      | `jake task`    |
 
 ## Basic Task Conversion
 
@@ -406,24 +406,24 @@ task docker-push:
 
 ## CLI Comparison
 
-| Invoke | Jake |
-|--------|------|
-| `invoke` | `jake` |
-| `invoke build` | `jake build` |
-| `invoke -l` | `jake --list` |
+| Invoke                     | Jake                   |
+| -------------------------- | ---------------------- |
+| `invoke`                   | `jake`                 |
+| `invoke build`             | `jake build`           |
+| `invoke -l`                | `jake --list`          |
 | `invoke deploy --env=prod` | `jake deploy env=prod` |
-| `invoke docker.build` | `jake docker-build` |
-| `invoke -e` | Uses environment |
+| `invoke docker.build`      | `jake docker-build`    |
+| `invoke -e`                | Uses environment       |
 
 ## Key Differences
 
-| Feature | Invoke | Jake |
-|---------|--------|------|
-| **Language** | Python | DSL |
-| **Dependencies** | pip install | Single binary |
-| **File tracking** | Manual | Native `file` recipes |
-| **Parallel** | Manual threads | `-j` flag |
-| **Watch mode** | External tool | Built-in |
+| Feature           | Invoke         | Jake                  |
+| ----------------- | -------------- | --------------------- |
+| **Language**      | Python         | DSL                   |
+| **Dependencies**  | pip install    | Single binary         |
+| **File tracking** | Manual         | Native `file` recipes |
+| **Parallel**      | Manual threads | `-j` flag             |
+| **Watch mode**    | External tool  | Built-in              |
 
 ## What You Gain
 

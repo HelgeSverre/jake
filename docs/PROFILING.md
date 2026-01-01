@@ -4,13 +4,13 @@ This document covers tools and techniques for profiling, benchmarking, and optim
 
 ## Quick Reference
 
-| Tool | Purpose | Install |
-|------|---------|---------|
-| hyperfine | CLI benchmarking | `brew install hyperfine` |
-| samply | CPU profiling with flamegraphs | `brew install samply` |
-| leaks | Memory leak detection (macOS) | Built-in |
-| Instruments | Full profiling suite (macOS) | Xcode |
-| Zig GPA | Allocation tracking | Built-in |
+| Tool        | Purpose                        | Install                  |
+| ----------- | ------------------------------ | ------------------------ |
+| hyperfine   | CLI benchmarking               | `brew install hyperfine` |
+| samply      | CPU profiling with flamegraphs | `brew install samply`    |
+| leaks       | Memory leak detection (macOS)  | Built-in                 |
+| Instruments | Full profiling suite (macOS)   | Xcode                    |
+| Zig GPA     | Allocation tracking            | Built-in                 |
 
 ## Benchmarking with Hyperfine
 
@@ -90,6 +90,7 @@ samply record --rate 10000 ./zig-out/bin/jake -l
 ```
 
 Samply opens an interactive web UI showing:
+
 - Flamegraph (which functions take time)
 - Call tree
 - Timeline view
@@ -226,6 +227,7 @@ open -a Instruments
 ```
 
 Templates to try:
+
 - **Time Profiler**: CPU usage and call stacks
 - **Allocations**: Memory allocation patterns
 - **Leaks**: Memory leak detection
@@ -286,7 +288,7 @@ Example GitHub Actions step:
   run: |
     hyperfine --warmup 3 --export-json bench.json \
       './zig-out/bin/jake -l'
-    
+
 - name: Upload benchmark
   uses: actions/upload-artifact@v3
   with:

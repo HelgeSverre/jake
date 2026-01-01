@@ -223,6 +223,7 @@ task changelog-check:
 ### Complete Release Flow
 
 The `release` task orchestrates the entire process:
+
 1. Run quality checks
 2. Validate changelog
 3. Bump version numbers
@@ -236,10 +237,10 @@ The `release` task orchestrates the entire process:
 Update the metadata at the top:
 
 ```jake
-name = "myproject"
-version = "1.0.0"
-repo = "username/myproject"
-targets = "x86_64-linux aarch64-linux x86_64-macos aarch64-macos"
+name = "myproject";
+version = "1.0.0";
+repo = "username/myproject";
+targets = "x86_64-linux aarch64-linux x86_64-macos aarch64-macos";
 ```
 
 ## See Also

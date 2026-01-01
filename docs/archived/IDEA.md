@@ -5,12 +5,14 @@
 ## The Problem Space
 
 ### Make's Strengths
+
 - File-based dependency tracking (only rebuild what changed)
 - Parallel execution with `-j`
 - Pattern rules (`%.o: %.c`)
 - Decades of battle-tested reliability
 
 ### Make's Pain Points
+
 - Tab-sensitivity is a constant footgun
 - Cryptic error messages
 - Designed for C builds, awkward for modern workflows
@@ -19,6 +21,7 @@
 - `.PHONY` everywhere for non-file targets
 
 ### Just's Strengths
+
 - Clean, readable syntax
 - Great CLI UX (listing recipes, tab completion)
 - Variables and expressions that make sense
@@ -27,6 +30,7 @@
 - Recipe parameters with defaults
 
 ### Just's Limitations
+
 - No file-based dependency tracking
 - No incremental builds
 - Always runs the full recipe
@@ -269,11 +273,11 @@ task build:
 
 ### Language Choices
 
-| Language | Pros | Cons |
-|----------|------|------|
-| **Rust** | Fast, single binary, just is written in it | Longer compile times |
-| **Go** | Fast, single binary, great stdlib | GC overhead (minimal) |
-| **Zig** | Extremely fast, minimal deps | Younger ecosystem |
+| Language | Pros                                       | Cons                  |
+| -------- | ------------------------------------------ | --------------------- |
+| **Rust** | Fast, single binary, just is written in it | Longer compile times  |
+| **Go**   | Fast, single binary, great stdlib          | GC overhead (minimal) |
+| **Zig**  | Extremely fast, minimal deps               | Younger ecosystem     |
 
 ### File Change Detection
 

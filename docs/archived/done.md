@@ -7,87 +7,94 @@ This document archives completed features, implementations, and milestones.
 ## Implementation Status
 
 ### Phase 1: Foundation
-| Feature | Tests | Notes |
-|---------|-------|-------|
-| Glob Pattern Matching | 10 | `src/glob.zig` - *, **, ?, [abc], [a-z] |
-| Better Error Messages | - | Line/column tracking in lexer/parser |
-| Recipe Documentation | - | Doc comments parsed, shown in help |
+
+| Feature               | Tests | Notes                                      |
+| --------------------- | ----- | ------------------------------------------ |
+| Glob Pattern Matching | 10    | `src/glob.zig` - \*, \*\*, ?, [abc], [a-z] |
+| Better Error Messages | -     | Line/column tracking in lexer/parser       |
+| Recipe Documentation  | -     | Doc comments parsed, shown in help         |
 
 ### Phase 2: Core Enhancements
-| Feature | Tests | Notes |
-|---------|-------|-------|
-| Watch Mode | 1 | `src/watch.zig` - FSEvents/inotify support |
-| Parallel Execution | 3 | `src/parallel.zig` - Thread pool, topological sort |
-| Dotenv Loading | 10 | `src/env.zig` - Variable expansion, escape sequences |
-| Required Env Vars | - | @require directive in parser |
+
+| Feature            | Tests | Notes                                                |
+| ------------------ | ----- | ---------------------------------------------------- |
+| Watch Mode         | 1     | `src/watch.zig` - FSEvents/inotify support           |
+| Parallel Execution | 3     | `src/parallel.zig` - Thread pool, topological sort   |
+| Dotenv Loading     | 10    | `src/env.zig` - Variable expansion, escape sequences |
+| Required Env Vars  | -     | @require directive in parser                         |
 
 ### Phase 3: Logic & Modularity
-| Feature | Tests | Notes |
-|---------|-------|-------|
-| Conditional Logic | 17 | @if/@elif/@else/@end in conditions.zig |
-| Import System | 2 | `src/import.zig` - Namespaced imports |
+
+| Feature           | Tests | Notes                                  |
+| ----------------- | ----- | -------------------------------------- |
+| Conditional Logic | 17    | @if/@elif/@else/@end in conditions.zig |
+| Import System     | 2     | `src/import.zig` - Namespaced imports  |
 
 ### Phase 4: Advanced Features
-| Feature | Tests | Notes |
-|---------|-------|-------|
-| Hooks (@pre/@post) | 3 | `src/hooks.zig` - Global and recipe hooks |
-| String Functions | 6 | `src/functions.zig` - uppercase, dirname, etc. |
+
+| Feature            | Tests | Notes                                          |
+| ------------------ | ----- | ---------------------------------------------- |
+| Hooks (@pre/@post) | 3     | `src/hooks.zig` - Global and recipe hooks      |
+| String Functions   | 6     | `src/functions.zig` - uppercase, dirname, etc. |
 
 ### Recent Additions
-| Feature | Tests | Notes |
-|---------|-------|-------|
-| @cd directive | 3 | Working directory per recipe |
-| @shell directive | 3 | Custom shell per recipe |
-| @ignore directive | 4 | Continue on command failure |
-| @group/@description | 6 | Recipe organization |
-| @only-os guards | 6 | Platform-specific recipes |
-| Recipe aliases | 6 | Alternative recipe names |
-| @ output suppression | 2 | Silent command execution |
-| Private recipes (_) | 2 | Hidden from listing |
-| Positional arguments | 7 | $1, $2, $@ in recipes |
+
+| Feature              | Tests | Notes                        |
+| -------------------- | ----- | ---------------------------- |
+| @cd directive        | 3     | Working directory per recipe |
+| @shell directive     | 3     | Custom shell per recipe      |
+| @ignore directive    | 4     | Continue on command failure  |
+| @group/@description  | 6     | Recipe organization          |
+| @only-os guards      | 6     | Platform-specific recipes    |
+| Recipe aliases       | 6     | Alternative recipe names     |
+| @ output suppression | 2     | Silent command execution     |
+| Private recipes (\_) | 2     | Hidden from listing          |
+| Positional arguments | 7     | $1, $2, $@ in recipes        |
 
 ### v0.2.2 Additions
-| Feature | Tests | Notes |
-|---------|-------|-------|
-| Recipe-level @needs | 17 | Check requirements before commands run |
-| @platform directive | 3 | Alias for @only-os |
-| @description directive | 2 | Alias for @desc |
-| @on_error targeting | 3 | Target specific recipes with error hooks |
-| without_extensions() | 9 | Strip all extensions from path |
-| Parallel directives | 10 | @if/@each/@ignore work in -j mode |
-| @export fix | 7 | Variables exported to shell environment |
+
+| Feature                | Tests | Notes                                    |
+| ---------------------- | ----- | ---------------------------------------- |
+| Recipe-level @needs    | 17    | Check requirements before commands run   |
+| @platform directive    | 3     | Alias for @only-os                       |
+| @description directive | 2     | Alias for @desc                          |
+| @on_error targeting    | 3     | Target specific recipes with error hooks |
+| without_extensions()   | 9     | Strip all extensions from path           |
+| Parallel directives    | 10    | @if/@each/@ignore work in -j mode        |
+| @export fix            | 7     | Variables exported to shell environment  |
 
 ---
 
 ## Test Coverage Summary
 
-| File | Test Count | Coverage |
-|------|------------|----------|
-| executor.zig | 154 | Excellent |
-| parser.zig | 100 | Excellent |
-| lexer.zig | 64 | Excellent |
-| args.zig | 45 | Excellent |
-| functions.zig | 37 | Excellent |
-| conditions.zig | 36 | Good |
-| parallel.zig | 23 | Good |
-| env.zig | 23 | Good |
-| cache.zig | 16 | Good |
-| suggest.zig | 13 | Good |
-| import.zig | 12 | Good |
-| hooks.zig | 12 | Good |
-| watch.zig | 15 | Good |
-| glob.zig | 10 | Good |
-| completions.zig | 10 | Good |
-| prompt.zig | 8 | Good |
-| main.zig | 1 | Minimal |
-| root.zig | 1 | Minimal |
-| **TOTAL** | **580** | |
+| File            | Test Count | Coverage  |
+| --------------- | ---------- | --------- |
+| executor.zig    | 154        | Excellent |
+| parser.zig      | 100        | Excellent |
+| lexer.zig       | 64         | Excellent |
+| args.zig        | 45         | Excellent |
+| functions.zig   | 37         | Excellent |
+| conditions.zig  | 36         | Good      |
+| parallel.zig    | 23         | Good      |
+| env.zig         | 23         | Good      |
+| cache.zig       | 16         | Good      |
+| suggest.zig     | 13         | Good      |
+| import.zig      | 12         | Good      |
+| hooks.zig       | 12         | Good      |
+| watch.zig       | 15         | Good      |
+| glob.zig        | 10         | Good      |
+| completions.zig | 10         | Good      |
+| prompt.zig      | 8          | Good      |
+| main.zig        | 1          | Minimal   |
+| root.zig        | 1          | Minimal   |
+| **TOTAL**       | **580**    |           |
 
 ---
 
 ## TDD Implementation Checklist (Completed)
 
 ### @require - Environment Variable Validation (8 tests)
+
 - `@require` validates single env var exists
 - `@require` fails with clear error when env var missing
 - `@require` checks multiple variables in single directive
@@ -98,6 +105,7 @@ This document archives completed features, implementations, and milestones.
 - `@require` with empty value still passes
 
 ### @needs - Command Existence Check (7 tests)
+
 - `@needs` verifies command exists in PATH
 - `@needs` fails with helpful error when command missing
 - `@needs` checks multiple space-separated commands
@@ -107,6 +115,7 @@ This document archives completed features, implementations, and milestones.
 - `@needs` only checks once per command
 
 ### @confirm - Interactive Prompts (11 tests)
+
 - Returns true for 'y', 'Y', 'yes', 'YES' input
 - Returns false for 'n', 'no', empty, whitespace-only input
 - `--yes` flag auto-confirms
@@ -114,6 +123,7 @@ This document archives completed features, implementations, and milestones.
 - Default message handling
 
 ### @each - Loop Iteration (7 tests)
+
 - Iterates over space-separated items
 - Expands {{item}} variable in command
 - Empty list executes zero times
@@ -123,15 +133,18 @@ This document archives completed features, implementations, and milestones.
 - Multiple commands
 
 ### @import Integration (2 tests)
+
 - Import resolver init
 - Prefixed name creation
 
 ### @before/@after Hooks (3 tests)
+
 - Hook context basic
 - Hook runner init
 - Hook variable expansion
 
 ### @cache - Command Caching (7 tests)
+
 - First run always executes
 - Existing file updates cache
 - Skips command when inputs unchanged
@@ -141,6 +154,7 @@ This document archives completed features, implementations, and milestones.
 - parseCachePatterns parses space-separated patterns
 
 ### @watch Inline (6 tests)
+
 - Dry-run mode shows what would be watched
 - Informational in normal mode
 - Multiple patterns
@@ -149,6 +163,7 @@ This document archives completed features, implementations, and milestones.
 - Empty pattern is no-op
 
 ### Edge Cases & Error Handling (15 tests)
+
 - Deeply nested @if blocks (5 levels)
 - @ignore with non-existent command continues
 - Empty recipe with only directives executes
@@ -206,18 +221,18 @@ This document archives completed features, implementations, and milestones.
 
 All major editor integrations implemented in `editors/`:
 
-| Editor | Directory | Status |
-|--------|-----------|--------|
-| VS Code | `vscode-jake/` | TextMate grammar, language config, VSIX packaged |
-| Vim/Neovim | `vim-jake/` | Syntax highlighting, ftdetect, ftplugin |
-| IntelliJ/JetBrains | `intellij-jake/` | Gradle plugin with TextMate integration |
-| Sublime Text | `sublime-jake/` | TextMate grammar, settings, comments |
-| Zed | `zed-jake/` | Tree-sitter queries, extension config |
-| Fleet | `fleet-jake/` | Dark theme configuration |
-| Tree-sitter | `tree-sitter-jake/` | Full parser, used by Zed/Helix/Neovim |
-| Highlight.js | `highlightjs-jake/` | NPM package for web highlighting |
-| Prism.js | `prism-jake/` | NPM package for web highlighting |
-| Shiki | `shiki-jake/` | NPM package for Astro/VitePress |
+| Editor             | Directory           | Status                                           |
+| ------------------ | ------------------- | ------------------------------------------------ |
+| VS Code            | `vscode-jake/`      | TextMate grammar, language config, VSIX packaged |
+| Vim/Neovim         | `vim-jake/`         | Syntax highlighting, ftdetect, ftplugin          |
+| IntelliJ/JetBrains | `intellij-jake/`    | Gradle plugin with TextMate integration          |
+| Sublime Text       | `sublime-jake/`     | TextMate grammar, settings, comments             |
+| Zed                | `zed-jake/`         | Tree-sitter queries, extension config            |
+| Fleet              | `fleet-jake/`       | Dark theme configuration                         |
+| Tree-sitter        | `tree-sitter-jake/` | Full parser, used by Zed/Helix/Neovim            |
+| Highlight.js       | `highlightjs-jake/` | NPM package for web highlighting                 |
+| Prism.js           | `prism-jake/`       | NPM package for web highlighting                 |
+| Shiki              | `shiki-jake/`       | NPM package for Astro/VitePress                  |
 
 Build tasks available via `jake/editors.jake` (30+ tasks for packaging, installing, testing).
 
@@ -226,6 +241,7 @@ Build tasks available via `jake/editors.jake` (30+ tasks for packaging, installi
 ## Architecture Reference
 
 ### File Structure
+
 ```
 src/
 ├── main.zig        # CLI entry point (1 test)
@@ -253,6 +269,7 @@ src/
 ### Key Data Structures
 
 **Recipe** (parser.zig):
+
 - `name`, `kind` (task/file/simple)
 - `dependencies`, `file_deps`, `output`
 - `params`, `commands`
@@ -261,6 +278,7 @@ src/
 - `pre_hooks`, `post_hooks`
 
 **Executor** (executor.zig):
+
 - Sequential and parallel execution modes
 - Variable expansion ({{var}}, $VAR, ${VAR})
 - Positional arguments ($1, $2, $@)

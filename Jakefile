@@ -18,13 +18,16 @@ JAKE_FUZZ_PORT = "4455"
 # Export version for child processes
 @export version
 
-# Global hooks
-@on_error echo "Build failed!"
 
 # Targeted hooks for release tasks
 @before release.all echo "Starting cross-platform build..."
 @after release.all echo "All platforms built successfully!"
 @before release.package echo "Preparing release package..."
+
+
+# Build hooks
+@before build echo "Starting build process..."
+@after build echo "Build process finished."
 
 # Default: build and test
 @default

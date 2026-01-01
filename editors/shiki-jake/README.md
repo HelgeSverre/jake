@@ -15,20 +15,20 @@ npm install shiki shiki-jake
 ### Basic
 
 ```javascript
-import { createHighlighter } from 'shiki';
-import jake from 'shiki-jake';
+import { createHighlighter } from "shiki";
+import jake from "shiki-jake";
 
 const highlighter = await createHighlighter({
-  themes: ['github-dark'],
-  langs: [jake]
+  themes: ["github-dark"],
+  langs: [jake],
 });
 
 const code = `task build:
     echo "Building..."`;
 
 const html = highlighter.codeToHtml(code, {
-  lang: 'jake',
-  theme: 'github-dark'
+  lang: "jake",
+  theme: "github-dark",
 });
 
 console.log(html);
@@ -40,15 +40,15 @@ Most Shiki integrations support custom languages. For example, in Astro:
 
 ```javascript
 // astro.config.mjs
-import { defineConfig } from 'astro/config';
-import jake from 'shiki-jake';
+import { defineConfig } from "astro/config";
+import jake from "shiki-jake";
 
 export default defineConfig({
   markdown: {
     shikiConfig: {
-      langs: [jake]
-    }
-  }
+      langs: [jake],
+    },
+  },
 });
 ```
 

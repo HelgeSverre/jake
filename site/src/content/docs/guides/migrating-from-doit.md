@@ -10,15 +10,15 @@ Doit (pydoit.org) is a Python-based build tool. If you're looking for a simpler,
 
 ## Syntax Comparison
 
-| Doit | Jake |
-|------|------|
-| `dodo.py` | `Jakefile` |
-| `def task_name():` | `task name:` |
-| `'actions': [...]` | Indented commands |
+| Doit                | Jake                   |
+| ------------------- | ---------------------- |
+| `dodo.py`           | `Jakefile`             |
+| `def task_name():`  | `task name:`           |
+| `'actions': [...]`  | Indented commands      |
 | `'file_dep': [...]` | Dependencies after `:` |
-| `'targets': [...]` | `file target:` recipe |
-| `'task_dep': [...]` | `[dependencies]` |
-| `'verbosity': 2` | `-v` flag |
+| `'targets': [...]`  | `file target:` recipe  |
+| `'task_dep': [...]` | `[dependencies]`       |
+| `'verbosity': 2`    | `-v` flag              |
 
 ## Basic Task Conversion
 
@@ -331,26 +331,26 @@ task deploy env="staging": [build, test]
 
 ## CLI Comparison
 
-| Doit | Jake |
-|------|------|
-| `doit` | `jake` |
-| `doit list` | `jake --list` |
-| `doit build` | `jake build` |
-| `doit clean` | `jake clean` |
-| `doit -n` | `jake -n` |
-| `doit --parallel 4` | `jake -j4` |
-| `doit forget` | Clear `.jake/` cache |
+| Doit                | Jake                 |
+| ------------------- | -------------------- |
+| `doit`              | `jake`               |
+| `doit list`         | `jake --list`        |
+| `doit build`        | `jake build`         |
+| `doit clean`        | `jake clean`         |
+| `doit -n`           | `jake -n`            |
+| `doit --parallel 4` | `jake -j4`           |
+| `doit forget`       | Clear `.jake/` cache |
 
 ## Key Differences
 
-| Feature | Doit | Jake |
-|---------|------|------|
-| **Language** | Python | Zig (single binary) |
-| **Config** | Python code | Simple DSL |
-| **Dependencies** | MD5 checksum | Checksum-based |
-| **Actions** | Python + shell | Shell (call scripts) |
-| **Task generators** | `yield` | Manual or `@each` |
-| **Setup** | `pip install` | Single binary |
+| Feature             | Doit           | Jake                 |
+| ------------------- | -------------- | -------------------- |
+| **Language**        | Python         | Zig (single binary)  |
+| **Config**          | Python code    | Simple DSL           |
+| **Dependencies**    | MD5 checksum   | Checksum-based       |
+| **Actions**         | Python + shell | Shell (call scripts) |
+| **Task generators** | `yield`        | Manual or `@each`    |
+| **Setup**           | `pip install`  | Single binary        |
 
 ## What You Gain
 

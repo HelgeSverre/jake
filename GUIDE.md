@@ -152,8 +152,8 @@ task long-command:
 ### Defining Variables
 
 ```jake
-name = "Jake"
-version = "1.0.0"
+name = "Jake";
+version = "1.0.0";
 ```
 
 ### Using Variables
@@ -212,11 +212,11 @@ Without `.env` or if `PORT` is not set, it uses the default: `Running on port 30
 
 Jake supports three types of recipes, each designed for different use cases:
 
-| Type   | Keyword | Runs When                              | Best For                         |
-|--------|---------|----------------------------------------|----------------------------------|
-| Task   | `task`  | Always                                 | Commands, scripts, development   |
-| File   | `file`  | Output missing or dependencies changed | Build artifacts, compilation     |
-| Simple | (none)  | Always                                 | Quick recipes, Make-like syntax  |
+| Type   | Keyword | Runs When                              | Best For                        |
+| ------ | ------- | -------------------------------------- | ------------------------------- |
+| Task   | `task`  | Always                                 | Commands, scripts, development  |
+| File   | `file`  | Output missing or dependencies changed | Build artifacts, compilation    |
+| Simple | (none)  | Always                                 | Quick recipes, Make-like syntax |
 
 ### Task Recipes
 
@@ -300,6 +300,7 @@ task build: [dist/app.min.js]
 ```
 
 When you run `jake build`, Jake automatically:
+
 1. Checks if `dist/compiled.js` needs rebuilding (compares source timestamps)
 2. Checks if `dist/app.min.js` needs rebuilding
 3. Only runs the necessary stages
@@ -334,16 +335,19 @@ task build mode="debug":
 ### Choosing the Right Recipe Type
 
 **Use `task` when:**
+
 - The command should run every time (tests, dev servers, deployments)
 - You need parameters
 - You want explicit, self-documenting syntax
 
 **Use `file` when:**
+
 - The recipe produces an output file
 - You want incremental builds (skip if output is up-to-date)
 - Build times matter and you want to avoid unnecessary work
 
 **Use simple recipes when:**
+
 - You want concise, Make-like syntax
 - The recipe is straightforward with no parameters
 - You're migrating from Make and want familiar syntax
@@ -515,6 +519,7 @@ Use `@export` to set environment variables that are passed to all subprocess com
 ```
 
 Exported variables:
+
 - Are available to all shell commands executed by Jake
 - Persist for the entire Jake execution
 - Are available in imported files
@@ -582,21 +587,21 @@ task deploy:
 
 ### Condition Functions
 
-| Function        | Description                                       |
-|-----------------|---------------------------------------------------|
-| `env(VAR)`      | True if environment variable is set and non-empty |
-| `exists(path)`  | True if file or directory exists                  |
-| `command(name)` | True if command exists in PATH                    |
-| `eq(a, b)`      | True if strings are equal                         |
-| `neq(a, b)`     | True if strings are not equal                     |
-| `is_watching()` | True if running in watch mode (`-w`)              |
-| `is_dry_run()`  | True if running in dry-run mode (`-n`)            |
-| `is_verbose()`  | True if running in verbose mode (`-v`)            |
-| `is_macos()`    | True if running on macOS                          |
-| `is_linux()`    | True if running on Linux                          |
-| `is_windows()`  | True if running on Windows                        |
-| `is_unix()`     | True if running on Unix-like OS                   |
-| `is_platform(name)` | True if running on the specified platform     |
+| Function            | Description                                       |
+| ------------------- | ------------------------------------------------- |
+| `env(VAR)`          | True if environment variable is set and non-empty |
+| `exists(path)`      | True if file or directory exists                  |
+| `command(name)`     | True if command exists in PATH                    |
+| `eq(a, b)`          | True if strings are equal                         |
+| `neq(a, b)`         | True if strings are not equal                     |
+| `is_watching()`     | True if running in watch mode (`-w`)              |
+| `is_dry_run()`      | True if running in dry-run mode (`-n`)            |
+| `is_verbose()`      | True if running in verbose mode (`-v`)            |
+| `is_macos()`        | True if running on macOS                          |
+| `is_linux()`        | True if running on Linux                          |
+| `is_windows()`      | True if running on Windows                        |
+| `is_unix()`         | True if running on Unix-like OS                   |
+| `is_platform(name)` | True if running on the specified platform         |
 
 ### Runtime State Conditions
 
@@ -1113,26 +1118,26 @@ Use functions in variable expansion with `{{function(arg)}}` syntax.
 ### String Functions
 
 | Function       | Description          | Example                          |
-|----------------|----------------------|----------------------------------|
+| -------------- | -------------------- | -------------------------------- |
 | `uppercase(s)` | Convert to uppercase | `{{uppercase(hello)}}` → `HELLO` |
 | `lowercase(s)` | Convert to lowercase | `{{lowercase(HELLO)}}` → `hello` |
 | `trim(s)`      | Remove whitespace    | `{{trim( hello )}}` → `hello`    |
 
 ### Path Functions
 
-| Function               | Description        | Example                                               |
-|------------------------|--------------------|-------------------------------------------------------|
-| `dirname(p)`           | Get directory part | `{{dirname(/a/b/c.txt)}}` → `/a/b`                    |
-| `basename(p)`          | Get filename part  | `{{basename(/a/b/c.txt)}}` → `c.txt`                  |
-| `extension(p)`         | Get file extension | `{{extension(file.txt)}}` → `.txt`                    |
-| `without_extension(p)` | Remove last extension | `{{without_extension(file.tar.gz)}}` → `file.tar`     |
+| Function                | Description           | Example                                               |
+| ----------------------- | --------------------- | ----------------------------------------------------- |
+| `dirname(p)`            | Get directory part    | `{{dirname(/a/b/c.txt)}}` → `/a/b`                    |
+| `basename(p)`           | Get filename part     | `{{basename(/a/b/c.txt)}}` → `c.txt`                  |
+| `extension(p)`          | Get file extension    | `{{extension(file.txt)}}` → `.txt`                    |
+| `without_extension(p)`  | Remove last extension | `{{without_extension(file.tar.gz)}}` → `file.tar`     |
 | `without_extensions(p)` | Remove ALL extensions | `{{without_extensions(file.tar.gz)}}` → `file`        |
-| `absolute_path(p)`     | Get absolute path  | `{{absolute_path(./src)}}` → `/home/user/project/src` |
+| `absolute_path(p)`      | Get absolute path     | `{{absolute_path(./src)}}` → `/home/user/project/src` |
 
 ### System Functions
 
 | Function          | Description                        | Example                                                  |
-|-------------------|------------------------------------|----------------------------------------------------------|
+| ----------------- | ---------------------------------- | -------------------------------------------------------- |
 | `home()`          | Get user home directory            | `{{home()}}` → `/Users/alice`                            |
 | `local_bin(name)` | Get path to binary in ~/.local/bin | `{{local_bin("jake")}}` → `/Users/alice/.local/bin/jake` |
 | `shell_config()`  | Get current shell's config file    | `{{shell_config()}}` → `/Users/alice/.zshrc`             |
@@ -1282,13 +1287,13 @@ autoload -Uz compinit && compinit
 
 The `--install` command automatically detects your zsh environment:
 
-| Environment | Install Location | Configuration |
-|-------------|------------------|---------------|
-| **Oh-My-Zsh** | `~/.oh-my-zsh/custom/completions/_jake` | None needed (auto-loads) |
-| **Homebrew zsh** | `/opt/homebrew/share/zsh/site-functions/_jake` | None needed (in fpath) |
-| **Vanilla zsh** | `~/.zsh/completions/_jake` | Auto-patches `~/.zshrc` |
-| **Bash** | `~/.local/share/bash-completion/completions/jake` | None needed |
-| **Fish** | `~/.config/fish/completions/jake.fish` | None needed (auto-loads) |
+| Environment      | Install Location                                  | Configuration            |
+| ---------------- | ------------------------------------------------- | ------------------------ |
+| **Oh-My-Zsh**    | `~/.oh-my-zsh/custom/completions/_jake`           | None needed (auto-loads) |
+| **Homebrew zsh** | `/opt/homebrew/share/zsh/site-functions/_jake`    | None needed (in fpath)   |
+| **Vanilla zsh**  | `~/.zsh/completions/_jake`                        | Auto-patches `~/.zshrc`  |
+| **Bash**         | `~/.local/share/bash-completion/completions/jake` | None needed              |
+| **Fish**         | `~/.config/fish/completions/jake.fish`            | None needed (auto-loads) |
 
 For vanilla zsh installations, the installer adds a clearly marked configuration block to your `~/.zshrc`:
 
@@ -1535,7 +1540,7 @@ task deploy env="staging":
 ### Syntax Changes
 
 | Make             | Jake                       |
-|------------------|----------------------------|
+| ---------------- | -------------------------- |
 | `target: deps`   | `task target: [deps]`      |
 | `$(VAR)`         | `{{VAR}}`                  |
 | `.PHONY: target` | `task target:` (automatic) |
@@ -1595,7 +1600,7 @@ task clean:
 ### Syntax Comparison
 
 | Just              | Jake              |
-|-------------------|-------------------|
+| ----------------- | ----------------- |
 | `recipe:`         | `task recipe:`    |
 | `{{var}}`         | `{{var}}` (same!) |
 | `[group]`         | Use imports       |
@@ -1711,4 +1716,4 @@ Create a `Jakefile` in current directory, or use `-f` to specify path.
 
 ---
 
-*Jake v0.3.0 • MIT License*
+_Jake v0.3.0 • MIT License_

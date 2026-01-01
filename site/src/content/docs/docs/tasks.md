@@ -136,10 +136,12 @@ Valid OS values: `linux`, `macos`, `windows`
 ## When to Use Tasks
 
 **Use `task` when:**
+
 - The command should run every time (tests, dev servers, deployments)
 - You need parameters
 - You want explicit, self-documenting syntax
 
 **Use `file` when:**
+
 - The recipe produces an output file
 - You want incremental builds

@@ -56,6 +56,7 @@ task build: [dist/app.js, dist/styles.css]
 ```
 
 File targets automatically track:
+
 - Whether the output file exists
 - Whether any dependency is newer than the output
 - Glob patterns like `src/**/*.ts`

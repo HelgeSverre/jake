@@ -57,6 +57,7 @@ jake build
 ```
 
 Dependencies are analyzed:
+
 - Tasks with no inter-dependencies run simultaneously
 - Tasks that depend on each other run in sequence
 - The `-j` flag controls the maximum parallel jobs
@@ -135,6 +136,7 @@ task build: [check, compile]
 ```
 
 Running `jake -j build`:
+
 1. lint, typecheck, and format-check run in parallel
 2. Once all pass, compile runs
 3. Then the build task runs

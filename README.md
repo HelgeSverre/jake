@@ -138,4 +138,4 @@ MIT License - see [LICENSE](LICENSE.md)
 
 ---
 
-*Built with Zig · Inspired by Make & Just*
+_Built with Zig · Inspired by Make & Just_

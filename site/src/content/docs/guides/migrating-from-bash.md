@@ -60,6 +60,7 @@ task clean:
 ### 1. Automatic Dependency Resolution
 
 **Bash** - Manual function calls:
+
 ```bash
 deploy() {
   build
@@ -69,6 +70,7 @@ deploy() {
 ```
 
 **Jake** - Declarative dependencies:
+
 ```jake
 task deploy: [build, test]
     rsync dist/ server:/app/
@@ -79,6 +81,7 @@ Jake automatically runs dependencies in the right order and skips duplicates.
 ### 2. Parallel Execution
 
 **Bash** - Complex PID management:
+
 ```bash
 build() {
   build_backend &
@@ -91,6 +94,7 @@ build() {
 ```
 
 **Jake** - Just use `-j` flag:
+
 ```jake
 task build: [build-backend, build-frontend]
     echo "Build complete"
@@ -109,6 +113,7 @@ jake -j4 build  # Run with 4 parallel workers
 ### 3. File-Based Dependencies
 
 **Bash** - No way to skip if unchanged:
+
 ```bash
 compile() {
   # Always runs, even if nothing changed
@@ -117,6 +122,7 @@ compile() {
 ```
 
 **Jake** - Smart rebuilds:
+
 ```jake
 file app: main.c util.c
     gcc -o app main.c util.c
@@ -127,6 +133,7 @@ This only runs if `main.c` or `util.c` are newer than `app`.
 ### 4. Built-in Help
 
 **Bash** - Manual implementation:
+
 ```bash
 help() {
   echo "Available tasks:"
@@ -135,6 +142,7 @@ help() {
 ```
 
 **Jake** - Built-in:
+
 ```bash
 jake --list     # List all recipes with descriptions
 jake -s build   # Show detailed info about a recipe
@@ -143,6 +151,7 @@ jake -s build   # Show detailed info about a recipe
 ### 5. Cross-Platform Compatibility
 
 **Bash** - Platform-specific code:
+
 ```bash
 # macOS vs Linux differences
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -153,6 +162,7 @@ fi
 ```
 
 **Jake** - Platform directives:
+
 ```jake
 @platform macos
 task install:
@@ -166,6 +176,7 @@ task install:
 ### 6. Confirmation Prompts
 
 **Bash** - Manual prompt:
+
 ```bash
 deploy() {
   read -p "Deploy to production? (yes/no) " -r
@@ -177,6 +188,7 @@ deploy() {
 ```
 
 **Jake** - Built-in directive:
+
 ```jake
 task deploy:
     @confirm "Deploy to production?"
@@ -188,6 +200,7 @@ Use `jake -y deploy` to auto-confirm.
 ### 7. Environment Variables
 
 **Bash** - Manual loading:
+
 ```bash
 if [ -f .env ]; then
   export $(grep -v '^#' .env | xargs)
@@ -195,6 +208,7 @@ fi
 ```
 
 **Jake** - Built-in:
+
 ```jake
 @dotenv
 @dotenv ".env.local"
@@ -333,15 +347,15 @@ task deploy env="staging": [build]
 
 ### Usage Comparison
 
-| Bash | Jake |
-|------|------|
-| `./build.sh` | `jake` |
-| `./build.sh build` | `jake build` |
-| `./build.sh deploy staging` | `jake deploy env=staging` |
-| `./build.sh help` | `jake --list` |
-| N/A | `jake -j4 build` (parallel) |
-| N/A | `jake -w build` (watch mode) |
-| N/A | `jake -n deploy` (dry-run) |
+| Bash                        | Jake                         |
+| --------------------------- | ---------------------------- |
+| `./build.sh`                | `jake`                       |
+| `./build.sh build`          | `jake build`                 |
+| `./build.sh deploy staging` | `jake deploy env=staging`    |
+| `./build.sh help`           | `jake --list`                |
+| N/A                         | `jake -j4 build` (parallel)  |
+| N/A                         | `jake -w build` (watch mode) |
+| N/A                         | `jake -n deploy` (dry-run)   |
 
 ## What You Gain
 

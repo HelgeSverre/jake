@@ -65,8 +65,8 @@ task long-command:
 ### Defining Variables
 
 ```jake
-name = "Jake"
-version = "1.0.0"
+name = "Jake";
+version = "1.0.0";
 ```
 
 ### Using Variables
@@ -101,11 +101,11 @@ task test:
 
 Jake supports three types of recipes:
 
-| Type   | Keyword | Runs When                              | Best For                         |
-|--------|---------|----------------------------------------|----------------------------------|
-| Task   | `task`  | Always                                 | Commands, scripts, development   |
-| File   | `file`  | Output missing or dependencies changed | Build artifacts, compilation     |
-| Simple | (none)  | Always                                 | Quick recipes, Make-like syntax  |
+| Type   | Keyword | Runs When                              | Best For                        |
+| ------ | ------- | -------------------------------------- | ------------------------------- |
+| Task   | `task`  | Always                                 | Commands, scripts, development  |
+| File   | `file`  | Output missing or dependencies changed | Build artifacts, compilation    |
+| Simple | (none)  | Always                                 | Quick recipes, Make-like syntax |
 
 ### Task Recipes
 

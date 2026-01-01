@@ -38,11 +38,13 @@ If you discover a security vulnerability in Jake, please report it responsibly:
 ## Scope
 
 This policy applies to:
+
 - The Jake binary and source code
 - Build scripts and CI/CD configurations
 - Documentation that could lead to security issues
 
 Out of scope:
+
 - Third-party dependencies (report to their maintainers)
 - Social engineering attacks
 - Physical security

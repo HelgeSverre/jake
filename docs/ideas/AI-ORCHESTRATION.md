@@ -7,6 +7,7 @@ A comprehensive design document for integrating AI agent orchestration capabilit
 **Vision**: Enable Jake to orchestrate AI coding agents as naturally as it orchestrates shell commands, creating a declarative workflow automation layer for agentic development.
 
 **Why Jake?**
+
 - Already handles task dependencies, parallel execution, and file watching
 - Declarative syntax is ideal for defining multi-step AI workflows
 - Existing hook system provides natural integration points
@@ -18,15 +19,15 @@ A comprehensive design document for integrating AI agent orchestration capabilit
 
 ## Competitive Landscape
 
-| Tool | Approach | Strengths | Weaknesses |
-|------|----------|-----------|------------|
-| **GitHub Copilot Coding Agent** | GitHub-native | Deep integration, auto-PR on CI failure | GitHub-only, closed source, limited customization |
-| **OpenAI Codex CLI** | CLI auto-fix | Diagnose → patch → test → PR pipeline | OpenAI-only, focused on CI fixing |
-| **Claude-Flow** | Multi-agent swarms | Enterprise features, 100+ MCP tools | Complex setup, heavyweight |
-| **Cursor Composer** | IDE-integrated | Excellent UX, multi-file edits | IDE-bound, no CLI automation |
-| **Aider** | CLI pair programming | Git-aware, works well in terminal | Single model, chat-focused |
-| **Cline/Continue** | IDE extensions | Good VS Code integration | IDE-bound |
-| **Jake (proposed)** | Task-file orchestration | Declarative, flexible, lightweight | Experimental, needs development |
+| Tool                            | Approach                | Strengths                               | Weaknesses                                        |
+| ------------------------------- | ----------------------- | --------------------------------------- | ------------------------------------------------- |
+| **GitHub Copilot Coding Agent** | GitHub-native           | Deep integration, auto-PR on CI failure | GitHub-only, closed source, limited customization |
+| **OpenAI Codex CLI**            | CLI auto-fix            | Diagnose → patch → test → PR pipeline   | OpenAI-only, focused on CI fixing                 |
+| **Claude-Flow**                 | Multi-agent swarms      | Enterprise features, 100+ MCP tools     | Complex setup, heavyweight                        |
+| **Cursor Composer**             | IDE-integrated          | Excellent UX, multi-file edits          | IDE-bound, no CLI automation                      |
+| **Aider**                       | CLI pair programming    | Git-aware, works well in terminal       | Single model, chat-focused                        |
+| **Cline/Continue**              | IDE extensions          | Good VS Code integration                | IDE-bound                                         |
+| **Jake (proposed)**             | Task-file orchestration | Declarative, flexible, lightweight      | Experimental, needs development                   |
 
 ### Key Differentiators for Jake
 
@@ -130,6 +131,7 @@ Define prompt templates with variable interpolation.
 ```
 
 **Usage**:
+
 ```jake
 task validate:
     @in reviewer
@@ -160,6 +162,7 @@ task deploy:
 ```
 
 **Context Types**:
+
 - `@in agent-name` - Execute via AI agent
 - `@in ssh://user@host` - Execute via SSH
 - `@in docker://image` - Execute in container
@@ -176,6 +179,7 @@ task flaky-test:
 ```
 
 **Options**:
+
 - `N` - Maximum attempts
 - `backoff=linear|exponential|fixed` - Backoff strategy
 - `delay=N` - Base delay in seconds
@@ -193,6 +197,7 @@ task release:
 ```
 
 **Supported Waiters**:
+
 - `github-action "workflow"` - Wait for GitHub Actions workflow
 - `http "url"` - Wait for HTTP endpoint to return 200
 - `file "path"` - Wait for file to exist
@@ -340,6 +345,7 @@ task generate-tests file:
 ## Implementation Roadmap
 
 ### Phase 1: Prototype (Current)
+
 - [x] `jake/ai.jake` module with bash + claude CLI
 - [x] Prompt templates in `jake/prompts/`
 - [x] Basic workflows: validate-docs, changelog, CI investigation
@@ -347,12 +353,14 @@ task generate-tests file:
 - [ ] Document pain points and limitations
 
 ### Phase 2: First-Class Prompts
+
 - [ ] Add `@prompt` directive to Jake parser
 - [ ] Template variable expansion in multi-line strings
 - [ ] `@include "file.md"` for prompt fragments
 - [ ] Prompt library/registry concept
 
 ### Phase 3: Agent Contexts
+
 - [ ] Add `@agent` definitions to parser
 - [ ] Implement `@in <agent>` context switching
 - [ ] Shell out to `claude -p "prompt" --flags`
@@ -360,6 +368,7 @@ task generate-tests file:
 - [ ] Agent output as variables
 
 ### Phase 4: Control Flow
+
 - [ ] `@retry` with backoff strategies
 - [ ] `@await` for async operations
 - [ ] `@expect` for output validation
@@ -367,6 +376,7 @@ task generate-tests file:
 - [ ] `@timeout` for AI operations
 
 ### Phase 5: Bidirectional Integration
+
 - [ ] MCP server for Jake (let Claude invoke recipes)
 - [ ] Generate Claude Code hook configs from Jakefile
 - [ ] Session state persistence across recipes
@@ -377,30 +387,35 @@ task generate-tests file:
 ## Open Questions
 
 ### Permission Model
+
 - How does Jake enforce agent permissions?
 - Trust Claude Code's permission system?
 - Separate sandbox per agent definition?
 - Allow `--dangerously-skip-permissions` equivalent?
 
 ### Output Handling
+
 - Capture agent stdout as variable?
 - Structured output (JSON) validation?
 - Stream to terminal vs. capture?
 - Agent return codes?
 
 ### Cost/Token Awareness
+
 - Track token usage per agent invocation?
 - Budget limits per task/session?
 - Warn when approaching limits?
 - Cost estimation before execution?
 
 ### State Persistence
+
 - Should agents share conversation context?
 - Session IDs across recipe invocations?
 - Checkpoint/resume for long workflows?
 - Memory/RAG integration?
 
 ### Parallel Agent Execution
+
 - Run multiple agents concurrently?
 - How to handle conflicts?
 - Merge strategies for file changes?
@@ -411,21 +426,25 @@ task generate-tests file:
 ## References
 
 ### Industry Context
+
 - [The New Stack: AI Coding Tools in 2025 - Welcome to the Agentic CLI Era](https://thenewstack.io/ai-coding-tools-in-2025-welcome-to-the-agentic-cli-era/)
 - [AI Engineering Trends 2025: Agents, MCP and Vibe Coding](https://thenewstack.io/ai-engineering-trends-in-2025-agents-mcp-and-vibe-coding/)
 
 ### Competitive Tools
+
 - [Elastic: Self-correcting CI pipelines with Claude](https://www.elastic.co/search-labs/blog/ci-pipelines-claude-ai-agent)
 - [GitHub Copilot Coding Agent 101](https://github.blog/ai-and-ml/github-copilot/github-copilot-coding-agent-101-getting-started-with-agentic-workflows-on-github/)
 - [OpenAI Codex CLI Autofix Guide](https://developers.openai.com/codex/guides/autofix-ci/)
 - [GitHub Agent HQ Announcement](https://www.infoworld.com/article/4080888/github-launches-agent-hq-to-bring-order-to-ai-powered-coding.html)
 
 ### Claude Code Documentation
+
 - [Claude Code Hooks Reference](https://code.claude.com/docs/en/hooks)
 - [Claude Code Best Practices](https://www.anthropic.com/engineering/claude-code-best-practices)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 
 ### Related Projects
+
 - [Claude-Flow](https://github.com/ruvnet/claude-flow) - Multi-agent orchestration
 - [Aider](https://aider.chat/) - CLI pair programming
 - [zig-clap](https://github.com/Hejsil/zig-clap) - Zig CLI argument parser

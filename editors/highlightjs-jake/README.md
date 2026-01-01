@@ -13,26 +13,29 @@ npm install highlightjs-jake
 ### Node.js / Bundlers
 
 ```javascript
-import hljs from 'highlight.js/lib/core';
-import jake from 'highlightjs-jake';
+import hljs from "highlight.js/lib/core";
+import jake from "highlightjs-jake";
 
-hljs.registerLanguage('jake', jake);
+hljs.registerLanguage("jake", jake);
 
 const code = `task build:
     echo "Building..."`;
 
-const result = hljs.highlight(code, { language: 'jake' });
+const result = hljs.highlight(code, { language: "jake" });
 console.log(result.value);
 ```
 
 ### Browser
 
 ```html
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css"
+/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="jake.js"></script>
 <script>
-  hljs.registerLanguage('jake', hljsDefineJake);
+  hljs.registerLanguage("jake", hljsDefineJake);
   hljs.highlightAll();
 </script>
 

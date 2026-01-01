@@ -13,7 +13,10 @@ npm install prism-jake
 ### Browser
 
 ```html
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css"
+/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="prism-jake.js"></script>
 
@@ -26,13 +29,13 @@ task build:
 ### Node.js / Bundlers
 
 ```javascript
-import Prism from 'prismjs';
-import 'prism-jake';
+import Prism from "prismjs";
+import "prism-jake";
 
 const code = `task build:
     echo "Building..."`;
 
-const html = Prism.highlight(code, Prism.languages.jake, 'jake');
+const html = Prism.highlight(code, Prism.languages.jake, "jake");
 ```
 
 ## Supported Syntax

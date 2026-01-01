@@ -8,28 +8,28 @@
 
 Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yargs, Picocli, zig-clap.
 
-| #  | Feature                       | Complexity | Effort | Impact | Tests |
-|----|-------------------------------|:----------:|:------:|:------:|:-----:|
-| 1  | "Did you mean?" suggestions   |    Low     |  2-3h  |  High  | 8-10  |
-| 2  | Environment variable fallback |   Medium   |  4-6h  |  High  | 12-15 |
-| 3  | Double-dash (`--`) separator  |    Low     |  1-2h  | Medium |  5-6  |
-| 4  | Negatable flags (`--no-X`)    |   Medium   |  3-4h  | Medium | 10-12 |
-| 5  | Repeatable flags (`-vvv`)     |    Low     |  2-3h  | Medium | 8-10  |
-| 6  | Flag aliases                  |    Low     |  2-3h  |  Low   |  6-8  |
-| 7  | Hidden flags                  |    Low     |   1h   |  Low   |  3-4  |
-| 8  | Deprecated flag warnings      |    Low     |   2h   | Medium |  5-6  |
-| 9  | Mutually exclusive groups     |   Medium   |  4-5h  | Medium | 10-12 |
-| 10 | Required-together groups      |   Medium   |  4-5h  |  Low   | 8-10  |
-| 11 | Default values in help        |    Low     |  1-2h  |  High  |  4-5  |
-| 12 | Value validation callbacks    |   Medium   |  3-4h  | Medium | 8-10  |
-| 13 | Enum/choice restrictions      |   Medium   |  3-4h  | Medium | 8-10  |
-| 14 | Flag categories in help       |    Low     |  2-3h  |  High  |  4-5  |
-| 15 | NO_COLOR/CLICOLOR support     |    Low     |  1-2h  | Medium |  4-6  |
-| 16 | Compile-time validation       |    High    |  6-8h  |  High  |  6-8  |
-| 17 | Streaming parser              |    High    | 8-12h  |  Low   | 15-20 |
-| 18 | Better error messages         |   Medium   |  4-6h  |  High  | 10-12 |
-| 19 | Short flag value (`-fVAL`)    |   Medium   |  3-4h  | Medium | 8-10  |
-| 20 | Config file support           |    High    | 10-15h | Medium | 15-20 |
+| #   | Feature                       | Complexity | Effort | Impact | Tests |
+| --- | ----------------------------- | :--------: | :----: | :----: | :---: |
+| 1   | "Did you mean?" suggestions   |    Low     |  2-3h  |  High  | 8-10  |
+| 2   | Environment variable fallback |   Medium   |  4-6h  |  High  | 12-15 |
+| 3   | Double-dash (`--`) separator  |    Low     |  1-2h  | Medium |  5-6  |
+| 4   | Negatable flags (`--no-X`)    |   Medium   |  3-4h  | Medium | 10-12 |
+| 5   | Repeatable flags (`-vvv`)     |    Low     |  2-3h  | Medium | 8-10  |
+| 6   | Flag aliases                  |    Low     |  2-3h  |  Low   |  6-8  |
+| 7   | Hidden flags                  |    Low     |   1h   |  Low   |  3-4  |
+| 8   | Deprecated flag warnings      |    Low     |   2h   | Medium |  5-6  |
+| 9   | Mutually exclusive groups     |   Medium   |  4-5h  | Medium | 10-12 |
+| 10  | Required-together groups      |   Medium   |  4-5h  |  Low   | 8-10  |
+| 11  | Default values in help        |    Low     |  1-2h  |  High  |  4-5  |
+| 12  | Value validation callbacks    |   Medium   |  3-4h  | Medium | 8-10  |
+| 13  | Enum/choice restrictions      |   Medium   |  3-4h  | Medium | 8-10  |
+| 14  | Flag categories in help       |    Low     |  2-3h  |  High  |  4-5  |
+| 15  | NO_COLOR/CLICOLOR support     |    Low     |  1-2h  | Medium |  4-6  |
+| 16  | Compile-time validation       |    High    |  6-8h  |  High  |  6-8  |
+| 17  | Streaming parser              |    High    | 8-12h  |  Low   | 15-20 |
+| 18  | Better error messages         |   Medium   |  4-6h  |  High  | 10-12 |
+| 19  | Short flag value (`-fVAL`)    |   Medium   |  3-4h  | Medium | 8-10  |
+| 20  | Config file support           |    High    | 10-15h | Medium | 15-20 |
 
 ---
 
@@ -39,20 +39,20 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 - [x] **#3 Double-dash separator** - `--` stops flag parsing (POSIX standard)
 - [x] **#7 Hidden flags** - `.hidden = true` excludes from help
 - [x] **#15 NO_COLOR support** - Respect `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE` env vars
-    - Created `src/color.zig` with runtime Color struct and writer methods
-    - Created `src/context.zig` for shared execution context
-    - Replaced hardcoded ANSI codes in executor.zig, parallel.zig, hooks.zig, watch.zig
-    - **Remaining:** Early error messages in `args.zig` and `main.zig` use comptime `ansi.err_prefix` - would need
-      refactoring to use runtime color detection
+  - Created `src/color.zig` with runtime Color struct and writer methods
+  - Created `src/context.zig` for shared execution context
+  - Replaced hardcoded ANSI codes in executor.zig, parallel.zig, hooks.zig, watch.zig
+  - **Remaining:** Early error messages in `args.zig` and `main.zig` use comptime `ansi.err_prefix` - would need
+    refactoring to use runtime color detection
 
 ---
 
 #### Phase 2 - High Impact (~12h, ~30 tests)
 
 - [x] **#1 "Did you mean?" suggestions** - Levenshtein for unknown flags (reuse suggest.zig)
-    - `error: Unknown option: --vrsbose` → `Did you mean '--verbose'?`
-    - Implemented in `args.zig` using `suggest.levenshteinDistance()`
-    - Added 11 tests for flag suggestions
+  - `error: Unknown option: --vrsbose` → `Did you mean '--verbose'?`
+  - Implemented in `args.zig` using `suggest.levenshteinDistance()`
+  - Added 11 tests for flag suggestions
 - [ ] **#14 Flag categories in help** - Group flags by category
   ```
   GENERAL OPTIONS:
@@ -68,7 +68,7 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 #### Phase 3 - Medium Effort (~18h, ~45 tests)
 
 - [ ] **#2 Environment variable fallback** - `.env = "JAKEFILE"` for flag defaults
-    - Precedence: CLI arg → env var → default
+  - Precedence: CLI arg → env var → default
 - [ ] **#18 Better error messages** - Rich context with usage hint
   ```
   error: Invalid value for --jobs: "abc"
@@ -98,32 +98,32 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 ### CLI Commands
 
 - [ ] `jake upgrade` - Self-update from GitHub releases
-    - Check version against latest release tag
-    - Detect OS/arch, download appropriate binary
-    - Optional signature verification (minisign)
-    - `--check` flag to only check for updates
+  - Check version against latest release tag
+  - Detect OS/arch, download appropriate binary
+  - Optional signature verification (minisign)
+  - `--check` flag to only check for updates
 
 ---
 
 - [ ] `jake init` - Scaffold Jakefile from templates
-    - Auto-detect project type (Node, Go, Rust, Python)
-    - `--template=node` for explicit selection
+  - Auto-detect project type (Node, Go, Rust, Python)
+  - `--template=node` for explicit selection
 
 ---
 
 - [x] `jake fmt` - Auto-format Jakefile
-    - [x] Consistent 4-space indentation
-    - [x] Align `=` in variable definitions
-    - [ ] Sort imports alphabetically (deferred to v2)
-    - [x] `--check` flag for CI
-    - [x] `--dump` flag for stdout output
+  - [x] Consistent 4-space indentation
+  - [x] Align `=` in variable definitions
+  - [ ] Sort imports alphabetically (deferred to v2)
+  - [x] `--check` flag for CI
+  - [x] `--dump` flag for stdout output
 
 ---
 
 - [ ] `--json` flag - Machine-readable output
-    - `--list --json` - recipes as JSON array
-    - `--dry-run --json` - execution plan as JSON
-    - `--vars --json` - resolved variables as JSON
+  - `--list --json` - recipes as JSON array
+  - `--dry-run --json` - execution plan as JSON
+  - `--vars --json` - resolved variables as JSON
 
 ---
 
@@ -140,7 +140,7 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 
 ```
 task backup:
-    @remote 
+    @remote
 
 ```
 
@@ -166,10 +166,10 @@ task backup:
 - [ ] `git_tag()` - Current git tag (or empty string)
 - [ ] `uuid()` - Generate a random UUIDv4
 - [ ] `unix()` - Shorthand/alias for `timestamp()`
-- [ ] `kebab()` - Example Text -> example-text 
-- [ ] `snake()` - Example Text -> example_text 
-- [ ] `upper()` - Example Text -> EXAMPLE TEXT 
-- [ ] `lower()` - Example Text -> example text 
+- [ ] `kebab()` - Example Text -> example-text
+- [ ] `snake()` - Example Text -> example_text
+- [ ] `upper()` - Example Text -> EXAMPLE TEXT
+- [ ] `lower()` - Example Text -> example text
 - [ ] `timestamp()` - Current Unix timestamp (seconds since epoch, 1970-01-01 eg: `1700000000` -> `Tue Nov 14 2023 22:13:20 GMT+0000`)
 - [ ] `datetime(format)` - Formatted date/time string (Which format patterns? PHP, JS, Python?)
 - [ ] `read_file(path)` - Read file contents into variable
@@ -204,6 +204,7 @@ Simple curl-to-shell installer covering ~90% of users.
 **File:** `site/public/install.sh` (served at jakefile.dev/install.sh)
 
 **Features:**
+
 - Multi-platform: Linux, macOS, FreeBSD
 - Multi-arch: x86_64, aarch64, armv7
 - curl/wget fallback
@@ -215,6 +216,7 @@ Simple curl-to-shell installer covering ~90% of users.
 **User installation:** `curl -fsSL jakefile.dev/install.sh | sh`
 
 **Checklist:**
+
 - [x] Create `install.sh`
 - [x] Host at predictable URL (site/public/)
 - [ ] Test on macOS (Intel + ARM) and Linux
@@ -272,6 +274,7 @@ end
 **User installation:** `brew install <user>/tap/jake`
 
 **Checklist:**
+
 - [ ] Create `homebrew-tap` repository
 - [ ] Add `Formula/jake.rb`
 - [ ] Add GitHub Action to auto-update on release
@@ -320,6 +323,7 @@ ManifestVersion: 1.6.0
 **User installation:** `winget install Jake.Jake`
 
 **Checklist:**
+
 - [ ] Create manifest YAML
 - [ ] Submit PR to microsoft/winget-pkgs
 - [ ] Set up [winget-create](https://github.com/microsoft/winget-create) for updates
@@ -367,11 +371,11 @@ For edge cases requiring containerized builds.
 ### Deferred Refactoring
 
 - [ ] executor.zig modularization (see REFACTOR.md)
-    - Extract platform.zig (~40 lines)
-    - Extract system.zig (~30 lines)
-    - Extract expansion.zig (~80 lines)
-    - Extract directive_parser.zig (~200 lines)
-    - Extract display.zig (~360 lines)
+  - Extract platform.zig (~40 lines)
+  - Extract system.zig (~30 lines)
+  - Extract expansion.zig (~80 lines)
+  - Extract directive_parser.zig (~200 lines)
+  - Extract display.zig (~360 lines)
 
 ---
 
@@ -420,7 +424,6 @@ task build:
 ```
 
 CLI: `jake build --package=core`, `jake build --changed`, `jake --list-packages`
-
 
 > TODO: needs more details and though into how workflows would look like, what directives are needed, and how it differs
 > from regular mode, what scopes and inheritance should be etc.

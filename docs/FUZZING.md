@@ -29,17 +29,17 @@ This is much more effective than "dumb" random fuzzing because the fuzzer learns
 
 Fuzz tests are embedded in the source files using `std.testing.fuzz`:
 
-| Component | File | What it tests |
-|-----------|------|---------------|
-| Lexer | `src/lexer.zig` | Token parsing from arbitrary input |
-| Parser | `src/parser.zig` | AST construction from fuzzed source |
-| Glob | `src/glob.zig` | Pattern matching and parsing |
-| Functions | `src/functions.zig` | Built-in function evaluation |
-| Conditions | `src/conditions.zig` | @if/@elif condition evaluation |
-| Formatter | `src/formatter.zig` | Round-trip formatting (parse → format → parse) |
-| Args | `src/args.zig` | CLI argument parsing, flag suggestion |
-| Suggest | `src/suggest.zig` | Levenshtein distance, typo suggestions |
-| Env | `src/env.zig` | .env file parsing |
+| Component  | File                 | What it tests                                  |
+| ---------- | -------------------- | ---------------------------------------------- |
+| Lexer      | `src/lexer.zig`      | Token parsing from arbitrary input             |
+| Parser     | `src/parser.zig`     | AST construction from fuzzed source            |
+| Glob       | `src/glob.zig`       | Pattern matching and parsing                   |
+| Functions  | `src/functions.zig`  | Built-in function evaluation                   |
+| Conditions | `src/conditions.zig` | @if/@elif condition evaluation                 |
+| Formatter  | `src/formatter.zig`  | Round-trip formatting (parse → format → parse) |
+| Args       | `src/args.zig`       | CLI argument parsing, flag suggestion          |
+| Suggest    | `src/suggest.zig`    | Levenshtein distance, typo suggestions         |
+| Env        | `src/env.zig`        | .env file parsing                              |
 
 ## Web Interface
 
@@ -51,6 +51,7 @@ zig build fuzz --fuzz
 ```
 
 Open the URL shown in the terminal in your browser. The interface shows:
+
 - Source code with coverage markers (red = not hit, green = hit)
 - Live-updating statistics
 - Which code paths the fuzzer has explored
@@ -58,6 +59,7 @@ Open the URL shown in the terminal in your browser. The interface shows:
 ## What Gets Tested
 
 **Covered:**
+
 - Lexer tokenization (all token types, edge cases)
 - Parser AST construction and error handling
 - Formatter round-trip stability (idempotent formatting)
@@ -69,6 +71,7 @@ Open the URL shown in the terminal in your browser. The interface shows:
 - .env file parsing
 
 **Not covered (by design):**
+
 - Recipe execution (would run shell commands)
 - File I/O operations
 - Network operations
@@ -102,11 +105,13 @@ test "fuzz my_function" {
 ```
 
 The API takes:
+
 - A context value (use `{}` for no context)
 - A test function that receives the context and fuzz input bytes
 - Options (use `.{}` for defaults)
 
 Guidelines:
+
 - Use `catch {}` or `catch return` for expected errors
 - Only crashes/panics indicate bugs
 - Avoid side effects (file I/O, network, shell commands)

@@ -6,9 +6,9 @@ description: Using variables in your Jakefile.
 ## Defining Variables
 
 ```jake
-name = "Jake"
-version = "1.0.0"
-build_dir = "dist"
+name = "Jake";
+version = "1.0.0";
+build_dir = "dist";
 ```
 
 ## Using Variables

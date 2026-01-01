@@ -7,6 +7,7 @@
 **Positioning:** The best of Make and Just, combined.
 
 **Brand Personality:**
+
 - Developer-focused, no-nonsense
 - Modern but approachable
 - Fast, efficient, reliable
@@ -25,11 +26,13 @@ The Jake logo is a simple, code-native mark using curly braces around a lowercas
 ```
 
 **Usage:**
+
 - Favicon and small contexts: `{j}`
 - With wordmark: `{j} jake`
 - CLI output: `{j}` or just `jake`
 
 **Why braces?**
+
 - Instantly recognizable as code/developer-focused
 - Works in any monospace font
 - Renders perfectly at any size
@@ -38,14 +41,15 @@ The Jake logo is a simple, code-native mark using curly braces around a lowercas
 
 ### Logo Variations
 
-| Context | Format |
-|---------|--------|
+| Context | Format                                |
+| ------- | ------------------------------------- |
 | Favicon | `{j}` in primary color on transparent |
-| Header | `{j} jake` |
-| Badge | `{j}` only |
-| CLI | Plain text `jake` or `{j}` |
+| Header  | `{j} jake`                            |
+| Badge   | `{j}` only                            |
+| CLI     | Plain text `jake` or `{j}`            |
 
 ### Logo Don'ts
+
 - Don't use other bracket types: `[j]` `<j>` `(j)`
 - Don't capitalize: `{J}`
 - Don't add spacing: `{ j }`
@@ -57,32 +61,32 @@ The Jake logo is a simple, code-native mark using curly braces around a lowercas
 
 ### Primary Colors
 
-| Role | Name | Hex | RGB | Usage |
-|------|------|-----|-----|-------|
-| **Primary** | Jake Red | `#f43f5e` | 244, 63, 94 | Main brand color, CTAs, links |
-| **Primary Dark** | Deep Red | `#e11d48` | 225, 29, 72 | Hover states, emphasis |
-| **Primary Light** | Rose | `#fda4af` | 253, 164, 175 | Backgrounds, highlights |
+| Role              | Name     | Hex       | RGB           | Usage                         |
+| ----------------- | -------- | --------- | ------------- | ----------------------------- |
+| **Primary**       | Jake Red | `#f43f5e` | 244, 63, 94   | Main brand color, CTAs, links |
+| **Primary Dark**  | Deep Red | `#e11d48` | 225, 29, 72   | Hover states, emphasis        |
+| **Primary Light** | Rose     | `#fda4af` | 253, 164, 175 | Backgrounds, highlights       |
 
 ### Neutral Colors
 
-| Role | Name | Hex | Usage |
-|------|------|-----|-------|
-| **Background Dark** | Charcoal | `#0a0a0a` | Dark mode background |
-| **Background Light** | Off-white | `#fafafa` | Light mode background |
-| **Surface Dark** | Dark Gray | `#1a1a1a` | Cards, code blocks (dark) |
-| **Surface Light** | Light Gray | `#f4f4f5` | Cards, code blocks (light) |
-| **Text Primary** | Near Black | `#18181b` | Body text (light mode) |
-| **Text Primary** | Near White | `#fafafa` | Body text (dark mode) |
-| **Text Muted** | Gray | `#71717a` | Secondary text |
+| Role                 | Name       | Hex       | Usage                      |
+| -------------------- | ---------- | --------- | -------------------------- |
+| **Background Dark**  | Charcoal   | `#0a0a0a` | Dark mode background       |
+| **Background Light** | Off-white  | `#fafafa` | Light mode background      |
+| **Surface Dark**     | Dark Gray  | `#1a1a1a` | Cards, code blocks (dark)  |
+| **Surface Light**    | Light Gray | `#f4f4f5` | Cards, code blocks (light) |
+| **Text Primary**     | Near Black | `#18181b` | Body text (light mode)     |
+| **Text Primary**     | Near White | `#fafafa` | Body text (dark mode)      |
+| **Text Muted**       | Gray       | `#71717a` | Secondary text             |
 
 ### Semantic Colors
 
-| Role | Hex | Usage |
-|------|-----|-------|
+| Role    | Hex       | Usage                 |
+| ------- | --------- | --------------------- |
 | Success | `#22c55e` | Task complete, passed |
-| Error | `#ef4444` | Failed, errors |
-| Warning | `#eab308` | Warnings, caution |
-| Info | `#3b82f6` | Information, tips |
+| Error   | `#ef4444` | Failed, errors        |
+| Warning | `#eab308` | Warnings, caution     |
+| Info    | `#3b82f6` | Information, tips     |
 
 ### Color in Context
 
@@ -98,16 +102,23 @@ Light mode:  #fafafa background, #f43f5e accents, #18181b text
 ### Font Stack
 
 **Headings & UI:**
+
 ```css
-font-family: Inter, system-ui, -apple-system, sans-serif;
+font-family:
+  Inter,
+  system-ui,
+  -apple-system,
+  sans-serif;
 ```
 
 **Code & Monospace:**
+
 ```css
-font-family: 'Fira Code', 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+font-family: "Fira Code", "JetBrains Mono", "SF Mono", Consolas, monospace;
 ```
 
 ### Font Weights
+
 - Regular (400): Body text
 - Medium (500): UI elements, subheadings
 - Semibold (600): Headings
@@ -131,19 +142,20 @@ Running task: build
 
 ### ANSI Color Codes
 
-| Element | Color | ANSI Code |
-|---------|-------|-----------|
-| Success/Done | Green | `\x1b[32m` |
-| Error/Failed | Red | `\x1b[31m` |
-| Warning | Yellow | `\x1b[33m` |
-| Running/Info | Blue | `\x1b[34m` |
-| Muted/Dim | Gray | `\x1b[90m` |
-| Task Name | Bold | `\x1b[1m` |
-| Reset | - | `\x1b[0m` |
+| Element      | Color  | ANSI Code  |
+| ------------ | ------ | ---------- |
+| Success/Done | Green  | `\x1b[32m` |
+| Error/Failed | Red    | `\x1b[31m` |
+| Warning      | Yellow | `\x1b[33m` |
+| Running/Info | Blue   | `\x1b[34m` |
+| Muted/Dim    | Gray   | `\x1b[90m` |
+| Task Name    | Bold   | `\x1b[1m`  |
+| Reset        | -      | `\x1b[0m`  |
 
 ### Output Examples
 
 **Minimal (default):**
+
 ```
 ✓ build
 ✓ test
@@ -151,6 +163,7 @@ Running task: build
 ```
 
 **Verbose:**
+
 ```
 {j} jake v1.0.0
 Running: deploy
@@ -177,11 +190,13 @@ Done in 2.35s
 ## README Badges
 
 ### Primary Badge
+
 ```markdown
 [![Jake](https://img.shields.io/badge/{j}-jake-f43f5e?style=flat-square)](https://jakefile.dev)
 ```
 
 ### Full Badge Set
+
 ```markdown
 [![CI](https://github.com/HelgeSverre/jake/actions/workflows/ci.yml/badge.svg)](https://github.com/HelgeSverre/jake/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/HelgeSverre/jake?style=flat-square)](https://github.com/HelgeSverre/jake/releases)
@@ -201,11 +216,13 @@ Custom shield.io badges with the `{j}` logo. The logo is embedded as base64-enco
 | Black | `PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iYmxhY2siPntqfTwvdGV4dD48L3N2Zz4=` |
 
 **Minimal badges (logo only):**
+
 ```markdown
 ![jake](https://img.shields.io/badge/jake-F43F5E?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=)
 ```
 
 **Labeled badges:**
+
 ```markdown
 ![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=)
 ```
@@ -213,16 +230,19 @@ Custom shield.io badges with the `{j}` logo. The logo is embedded as base64-enco
 Available label prefixes: `Built_with`, `Powered_by`, `Made_with`, `Automated_with`, `Runs_on`, `Uses`, `Managed_by`
 
 **Two-tone badges (label color / badge color):**
+
 ```markdown
 ![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat&labelColor=000000&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=)
 ```
 
 Common two-tone combinations:
+
 - Gray/Rose: `labelColor=555555` + badge `F43F5E`
 - Black/Rose: `labelColor=000000` + badge `F43F5E`
 - Rose/Black: `labelColor=F43F5E` + badge `000000`
 
 **With link wrapper:**
+
 ```markdown
 [![Built with jake](https://img.shields.io/badge/Built_with-jake-F43F5E?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHRleHQgeD0iMTIiIHk9IjE3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiPntqfTwvdGV4dD48L3N2Zz4=)](https://jakefile.dev)
 ```
@@ -232,6 +252,7 @@ Common two-tone combinations:
 ## Website Design
 
 ### Hero Section
+
 - Large `{j} jake` logo
 - Tagline: "Modern command running"
 - Install command with copy button
@@ -239,11 +260,13 @@ Common two-tone combinations:
 - Secondary CTA: "View on GitHub" (outline)
 
 ### Code Examples
+
 - Dark background (`#1a1a1a`)
 - Syntax highlighting with primary color for keywords
 - Copy button on hover
 
 ### Feature Cards
+
 - Icon + title + description
 - Subtle border or shadow
 - Hover state with slight lift
@@ -253,6 +276,7 @@ Common two-tone combinations:
 ## Favicon
 
 ### SVG Source
+
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <text x="50%" y="50%"
@@ -266,6 +290,7 @@ Common two-tone combinations:
 ```
 
 ### Sizes to Generate
+
 - 16x16 (favicon.ico)
 - 32x32 (favicon-32x32.png)
 - 180x180 (apple-touch-icon.png)
@@ -277,12 +302,14 @@ Common two-tone combinations:
 ## Social Media
 
 ### Open Graph Image (1200x630)
+
 - Dark background (`#0f0f0f`)
 - Large `{j}` mark in primary color
 - "jake" wordmark below
 - Tagline: "Modern command running"
 
 ### Twitter Card
+
 - Same as OG image
 - Ensure text is readable at thumbnail size
 
@@ -290,12 +317,12 @@ Common two-tone combinations:
 
 ## File Naming
 
-| Asset | Filename |
-|-------|----------|
-| Primary logo SVG | `jake-logo.svg` |
-| Favicon | `favicon.svg` / `favicon.ico` |
-| OG Image | `og-image.png` |
-| Twitter Card | `twitter-card.png` |
+| Asset            | Filename                      |
+| ---------------- | ----------------------------- |
+| Primary logo SVG | `jake-logo.svg`               |
+| Favicon          | `favicon.svg` / `favicon.ico` |
+| OG Image         | `og-image.png`                |
+| Twitter Card     | `twitter-card.png`            |
 
 ---
 

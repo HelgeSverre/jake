@@ -10,13 +10,13 @@ Mage (magefile.org) uses Go functions as build tasks. Jake provides similar func
 
 ## Syntax Comparison
 
-| Mage | Jake |
-|------|------|
-| `magefile.go` | `Jakefile` |
-| `func Build()` | `task build:` |
-| `mg.Deps(Install)` | `[install]` |
-| `sh.Run(...)` | Direct command |
-| `//go:build mage` | Not needed |
+| Mage               | Jake           |
+| ------------------ | -------------- |
+| `magefile.go`      | `Jakefile`     |
+| `func Build()`     | `task build:`  |
+| `mg.Deps(Install)` | `[install]`    |
+| `sh.Run(...)`      | Direct command |
+| `//go:build mage`  | Not needed     |
 
 ## Basic Task Conversion
 
@@ -350,24 +350,24 @@ task docker-push:
 
 ## CLI Comparison
 
-| Mage | Jake |
-|------|------|
-| `mage` | `jake` |
-| `mage build` | `jake build` |
-| `mage -l` | `jake --list` |
-| `mage -v build` | `jake -v build` |
-| `mage docker:build` | `jake docker-build` |
+| Mage                  | Jake                     |
+| --------------------- | ------------------------ |
+| `mage`                | `jake`                   |
+| `mage build`          | `jake build`             |
+| `mage -l`             | `jake --list`            |
+| `mage -v build`       | `jake -v build`          |
+| `mage docker:build`   | `jake docker-build`      |
 | `mage -compile ./bin` | Not needed (interpreted) |
 
 ## Key Differences
 
-| Feature | Mage | Jake |
-|---------|------|------|
-| **Language** | Go | DSL |
-| **Compilation** | Required first run | None (interpreted) |
-| **File deps** | Manual | Native `file` recipes |
-| **Parallel** | Manual goroutines | `-j` flag |
-| **Namespaces** | `mg.Namespace` | `@import as` |
+| Feature         | Mage               | Jake                  |
+| --------------- | ------------------ | --------------------- |
+| **Language**    | Go                 | DSL                   |
+| **Compilation** | Required first run | None (interpreted)    |
+| **File deps**   | Manual             | Native `file` recipes |
+| **Parallel**    | Manual goroutines  | `-j` flag             |
+| **Namespaces**  | `mg.Namespace`     | `@import as`          |
 
 ## What You Gain
 

@@ -6,36 +6,36 @@ This document defines the visual design language for Jake's command-line interfa
 
 ### Brand Colors (True Color / 24-bit)
 
-| Name | Hex | RGB | ANSI Code | Usage |
-|------|-----|-----|-----------|-------|
-| Jake Rose | `#f43f5e` | 244,63,94 | `\x1b[38;2;244;63;94m` | Recipe names, branding |
-| Success | `#22c55e` | 34,197,94 | `\x1b[38;2;34;197;94m` | Checkmarks, completion |
-| Error | `#ef4444` | 239,68,68 | `\x1b[38;2;239;68;68m` | Failures, errors |
-| Warning | `#eab308` | 234,179,8 | `\x1b[38;2;234;179;8m` | Warnings, skipped |
-| Info | `#60a5fa` | 96,165,250 | `\x1b[38;2;96;165;250m` | Arrows, info text |
-| Muted | `#71717a` | 113,113,122 | `\x1b[38;2;113;113;122m` | Comments, secondary |
+| Name      | Hex       | RGB         | ANSI Code                | Usage                  |
+| --------- | --------- | ----------- | ------------------------ | ---------------------- |
+| Jake Rose | `#f43f5e` | 244,63,94   | `\x1b[38;2;244;63;94m`   | Recipe names, branding |
+| Success   | `#22c55e` | 34,197,94   | `\x1b[38;2;34;197;94m`   | Checkmarks, completion |
+| Error     | `#ef4444` | 239,68,68   | `\x1b[38;2;239;68;68m`   | Failures, errors       |
+| Warning   | `#eab308` | 234,179,8   | `\x1b[38;2;234;179;8m`   | Warnings, skipped      |
+| Info      | `#60a5fa` | 96,165,250  | `\x1b[38;2;96;165;250m`  | Arrows, info text      |
+| Muted     | `#71717a` | 113,113,122 | `\x1b[38;2;113;113;122m` | Comments, secondary    |
 
 ### Fallback Colors (16-color ANSI)
 
 For terminals without true color support:
 
-| Brand Color | Fallback ANSI | Code |
-|-------------|---------------|------|
-| Jake Rose | Bold Magenta | `\x1b[1;35m` |
-| Success | Bold Green | `\x1b[1;32m` |
-| Error | Bold Red | `\x1b[1;31m` |
-| Warning | Bold Yellow | `\x1b[1;33m` |
-| Info | Bold Blue | `\x1b[1;34m` |
-| Muted | Dark Gray | `\x1b[90m` |
+| Brand Color | Fallback ANSI | Code         |
+| ----------- | ------------- | ------------ |
+| Jake Rose   | Bold Magenta  | `\x1b[1;35m` |
+| Success     | Bold Green    | `\x1b[1;32m` |
+| Error       | Bold Red      | `\x1b[1;31m` |
+| Warning     | Bold Yellow   | `\x1b[1;33m` |
+| Info        | Bold Blue     | `\x1b[1;34m` |
+| Muted       | Dark Gray     | `\x1b[90m`   |
 
 ## Symbols
 
-| Symbol | Unicode | Usage |
-|--------|---------|-------|
-| Arrow | `→` (U+2192) | Recipe execution start |
-| Success | `✓` (U+2713) | Task completed |
-| Failure | `✗` (U+2717) | Task failed |
-| Warning | `~` | Skipped/warning |
+| Symbol  | Unicode      | Usage                  |
+| ------- | ------------ | ---------------------- |
+| Arrow   | `→` (U+2192) | Recipe execution start |
+| Success | `✓` (U+2713) | Task completed         |
+| Failure | `✗` (U+2717) | Task failed            |
+| Warning | `~`          | Skipped/warning        |
 
 ## Output Formats
 
@@ -49,6 +49,7 @@ $ jake build
 ```
 
 With dependencies:
+
 ```
 $ jake deploy
 → build
@@ -80,6 +81,7 @@ test:
 ```
 
 With `--all`:
+
 ```
 $ jake -la
 Available recipes:
@@ -94,6 +96,7 @@ build:
 ### Error Messages
 
 Recipe not found:
+
 ```
 $ jake buidl
 error: Recipe 'buidl' not found
@@ -104,6 +107,7 @@ Run 'jake -l' to see available recipes.
 ```
 
 Command failed:
+
 ```
 $ jake test
 → test
@@ -114,6 +118,7 @@ error: Command exited with code 1
 ```
 
 Missing dependency:
+
 ```
 $ jake deploy
 error: Required command not found: helm
@@ -176,6 +181,7 @@ Quiet: no
 ```
 
 For hidden recipes:
+
 ```
 $ jake -s _helper
 Recipe: _helper (hidden)
@@ -185,22 +191,22 @@ Type: task
 
 ## Semantic Color Mapping
 
-| Element | Color | Notes |
-|---------|-------|-------|
-| Recipe name (execution) | Jake Rose | `→ build` |
-| Recipe name (listing) | Jake Rose | In recipe lists |
-| Success message | Success Green | `✓ build` |
-| Error message | Error Red | `error:`, `✗` |
-| Warning message | Warning Yellow | `warning:`, `~` |
-| Group header | Jake Rose (bold) | `build:` |
-| Section header | Bold | `Available recipes:` |
-| Hidden marker | Muted | `(hidden)` |
-| Type badge | Muted | `[task]`, `[file]` |
-| Description | Muted | `# comment text` |
-| Directive | Warning Yellow | `@needs`, `@confirm` |
-| Hook label | Success Green | `@pre`, `@post` |
-| Watch prefix | Info Blue | `[watch]` |
-| Dry-run prefix | Info Blue | `[dry-run]` |
+| Element                 | Color            | Notes                |
+| ----------------------- | ---------------- | -------------------- |
+| Recipe name (execution) | Jake Rose        | `→ build`            |
+| Recipe name (listing)   | Jake Rose        | In recipe lists      |
+| Success message         | Success Green    | `✓ build`            |
+| Error message           | Error Red        | `error:`, `✗`        |
+| Warning message         | Warning Yellow   | `warning:`, `~`      |
+| Group header            | Jake Rose (bold) | `build:`             |
+| Section header          | Bold             | `Available recipes:` |
+| Hidden marker           | Muted            | `(hidden)`           |
+| Type badge              | Muted            | `[task]`, `[file]`   |
+| Description             | Muted            | `# comment text`     |
+| Directive               | Warning Yellow   | `@needs`, `@confirm` |
+| Hook label              | Success Green    | `@pre`, `@post`      |
+| Watch prefix            | Info Blue        | `[watch]`            |
+| Dry-run prefix          | Info Blue        | `[dry-run]`          |
 
 ## Implementation Notes
 

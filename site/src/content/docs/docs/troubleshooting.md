@@ -11,11 +11,13 @@ Run 'jake --list' to see available recipes.
 ```
 
 **Causes:**
+
 - Typo in recipe name
 - Jakefile not in current directory
 - Recipe is private (prefixed with `_`)
 
 **Solutions:**
+
 - Check spelling - Jake suggests similar names if you're close
 - Use `jake --list` to see available recipes
 - Use `-f` to specify Jakefile path: `jake -f path/to/Jakefile`
@@ -56,6 +58,7 @@ error: command exited with code 1
 **Cause:** A shell command returned a non-zero exit code.
 
 **Solutions:**
+
 - Run with `-v` (verbose) to see the failing command
 - Run with `-n` (dry-run) to see commands without executing
 - Use `@ignore` to continue on failure if appropriate:
@@ -76,6 +79,7 @@ error: No Jakefile found
 **Cause:** No `Jakefile` in current directory or parent directories.
 
 **Solutions:**
+
 - Create a `Jakefile` in your project root
 - Use `-f` to specify the path: `jake -f scripts/Jakefile`
 
@@ -88,6 +92,7 @@ error: Required environment variable 'API_KEY' is not set
 **Cause:** A `@require` directive specifies a variable that isn't set.
 
 **Solutions:**
+
 - Set the variable: `export API_KEY=xxx`
 - Create a `.env` file and add `@dotenv` to your Jakefile
 - Pass it inline: `API_KEY=xxx jake deploy`
@@ -102,6 +107,7 @@ Hint: Install Docker from https://docker.com
 **Cause:** A `@needs` directive specifies a command that isn't installed.
 
 **Solutions:**
+
 - Install the missing command
 - Check that it's in your PATH
 - If auto-install is configured, run the suggested task
@@ -111,6 +117,7 @@ Hint: Install Docker from https://docker.com
 **Cause:** File target might have incorrect dependencies.
 
 **Check:**
+
 1. Verify glob patterns match your files:
    ```bash
    jake -v build  # Verbose shows matched files
@@ -123,6 +130,7 @@ Hint: Install Docker from https://docker.com
 **Cause:** Output file might be missing or dependencies misconfigured.
 
 **Check:**
+
 1. Verify the output file exists after build
 2. Ensure recipe creates the file at the exact path specified
 3. Check for typos in file paths
@@ -132,6 +140,7 @@ Hint: Install Docker from https://docker.com
 **Cause:** Watch patterns might not match your files.
 
 **Solutions:**
+
 - Add explicit `@watch` patterns:
   ```jake
   task build:

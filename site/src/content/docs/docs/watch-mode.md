@@ -12,6 +12,7 @@ jake -w build
 ```
 
 Jake watches files based on:
+
 - File dependencies in file recipes
 - `@watch` directives in tasks
 

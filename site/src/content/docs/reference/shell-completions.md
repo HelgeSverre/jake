@@ -48,13 +48,13 @@ jake --completions fish > ~/.config/fish/completions/jake.fish
 
 The `--install` command automatically detects your zsh environment:
 
-| Environment | Install Location | Configuration |
-|-------------|------------------|---------------|
-| **Oh-My-Zsh** | `~/.oh-my-zsh/custom/completions/_jake` | None needed |
-| **Homebrew zsh** | `/opt/homebrew/share/zsh/site-functions/_jake` | None needed |
-| **Vanilla zsh** | `~/.zsh/completions/_jake` | Auto-patches `~/.zshrc` |
-| **Bash** | `~/.local/share/bash-completion/completions/jake` | None needed |
-| **Fish** | `~/.config/fish/completions/jake.fish` | None needed |
+| Environment      | Install Location                                  | Configuration           |
+| ---------------- | ------------------------------------------------- | ----------------------- |
+| **Oh-My-Zsh**    | `~/.oh-my-zsh/custom/completions/_jake`           | None needed             |
+| **Homebrew zsh** | `/opt/homebrew/share/zsh/site-functions/_jake`    | None needed             |
+| **Vanilla zsh**  | `~/.zsh/completions/_jake`                        | Auto-patches `~/.zshrc` |
+| **Bash**         | `~/.local/share/bash-completion/completions/jake` | None needed             |
+| **Fish**         | `~/.config/fish/completions/jake.fish`            | None needed             |
 
 For vanilla zsh, the installer adds a configuration block to `~/.zshrc`:
 

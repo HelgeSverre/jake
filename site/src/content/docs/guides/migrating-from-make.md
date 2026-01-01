@@ -10,15 +10,15 @@ If you're coming from GNU Make, this guide will help you translate your Makefile
 
 ## Syntax Changes
 
-| Make | Jake |
-|------|------|
-| `target: deps` | `task target: [deps]` |
-| `$(VAR)` | `{{VAR}}` |
-| `.PHONY: target` | `task target:` (automatic) |
-| Tab required | 4 spaces or tab |
-| `$@` (target name) | Use explicit name |
-| `$<` (first dep) | Use explicit name |
-| `%.o: %.c` | Write explicit rules |
+| Make               | Jake                       |
+| ------------------ | -------------------------- |
+| `target: deps`     | `task target: [deps]`      |
+| `$(VAR)`           | `{{VAR}}`                  |
+| `.PHONY: target`   | `task target:` (automatic) |
+| Tab required       | 4 spaces or tab            |
+| `$@` (target name) | Use explicit name          |
+| `$<` (first dep)   | Use explicit name          |
+| `%.o: %.c`         | Write explicit rules       |
 
 ## Key Differences
 

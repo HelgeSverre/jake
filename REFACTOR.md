@@ -1,9 +1,11 @@
 # Executor.zig Refactoring Plan (Revised)
 
 ## Goal
+
 Break down `executor.zig` (~1700 lines of code + ~3550 lines of tests) into focused modules following Zig Zen principles.
 
 **Key Constraints**:
+
 - Zig cannot split struct methods across files—use wrapper method pattern
 - Avoid circular imports—helper modules must not import `Executor`
 - Also deduplicate shared code in `parallel.zig`
@@ -13,13 +15,16 @@ Break down `executor.zig` (~1700 lines of code + ~3550 lines of tests) into focu
 ## Phase 1: Extract Pure Utilities (No Dependencies)
 
 ### 1.1 Create `src/platform.zig`
+
 **Lines affected**: 830-862 in executor.zig, 975-1006 in parallel.zig
 
 **Extract**:
+
 - `getCurrentOsString()` → `platform.getCurrentOs()`
 - `shouldSkipForOs(recipe)` → `platform.shouldSkipForOs(recipe.only_os)`
 
 **New file structure**:
+
 ```zig
 // src/platform.zig
 const builtin = @import("builtin");
@@ -49,6 +54,7 @@ pub fn shouldSkipForOs(only_os: []const []const u8) bool {
 ```
 
 **Changes to executor.zig**:
+
 ```zig
 const platform = @import("platform.zig");
 // Replace: getCurrentOsString() → platform.getCurrentOs()
@@ -56,6 +62,7 @@ const platform = @import("platform.zig");
 ```
 
 **Changes to parallel.zig**:
+
 - Same pattern, remove duplicated functions
 
 **Risk**: Very low - pure functions, no state
@@ -63,12 +70,15 @@ const platform = @import("platform.zig");
 ---
 
 ### 1.2 Create `src/system.zig`
+
 **Lines affected**: 187-209 in executor.zig, 397-419 in parallel.zig
 
 **Extract**:
+
 - `commandExists(cmd)` - checks if command is in PATH
 
 **New file structure**:
+
 ```zig
 // src/system.zig
 const std = @import("std");
@@ -83,6 +93,7 @@ pub fn commandExists(cmd: []const u8) bool {
 ```
 
 **Changes to executor.zig**:
+
 ```zig
 const system = @import("system.zig");
 
@@ -95,6 +106,7 @@ fn commandExists(self: *Executor, cmd: []const u8) bool {
 ```
 
 **Changes to parallel.zig**:
+
 - Remove duplicated `commandExists`, use `system.commandExists()`
 
 **Risk**: Very low - pure function, only uses std
@@ -104,15 +116,18 @@ fn commandExists(self: *Executor, cmd: []const u8) bool {
 ## Phase 2: Extract Variable Expansion
 
 ### 2.1 Create `src/expansion.zig`
+
 **Lines affected**: 569-587, 1246-1305 in executor.zig
 
 **Extract**:
+
 - `expandJakeVariables(line)` → variable substitution `{{var}}`
 - `expandItemVariable(input, item)` → `{{item}}` substitution
 
 **Key Design**: Functions must NOT import Executor (avoids cycles). Pass required data as parameters.
 
 **New file structure**:
+
 ```zig
 // src/expansion.zig
 const std = @import("std");
@@ -135,6 +150,7 @@ pub fn expandVariables(
 ```
 
 **Changes to executor.zig**:
+
 ```zig
 const expansion = @import("expansion.zig");
 
@@ -167,11 +183,13 @@ fn expandItemVariable(self: *Executor, input: []const u8, item: []const u8) []co
 ## Phase 3: Extract Directive Parsing
 
 ### 3.1 Create `src/directive_parser.zig`
+
 **Lines affected**: 232-431, 1678-1695 in executor.zig
 
 **Key Design**: This module provides PURE PARSING only. No IO, no error printing, no command execution. Executor handles those.
 
 **Extract**:
+
 - Parse `@needs` line → structured data
 - Parse `@each` items (with glob expansion)
 - Parse `@cache`/`@watch` patterns
@@ -179,6 +197,7 @@ fn expandItemVariable(self: *Executor, input: []const u8, item: []const u8) []co
 - `stripQuotes()` helper
 
 **New file structure**:
+
 ```zig
 // src/directive_parser.zig
 const std = @import("std");
@@ -208,6 +227,7 @@ pub fn stripQuotes(s: []const u8) []const u8 { ... }
 ```
 
 **Changes to executor.zig**:
+
 ```zig
 const directive_parser = @import("directive_parser.zig");
 
@@ -215,7 +235,7 @@ const directive_parser = @import("directive_parser.zig");
 fn checkNeedsDirective(self: *Executor, line: []const u8) ExecuteError!void {
     const specs = directive_parser.parseNeedsLine(self.allocator, line) catch return;
     defer self.allocator.free(specs);
-    
+
     for (specs) |spec| {
         if (!system.commandExists(spec.command)) {
             // Handle missing command (print error, run install task, etc.)
@@ -234,9 +254,11 @@ fn checkNeedsDirective(self: *Executor, line: []const u8) ExecuteError!void {
 ## Phase 4: Extract Display Logic
 
 ### 4.1 Create `src/display.zig`
+
 **Lines affected**: 1314-1675 in executor.zig (~360 lines)
 
 **Extract**:
+
 - `isPrivateRecipe(recipe)` - check if recipe is hidden
 - `listRecipes(jakefile, short_mode)` - list available recipes
 - `printSummary(jakefile)` - space-separated names for scripting
@@ -246,6 +268,7 @@ fn checkNeedsDirective(self: *Executor, line: []const u8) ExecuteError!void {
 **Key Design**: Functions operate on `Jakefile`/`Recipe`, not `Executor`. No cycles.
 
 **New file structure**:
+
 ```zig
 // src/display.zig
 const std = @import("std");
@@ -267,6 +290,7 @@ fn printRecipe(stdout: std.fs.File, recipe: *const Recipe) void { ... }
 ```
 
 **Changes to executor.zig**:
+
 ```zig
 const display = @import("display.zig");
 
@@ -293,11 +317,13 @@ pub fn showRecipe(self: *Executor, name: []const u8) bool {
 ## Phase 5: Deduplicate Conditional Logic
 
 ### 5.1 Refactor `executeEachBody` to reuse `executeCommands`
+
 **Lines affected**: 435-567, 865-1158 in executor.zig
 
 **Problem**: Both functions implement identical `@if/@elif/@else/@end` state machines.
 
 **Solution**: Add execution context parameter:
+
 ```zig
 const ExecutionContext = struct {
     item: ?[]const u8 = null,  // For @each loops
@@ -320,9 +346,11 @@ fn executeEachBody(self: *Executor, body: []const Recipe.Command, item: []const 
 ## Phase 6: Simplify init()
 
 ### 6.1 Split initialization concerns
+
 **Lines affected**: 59-146 in executor.zig
 
 **Refactor to named helper methods**:
+
 ```zig
 pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
     var self = Executor{
@@ -350,6 +378,7 @@ fn loadCache(self: *Executor) void { ... }
 ## Phase 7: Update Exports
 
 ### 7.1 Add new modules to `src/root.zig`
+
 ```zig
 pub const platform = @import("platform.zig");
 pub const system = @import("system.zig");
@@ -363,11 +392,13 @@ pub const directive_parser = @import("directive_parser.zig");
 ## Testing Strategy
 
 Each phase:
+
 1. Run unit tests: `zig build test`
 2. Run e2e tests: `jake e2e`
 3. Manual smoke test: `jake -l` and `jake build`
 
-**Test migration**: 
+**Test migration**:
+
 - Keep high-level integration tests in executor.zig initially
 - Add focused unit tests in new modules
 - Gradually move relevant tests to new modules
@@ -377,40 +408,44 @@ Each phase:
 ## Files Summary
 
 ### Files to Create
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/platform.zig` | ~40 | OS detection, recipe OS filtering |
-| `src/system.zig` | ~30 | Command existence checks |
-| `src/expansion.zig` | ~80 | Variable/item expansion |
-| `src/directive_parser.zig` | ~200 | Pure directive parsing |
-| `src/display.zig` | ~360 | Recipe listing/display |
+
+| File                       | Lines | Purpose                           |
+| -------------------------- | ----- | --------------------------------- |
+| `src/platform.zig`         | ~40   | OS detection, recipe OS filtering |
+| `src/system.zig`           | ~30   | Command existence checks          |
+| `src/expansion.zig`        | ~80   | Variable/item expansion           |
+| `src/directive_parser.zig` | ~200  | Pure directive parsing            |
+| `src/display.zig`          | ~360  | Recipe listing/display            |
 
 ### Files to Modify
-| File | Changes |
-|------|---------|
+
+| File               | Changes                                   |
+| ------------------ | ----------------------------------------- |
 | `src/executor.zig` | Remove ~700 lines, add imports + wrappers |
-| `src/parallel.zig` | Use platform.zig, system.zig |
-| `src/root.zig` | Add new module exports |
-| `src/main.zig` | Possibly update display calls |
+| `src/parallel.zig` | Use platform.zig, system.zig              |
+| `src/root.zig`     | Add new module exports                    |
+| `src/main.zig`     | Possibly update display calls             |
 
 ---
 
 ## Expected Outcome
 
-| File | Before | After |
-|------|--------|-------|
-| executor.zig (code) | ~1700 lines | ~1000 lines |
+| File                 | Before      | After                   |
+| -------------------- | ----------- | ----------------------- |
+| executor.zig (code)  | ~1700 lines | ~1000 lines             |
 | executor.zig (tests) | ~3550 lines | ~3550 lines (initially) |
-| New modules | - | ~710 lines total |
+| New modules          | -           | ~710 lines total        |
 
 **Executor becomes**: Recipe execution engine only
+
 - Dependency resolution
-- Command execution  
+- Command execution
 - Hook orchestration
 - Cache checking
 - IO and error handling
 
 **Extracted concerns**:
+
 - Platform detection → platform.zig
 - System utilities → system.zig
 - String expansion → expansion.zig (pure)

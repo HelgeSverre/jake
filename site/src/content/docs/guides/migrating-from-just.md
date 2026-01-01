@@ -10,15 +10,15 @@ If you're coming from Just, the transition to Jake is smooth. Most syntax is sim
 
 ## Syntax Comparison
 
-| Just | Jake |
-|------|------|
-| `recipe:` | `task recipe:` (or simple syntax) |
-| `{{var}}` | `{{var}}` (same!) |
-| `set dotenv-load` | `@dotenv` |
-| `@recipe` (quiet) | `@quiet` decorator |
-| `[group: 'x']` | `@group x` |
-| `[confirm]` | `@confirm "message"` |
-| `[private]` | Prefix with `_` |
+| Just              | Jake                              |
+| ----------------- | --------------------------------- |
+| `recipe:`         | `task recipe:` (or simple syntax) |
+| `{{var}}`         | `{{var}}` (same!)                 |
+| `set dotenv-load` | `@dotenv`                         |
+| `@recipe` (quiet) | `@quiet` decorator                |
+| `[group: 'x']`    | `@group x`                        |
+| `[confirm]`       | `@confirm "message"`              |
+| `[private]`       | Prefix with `_`                   |
 
 ## Key Differences
 
@@ -213,6 +213,7 @@ task build:
 ## Keeping Compatibility
 
 If you want to gradually migrate, you can:
+
 1. Keep your justfile during transition
 2. Run specific tasks with both tools to verify behavior
 3. Once confident, remove the justfile

@@ -39,6 +39,7 @@ file dist/app.js: src/**/*.ts
 ```
 
 Supported patterns:
+
 - `*` - Match any characters except `/`
 - `**` - Match any characters including `/` (recursive)
 - `?` - Match single character

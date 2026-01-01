@@ -88,6 +88,7 @@ Prompt before dangerous operations:
 ```
 
 Use `-y` flag to auto-confirm all prompts:
+
 ```bash
 jake -y deploy  # Skips all @confirm prompts
 ```

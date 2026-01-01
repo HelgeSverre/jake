@@ -31,6 +31,7 @@ file dist/app.js: src/**/*.ts
 ```
 
 Supported patterns:
+
 - `*` - Match any characters except `/`
 - `**` - Match any characters including `/` (recursive)
 - `?` - Match single character
@@ -56,6 +57,7 @@ task build: [dist/app.min.js]
 ```
 
 When you run `jake build`, Jake automatically:
+
 1. Checks if `dist/compiled.js` needs rebuilding
 2. Checks if `dist/app.min.js` needs rebuilding
 3. Only runs the necessary stages
@@ -89,10 +91,12 @@ file app: main.c utils.c
 ## When to Use File Targets
 
 **Use `file` when:**
+
 - The recipe produces an output file
 - You want incremental builds (skip if output is up-to-date)
 - Build times matter and you want to avoid unnecessary work
 
 **Use `task` when:**
+
 - The command should run every time
 - There's no specific output file

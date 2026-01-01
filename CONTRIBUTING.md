@@ -11,11 +11,13 @@ Thank you for your interest in contributing to Jake!
    cd jake
    ```
 3. Build and test:
+
    ```bash
    jake ci          # Lint, test, and build
    ```
 
    Or without jake installed:
+
    ```bash
    zig build && zig build test
    ```
@@ -124,6 +126,7 @@ See `CLAUDE.md` for the full documentation checklist.
 ## Reporting Issues
 
 When reporting bugs, please include:
+
 - Jake version (`jake --version`)
 - Operating system and architecture
 - Minimal Jakefile to reproduce the issue
@@ -133,6 +136,7 @@ When reporting bugs, please include:
 ## Feature Requests
 
 We welcome feature ideas! Please:
+
 - Check existing issues first
 - Describe the use case clearly
 - Provide example syntax if applicable

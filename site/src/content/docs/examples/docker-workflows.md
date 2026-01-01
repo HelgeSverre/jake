@@ -254,15 +254,15 @@ task db-reset:
 Update configuration variables:
 
 ```jake
-app_name = "myapp"
-registry = "${DOCKER_REGISTRY}"
-tag = "latest"
+app_name = "myapp";
+registry = "${DOCKER_REGISTRY}";
+tag = "latest";
 ```
 
 ## docker-compose.yml Example
 
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   app:
     build: .
