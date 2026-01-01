@@ -14,6 +14,7 @@ const prompt_mod = @import("prompt.zig");
 const functions = @import("functions.zig");
 const glob_mod = @import("glob.zig");
 const color_mod = @import("color.zig");
+const progress_mod = @import("progress.zig");
 const RuntimeContext = @import("context.zig").RuntimeContext;
 
 const Jakefile = parser.Jakefile;
@@ -63,6 +64,13 @@ pub const Executor = struct {
     watch_mode: bool, // Whether jake is running in watch mode (-w/--watch)
     color: color_mod.Color, // Color output configuration (respects NO_COLOR etc.)
     theme: color_mod.Theme, // Semantic color theme (error, warning, recipe, etc.)
+    is_tty: bool, // Whether stderr is a TTY (for animated output)
+    owns_resources: bool, // Whether this executor owns its cache/environment/hook_runner (for cleanup)
+
+    // Execution statistics for Nx-style summary
+    exec_start_time: i128, // Start time of entire execution
+    tasks_run: usize, // Number of tasks successfully executed
+    tasks_failed: usize, // Number of tasks that failed
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
         const owned_index = allocator.create(JakefileIndex) catch {
@@ -80,6 +88,45 @@ pub const Executor = struct {
 
     pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Executor {
         return initInternal(allocator, jakefile, index);
+    }
+
+    /// Initialize with a pre-configured RuntimeContext (shares cache, environment, hooks, etc.)
+    pub fn initWithIndexAndContext(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, runtime: *RuntimeContext) Executor {
+        var variables = std.StringHashMap([]const u8).init(allocator);
+        var var_iter = index.variablesIterator();
+        while (var_iter.next()) |entry| {
+            variables.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
+        }
+
+        return .{
+            .allocator = allocator,
+            .jakefile = jakefile,
+            .index = index,
+            .cache = runtime.cache,
+            .executed = std.StringHashMap(void).init(allocator),
+            .in_progress = std.StringHashMap(void).init(allocator),
+            .variables = variables,
+            .expanded_strings = .empty,
+            .environment = runtime.environment,
+            .hook_runner = runtime.hook_runner,
+            .dry_run = false,
+            .verbose = false,
+            .auto_yes = false,
+            .jobs = 0,
+            .positional_args = &.{},
+            .current_shell = null,
+            .current_working_dir = null,
+            .current_quiet = false,
+            .prompt = runtime.prompt,
+            .watch_mode = false,
+            .color = runtime.color,
+            .theme = runtime.theme,
+            .is_tty = compat.getStdErr().isTty(),
+            .owns_resources = false, // Resources owned by RuntimeContext
+            .exec_start_time = 0,
+            .tasks_run = 0,
+            .tasks_failed = 0,
+        };
     }
 
     fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Executor {
@@ -161,6 +208,11 @@ pub const Executor = struct {
             .watch_mode = false,
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
+            .is_tty = compat.getStdErr().isTty(),
+            .owns_resources = true, // This executor owns its resources
+            .exec_start_time = 0,
+            .tasks_run = 0,
+            .tasks_failed = 0,
         };
     }
 
@@ -642,15 +694,18 @@ pub const Executor = struct {
     }
 
     pub fn deinit(self: *Executor) void {
-        // Persist cache to disk before cleanup
-        self.cache.save() catch {};
-        self.cache.deinit();
+        // Only cleanup resources if we own them (not when using RuntimeContext)
+        if (self.owns_resources) {
+            self.cache.save() catch {};
+            self.cache.deinit();
+            self.environment.deinit();
+            self.hook_runner.deinit();
+        }
+
+        // Always cleanup executor-specific state
         self.executed.deinit();
         self.in_progress.deinit();
         self.variables.deinit();
-        self.environment.deinit();
-        self.hook_runner.deinit();
-        // Free all expanded strings
         for (self.expanded_strings.items) |s| {
             self.allocator.free(s);
         }
@@ -665,13 +720,27 @@ pub const Executor = struct {
 
     /// Execute a recipe by name
     pub fn execute(self: *Executor, name: []const u8) ExecuteError!void {
+        // Record start time for summary
+        self.exec_start_time = std.time.nanoTimestamp();
+        self.tasks_run = 0;
+        self.tasks_failed = 0;
+
         // Use parallel execution if jobs > 1
         if (self.jobs > 1) {
-            return self.executeParallel(name);
+            self.executeParallel(name) catch |err| {
+                self.printExecutionSummary();
+                return err;
+            };
+            self.printExecutionSummary();
+            return;
         }
 
         // Sequential execution
-        return self.executeSequential(name);
+        self.executeSequential(name) catch |err| {
+            self.printExecutionSummary();
+            return err;
+        };
+        self.printExecutionSummary();
     }
 
     /// Execute using parallel executor for concurrent dependency execution
@@ -760,11 +829,15 @@ pub const Executor = struct {
 
         // Run the recipe - capture start time for duration display
         const start_time = std.time.nanoTimestamp();
-        // v4 format: use ○ for dry-run, → for normal execution
-        if (self.dry_run) {
+
+        // v4: animated spinner for TTY, static output for non-TTY/dry-run
+        var spinner: ?progress_mod.Spinner = null;
+        if (self.is_tty and !self.dry_run) {
+            spinner = progress_mod.Spinner.init(name, self.color);
+            spinner.?.start();
+        } else if (self.dry_run) {
+            // v4 format: use ○ for dry-run
             self.print("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(name) });
-        } else {
-            self.print("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(name) });
         }
 
         // Update hook runner settings
@@ -782,7 +855,7 @@ pub const Executor = struct {
         // Run pre-hooks (global and recipe-specific)
         self.hook_runner.runPreHooks(recipe.pre_hooks, &hook_context) catch |err| {
             self.print("{s}pre-hook failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            self.printCompletionStatus(name, false, start_time);
+            self.stopSpinnerOrPrintStatus(&spinner, name, false, start_time);
             return ExecuteError.CommandFailed;
         };
 
@@ -794,7 +867,7 @@ pub const Executor = struct {
         // Bind recipe parameters to variables
         self.bindRecipeParams(recipe) catch |err| {
             self.print("{s}failed to bind parameters: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            self.printCompletionStatus(name, false, start_time);
+            self.stopSpinnerOrPrintStatus(&spinner, name, false, start_time);
             return ExecuteError.CommandFailed;
         };
 
@@ -825,10 +898,12 @@ pub const Executor = struct {
 
         // Return the original error if recipe execution failed
         if (exec_result) |_| {
-            // Success - print completion with timing
-            self.printCompletionStatus(name, true, start_time);
+            // Success - stop spinner and print completion
+            self.stopSpinnerOrPrintStatus(&spinner, name, true, start_time);
+            self.tasks_run += 1;
         } else |err| {
-            self.printCompletionStatus(name, false, start_time);
+            self.stopSpinnerOrPrintStatus(&spinner, name, false, start_time);
+            self.tasks_failed += 1;
             return err;
         }
 
@@ -1506,6 +1581,83 @@ pub const Executor = struct {
         compat.getStdErr().writeAll(msg) catch {};
     }
 
+    /// Print Nx-style execution summary
+    /// Format: "   Successfully ran N tasks" or "   Failed to run N task(s)"
+    ///         "   Total time: X.XXs"
+    fn printExecutionSummary(self: *Executor) void {
+        const stderr = compat.getStdErr();
+        const total_time_ns = std.time.nanoTimestamp() - self.exec_start_time;
+        const total_time_ms = @divFloor(total_time_ns, 1_000_000);
+        const total_time_s = @as(f64, @floatFromInt(total_time_ms)) / 1000.0;
+
+        // Don't print summary in dry-run mode or if no tasks ran
+        if (self.dry_run) {
+            // Print dry-run summary
+            const total = self.tasks_run + self.tasks_failed;
+            if (total > 0) {
+                stderr.writeAll("\n") catch {};
+                var buf: [128]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "   {d} task{s} would run\n", .{ total, if (total == 1) "" else "s" }) catch return;
+                stderr.writeAll(msg) catch {};
+            }
+            return;
+        }
+
+        const total_tasks = self.tasks_run + self.tasks_failed;
+        if (total_tasks == 0) return;
+
+        stderr.writeAll("\n") catch {};
+
+        if (self.tasks_failed > 0) {
+            // Failure summary
+            stderr.writeAll("   ") catch {};
+            stderr.writeAll(self.color.errorRed()) catch {};
+            var buf: [128]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "Failed to run {d} task{s}", .{ self.tasks_failed, if (self.tasks_failed == 1) "" else "s" }) catch return;
+            stderr.writeAll(msg) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        } else {
+            // Success summary
+            stderr.writeAll("   ") catch {};
+            stderr.writeAll(self.color.successGreen()) catch {};
+            var buf: [128]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "Successfully ran {d} task{s}", .{ self.tasks_run, if (self.tasks_run == 1) "" else "s" }) catch return;
+            stderr.writeAll(msg) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        }
+
+        // Total time
+        stderr.writeAll("   ") catch {};
+        stderr.writeAll(self.color.muted()) catch {};
+        var time_buf: [64]u8 = undefined;
+        const time_msg = std.fmt.bufPrint(&time_buf, "Total time: {d:.2}s", .{total_time_s}) catch return;
+        stderr.writeAll(time_msg) catch {};
+        stderr.writeAll(self.color.reset()) catch {};
+        stderr.writeAll("\n") catch {};
+    }
+
+    /// Stop spinner (if running) and print completion status
+    /// Used for animated spinner mode - stops the animation thread and prints final status
+    fn stopSpinnerOrPrintStatus(self: *Executor, spinner: *?progress_mod.Spinner, name: []const u8, success: bool, start_time: i128) void {
+        // In dry-run mode, don't print completion line (tasks don't actually run)
+        if (self.dry_run) {
+            return;
+        }
+
+        const end_time = std.time.nanoTimestamp();
+        const duration_ns = end_time - start_time;
+
+        if (spinner.*) |*s| {
+            s.stop(success, duration_ns);
+            spinner.* = null;
+        } else {
+            // Non-TTY: use regular completion status
+            self.printCompletionStatusWithDuration(name, success, duration_ns);
+        }
+    }
+
     /// Print completion status with timing (per brand guide Style A)
     /// Success: ✓ recipe_name (duration)
     /// Failure: ✗ recipe_name (duration)
@@ -1515,32 +1667,69 @@ pub const Executor = struct {
         const duration_ms = @divFloor(duration_ns, 1_000_000);
         const duration_s = @as(f64, @floatFromInt(duration_ms)) / 1000.0;
 
+        // v4 format: "   ✓ name     1.82s" with 3-space indent and spacing before duration
         const stderr = compat.getStdErr();
+        var buf: [32]u8 = undefined;
+        const duration_str = std.fmt.bufPrint(&buf, "{d:.2}s", .{duration_s}) catch "?s";
+
         if (success) {
-            // ✓ recipe_name (duration) - all in success green, duration muted
+            stderr.writeAll("   ") catch {};
             stderr.writeAll(self.color.successGreen()) catch {};
             stderr.writeAll(color_mod.symbols.success) catch {};
-            stderr.writeAll(" ") catch {};
-            stderr.writeAll(name) catch {};
             stderr.writeAll(self.color.reset()) catch {};
             stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll("     ") catch {};
             stderr.writeAll(self.color.muted()) catch {};
-            var buf: [32]u8 = undefined;
-            const duration_str = std.fmt.bufPrint(&buf, "({d:.1}s)", .{duration_s}) catch "(?)";
             stderr.writeAll(duration_str) catch {};
             stderr.writeAll(self.color.reset()) catch {};
             stderr.writeAll("\n") catch {};
         } else {
-            // ✗ recipe_name (duration) - all in error red, duration muted
+            stderr.writeAll("   ") catch {};
             stderr.writeAll(self.color.errorRed()) catch {};
             stderr.writeAll(color_mod.symbols.failure) catch {};
-            stderr.writeAll(" ") catch {};
-            stderr.writeAll(name) catch {};
             stderr.writeAll(self.color.reset()) catch {};
             stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll("     ") catch {};
             stderr.writeAll(self.color.muted()) catch {};
-            var buf: [32]u8 = undefined;
-            const duration_str = std.fmt.bufPrint(&buf, "({d:.1}s)", .{duration_s}) catch "(?)";
+            stderr.writeAll(duration_str) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        }
+    }
+
+    /// Print completion status with pre-computed duration (for use with spinner)
+    fn printCompletionStatusWithDuration(self: *Executor, name: []const u8, success: bool, duration_ns: i128) void {
+        const duration_ms = @divFloor(duration_ns, 1_000_000);
+        const duration_s = @as(f64, @floatFromInt(duration_ms)) / 1000.0;
+
+        // v4 format: "   ✓ name     1.82s" with 3-space indent
+        const stderr = compat.getStdErr();
+        var buf: [32]u8 = undefined;
+        const duration_str = std.fmt.bufPrint(&buf, "{d:.2}s", .{duration_s}) catch "?s";
+
+        if (success) {
+            stderr.writeAll("   ") catch {};
+            stderr.writeAll(self.color.successGreen()) catch {};
+            stderr.writeAll(color_mod.symbols.success) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll("     ") catch {};
+            stderr.writeAll(self.color.muted()) catch {};
+            stderr.writeAll(duration_str) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        } else {
+            stderr.writeAll("   ") catch {};
+            stderr.writeAll(self.color.errorRed()) catch {};
+            stderr.writeAll(color_mod.symbols.failure) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll("     ") catch {};
+            stderr.writeAll(self.color.muted()) catch {};
             stderr.writeAll(duration_str) catch {};
             stderr.writeAll(self.color.reset()) catch {};
             stderr.writeAll("\n") catch {};

@@ -24,6 +24,7 @@ pub const context = @import("context.zig");
 pub const formatter = @import("formatter.zig");
 pub const upgrade = @import("upgrade.zig");
 pub const init = @import("init.zig");
+pub const progress = @import("progress.zig");
 
 pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;
@@ -83,6 +84,7 @@ comptime {
     _ = formatter;
     _ = upgrade;
     _ = init;
+    _ = progress;
 }
 
 test "basic lexer test" {

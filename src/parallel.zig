@@ -113,6 +113,10 @@ pub const ParallelExecutor = struct {
     completed_count: usize,
     failed: bool,
     first_error: ?ExecuteError,
+    is_tty: bool, // Whether stderr is a TTY (for animated output)
+    tasks_run: usize, // Successfully completed tasks
+    tasks_failed: usize, // Failed tasks
+    exec_start_time: i128, // Start time for summary
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, thread_count: usize) ParallelExecutor {
         const owned_index = allocator.create(JakefileIndex) catch {
@@ -159,6 +163,10 @@ pub const ParallelExecutor = struct {
             .completed_count = 0,
             .failed = false,
             .first_error = null,
+            .is_tty = compat.getStdErr().isTty(),
+            .tasks_run = 0,
+            .tasks_failed = 0,
+            .exec_start_time = 0,
         };
     }
 
@@ -299,7 +307,10 @@ pub const ParallelExecutor = struct {
         }
 
         // Reset state
+        self.exec_start_time = std.time.nanoTimestamp();
         self.completed_count = 0;
+        self.tasks_run = 0;
+        self.tasks_failed = 0;
         self.failed = false;
         self.first_error = null;
 
@@ -308,7 +319,11 @@ pub const ParallelExecutor = struct {
 
         if (max_threads <= 1 or self.dry_run) {
             // Single-threaded execution for simplicity in dry-run or single thread
-            try self.executeSequential();
+            self.executeSequential() catch |err| {
+                self.printExecutionSummary();
+                return err;
+            };
+            self.printExecutionSummary();
             return;
         }
 
@@ -328,6 +343,9 @@ pub const ParallelExecutor = struct {
         for (threads.items) |thread| {
             thread.join();
         }
+
+        // Print summary
+        self.printExecutionSummary();
 
         // Check if any recipe failed
         if (self.failed) {
@@ -410,11 +428,19 @@ pub const ParallelExecutor = struct {
 
         // Print recipe header and capture start time
         const start_time = std.time.nanoTimestamp();
-        self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
+        if (self.dry_run) {
+            // v4 format: use ○ for dry-run (no completion line)
+            self.printSynchronized("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(recipe.name) });
+        } else {
+            self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
+        }
 
         // Execute commands with directive handling
         if (!self.executeRecipeCommands(recipe.commands)) {
-            self.printCompletionStatus(recipe.name, false, start_time);
+            if (!self.dry_run) {
+                self.printCompletionStatus(recipe.name, false, start_time);
+            }
+            self.incrementTasksFailed();
             return false;
         }
 
@@ -425,8 +451,25 @@ pub const ParallelExecutor = struct {
             }
         }
 
-        self.printCompletionStatus(recipe.name, true, start_time);
+        if (!self.dry_run) {
+            self.printCompletionStatus(recipe.name, true, start_time);
+        }
+        self.incrementTasksRun();
         return true;
+    }
+
+    /// Thread-safe increment of tasks_run counter
+    fn incrementTasksRun(self: *ParallelExecutor) void {
+        self.output_mutex.lock();
+        defer self.output_mutex.unlock();
+        self.tasks_run += 1;
+    }
+
+    /// Thread-safe increment of tasks_failed counter
+    fn incrementTasksFailed(self: *ParallelExecutor) void {
+        self.output_mutex.lock();
+        defer self.output_mutex.unlock();
+        self.tasks_failed += 1;
     }
 
     /// Check if a command exists in PATH
@@ -959,9 +1002,7 @@ pub const ParallelExecutor = struct {
         compat.getStdErr().writeAll(msg) catch {};
     }
 
-    /// Print completion status with timing (per brand guide Style A)
-    /// Success: ✓ recipe_name (duration)
-    /// Failure: ✗ recipe_name (duration)
+    /// Print completion status with timing (v4 format: "   ✓ name     1.82s")
     fn printCompletionStatus(self: *ParallelExecutor, name: []const u8, success: bool, start_time: i128) void {
         const end_time = std.time.nanoTimestamp();
         const duration_ns = end_time - start_time;
@@ -972,33 +1013,89 @@ pub const ParallelExecutor = struct {
         defer self.output_mutex.unlock();
 
         const stderr = compat.getStdErr();
+        var buf: [32]u8 = undefined;
+        const duration_str = std.fmt.bufPrint(&buf, "{d:.2}s", .{duration_s}) catch "?s";
+
         if (success) {
+            stderr.writeAll("   ") catch {};
             stderr.writeAll(self.color.successGreen()) catch {};
             stderr.writeAll(color_mod.symbols.success) catch {};
-            stderr.writeAll(" ") catch {};
-            stderr.writeAll(name) catch {};
             stderr.writeAll(self.color.reset()) catch {};
             stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll("     ") catch {};
             stderr.writeAll(self.color.muted()) catch {};
-            var buf: [32]u8 = undefined;
-            const duration_str = std.fmt.bufPrint(&buf, "({d:.1}s)", .{duration_s}) catch "(?)";
             stderr.writeAll(duration_str) catch {};
             stderr.writeAll(self.color.reset()) catch {};
             stderr.writeAll("\n") catch {};
         } else {
+            stderr.writeAll("   ") catch {};
             stderr.writeAll(self.color.errorRed()) catch {};
             stderr.writeAll(color_mod.symbols.failure) catch {};
-            stderr.writeAll(" ") catch {};
-            stderr.writeAll(name) catch {};
             stderr.writeAll(self.color.reset()) catch {};
             stderr.writeAll(" ") catch {};
+            stderr.writeAll(name) catch {};
+            stderr.writeAll("     ") catch {};
             stderr.writeAll(self.color.muted()) catch {};
-            var buf: [32]u8 = undefined;
-            const duration_str = std.fmt.bufPrint(&buf, "({d:.1}s)", .{duration_s}) catch "(?)";
             stderr.writeAll(duration_str) catch {};
             stderr.writeAll(self.color.reset()) catch {};
             stderr.writeAll("\n") catch {};
         }
+    }
+
+    /// Print Nx-style execution summary (v4 format)
+    fn printExecutionSummary(self: *ParallelExecutor) void {
+        const stderr = compat.getStdErr();
+        const total_time_ns = std.time.nanoTimestamp() - self.exec_start_time;
+        const total_time_ms = @divFloor(total_time_ns, 1_000_000);
+        const total_time_s = @as(f64, @floatFromInt(total_time_ms)) / 1000.0;
+
+        // Don't print summary in dry-run mode or if no tasks ran
+        if (self.dry_run) {
+            // Print dry-run summary
+            const total = self.tasks_run + self.tasks_failed;
+            if (total > 0) {
+                stderr.writeAll("\n") catch {};
+                var buf: [128]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "   {d} task{s} would run\n", .{ total, if (total == 1) "" else "s" }) catch return;
+                stderr.writeAll(msg) catch {};
+            }
+            return;
+        }
+
+        const total_tasks = self.tasks_run + self.tasks_failed;
+        if (total_tasks == 0) return;
+
+        stderr.writeAll("\n") catch {};
+
+        if (self.tasks_failed > 0) {
+            // Failure summary
+            stderr.writeAll("   ") catch {};
+            stderr.writeAll(self.color.errorRed()) catch {};
+            var buf: [128]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "Failed to run {d} task{s}", .{ self.tasks_failed, if (self.tasks_failed == 1) "" else "s" }) catch return;
+            stderr.writeAll(msg) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        } else {
+            // Success summary
+            stderr.writeAll("   ") catch {};
+            stderr.writeAll(self.color.successGreen()) catch {};
+            var buf: [128]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "Successfully ran {d} task{s}", .{ self.tasks_run, if (self.tasks_run == 1) "" else "s" }) catch return;
+            stderr.writeAll(msg) catch {};
+            stderr.writeAll(self.color.reset()) catch {};
+            stderr.writeAll("\n") catch {};
+        }
+
+        // Total time
+        stderr.writeAll("   ") catch {};
+        stderr.writeAll(self.color.muted()) catch {};
+        var time_buf: [64]u8 = undefined;
+        const time_msg = std.fmt.bufPrint(&time_buf, "Total time: {d:.2}s", .{total_time_s}) catch return;
+        stderr.writeAll(time_msg) catch {};
+        stderr.writeAll(self.color.reset()) catch {};
+        stderr.writeAll("\n") catch {};
     }
 
     /// Execute sequentially (for single-threaded or dry-run mode)

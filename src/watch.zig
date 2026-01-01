@@ -10,6 +10,7 @@ const executor_mod = @import("executor.zig");
 const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
 const glob_mod = @import("glob.zig");
 const color_mod = @import("color.zig");
+const RuntimeContext = @import("context.zig").RuntimeContext;
 
 const Jakefile = parser.Jakefile;
 const Executor = executor_mod.Executor;
@@ -59,6 +60,25 @@ pub const Watcher = struct {
 
     pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {
         return initInternal(allocator, jakefile, index);
+    }
+
+    /// Initialize with a pre-configured RuntimeContext (shares color, theme)
+    pub fn initWithIndexAndContext(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, runtime: *RuntimeContext) Watcher {
+        return .{
+            .allocator = allocator,
+            .jakefile = jakefile,
+            .index = index,
+            .watch_patterns = .empty,
+            .file_mtimes = .empty,
+            .resolved_files = .empty,
+            .poll_interval_ns = POLL_INTERVAL_MS * std.time.ns_per_ms,
+            .debounce_ns = DEBOUNCE_MS * std.time.ns_per_ms,
+            .verbose = false,
+            .dry_run = false,
+            .last_change_time = 0,
+            .color = runtime.color,
+            .theme = runtime.theme,
+        };
     }
 
     fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {

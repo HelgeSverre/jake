@@ -1,0 +1,19 @@
+# Test parallel execution
+
+task a:
+    echo "task a running"
+    sleep 0.1
+    echo "task a done"
+
+task b:
+    echo "task b running"
+    sleep 0.1
+    echo "task b done"
+
+task c:
+    echo "task c running"
+    sleep 0.1
+    echo "task c done"
+
+task all: [a, b, c]
+    echo "all tasks complete"
