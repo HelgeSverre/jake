@@ -38,7 +38,7 @@ const logo = "{j}";
             class="fixed top-0 left-0 right-0 z-50 bg-bg-primary/80 backdrop-blur-xl border-b border-border"
         >
             <div
-                class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between"
+                class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between"
             >
                 <a
                     href="/"
@@ -51,7 +51,9 @@ const logo = "{j}";
                     >
                     <span>jake</span>
                 </a>
-                <div class="flex items-center gap-6">
+
+                <!-- Desktop Navigation (hidden on mobile) -->
+                <div class="hidden md:flex items-center gap-6">
                     <!-- Features Dropdown -->
                     <div class="relative group" id="features-dropdown">
                         <button
@@ -158,15 +160,134 @@ const logo = "{j}";
                         Get Started
                     </a>
                 </div>
+
+                <!-- Mobile menu button (visible on mobile) -->
+                <button
+                    id="mobile-menu-button"
+                    class="md:hidden text-text-secondary hover:text-text-primary transition-colors p-2"
+                    aria-label="Toggle mobile menu"
+                >
+                    <svg
+                        class="w-6 h-6"
+                        id="hamburger-icon"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                    <svg
+                        class="w-6 h-6 hidden"
+                        id="close-icon"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Mobile menu (full screen overlay) -->
+            <div
+                id="mobile-menu"
+                class="md:hidden fixed inset-0 top-16 bg-bg-primary/95 backdrop-blur-xl z-40 opacity-0 invisible transition-all duration-300"
+            >
+                <div class="flex flex-col h-full px-4 py-6 overflow-y-auto">
+                    <!-- Features Section -->
+                    <div class="mb-4">
+                        <button
+                            id="mobile-features-toggle"
+                            class="w-full flex items-center justify-between py-3 text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            <span class="text-base font-medium">Features</span>
+                            <svg
+                                class="w-5 h-5 transition-transform"
+                                id="mobile-features-arrow"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </button>
+                        <div
+                            id="mobile-features-menu"
+                            class="hidden pl-4 space-y-2"
+                        >
+                            <a
+                                href="/features"
+                                class="block py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                            >
+                                Overview
+                            </a>
+                            <a
+                                href="/features/file-targets"
+                                class="block py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                            >
+                                File Targets
+                            </a>
+                            <a
+                                href="/features/parallel-execution"
+                                class="block py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                            >
+                                Parallel Execution
+                            </a>
+                            <a
+                                href="/features/hooks"
+                                class="block py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                            >
+                                Hooks
+                            </a>
+                            <a
+                                href="/features/imports"
+                                class="block py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                            >
+                                Imports & Modules
+                            </a>
+                            <a
+                                href="/features/watch-mode"
+                                class="block py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                            >
+                                Watch Mode
+                            </a>
+                        </div>
+                    </div>
+
+                    <a
+                        href="/docs/introduction"
+                        class="py-3 text-base text-text-secondary hover:text-text-primary transition-colors"
+                        >Docs</a
+                    >
+                    <a
+                        href="https://github.com/HelgeSverre/jake"
+                        class="py-3 text-base text-text-secondary hover:text-text-primary transition-colors"
+                        >GitHub</a
+                    >
+                    <a
+                        href="/docs/installation"
+                        class="mt-4 bg-jake hover:bg-jake-dark text-white px-6 py-3 rounded-lg text-base font-medium transition-colors text-center"
+                    >
+                        Get Started
+                    </a>
+                </div>
             </div>
         </nav>
 
         <script>
-            // Mobile-friendly dropdown toggle
-            const isTouchDevice = () => {
-                return "ontouchstart" in window || navigator.maxTouchPoints > 0;
-            };
-
+            // Desktop dropdown toggle
             const dropdown = document.getElementById("features-dropdown");
             const toggle = document.getElementById("features-toggle");
             const menu = document.getElementById("features-menu");
@@ -210,6 +331,70 @@ const logo = "{j}";
                         menu.classList.remove("opacity-100", "visible");
                         arrow.style.transform = "rotate(0deg)";
                     });
+                });
+            }
+
+            // Mobile menu toggle
+            const mobileMenuButton = document.getElementById("mobile-menu-button");
+            const mobileMenu = document.getElementById("mobile-menu");
+            const hamburgerIcon = document.getElementById("hamburger-icon");
+            const closeIcon = document.getElementById("close-icon");
+
+            if (mobileMenuButton && mobileMenu) {
+                let mobileMenuOpen = false;
+
+                mobileMenuButton.addEventListener("click", () => {
+                    mobileMenuOpen = !mobileMenuOpen;
+
+                    if (mobileMenuOpen) {
+                        mobileMenu.classList.remove("opacity-0", "invisible");
+                        mobileMenu.classList.add("opacity-100", "visible");
+                        hamburgerIcon.classList.add("hidden");
+                        closeIcon.classList.remove("hidden");
+                        // Prevent body scroll when menu is open
+                        document.body.style.overflow = "hidden";
+                    } else {
+                        mobileMenu.classList.add("opacity-0", "invisible");
+                        mobileMenu.classList.remove("opacity-100", "visible");
+                        hamburgerIcon.classList.remove("hidden");
+                        closeIcon.classList.add("hidden");
+                        // Restore body scroll
+                        document.body.style.overflow = "";
+                    }
+                });
+
+                // Close mobile menu when clicking on a link
+                const mobileMenuLinks = mobileMenu.querySelectorAll("a");
+                mobileMenuLinks.forEach((link) => {
+                    link.addEventListener("click", () => {
+                        mobileMenuOpen = false;
+                        mobileMenu.classList.add("opacity-0", "invisible");
+                        mobileMenu.classList.remove("opacity-100", "visible");
+                        hamburgerIcon.classList.remove("hidden");
+                        closeIcon.classList.add("hidden");
+                        document.body.style.overflow = "";
+                    });
+                });
+            }
+
+            // Mobile features dropdown toggle
+            const mobileFeaturesToggle = document.getElementById("mobile-features-toggle");
+            const mobileFeaturesMenu = document.getElementById("mobile-features-menu");
+            const mobileFeaturesArrow = document.getElementById("mobile-features-arrow");
+
+            if (mobileFeaturesToggle && mobileFeaturesMenu) {
+                let mobileFeaturesOpen = false;
+
+                mobileFeaturesToggle.addEventListener("click", () => {
+                    mobileFeaturesOpen = !mobileFeaturesOpen;
+
+                    if (mobileFeaturesOpen) {
+                        mobileFeaturesMenu.classList.remove("hidden");
+                        mobileFeaturesArrow.style.transform = "rotate(180deg)";
+                    } else {
+                        mobileFeaturesMenu.classList.add("hidden");
+                        mobileFeaturesArrow.style.transform = "rotate(0deg)";
+                    }
                 });
             }
         </script>
