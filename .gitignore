@@ -62,4 +62,8 @@ site/public/libs/
 # Zed extension build artifacts
 editors/zed-jake/extension.wasm
 
+# Package manager directories
 node_modules
+
+# Temporary experiments
+tui/
