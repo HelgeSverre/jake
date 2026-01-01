@@ -14,29 +14,29 @@ This document defines the v4 CLI output design for jake, based on patterns from 
 
 ### Status Symbols
 
-| Symbol | Color        | Meaning              | Usage                    |
-| ------ | ------------ | -------------------- | ------------------------ |
-| `✓`    | Success Green | Task completed       | After task finishes      |
-| `✗`    | Error Red     | Task failed          | After task fails         |
-| `—`    | Muted Gray    | Skipped              | Up to date, not for OS   |
+| Symbol | Color         | Meaning        | Usage                  |
+| ------ | ------------- | -------------- | ---------------------- |
+| `✓`    | Success Green | Task completed | After task finishes    |
+| `✗`    | Error Red     | Task failed    | After task fails       |
+| `—`    | Muted Gray    | Skipped        | Up to date, not for OS |
 
 ### Activity Symbols
 
-| Symbol | Color        | Meaning              | Usage                    |
-| ------ | ------------ | -------------------- | ------------------------ |
-| `⠋⠙⠹` | Jake Rose    | Running (animated)   | During task execution    |
-| `◉`    | Info Blue    | Watching             | Watch mode active        |
-| `⟳`    | Warning Yellow | Changed            | File modification        |
-| `○`    | Muted Gray   | Would run            | Dry-run pending tasks    |
+| Symbol | Color          | Meaning            | Usage                 |
+| ------ | -------------- | ------------------ | --------------------- |
+| `⠋⠙⠹`  | Jake Rose      | Running (animated) | During task execution |
+| `◉`    | Info Blue      | Watching           | Watch mode active     |
+| `⟳`    | Warning Yellow | Changed            | File modification     |
+| `○`    | Muted Gray     | Would run          | Dry-run pending tasks |
 
 ### UI Symbols
 
-| Symbol | Color        | Meaning              | Usage                    |
-| ------ | ------------ | -------------------- | ------------------------ |
-| `?`    | Warning Yellow | Prompt              | Confirmation required    |
-| `▷`    | Info Blue    | Mode indicator       | Dry-run header           |
-| `│┌└`  | Muted Gray   | Box drawing          | Parallel task grouping   |
-| `{j}`  | Jake Rose    | Logo                 | Version, help, errors    |
+| Symbol | Color          | Meaning        | Usage                  |
+| ------ | -------------- | -------------- | ---------------------- |
+| `?`    | Warning Yellow | Prompt         | Confirmation required  |
+| `▷`    | Info Blue      | Mode indicator | Dry-run header         |
+| `│┌└`  | Muted Gray     | Box drawing    | Parallel task grouping |
+| `{j}`  | Jake Rose      | Logo           | Version, help, errors  |
 
 ## Output Formats
 
@@ -173,6 +173,7 @@ $ jake editors.vscode-publish
 ```
 
 With `--yes`:
+
 ```
    ✓ editors.vscode-package 1.2s
    auto-confirmed: Publish jake-lang 0.3.0 to marketplace?
@@ -229,31 +230,31 @@ All verbose messages use the `jake:` prefix in muted gray color.
 
 ### Categories
 
-| Category | Example |
-| -------- | ------- |
-| Import | `jake: importing 'build.jake'` |
-| | `jake: imported 12 recipes from 'build.jake'` |
-| Environment | `jake: loading .env from '/project/.env'` |
-| | `jake: loaded 5 variables from .env` |
-| Directory | `jake: changing directory to '/project/src'` |
-| Variables | `jake: expanding {{name}} → 'value'` |
-| | `jake: calling {{env(HOME)}} → '/Users/dev'` |
-| Glob | `jake: expanding 'src/*.zig' → 12 files` |
-| Cache | `jake: cache hit for 'build' (up to date)` |
-| | `jake: cache miss for 'build' (needs rebuild)` |
-| | `jake: dependency 'lib.zig' changed` |
-| Dependencies | `jake: resolving dependencies for 'deploy'` |
-| | `jake: dependency order: build → test → deploy` |
-| | `jake: parallel execution: 4 threads` |
-| Watch | `jake: watching 24 files for changes` |
-| | `jake: detected change in 'src/parser.zig'` |
-| Hooks | `jake: running @pre hook for 'deploy'` |
-| | `jake: hook exited with code 0` |
-| Validation | `jake: checking @require 'docker'` |
-| | `jake: @require 'docker' satisfied` |
-| | `jake: detected platform 'macos-aarch64'` |
-| Conditions | `jake: evaluating 'env_exists(CI)' → true` |
-| | `jake: @if block taken` |
+| Category     | Example                                         |
+| ------------ | ----------------------------------------------- |
+| Import       | `jake: importing 'build.jake'`                  |
+|              | `jake: imported 12 recipes from 'build.jake'`   |
+| Environment  | `jake: loading .env from '/project/.env'`       |
+|              | `jake: loaded 5 variables from .env`            |
+| Directory    | `jake: changing directory to '/project/src'`    |
+| Variables    | `jake: expanding {{name}} → 'value'`            |
+|              | `jake: calling {{env(HOME)}} → '/Users/dev'`    |
+| Glob         | `jake: expanding 'src/*.zig' → 12 files`        |
+| Cache        | `jake: cache hit for 'build' (up to date)`      |
+|              | `jake: cache miss for 'build' (needs rebuild)`  |
+|              | `jake: dependency 'lib.zig' changed`            |
+| Dependencies | `jake: resolving dependencies for 'deploy'`     |
+|              | `jake: dependency order: build → test → deploy` |
+|              | `jake: parallel execution: 4 threads`           |
+| Watch        | `jake: watching 24 files for changes`           |
+|              | `jake: detected change in 'src/parser.zig'`     |
+| Hooks        | `jake: running @pre hook for 'deploy'`          |
+|              | `jake: hook exited with code 0`                 |
+| Validation   | `jake: checking @require 'docker'`              |
+|              | `jake: @require 'docker' satisfied`             |
+|              | `jake: detected platform 'macos-aarch64'`       |
+| Conditions   | `jake: evaluating 'env_exists(CI)' → true`      |
+|              | `jake: @if block taken`                         |
 
 ### Example Verbose Execution
 
@@ -287,15 +288,15 @@ $ jake -v dev.ci
 
 ### Files to Modify
 
-| File | Changes |
-| ---- | ------- |
-| `src/color.zig` | Add new symbols: `◉`, `⟳`, `○`, `—`, `▷`. Add spinner frames constant. |
+| File               | Changes                                                                    |
+| ------------------ | -------------------------------------------------------------------------- |
+| `src/color.zig`    | Add new symbols: `◉`, `⟳`, `○`, `—`, `▷`. Add spinner frames constant.     |
 | `src/executor.zig` | Recipe headers → spinner. Completion → timing. Nx summary. Verbose prefix. |
-| `src/parallel.zig` | Box-drawing for parallel. Synchronized spinner. Per-thread updates. |
-| `src/main.zig` | Version with `{j}`. Error formatting. No-Jakefile with `{j}`. |
-| `src/watch.zig` | `◉` watching. `⟳` changed. |
-| `src/args.zig` | Help text with `{j}`. |
-| `src/prompt.zig` | `?` symbol. Auto-confirm format. |
+| `src/parallel.zig` | Box-drawing for parallel. Synchronized spinner. Per-thread updates.        |
+| `src/main.zig`     | Version with `{j}`. Error formatting. No-Jakefile with `{j}`.              |
+| `src/watch.zig`    | `◉` watching. `⟳` changed.                                                 |
+| `src/args.zig`     | Help text with `{j}`.                                                      |
+| `src/prompt.zig`   | `?` symbol. Auto-confirm format.                                           |
 
 ### Color Codes (from color.zig)
 
@@ -306,7 +307,7 @@ pub const symbols = struct {
     pub const failure = "✗";
     pub const warning = "~";
     pub const logo = "{j}";
-    
+
     // New v4 symbols
     pub const skipped = "—";
     pub const watching = "◉";
@@ -314,7 +315,7 @@ pub const symbols = struct {
     pub const pending = "○";
     pub const prompt = "?";
     pub const mode = "▷";
-    
+
     // Spinner frames
     pub const spinner = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 };

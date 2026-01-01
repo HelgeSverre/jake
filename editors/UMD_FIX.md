@@ -48,7 +48,7 @@ Implemented the **Universal Module Definition (UMD)** pattern, which is the stan
   }
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
-  
+
   // Your actual module code here
   return function(...) { ... };
 });
@@ -59,12 +59,14 @@ Implemented the **Universal Module Definition (UMD)** pattern, which is the stan
 ### 1. highlightjs-jake
 
 **Before:**
+
 ```javascript
 export default function hljsDefineJake(hljs) { ... }
 // + conditional CommonJS/browser exports
 ```
 
 **After:**
+
 ```javascript
 (function (root, factory) {
   // UMD wrapper
@@ -80,17 +82,21 @@ export default function hljsDefineJake(hljs) { ... }
 ### 2. prism-jake
 
 **Before:**
+
 ```javascript
 const jake = { ... };
 // + conditional exports
 ```
 
 **After:**
+
 ```javascript
 (function (root, factory) {
   // UMD wrapper with auto-registration
 })(typeof self !== "undefined" ? self : this, function () {
-  return { /* grammar */ };
+  return {
+    /* grammar */
+  };
 });
 ```
 
@@ -101,24 +107,30 @@ const jake = { ... };
 ## Results
 
 ✅ **Browser `<script>` tags work**
+
 ```html
 <script src="highlightjs-jake.min.js"></script>
-<script>hljs.registerLanguage('jake', hljsDefineJake);</script>
+<script>
+  hljs.registerLanguage("jake", hljsDefineJake);
+</script>
 ```
 
 ✅ **Node.js CommonJS works**
+
 ```javascript
-const jake = require('highlightjs-jake');
-hljs.registerLanguage('jake', jake);
+const jake = require("highlightjs-jake");
+hljs.registerLanguage("jake", jake);
 ```
 
 ✅ **ES Modules work**
+
 ```javascript
-import jake from 'highlightjs-jake';
-hljs.registerLanguage('jake', jake);
+import jake from "highlightjs-jake";
+hljs.registerLanguage("jake", jake);
 ```
 
 ✅ **Minification works**
+
 - Terser minifies UMD pattern correctly
 - No syntax errors in browser
 - All module systems supported
@@ -132,12 +144,14 @@ jake editors.build-highlighters
 ```
 
 Which runs:
+
 ```bash
 npx terser editors/highlightjs-jake/src/languages/jake.js \
   -o site/public/libs/highlightjs-jake.min.js -c -m
 ```
 
 Output sizes:
+
 - `highlightjs-jake.min.js`: ~1.9KB
 - `prism-jake.min.js`: ~1.5KB
 - `shiki-jake.tmLanguage.json`: ~13KB (uncompressed JSON)
@@ -145,6 +159,7 @@ Output sizes:
 ## Testing
 
 Verified that minified files:
+
 1. Start with UMD wrapper: `!function(e,a){...`
 2. Export correctly in all environments
 3. No syntax errors when loaded in browser

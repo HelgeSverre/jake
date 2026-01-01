@@ -13,8 +13,8 @@ npm install prism-jake
 ### Node.js / ES Modules
 
 ```javascript
-import Prism from 'prismjs';
-import jake from 'prism-jake';
+import Prism from "prismjs";
+import jake from "prism-jake";
 
 // Register the language
 Prism.languages.jake = jake;
@@ -24,7 +24,7 @@ Prism.languages.jakefile = jake;
 const code = `task build:
     echo "Building..."`;
 
-const html = Prism.highlight(code, jake, 'jake');
+const html = Prism.highlight(code, jake, "jake");
 console.log(html);
 ```
 
@@ -33,32 +33,35 @@ console.log(html);
 ```html
 <!DOCTYPE html>
 <html>
-<head>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" />
-</head>
-<body>
-  <pre><code class="language-jake">
+  <head>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css"
+    />
+  </head>
+  <body>
+    <pre><code class="language-jake">
 task build:
     echo "Building..."
   </code></pre>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-  <script src="prism-jake.js"></script>
-  <!-- Language auto-registers when Prism is global -->
-</body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="prism-jake.js"></script>
+    <!-- Language auto-registers when Prism is global -->
+  </body>
 </html>
 ```
 
 ### With Bundlers (Webpack, Vite, etc.)
 
 ```javascript
-import Prism from 'prismjs';
-import jake from 'prism-jake';
+import Prism from "prismjs";
+import jake from "prism-jake";
 
 Prism.languages.jake = jake;
 
 // Use in your framework
-const highlighted = Prism.highlight(jakeCode, jake, 'jake');
+const highlighted = Prism.highlight(jakeCode, jake, "jake");
 ```
 
 ## Supported Syntax

@@ -16,7 +16,7 @@ This document summarizes all work completed to simplify and improve the Jake syn
    - Users: `Prism.languages.jake = jake;`
    - Standard Prism pattern
 
-2. **highlightjs-jake** - Exports just the language function  
+2. **highlightjs-jake** - Exports just the language function
    - Users: `hljs.registerLanguage('jake', jake);`
    - Standard highlight.js pattern
 
@@ -46,11 +46,11 @@ This document summarizes all work completed to simplify and improve the Jake syn
 ```javascript
 (function (root, factory) {
   if (typeof define === "function" && define.amd) {
-    define([], factory);  // AMD
+    define([], factory); // AMD
   } else if (typeof module === "object" && module.exports) {
-    module.exports = factory();  // CommonJS
+    module.exports = factory(); // CommonJS
   } else {
-    root.globalName = factory();  // Browser
+    root.globalName = factory(); // Browser
   }
 })(typeof self !== "undefined" ? self : this, function () {
   // Actual code here
@@ -62,11 +62,12 @@ This document summarizes all work completed to simplify and improve the Jake syn
 ✅ Works in browsers via `<script>` tags  
 ✅ Works with CommonJS (`require()`)  
 ✅ Works with ES modules (`import`)  
-✅ Minifies correctly with Terser  
+✅ Minifies correctly with Terser
 
 **Build Command**: `jake editors.build-highlighters`
 
 **Output**:
+
 - `site/public/libs/highlightjs-jake.min.js` (~1.9KB)
 - `site/public/libs/prism-jake.min.js` (~1.5KB)
 - `site/public/libs/shiki-jake.tmLanguage.json` (~13KB)
@@ -96,6 +97,7 @@ This document summarizes all work completed to simplify and improve the Jake syn
 **Condition functions**: `env`, `exists`, `eq`, `neq`, `is_watching`, `is_dry_run`, `is_verbose`
 
 **Implementation**:
+
 - **Prism**: Added `builtin-function` pattern (before generic function)
 - **highlight.js**: Added `BUILTIN_FUNCTIONS` constant and pattern
 - **Shiki**: Already had this ✅
@@ -107,6 +109,7 @@ This document summarizes all work completed to simplify and improve the Jake syn
 **After**: All three use generic `@[a-zA-Z_][a-zA-Z0-9_-]*` pattern.
 
 **Benefits**:
+
 - Catches any directive automatically
 - Future-proof for new directives
 - Consistent across all three
@@ -131,7 +134,8 @@ Some differences are **features**, not bugs:
 
 These reflect each library's philosophy and use case.
 
-**Documentation**: 
+**Documentation**:
+
 - `editors/CONSISTENCY_IMPROVEMENTS.md`
 - `editors/GRAMMAR_COMPARISON.md`
 
@@ -176,16 +180,18 @@ site/
 ✅ Built-in functions highlighted in all three  
 ✅ Directives highlighted consistently  
 ✅ Auto-registration (Prism in browser)  
-✅ Framework integration (Astro, VitePress examples)  
+✅ Framework integration (Astro, VitePress examples)
 
 ## Metrics
 
 ### Code Reduction
+
 - Removed ~70 lines of abstraction code
 - Simplified exports by 40%
 - Reduced API surface
 
 ### Feature Parity
+
 - Before: Shiki had 19 built-in functions, others had 0
 - After: All three have 19 built-in functions ✅
 
@@ -193,6 +199,7 @@ site/
 - After: All three catch any directive ✅
 
 ### File Sizes
+
 - `highlightjs-jake.min.js`: 1.9KB (efficient)
 - `prism-jake.min.js`: 1.5KB (lightweight)
 - `shiki-jake.tmLanguage.json`: 13KB (rich grammar)
@@ -237,6 +244,6 @@ The syntax highlighter packages are now:
 ✅ **Consistent** - Same elements highlighted across all three  
 ✅ **Compatible** - Work in all JavaScript environments  
 ✅ **Documented** - Clear usage examples and migration guides  
-✅ **Maintainable** - Less code, clearer patterns  
+✅ **Maintainable** - Less code, clearer patterns
 
 The work transforms these from overengineered wrappers into clean, ecosystem-standard language packages while improving feature parity and fixing critical compatibility issues.

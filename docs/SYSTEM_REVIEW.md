@@ -73,7 +73,7 @@
   helpers, or at least gate them per OS (`jake/build.jake:70-96`). That lowers hidden dependencies on GNU coreutils and
   makes the automation usable on default macOS setups.
 
-----
+---
 
 ## Action Plan
 

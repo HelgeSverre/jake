@@ -13,31 +13,31 @@ npm install highlightjs-jake
 ### Node.js / ES Modules
 
 ```javascript
-import hljs from 'highlight.js/lib/core';
-import jake from 'highlightjs-jake';
+import hljs from "highlight.js/lib/core";
+import jake from "highlightjs-jake";
 
 // Register the language (standard highlight.js pattern)
-hljs.registerLanguage('jake', jake);
-hljs.registerLanguage('jakefile', jake);
+hljs.registerLanguage("jake", jake);
+hljs.registerLanguage("jakefile", jake);
 
 // Highlight code
 const code = `task build:
     echo "Building..."`;
 
-const result = hljs.highlight(code, { language: 'jake' });
+const result = hljs.highlight(code, { language: "jake" });
 console.log(result.value);
 ```
 
 ### CommonJS
 
 ```javascript
-const hljs = require('highlight.js/lib/core');
-const jake = require('highlightjs-jake');
+const hljs = require("highlight.js/lib/core");
+const jake = require("highlightjs-jake");
 
-hljs.registerLanguage('jake', jake);
-hljs.registerLanguage('jakefile', jake);
+hljs.registerLanguage("jake", jake);
+hljs.registerLanguage("jakefile", jake);
 
-const html = hljs.highlight(jakeCode, { language: 'jake' }).value;
+const html = hljs.highlight(jakeCode, { language: "jake" }).value;
 ```
 
 ### Browser
@@ -45,43 +45,46 @@ const html = hljs.highlight(jakeCode, { language: 'jake' }).value;
 ```html
 <!DOCTYPE html>
 <html>
-<head>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" />
-</head>
-<body>
-  <pre><code class="language-jake">
+  <head>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css"
+    />
+  </head>
+  <body>
+    <pre><code class="language-jake">
 task build:
     echo "Building..."
   </code></pre>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="highlightjs-jake.js"></script>
-  <script>
-    hljs.registerLanguage('jake', hljsDefineJake);
-    hljs.highlightAll();
-  </script>
-</body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="highlightjs-jake.js"></script>
+    <script>
+      hljs.registerLanguage("jake", hljsDefineJake);
+      hljs.highlightAll();
+    </script>
+  </body>
 </html>
 ```
 
 ### CommonJS
 
 ```javascript
-const hljs = require('highlight.js/lib/core');
-const jake = require('highlightjs-jake');
+const hljs = require("highlight.js/lib/core");
+const jake = require("highlightjs-jake");
 
-hljs.registerLanguage('jake', jake);
+hljs.registerLanguage("jake", jake);
 
-const html = hljs.highlight(jakeCode, { language: 'jake' }).value;
+const html = hljs.highlight(jakeCode, { language: "jake" }).value;
 ```
 
 ### With Automatic Language Detection
 
 ```javascript
-import hljs from 'highlight.js/lib/core';
-import jake from 'highlightjs-jake';
+import hljs from "highlight.js/lib/core";
+import jake from "highlightjs-jake";
 
-hljs.registerLanguage('jake', jake);
+hljs.registerLanguage("jake", jake);
 
 // Will auto-detect Jake syntax
 const result = hljs.highlightAuto(code);

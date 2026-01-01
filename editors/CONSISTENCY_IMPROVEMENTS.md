@@ -98,6 +98,7 @@ Ensured built-in functions are matched BEFORE generic function patterns in all t
 **Why**: Regex engines match first pattern that succeeds. If generic function pattern comes first, built-ins never get their special styling.
 
 **Order**:
+
 1. Built-in functions (specific)
 2. Generic functions (catch-all)
 3. Variables
@@ -107,6 +108,7 @@ Ensured built-in functions are matched BEFORE generic function patterns in all t
 All three grammars now consistently highlight these 19 functions:
 
 ### Path Functions
+
 - `dirname(path)` - Get directory name
 - `basename(path)` - Get file name
 - `extension(path)` - Get file extension
@@ -116,16 +118,19 @@ All three grammars now consistently highlight these 19 functions:
 - `abs_path(path)` - Alias for absolute_path
 
 ### String Functions
+
 - `uppercase(str)` - Convert to uppercase
 - `lowercase(str)` - Convert to lowercase
 - `trim(str)` - Trim whitespace
 
 ### System Functions
+
 - `home()` - User home directory
 - `local_bin(name)` - Path to ~/.local/bin/name
 - `shell_config()` - Path to shell config file
 
 ### Condition Functions
+
 - `env(VAR)` - Get environment variable
 - `exists(path)` - Check if path exists
 - `eq(a, b)` - Check equality
@@ -147,6 +152,7 @@ Some differences remain because they reflect each library's philosophy:
 ### CSS Classes
 
 Each uses different naming:
+
 - Prism: `.token.builtin-function`, `.token.keyword`
 - highlight.js: `.hljs-built_in`, `.hljs-keyword`
 - Shiki: Inline colors from TextMate scopes
@@ -179,22 +185,24 @@ task build:
 ```
 
 **Before**:
+
 - Prism: `dirname`, `exists`, `uppercase` as generic functions
 - highlight.js: Same
 - Shiki: Special built-in highlighting ✨
 
 **After**:
+
 - All three: Special built-in highlighting ✨
 
 ## Summary
 
-| Element | Before | After |
-|---------|--------|-------|
-| Built-in functions | Shiki only | All three ✅ |
-| Directives | highlight.js explicit list | All three generic ✅ |
-| Comments | Consistent | Consistent ✅ |
-| Strings | Consistent | Consistent ✅ |
-| Interpolation | Mostly consistent | Consistent ✅ |
-| Recipe headers | Different granularity | Different granularity (intentional) |
+| Element            | Before                     | After                               |
+| ------------------ | -------------------------- | ----------------------------------- |
+| Built-in functions | Shiki only                 | All three ✅                        |
+| Directives         | highlight.js explicit list | All three generic ✅                |
+| Comments           | Consistent                 | Consistent ✅                       |
+| Strings            | Consistent                 | Consistent ✅                       |
+| Interpolation      | Mostly consistent          | Consistent ✅                       |
+| Recipe headers     | Different granularity      | Different granularity (intentional) |
 
 The grammars are now **functionally consistent** while preserving each library's architectural strengths.

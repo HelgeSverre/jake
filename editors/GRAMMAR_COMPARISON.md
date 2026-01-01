@@ -3,24 +3,28 @@
 ## Overview
 
 This document compares how the three syntax highlighters handle Jake syntax to understand if rendering differences are due to:
+
 1. **Inconsistent grammars** (our fault)
 2. **Library differences** (inherent to each library)
 
 ## Architecture Differences
 
 ### Prism.js
+
 - **Type**: Regular expression-based token matcher
 - **Philosophy**: Simple, lightweight patterns
 - **Granularity**: Token-level (each pattern matches and classifies)
 - **Nesting**: Limited nesting via `inside` property
 
-### highlight.js  
+### highlight.js
+
 - **Type**: Mode-based lexer
 - **Philosophy**: Context-aware parsing with modes
 - **Granularity**: Mode-level (enters/exits contexts)
 - **Nesting**: Rich nesting with `begin`/`end` and `contains`
 
 ### Shiki
+
 - **Type**: TextMate grammar (used by VS Code)
 - **Philosophy**: Full language grammar with scopes
 - **Granularity**: Scope-based (hierarchical scopes)
@@ -31,17 +35,20 @@ This document compares how the three syntax highlighters handle Jake syntax to u
 ### 1. Directives (`@import`, `@dotenv`, etc.)
 
 **Prism:**
+
 ```javascript
 directive: {
   pattern: /^\s*@[a-zA-Z_][a-zA-Z0-9_-]*/m,
   alias: "keyword",
 }
 ```
+
 - Matches ANY directive starting with `@`
 - Generic pattern
 - Maps to `keyword` class
 
 **highlight.js:**
+
 ```javascript
 const DIRECTIVES = [
   "@import", "@dotenv", "@require", "@export", // ... (explicit list)
@@ -54,11 +61,13 @@ const DIRECTIVES = [
   ),
 }
 ```
+
 - Matches SPECIFIC directives (explicit list)
 - Only highlights known directives
 - Maps to `keyword` class
 
 **Shiki:**
+
 ```javascript
 "imports": {
   "match": "^(@import)\\s+(\"[^\"]*\"|'[^']*')(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?",
@@ -70,11 +79,13 @@ const DIRECTIVES = [
   }
 }
 ```
+
 - DIFFERENT pattern for EACH directive type
 - Captures parts of the directive (path, alias, etc.)
 - Maps to specific semantic scopes
 
 **Issue**: ❌ **Inconsistent**
+
 - Prism: Generic catch-all
 - highlight.js: Explicit list (could miss new directives)
 - Shiki: Context-aware per-directive patterns
@@ -82,6 +93,7 @@ const DIRECTIVES = [
 ### 2. Variable Interpolation (`{{variable}}`)
 
 **Prism:**
+
 ```javascript
 interpolation: {
   pattern: /\{\{[\s\S]*?\}\}/,
@@ -93,11 +105,13 @@ interpolation: {
   },
 }
 ```
+
 - Matches entire `{{...}}` block
 - Parses contents separately
 - Simple nested parsing
 
 **highlight.js:**
+
 ```javascript
 const INTERPOLATION = {
   className: "subst",
@@ -114,13 +128,15 @@ const INTERPOLATION = {
     },
     // ...
   ],
-}
+};
 ```
+
 - Mode with begin/end markers
 - Contains other modes
 - Maps to `subst` (substitution)
 
 **Shiki:**
+
 ```javascript
 "jake-variables": {
   "patterns": [{
@@ -143,6 +159,7 @@ const INTERPOLATION = {
   }]
 }
 ```
+
 - Separate scopes for begin/end markers
 - Explicit list of built-in functions
 - Rich hierarchical scopes
@@ -152,6 +169,7 @@ const INTERPOLATION = {
 ### 3. Comments (`#`)
 
 **All three are consistent:**
+
 - Prism: `pattern: /#.*/`
 - highlight.js: `hljs.COMMENT("#", "$")`
 - Shiki: `"match": "#.*$"`
@@ -161,6 +179,7 @@ const INTERPOLATION = {
 ### 4. Recipe Headers (`task build:`)
 
 **Prism:**
+
 ```javascript
 "recipe-header": {
   pattern: /^(task|file)\s+[a-zA-Z_][a-zA-Z0-9_-]*|^[a-zA-Z_][a-zA-Z0-9_-]*(?=\s*[:(])/m,
@@ -170,10 +189,12 @@ const INTERPOLATION = {
   },
 }
 ```
+
 - Single pattern for both task/file and simple recipes
 - Generic classification
 
 **highlight.js:**
+
 ```javascript
 {
   // Recipe header: task name or file name
@@ -199,10 +220,12 @@ const INTERPOLATION = {
   begin: /^[a-zA-Z_][a-zA-Z0-9_-]*(?=\s*:)/,
 }
 ```
+
 - Separate modes for task/file vs simple
 - Context-aware with begin/end
 
 **Shiki:**
+
 ```javascript
 "recipes": {
   "patterns": [
@@ -229,6 +252,7 @@ const INTERPOLATION = {
   ]
 }
 ```
+
 - THREE separate patterns (file, task, simple)
 - Captures dependencies, parameters, etc.
 - Tracks recipe body scope
@@ -240,6 +264,7 @@ const INTERPOLATION = {
 ### 1. **Library Architecture** (not our fault)
 
 Different libraries have fundamentally different approaches:
+
 - **Prism**: Flat token matching → simpler output
 - **highlight.js**: Mode-based → contextual classes
 - **Shiki**: Scope hierarchy → VS Code-like output
@@ -247,6 +272,7 @@ Different libraries have fundamentally different approaches:
 ### 2. **CSS Theme Mapping** (not our fault)
 
 Each library uses different CSS class names:
+
 - **Prism**: `.token.keyword`, `.token.function`, `.token.string`
 - **highlight.js**: `.hljs-keyword`, `.hljs-title.function`, `.hljs-string`
 - **Shiki**: Applies colors directly based on TextMate scopes + theme
@@ -258,11 +284,13 @@ The SAME logical token gets DIFFERENT CSS classes, which themes color differentl
 We COULD make them more consistent:
 
 **Current:**
+
 - Prism: Catches all `@directives` generically
 - highlight.js: Only highlights known directives
 - Shiki: Per-directive patterns with context
 
 **Could improve:**
+
 - Make highlight.js use a generic pattern OR
 - Make Prism/Shiki explicit lists OR
 - Document that this is intentional
@@ -270,12 +298,14 @@ We COULD make them more consistent:
 ### 4. **Built-in Function Lists** (our fault)
 
 **highlight.js:**
+
 ```javascript
 // No explicit built-in function highlighting
 // Functions detected by pattern: word followed by (
 ```
 
 **Shiki:**
+
 ```javascript
 "match": "\\b(dirname|basename|extension|without_extension|...)\\s*\\(",
 "captures": { "1": { "name": "support.function.jake" } }
@@ -292,6 +322,7 @@ We COULD make them more consistent:
    - **Option B**: Explicit list (more precise, needs updates)
 
 2. **Built-in Functions**: Add explicit list to highlight.js/Prism
+
    ```javascript
    // Add to Prism interpolation.inside
    'builtin-function': /\b(dirname|basename|uppercase|lowercase|...)\b(?=\()/
@@ -302,6 +333,7 @@ We COULD make them more consistent:
 ### Accept as Different
 
 Some differences are GOOD:
+
 - Shiki's rich scopes provide VS Code-like accuracy
 - highlight.js's simpler output is faster
 - Prism's lightweight patterns minimize bundle size
@@ -316,7 +348,8 @@ Different use cases benefit from different approaches.
 2. ⚠️ **~30% Granularity Choices** - We could align these better (partially our fault)
 3. ❌ **~10% Missing Patterns** - Some features only in one library (our fault)
 
-**Recommendation**: 
+**Recommendation**:
+
 - Fix the missing patterns (built-in functions in all three)
 - Document that visual differences are expected and intentional
 - Consider standardizing directive handling approach

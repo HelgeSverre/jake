@@ -8,7 +8,7 @@
 
 ## Assistant
 
-```
+````
 Tool: read
 
 **Input:**
@@ -18,23 +18,25 @@ Tool: read
   "offset": 600,
   "limit": 80
 }
-```
+````
+
 **Output:**
+
 ```
 <file>
 00601|         var result: std.ArrayListUnmanaged(u8) = .empty;
 00602|         var pos: usize = 0;
-00603| 
+00603|
 00604|         while (std.mem.indexOfPos(u8, input, pos, needle)) |idx| {
 00605|             result.appendSlice(self.allocator, input[pos..idx]) catch return input;
 00606|             result.appendSlice(self.allocator, item) catch return input;
 00607|             pos = idx + needle.len;
 00608|         }
 00609|         result.appendSlice(self.allocator, input[pos..]) catch return input;
-00610| 
+00610|
 00611|         return result.toOwnedSlice(self.allocator) catch input;
 00612|     }
-00613| 
+00613|
 00614|     pub fn deinit(self: *Executor) void {
 00615|         // Persist cache to disk before cleanup
 00616|         self.cache.save() catch {};
@@ -50,62 +52,63 @@ Tool: read
 00626|         }
 00627|         self.expanded_strings.deinit(self.allocator);
 00628|     }
-00629| 
+00629|
 00630|     /// Execute a recipe by name
 00631|     pub fn execute(self: *Executor, name: []const u8) ExecuteError!void {
 00632|         // Use parallel execution if jobs > 1
 00633|         if (self.jobs > 1) {
 00634|             return self.executeParallel(name);
 00635|         }
-00636| 
+00636|
 00637|         // Sequential execution
 00638|         return self.executeSequential(name);
 00639|     }
-00640| 
+00640|
 00641|     /// Execute using parallel executor for concurrent dependency execution
 00642|     fn executeParallel(self: *Executor, name: []const u8) ExecuteError!void {
 00643|         var parallel_exec = ParallelExecutor.init(self.allocator, self.jakefile, self.jobs);
 00644|         defer parallel_exec.deinit();
-00645| 
+00645|
 00646|         parallel_exec.dry_run = self.dry_run;
 00647|         parallel_exec.verbose = self.verbose;
-00648| 
+00648|
 00649|         // Build dependency graph
 00650|         try parallel_exec.buildGraph(name);
-00651| 
+00651|
 00652|         // Show parallelism stats in verbose mode
 00653|         if (self.verbose) {
 00654|             const stats = parallel_exec.getParallelismStats();
 00655|             self.print("jake: parallel execution with {d} threads\n", .{self.jobs});
 00656|             self.print("jake: {d} recipes, max {d} parallel, critical path length {d}\n", .{ stats.total_recipes, stats.max_parallel, stats.critical_path_length });
 00657|         }
-00658| 
+00658|
 00659|         // Execute
 00660|         try parallel_exec.execute();
 00661|     }
-00662| 
+00662|
 00663|     /// Execute sequentially (original behavior)
 00664|     fn executeSequential(self: *Executor, name: []const u8) ExecuteError!void {
 00665|         // Check for cycles
 00666|         if (self.in_progress.contains(name)) {
 00667|             return ExecuteError.CyclicDependency;
 00668|         }
-00669| 
+00669|
 00670|         // Already executed?
 00671|         if (self.executed.contains(name)) {
 00672|             return;
 00673|         }
-00674| 
+00674|
 00675|         const recipe = self.jakefile.getRecipe(name) orelse {
 00676|             return ExecuteError.RecipeNotFound;
 00677|         };
-00678| 
+00678|
 00679|         // Check OS constraints - skip recipe if not for current OS
 00680|         if (shouldSkipForOs(recipe)) {
 
 (File has more lines. Use 'offset' parameter to read beyond line 680)
 </file>
 ```
+
 ```
 
 ---
@@ -117,9 +120,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -127,7 +132,9 @@ Tool: edit
   "newString": "    jakefile: *const Jakefile,\n    index: *const JakefileIndex,\n    owned_index: ?JakefileIndex = null,\n    cache: Cache,\n"
 }
 ```
+
 **Output:**
+
 ```
 
 This file has errors, please fix
@@ -136,6 +143,7 @@ ERROR [42:19] use of undeclared identifier 'JakefileIndex'
 </file_diagnostics>
 
 ```
+
 ```
 
 ---
@@ -147,9 +155,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -157,6 +167,7 @@ Tool: edit
   "newString": "const cache_mod = @import(\"cache.zig\");\nconst conditions = @import(\"conditions.zig\");\nconst JakefileIndex = @import(\"jakefile_index.zig\").JakefileIndex;\n"
 }
 ```
+
 ```
 
 ---
@@ -168,9 +179,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -178,6 +191,7 @@ Tool: edit
   "newString": "    jakefile: *const Jakefile,\n    index: *const JakefileIndex,\n    owned_index: ?JakefileIndex = null,\n    cache: Cache,\n"
 }
 ```
+
 ```
 
 ---
@@ -189,9 +203,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -199,6 +215,7 @@ Tool: edit
   "newString": "    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {\n        var owned_index = JakefileIndex.build(allocator, jakefile) catch {\n            @panic(\"failed to build Jakefile index\");\n        };\n        var executor = initInternal(allocator, jakefile, &owned_index);\n        executor.owned_index = owned_index;\n        executor.index = &executor.owned_index.?;\n        return executor;\n    }\n\n    pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Executor {\n        return initInternal(allocator, jakefile, index);\n    }\n\n    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Executor {\n        var variables = std.StringHashMap([]const u8).init(allocator);\n        var var_iter = index.variablesIterator();\n        while (var_iter.next()) |entry| {\n            variables.put(entry.key_ptr.*, entry.value_ptr.*) catch {};\n        }\n\n        // Initialize environment\n        var environment = Environment.init(allocator);\n\n        // Process directives for environment setup\n        for (index.getDirectives(.dotenv)) |directive_ptr| {\n            const directive = directive_ptr.*;\n            if (directive.args.len > 0) {\n                for (directive.args) |path| {\n                    environment.loadDotenv(stripQuotes(path)) catch {};\n                }\n            } else {\n                environment.loadDotenv(\".env\") catch {};\n            }\n        }\n\n        for (index.getDirectives(.@\"export\")) |directive_ptr| {\n            const directive = directive_ptr.*;\n            if (directive.args.len >= 1) {\n                const first_arg = directive.args[0];\n                if (std.mem.indexOfScalar(u8, first_arg, '=')) |eq_pos| {\n                    const key = first_arg[0..eq_pos];\n                    const value = first_arg[eq_pos + 1 ..];\n                    environment.set(key, stripQuotes(value)) catch {};\n                } else if (directive.args.len >= 2) {\n                    environment.set(first_arg, stripQuotes(directive.args[1])) catch {};\n                } else {\n                    if (variables.get(first_arg)) |value| {\n                        environment.set(first_arg, value) catch {};\n                    }\n                }\n            }\n        }\n\n        // Initialize hook runner with global hooks (OOM here is unrecoverable)\n        var hook_runner = HookRunner.init(allocator);\n        for (jakefile.global_pre_hooks) |hook| {\n            hook_runner.addGlobalHook(hook) catch {};\n        }\n        for (jakefile.global_post_hooks) |hook| {\n            hook_runner.addGlobalHook(hook) catch {};\n        }\n        for (jakefile.global_on_error_hooks) |hook| {\n            hook_runner.addGlobalHook(hook) catch {};\n        }\n\n        // Initialize cache and load from disk\n        var cache = Cache.init(allocator);\n        cache.load() catch {}; // Ignore errors, start with empty cache if load fails\n\n        return .{\n            .allocator = allocator,\n            .jakefile = jakefile,\n            .index = index,\n            .cache = cache,\n            .executed = std.StringHashMap(void).init(allocator),\n            .in_progress = std.StringHashMap(void).init(allocator),\n            .variables = variables,\n            .expanded_strings = .empty,\n            .environment = environment,\n            .hook_runner = hook_runner,\n            .dry_run = false,\n            .verbose = false,\n            .auto_yes = false,\n            .jobs = 0, // Default to sequential execution\n            .positional_args = &.{}, // Empty by default\n            .current_shell = null,\n            .current_working_dir = null,\n            .current_quiet = false,\n            .prompt = Prompt.init(),\n            .watch_mode = false,\n            .color = color_mod.init(),\n            .theme = color_mod.Theme.init(),\n        };\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -210,9 +227,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -220,6 +239,7 @@ Tool: edit
   "newString": "        for (self.expanded_strings.items) |s| {\n            self.allocator.free(s);\n        }\n        self.expanded_strings.deinit(self.allocator);\n\n        if (self.owned_index) |*owned| {\n            owned.deinit();\n            self.owned_index = null;\n        }\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -231,9 +251,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -241,6 +263,7 @@ Tool: edit
   "newString": "        // Check all @require directives\n        for (self.index.getDirectives(.require)) |directive_ptr| {\n            const directive = directive_ptr.*;\n            for (directive.args) |var_name| {\n                // First check our loaded environment (includes @dotenv vars)\n                if (self.environment.get(var_name)) |_| {\n                    continue; // Variable exists in our environment\n                }\n\n                // Fall back to system environment\n                if (std.process.getEnvVarOwned(self.allocator, var_name)) |value| {\n                    self.allocator.free(value);\n                    continue; // Variable exists in system environment\n                } else |_| {\n                    // Variable not found - report error\n                    self.print(\"{s}Required environment variable '{s}' is not set\\n\", .{ self.color.errPrefix(), var_name });\n                    self.print(\"  hint: Set this variable in your shell or add it to .env\\n\", .{});\n                    return ExecuteError.MissingRequiredEnv;\n                }\n            }\n        }\n"
 }
 ```
+
 ```
 
 ---
@@ -252,22 +275,27 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "self\\.jakefile\\.getRecipe",
   "path": "/Users/helge/code/jake/src/executor.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 2 matches
 /Users/helge/code/jake/src/executor.zig:
   Line 688:         const recipe = self.jakefile.getRecipe(name) orelse {
   Line 1721:         const recipe = self.jakefile.getRecipe(name) orelse {
 ```
+
 ```
 
 ---
@@ -279,9 +307,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -289,6 +319,7 @@ Tool: edit
   "newString": "        const recipe = self.index.getRecipe(name) orelse {\n            return ExecuteError.RecipeNotFound;\n        };\n"
 }
 ```
+
 ```
 
 ---
@@ -300,9 +331,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -310,6 +343,7 @@ Tool: edit
   "newString": "        const recipe = self.index.getRecipe(name) orelse {\n            return false;\n        };\n"
 }
 ```
+
 ```
 
 ---
@@ -321,16 +355,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "getDefaultRecipe",
   "path": "/Users/helge/code/jake"
 }
 ```
+
 **Output:**
+
 ```
 Found 7 matches
 /Users/helge/code/jake/src/main.zig:
@@ -346,6 +384,7 @@ Found 7 matches
   Line 2187: test "getDefaultRecipe returns marked recipe" {
   Line 2200:     const default = jakefile.getDefaultRecipe();
 ```
+
 ```
 
 ---
@@ -357,9 +396,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/main.zig",
@@ -367,6 +408,7 @@ Tool: edit
   "newString": "    const target = args.recipe orelse blk: {\n        if (jakefile_data.index.getDefaultRecipe()) |r| {\n            break :blk r.name;\n        }\n        getStderr().writeAll(args_mod.ansi.err_prefix ++ \"No default recipe and no recipe specified\\n\") catch {};\n        std.process.exit(1);\n    };\n"
 }
 ```
+
 ```
 
 ---
@@ -378,9 +420,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/main.zig",
@@ -388,6 +432,7 @@ Tool: edit
   "newString": "    var executor = jake.Executor.initWithIndex(allocator, &jakefile_data.jakefile, &jakefile_data.index);\n"
 }
 ```
+
 ```
 
 ---
@@ -399,9 +444,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -409,6 +456,7 @@ Tool: edit
   "newString": "const parser = @import(\"parser.zig\");\nconst executor_mod = @import(\"executor.zig\");\nconst JakefileIndex = @import(\"jakefile_index.zig\").JakefileIndex;\n"
 }
 ```
+
 ```
 
 ---
@@ -420,9 +468,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -430,6 +480,7 @@ Tool: edit
   "newString": "    jakefile: *const Jakefile,\n    index: *const JakefileIndex,\n    watch_patterns: std.ArrayListUnmanaged([]const u8),\n"
 }
 ```
+
 ```
 
 ---
@@ -441,9 +492,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -451,6 +504,7 @@ Tool: edit
   "newString": "    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {\n        return .{\n            .allocator = allocator,\n            .jakefile = jakefile,\n            .index = index,\n"
 }
 ```
+
 ```
 
 ---
@@ -462,9 +516,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -472,6 +528,7 @@ Tool: edit
   "newString": "        const recipe = self.index.getRecipe(recipe_name) orelse return;\n"
 }
 ```
+
 ```
 
 ---
@@ -483,16 +540,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "Watcher\\.init",
   "path": "/Users/helge/code/jake"
 }
 ```
+
 **Output:**
+
 ```
 Found 16 matches
 /Users/helge/code/jake/src/watch.zig:
@@ -515,6 +576,7 @@ Found 16 matches
 /Users/helge/code/jake/src/main.zig:
   Line 249:         var watcher = jake.Watcher.init(allocator, &jakefile_data.jakefile, &jakefile_data.index);
 ```
+
 ```
 
 ---
@@ -526,9 +588,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -536,6 +600,7 @@ Tool: edit
   "newString": "    index: *const JakefileIndex,\n    owned_index: ?JakefileIndex = null,\n    watch_patterns: std.ArrayListUnmanaged([]const u8),\n"
 }
 ```
+
 ```
 
 ---
@@ -547,9 +612,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -557,6 +624,7 @@ Tool: edit
   "newString": "    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Watcher {\n        var owned_index = JakefileIndex.build(allocator, jakefile) catch {\n            @panic(\"failed to build Jakefile index\");\n        };\n        var watcher = initInternal(allocator, jakefile, &owned_index);\n        watcher.owned_index = owned_index;\n        watcher.index = &watcher.owned_index.?;\n        return watcher;\n    }\n\n    pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {\n        return initInternal(allocator, jakefile, index);\n    }\n\n    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {\n        return .{\n            .allocator = allocator,\n            .jakefile = jakefile,\n            .index = index,\n            .watch_patterns = .empty,\n            .file_mtimes = .empty,\n            .resolved_files = .empty,\n            .poll_interval_ns = POLL_INTERVAL_MS * std.time.ns_per_ms,\n            .debounce_ns = DEBOUNCE_MS * std.time.ns_per_ms,\n            .verbose = false,\n            .dry_run = false,\n            .last_change_time = 0,\n            .color = color_mod.init(),\n            .theme = color_mod.Theme.init(),\n        };\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -568,9 +636,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -578,6 +648,7 @@ Tool: edit
   "newString": "        for (self.resolved_files.items) |file| {\n            self.allocator.free(file);\n        }\n        self.resolved_files.deinit(self.allocator);\n\n        if (self.owned_index) |*owned| {\n            owned.deinit();\n            self.owned_index = null;\n        }\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -589,9 +660,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/main.zig",
@@ -599,6 +672,7 @@ Tool: edit
   "newString": "        var watcher = jake.Watcher.initWithIndex(allocator, &jakefile_data.jakefile, &jakefile_data.index);\n"
 }
 ```
+
 ```
 
 ---
@@ -610,9 +684,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parallel.zig",
@@ -620,7 +696,9 @@ Tool: read
   "limit": 200
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00002| //
@@ -629,7 +707,7 @@ Tool: read
 00005| // 2. Identifying recipes that can run in parallel (no dependencies on each other)
 00006| // 3. Using Zig's std.Thread to run them concurrently
 00007| // 4. Collecting and merging results with synchronized output
-00008| 
+00008|
 00009| const std = @import("std");
 00010| const builtin = @import("builtin");
 00011| const compat = @import("compat.zig");
@@ -638,12 +716,12 @@ Tool: read
 00014| const cache_mod = @import("cache.zig");
 00015| const conditions = @import("conditions.zig");
 00016| const color_mod = @import("color.zig");
-00017| 
+00017|
 00018| const Jakefile = parser.Jakefile;
 00019| const Recipe = parser.Recipe;
 00020| const Executor = executor_mod.Executor;
 00021| const ExecuteError = executor_mod.ExecuteError;
-00022| 
+00022|
 00023| /// Result of a parallel recipe execution
 00024| pub const RecipeResult = struct {
 00025|     name: []const u8,
@@ -651,7 +729,7 @@ Tool: read
 00027|     error_info: ?ExecuteError,
 00028|     output: []const u8,
 00029| };
-00030| 
+00030|
 00031| /// Dependency graph node
 00032| const GraphNode = struct {
 00033|     recipe: *const Recipe,
@@ -659,7 +737,7 @@ Tool: read
 00035|     dependents: std.ArrayListUnmanaged(usize), // Indices of recipes that depend on this
 00036|     in_degree: usize, // Number of unfinished dependencies
 00037|     state: State,
-00038| 
+00038|
 00039|     const State = enum {
 00040|         pending,
 00041|         ready, // All dependencies satisfied
@@ -668,13 +746,13 @@ Tool: read
 00044|         failed,
 00045|     };
 00046| };
-00047| 
+00047|
 00048| /// Thread-safe output buffer for capturing recipe output
 00049| const OutputBuffer = struct {
 00050|     mutex: std.Thread.Mutex,
 00051|     buffers: std.StringHashMap(std.ArrayList(u8)),
 00052|     allocator: std.mem.Allocator,
-00053| 
+00053|
 00054|     fn init(allocator: std.mem.Allocator) OutputBuffer {
 00055|         return .{
 00056|             .mutex = .{},
@@ -682,7 +760,7 @@ Tool: read
 00058|             .allocator = allocator,
 00059|         };
 00060|     }
-00061| 
+00061|
 00062|     fn deinit(self: *OutputBuffer) void {
 00063|         var iter = self.buffers.iterator();
 00064|         while (iter.next()) |entry| {
@@ -690,18 +768,18 @@ Tool: read
 00066|         }
 00067|         self.buffers.deinit();
 00068|     }
-00069| 
+00069|
 00070|     fn getBuffer(self: *OutputBuffer, name: []const u8) !*std.ArrayList(u8) {
 00071|         self.mutex.lock();
 00072|         defer self.mutex.unlock();
-00073| 
+00073|
 00074|         const result = try self.buffers.getOrPut(name);
 00075|         if (!result.found_existing) {
 00076|             result.value_ptr.* = std.ArrayList(u8).init(self.allocator);
 00077|         }
 00078|         return result.value_ptr;
 00079|     }
-00080| 
+00080|
 00081|     fn write(self: *OutputBuffer, name: []const u8, data: []const u8) !void {
 00082|         const buf = try self.getBuffer(name);
 00083|         self.mutex.lock();
@@ -709,7 +787,7 @@ Tool: read
 00085|         try buf.appendSlice(data);
 00086|     }
 00087| };
-00088| 
+00088|
 00089| /// Parallel executor that runs independent recipes concurrently
 00090| pub const ParallelExecutor = struct {
 00091|     allocator: std.mem.Allocator,
@@ -723,26 +801,26 @@ Tool: read
 00099|     cache: cache_mod.Cache,
 00100|     color: color_mod.Color,
 00101|     theme: color_mod.Theme,
-00102| 
+00102|
 00103|     // Synchronization primitives
 00104|     mutex: std.Thread.Mutex,
 00105|     condition: std.Thread.Condition,
 00106|     output_mutex: std.Thread.Mutex,
-00107| 
+00107|
 00108|     // Execution state
 00109|     ready_queue: std.ArrayListUnmanaged(usize),
 00110|     completed_count: usize,
 00111|     failed: bool,
 00112|     first_error: ?ExecuteError,
-00113| 
+00113|
 00114|     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, thread_count: usize) ParallelExecutor {
 00115|         var variables = std.StringHashMap([]const u8).init(allocator);
-00116| 
+00116|
 00117|         // Load variables from jakefile (OOM here is unrecoverable)
 00118|         for (jakefile.variables) |v| {
 00119|             variables.put(v.name, v.value) catch {};
 00120|         }
-00121| 
+00121|
 00122|         return .{
 00123|             .allocator = allocator,
 00124|             .jakefile = jakefile,
@@ -764,7 +842,7 @@ Tool: read
 00140|             .first_error = null,
 00141|         };
 00142|     }
-00143| 
+00143|
 00144|     pub fn deinit(self: *ParallelExecutor) void {
 00145|         for (self.nodes.items) |*node| {
 00146|             node.dependencies.deinit(self.allocator);
@@ -776,19 +854,19 @@ Tool: read
 00152|         self.variables.deinit();
 00153|         self.cache.deinit();
 00154|     }
-00155| 
+00155|
 00156|     /// Get the default number of threads (CPU count)
 00157|     fn getDefaultThreadCount() usize {
 00158|         return std.Thread.getCpuCount() catch 4;
 00159|     }
-00160| 
+00160|
 00161|     /// Build the dependency graph for a target recipe and all its dependencies
 00162|     pub fn buildGraph(self: *ParallelExecutor, target: []const u8) !void {
 00163|         try self.addRecipeToGraph(target, null);
 00164|         try self.calculateInDegrees();
 00165|         try self.initializeReadyQueue();
 00166|     }
-00167| 
+00167|
 00168|     /// Recursively add a recipe and its dependencies to the graph
 00169|     fn addRecipeToGraph(self: *ParallelExecutor, name: []const u8, dependent_idx: ?usize) ExecuteError!void {
 00170|         // Check if already in graph
@@ -799,12 +877,12 @@ Tool: read
 00175|             }
 00176|             return;
 00177|         }
-00178| 
+00178|
 00179|         // Find the recipe
 00180|         const recipe = self.jakefile.getRecipe(name) orelse {
 00181|             return ExecuteError.RecipeNotFound;
 00182|         };
-00183| 
+00183|
 00184|         // Create node
 00185|         const node_idx = self.nodes.items.len;
 00186|         self.nodes.append(self.allocator, .{
@@ -814,19 +892,20 @@ Tool: read
 00190|             .in_degree = 0,
 00191|             .state = .pending,
 00192|         }) catch return ExecuteError.OutOfMemory;
-00193| 
+00193|
 00194|         self.name_to_index.put(name, node_idx) catch return ExecuteError.OutOfMemory;
-00195| 
+00195|
 00196|         // Add edge to dependent
 00197|         if (dependent_idx) |dep_idx| {
 00198|             self.nodes.items[node_idx].dependents.append(self.allocator, dep_idx) catch return ExecuteError.OutOfMemory;
 00199|         }
-00200| 
+00200|
 00201|         // Recursively add dependencies
 
 (File has more lines. Use 'offset' parameter to read beyond line 201)
 </file>
 ```
+
 ```
 
 ---
@@ -838,16 +917,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "ParallelExecutor\\.init",
   "path": "/Users/helge/code/jake"
 }
 ```
+
 **Output:**
+
 ```
 Found 23 matches
 /Users/helge/code/jake/src/executor.zig:
@@ -879,6 +962,7 @@ Found 23 matches
   Line 37:     var parallel = jake.ParallelExecutor.init(allocator, &jakefile, 4);
   Line 52:     var parallel = jake.ParallelExecutor.init(allocator, &jakefile, 4);
 ```
+
 ```
 
 ---
@@ -890,21 +974,26 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "self\\.jakefile",
   "path": "/Users/helge/code/jake/src/parallel.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 1 matches
 /Users/helge/code/jake/src/parallel.zig:
   Line 180:         const recipe = self.jakefile.getRecipe(name) orelse {
 ```
+
 ```
 
 ---
@@ -916,9 +1005,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parallel.zig",
@@ -926,6 +1017,7 @@ Tool: edit
   "newString": "const cache_mod = @import(\"cache.zig\");\nconst conditions = @import(\"conditions.zig\");\nconst JakefileIndex = @import(\"jakefile_index.zig\").JakefileIndex;\n"
 }
 ```
+
 ```
 
 ---
@@ -937,9 +1029,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parallel.zig",
@@ -947,6 +1041,7 @@ Tool: edit
   "newString": "    allocator: std.mem.Allocator,\n    jakefile: *const Jakefile,\n    index: *const JakefileIndex,\n    owned_index: ?JakefileIndex = null,\n"
 }
 ```
+
 ```
 
 ---
@@ -958,9 +1053,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parallel.zig",
@@ -968,6 +1065,7 @@ Tool: edit
   "newString": "    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, thread_count: usize) ParallelExecutor {\n        var owned_index = JakefileIndex.build(allocator, jakefile) catch {\n            @panic(\"failed to build Jakefile index\");\n        };\n        var exec = initInternal(allocator, jakefile, &owned_index, thread_count);\n        exec.owned_index = owned_index;\n        exec.index = &exec.owned_index.?;\n        return exec;\n    }\n\n    pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, thread_count: usize) ParallelExecutor {\n        return initInternal(allocator, jakefile, index, thread_count);\n    }\n\n    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, thread_count: usize) ParallelExecutor {\n        var variables = std.StringHashMap([]const u8).init(allocator);\n        var var_iter = index.variablesIterator();\n        while (var_iter.next()) |entry| {\n            variables.put(entry.key_ptr.*, entry.value_ptr.*) catch {};\n        }\n\n        return .{\n            .allocator = allocator,\n            .jakefile = jakefile,\n            .index = index,\n            .nodes = .empty,\n            .name_to_index = std.StringHashMap(usize).init(allocator),\n            .thread_count = if (thread_count == 0) getDefaultThreadCount() else thread_count,\n            .dry_run = false,\n            .verbose = false,\n            .variables = variables,\n            .cache = cache_mod.Cache.init(allocator),\n            .color = color_mod.init(),\n            .theme = color_mod.Theme.init(),\n            .mutex = .{},\n            .condition = .{},\n            .output_mutex = .{},\n            .ready_queue = .empty,\n            .completed_count = 0,\n            .failed = false,\n            .first_error = null,\n        };\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -979,9 +1077,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parallel.zig",
@@ -989,6 +1089,7 @@ Tool: edit
   "newString": "        self.ready_queue.deinit(self.allocator);\n        self.variables.deinit();\n        self.cache.deinit();\n\n        if (self.owned_index) |*owned| {\n            owned.deinit();\n            self.owned_index = null;\n        }\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -1000,9 +1101,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parallel.zig",
@@ -1010,6 +1113,7 @@ Tool: edit
   "newString": "        // Find the recipe\n        const recipe = self.index.getRecipe(name) orelse {\n            return ExecuteError.RecipeNotFound;\n        };\n"
 }
 ```
+
 ```
 
 ---
@@ -1021,9 +1125,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -1031,6 +1137,7 @@ Tool: edit
   "newString": "        var parallel_exec = ParallelExecutor.initWithIndex(self.allocator, self.jakefile, self.index, self.jobs);\n"
 }
 ```
+
 ```
 
 ---
@@ -1042,9 +1149,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1052,7 +1161,9 @@ Tool: edit
   "newString": "        var lists = DirectiveListArray.initFill(std.ArrayListUnmanaged(*const parser.Directive).empty);\n"
 }
 ```
+
 **Output:**
+
 ```
 
 This file has errors, please fix
@@ -1061,6 +1172,7 @@ ERROR [1:7] duplicate struct member name 'std'
 </file_diagnostics>
 
 ```
+
 ```
 
 ---
@@ -1072,9 +1184,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1082,7 +1196,9 @@ Tool: read
   "limit": 20
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00061|     fn populateVariables(self: *JakefileIndex) !void {
@@ -1091,7 +1207,7 @@ Tool: read
 00064|             try self.variables.put(variable.name, variable.value);
 00065|         }
 00066|     }
-00067| 
+00067|
 00068|     fn populateDirectives(self: *JakefileIndex) !void {
 00069|         var lists = DirectiveListArray.initFill(std.ArrayListUnmanaged(*const parser.Directive).empty);
 00070|         errdefer {
@@ -1099,16 +1215,17 @@ Tool: read
 00072|                 lists.getPtr(kind).deinit(self.allocator);
 00073|             }
 00074|         }
-00075| 
+00075|
 00076|         for (self.jakefile.directives) |*directive| {
 00077|             lists.getPtr(directive.kind).append(self.allocator, directive) catch return error.OutOfMemory;
 00078|         }
-00079| 
+00079|
 00080|         inline for (std.enums.values(parser.Directive.Kind)) |kind| {
 
 (File has more lines. Use 'offset' parameter to read beyond line 80)
 </file>
 ```
+
 ```
 
 ---
@@ -1120,16 +1237,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "Watcher\\.init",
   "path": "/Users/helge/code/jake"
 }
 ```
+
 **Output:**
+
 ```
 Found 16 matches
 /Users/helge/code/jake/src/main.zig:
@@ -1152,6 +1273,7 @@ Found 16 matches
   Line 692:     var watcher = Watcher.init(allocator, &jakefile);
   Line 718:     var watcher = Watcher.init(allocator, &jakefile);
 ```
+
 ```
 
 ---
@@ -1163,16 +1285,20 @@ _Thinking:_
 
 
 ```
+
 Tool: bash
 
 **Input:**
+
 ```json
 {
   "command": "zig build test",
   "description": "Runs Zig unit tests with new index changes"
 }
 ```
+
 **Output:**
+
 ```
 test
 +- run exe tests
@@ -1214,6 +1340,7 @@ error: the following build command failed with exit code 1:
 .zig-cache/o/3471716c3077a72257ab7b9aa21d82b7/build /opt/homebrew/Cellar/zig/0.15.2/bin/zig /opt/homebrew/Cellar/zig/0.15.2/lib/zig /Users/helge/code/jake .zig-cache /Users/helge/.cache/zig --seed 0xd848b47e -Z462b1db505c732a0 test
 
 ```
+
 ```
 
 ---
@@ -1225,9 +1352,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1235,15 +1364,17 @@ Tool: read
   "limit": 10
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00002| const std = @import("std");
 00003| const parser = @import("parser.zig");
-00004| 
+00004|
 00005| const DirectiveSlices = std.EnumArray(parser.Directive.Kind, []const *const parser.Directive);
 00006| const DirectiveListArray = std.EnumArray(parser.Directive.Kind, std.ArrayListUnmanaged(*const parser.Directive));
-00007| 
+00007|
 00008| pub const JakefileIndex = struct {
 00009|     allocator: std.mem.Allocator,
 00010|     jakefile: *const parser.Jakefile,
@@ -1252,6 +1383,7 @@ Tool: read
 (File has more lines. Use 'offset' parameter to read beyond line 11)
 </file>
 ```
+
 ```
 
 ---
@@ -1263,22 +1395,27 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "const std",
   "path": "/Users/helge/code/jake/src/jakefile_index.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 2 matches
 /Users/helge/code/jake/src/jakefile_index.zig:
   Line 1: const std = @import("std");
   Line 2: const std = @import("std");
 ```
+
 ```
 
 ---
@@ -1290,9 +1427,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1300,18 +1439,21 @@ Tool: read
   "limit": 5
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00001| const std = @import("std");
 00002| const std = @import("std");
 00003| const parser = @import("parser.zig");
-00004| 
+00004|
 00005| const DirectiveSlices = std.EnumArray(parser.Directive.Kind, []const *const parser.Directive);
 
 (File has more lines. Use 'offset' parameter to read beyond line 5)
 </file>
 ```
+
 ```
 
 ---
@@ -1323,9 +1465,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1333,10 +1477,13 @@ Tool: edit
   "newString": "const std = @import(\"std\");\nconst parser = @import(\"parser.zig\");\n"
 }
 ```
+
 **Error:**
+
 ```
 Error: oldString and newString must be different
 ```
+
 ```
 
 ---
@@ -1348,9 +1495,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1358,6 +1507,7 @@ Tool: edit
   "newString": "const std = @import(\"std\");\nconst parser = @import(\"parser.zig\");\n"
 }
 ```
+
 ```
 
 ---
@@ -1369,16 +1519,20 @@ _Thinking:_
 
 
 ```
+
 Tool: bash
 
 **Input:**
+
 ```json
 {
   "command": "zig build test",
   "description": "Re-run Zig tests after indexing changes"
 }
 ```
+
 **Output:**
+
 ```
 test
 +- run module tests
@@ -1409,6 +1563,7 @@ error: the following build command failed with exit code 1:
 .zig-cache/o/3471716c3077a72257ab7b9aa21d82b7/build /opt/homebrew/Cellar/zig/0.15.2/bin/zig /opt/homebrew/Cellar/zig/0.15.2/lib/zig /Users/helge/code/jake .zig-cache /Users/helge/.cache/zig --seed 0x69f4f938 -Zf0a476c4ef723850 test
 
 ```
+
 ```
 
 ---
@@ -1420,9 +1575,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1430,7 +1587,9 @@ Tool: edit
   "newString": "const DirectiveSlices = std.EnumArray(parser.Directive.Kind, []const *const parser.Directive);\nconst DirectiveListArray = std.EnumArray(parser.Directive.Kind, std.ArrayListUnmanaged(*const parser.Directive));\nconst directive_kinds = comptime std.enums.values(parser.Directive.Kind);\n"
 }
 ```
+
 **Output:**
+
 ```
 
 This file has errors, please fix
@@ -1439,6 +1598,7 @@ ERROR [6:25] redundant comptime keyword in already comptime scope
 </file_diagnostics>
 
 ```
+
 ```
 
 ---
@@ -1450,9 +1610,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1460,6 +1622,7 @@ Tool: edit
   "newString": "const DirectiveListArray = std.EnumArray(parser.Directive.Kind, std.ArrayListUnmanaged(*const parser.Directive));\nconst directive_kinds = std.enums.values(parser.Directive.Kind);\n"
 }
 ```
+
 ```
 
 ---
@@ -1471,9 +1634,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1481,6 +1646,7 @@ Tool: edit
   "newString": "        errdefer {\n            inline for (directive_kinds) |kind| {\n                lists.getPtr(kind).deinit(self.allocator);\n            }\n        }\n"
 }
 ```
+
 ```
 
 ---
@@ -1492,9 +1658,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1502,6 +1670,7 @@ Tool: edit
   "newString": "        inline for (directive_kinds) |kind| {\n            const slice = try lists.getPtr(kind).toOwnedSlice(self.allocator);\n            self.directives.set(kind, slice);\n        }\n"
 }
 ```
+
 ```
 
 ---
@@ -1513,9 +1682,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/jakefile_index.zig",
@@ -1523,6 +1694,7 @@ Tool: edit
   "newString": "        inline for (directive_kinds) |kind| {\n            const slice = self.directives.get(kind);\n            if (slice.len > 0) {\n                self.allocator.free(slice);\n            }\n        }\n"
 }
 ```
+
 ```
 
 ---
@@ -1534,16 +1706,20 @@ _Thinking:_
 
 
 ```
+
 Tool: bash
 
 **Input:**
+
 ```json
 {
   "command": "zig build test",
   "description": "Re-run Zig tests after fixing directive loops"
 }
 ```
+
 **Output:**
+
 ```
 1/858 root.test.basic lexer test...OK
 2/858 lexer.test.lexer basic tokens...OK
@@ -1793,6 +1969,7 @@ error: the following build command failed with exit code 1:
 .zig-cache/o/3471716c3077a72257ab7b9aa21d82b7/build /opt/homebrew/Cellar/zig/0.15.2/bin/zig /opt/homebrew/Cellar/zig/0.15.2/lib/zig /Users/helge/code/jake .zig-cache /Users/helge/.cache/zig --seed 0x4d635ee9 -Zf888290e9245f872 test
 
 ```
+
 ```
 
 ---
@@ -1804,9 +1981,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -1814,6 +1993,7 @@ Tool: edit
   "newString": "    index: *const JakefileIndex,\n    owned_index: ?*JakefileIndex = null,\n"
 }
 ```
+
 ```
 
 ---
@@ -1825,9 +2005,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -1835,6 +2017,7 @@ Tool: edit
   "newString": "        const owned_index = allocator.create(JakefileIndex) catch {\n            @panic(\"failed to allocate Jakefile index\");\n        };\n        owned_index.* = JakefileIndex.build(allocator, jakefile) catch {\n            allocator.destroy(owned_index);\n            @panic(\"failed to build Jakefile index\");\n        };\n        var executor = initInternal(allocator, jakefile, owned_index);\n        executor.owned_index = owned_index;\n        executor.index = owned_index;\n        return executor;\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -1846,9 +2029,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -1856,6 +2041,7 @@ Tool: edit
   "newString": "        if (self.owned_index) |owned| {\n            owned.deinit();\n            self.allocator.destroy(owned);\n            self.owned_index = null;\n        }\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -1867,9 +2053,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -1877,6 +2065,7 @@ Tool: edit
   "newString": "    index: *const JakefileIndex,\n    owned_index: ?*JakefileIndex = null,\n"
 }
 ```
+
 ```
 
 ---
@@ -1888,9 +2077,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -1898,6 +2089,7 @@ Tool: edit
   "newString": "        const owned_index = allocator.create(JakefileIndex) catch {\n            @panic(\"failed to allocate Jakefile index\");\n        };\n        owned_index.* = JakefileIndex.build(allocator, jakefile) catch {\n            allocator.destroy(owned_index);\n            @panic(\"failed to build Jakefile index\");\n        };\n        var watcher = initInternal(allocator, jakefile, owned_index);\n        watcher.owned_index = owned_index;\n        watcher.index = owned_index;\n        return watcher;\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -1909,9 +2101,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/watch.zig",
@@ -1919,6 +2113,7 @@ Tool: edit
   "newString": "        if (self.owned_index) |owned| {\n            owned.deinit();\n            self.allocator.destroy(owned);\n            self.owned_index = null;\n        }\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -1930,9 +2125,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parallel.zig",
@@ -1940,6 +2137,7 @@ Tool: edit
   "newString": "    index: *const JakefileIndex,\n    owned_index: ?*JakefileIndex = null,\n"
 }
 ```
+
 ```
 
 ---
@@ -1951,9 +2149,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parallel.zig",
@@ -1961,6 +2161,7 @@ Tool: edit
   "newString": "        const owned_index = allocator.create(JakefileIndex) catch {\n            @panic(\"failed to allocate Jakefile index\");\n        };\n        owned_index.* = JakefileIndex.build(allocator, jakefile) catch {\n            allocator.destroy(owned_index);\n            @panic(\"failed to build Jakefile index\");\n        };\n        var exec = initInternal(allocator, jakefile, owned_index, thread_count);\n        exec.owned_index = owned_index;\n        exec.index = owned_index;\n        return exec;\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -1972,9 +2173,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parallel.zig",
@@ -1982,6 +2185,7 @@ Tool: edit
   "newString": "        if (self.owned_index) |owned| {\n            owned.deinit();\n            self.allocator.destroy(owned);\n            self.owned_index = null;\n        }\n    }\n"
 }
 ```
+
 ```
 
 ---
@@ -1993,16 +2197,20 @@ _Thinking:_
 
 
 ```
+
 Tool: bash
 
 **Input:**
+
 ```json
 {
   "command": "zig build test",
   "description": "Run Zig tests after pointer fixes"
 }
 ```
+
 **Output:**
+
 ```
 1/1 main.test.main does not crash...OK
 All 1 tests passed.
@@ -2397,8 +2605,8 @@ OK
   [dry-run] echo "deployed"
 ✓ test (0.0s)
 OK
-266/858 executor.test.@confirm in dry-run mode shows message but doesn't prompt...  [dry-run] Would prompt: Deploy to production? [y/N] 
-  [dry-run] Would prompt: Are you sure? [y/N] 
+266/858 executor.test.@confirm in dry-run mode shows message but doesn't prompt...  [dry-run] Would prompt: Deploy to production? [y/N]
+  [dry-run] Would prompt: Are you sure? [y/N]
 → test
   [dry-run] echo "done"
 ✓ test (0.0s)
@@ -2406,7 +2614,7 @@ OK
 267/858 executor.test.@confirm with default message...→ test
   [dry-run] echo "done"
 ✓ test (0.0s)
-  [dry-run] Would prompt: Continue? [y/N] 
+  [dry-run] Would prompt: Continue? [y/N]
 OK
 268/858 executor.test.@each iterates over space-separated items...→ test
   [dry-run] echo "item: a"
@@ -2512,7 +2720,7 @@ OK
 OK
 291/858 executor.test.parseCachePatterns works for watch patterns...OK
 292/858 executor.test.@watch with empty pattern is no-op...→ test
-  [dry-run] @watch would monitor: 
+  [dry-run] @watch would monitor:
   [dry-run] echo "running"
 ✓ test (0.0s)
 OK
@@ -2759,6 +2967,7 @@ OK
 bash tool truncated output as it exceeded 30000 char limit
 </bash_metadata>
 ```
+
 ```
 
 ---
@@ -2770,16 +2979,20 @@ _Thinking:_
 
 
 ```
+
 Tool: bash
 
 **Input:**
+
 ```json
 {
   "command": "git status -sb",
   "description": "Show git status succinct"
 }
 ```
+
 **Output:**
+
 ```
 ## main...origin/main [ahead 7]
  M TODO.md
@@ -2807,6 +3020,7 @@ Tool: bash
 ?? tui2/
 
 ```
+
 ```
 
 ---
@@ -2818,9 +3032,11 @@ _Thinking:_
 
 
 ```
+
 Tool: todowrite
 
 **Input:**
+
 ```json
 {
   "todos": [
@@ -2851,7 +3067,9 @@ Tool: todowrite
   ]
 }
 ```
+
 **Output:**
+
 ```
 [
   {
@@ -2880,6 +3098,7 @@ Tool: todowrite
   }
 ]
 ```
+
 ```
 
 ---
@@ -2918,25 +3137,25 @@ _Thinking:_
 
 Here are a few concrete follow‑ups you could choose from next:
 
-1. **Extend index usage across remaining modules**  
-   - Update formatter, completions, and suggest modules to rely on `JakefileIndex` for recipe/variable queries.  
+1. **Extend index usage across remaining modules**
+   - Update formatter, completions, and suggest modules to rely on `JakefileIndex` for recipe/variable queries.
    - Ensures consistent behavior and removes residual linear scans.
 
-2. **Build the shared runtime context/services (Action Plan #2)**  
-   - Expand `Context` into `RuntimeContext` owning allocator, cache, hooks, env loader, etc.  
+2. **Build the shared runtime context/services (Action Plan #2)**
+   - Expand `Context` into `RuntimeContext` owning allocator, cache, hooks, env loader, etc.
    - Wire `Executor`, `ParallelExecutor`, and `Watcher` to consume it, eliminating duplicated state setup.
 
-3. **Unify parallel scheduling with the sequential executor (Action Plan #3)**  
-   - Extract a `CommandRunner` from `Executor` and make `ParallelExecutor` delegate to it instead of reimplementing directives/hooks/caching.  
+3. **Unify parallel scheduling with the sequential executor (Action Plan #3)**
+   - Extract a `CommandRunner` from `Executor` and make `ParallelExecutor` delegate to it instead of reimplementing directives/hooks/caching.
    - Sets foundation for cleaner scheduling strategies.
 
-4. **Enhance `zig build` tooling parity (Action Plan #4)**  
+4. **Enhance `zig build` tooling parity (Action Plan #4)**
    - Add `fmt`, `lint`, and `e2e` steps to `build.zig` and document them, so contributors have one entry point for common workflows.
 
-5. **Git metadata caching improvements (Action Plan #5)**  
+5. **Git metadata caching improvements (Action Plan #5)**
    - Add cached version/hash handling in `build.zig`, plus helper scripts/tests to keep non-`git` builds fast.
 
-6. **Portable coverage tooling cleanup (Action Plan #6)**  
+6. **Portable coverage tooling cleanup (Action Plan #6)**
    - Replace GNU-specific shell usage in coverage tasks with Jake/Zig helpers and add OS guards + documentation updates.
 
 Let me know which of these you’d like me to tackle next (or if you have another priority).
@@ -2956,16 +3175,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "\\.getRecipe",
   "path": "/Users/helge/code/jake"
 }
 ```
+
 **Output:**
+
 ```
 Found 24 matches
 /Users/helge/code/jake/src/parallel.zig:
@@ -3002,6 +3225,7 @@ Found 24 matches
   Line 3234:     const build = jakefile.getRecipe("build").?;
   Line 3238:     const test_recipe = jakefile.getRecipe("test").?;
 ```
+
 ```
 
 ---
@@ -3013,9 +3237,11 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "Jakefile",
@@ -3023,7 +3249,9 @@ Tool: grep
   "include": "*.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 100 matches
 /Users/helge/code/jake/src/parallel.zig:
@@ -3134,6 +3362,7 @@ Found 100 matches
 
 (Results are truncated. Consider using a more specific path or pattern.)
 ```
+
 ```
 
 ---
@@ -3145,16 +3374,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "jakefile\\.recipes",
   "path": "/Users/helge/code/jake/src"
 }
 ```
+
 **Output:**
+
 ```
 Found 100 matches
 /Users/helge/code/jake/src/parallel.zig:
@@ -3269,6 +3502,7 @@ Found 100 matches
 
 (Results are truncated. Consider using a more specific path or pattern.)
 ```
+
 ```
 
 ---
@@ -3280,16 +3514,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "JakefileIndex",
   "path": "/Users/helge/code/jake"
 }
 ```
+
 **Output:**
+
 ```
 Found 43 matches
 /Users/helge/code/jake/src/parallel.zig:
@@ -3349,6 +3587,7 @@ Found 43 matches
   Line 86: 2. Update `parser.parseJakefile()` to return both `Jakefile` and `JakefileIndex`, or expose a helper that builds the
   Line 110: pub fn getRecipe(self: *const JakefileIndex, name: []const u8) ?*const Recipe {
 ```
+
 ```
 
 ---
@@ -3360,9 +3599,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/completions.zig",
@@ -3370,30 +3611,32 @@ Tool: read
   "limit": 400
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00002| // Generates completion scripts for bash, zsh, and fish shells
 00003| // Includes smart installation with environment detection
-00004| 
+00004|
 00005| const std = @import("std");
 00006| const builtin = @import("builtin");
 00007| const args_mod = @import("args.zig");
 00008| const color_mod = @import("color.zig");
-00009| 
+00009|
 00010| /// Shell types supported for completion generation
 00011| pub const Shell = enum {
 00012|     bash,
 00013|     zsh,
 00014|     fish,
-00015| 
+00015|
 00016|     pub fn fromString(s: []const u8) ?Shell {
 00017|         if (std.mem.eql(u8, s, "bash")) return .bash;
 00018|         if (std.mem.eql(u8, s, "zsh")) return .zsh;
 00019|         if (std.mem.eql(u8, s, "fish")) return .fish;
 00020|         return null;
 00021|     }
-00022| 
+00022|
 00023|     pub fn toString(self: Shell) []const u8 {
 00024|         return switch (self) {
 00025|             .bash => "bash",
@@ -3402,14 +3645,14 @@ Tool: read
 00028|         };
 00029|     }
 00030| };
-00031| 
+00031|
 00032| /// Zsh environment type for smart installation
 00033| pub const ZshEnv = enum {
 00034|     oh_my_zsh, // Has Oh-My-Zsh installed
 00035|     homebrew, // Has Homebrew zsh site-functions
 00036|     vanilla, // Plain zsh, needs .zshrc modification
 00037| };
-00038| 
+00038|
 00039| /// Installation result with path and status
 00040| pub const InstallResult = struct {
 00041|     path: []const u8,
@@ -3417,11 +3660,11 @@ Tool: read
 00043|     needs_instructions: bool,
 00044|     instructions: ?[]const u8,
 00045| };
-00046| 
+00046|
 00047| /// Markers for config file blocks
 00048| const CONFIG_BLOCK_START = "# >>> jake completion >>>";
 00049| const CONFIG_BLOCK_END = "# <<< jake completion <<<";
-00050| 
+00050|
 00051| /// Detect shell from $SHELL environment variable
 00052| pub fn detectShell() ?Shell {
 00053|     // Shell completions are not applicable on Windows
@@ -3430,17 +3673,17 @@ Tool: read
 00056|     }
 00057|     const shell_path = std.posix.getenv("SHELL") orelse return null;
 00058|     const basename = std.fs.path.basename(shell_path);
-00059| 
+00059|
 00060|     if (std.mem.eql(u8, basename, "bash")) return .bash;
 00061|     if (std.mem.eql(u8, basename, "zsh")) return .zsh;
 00062|     if (std.mem.eql(u8, basename, "fish")) return .fish;
 00063|     if (std.mem.startsWith(u8, basename, "bash")) return .bash;
 00064|     if (std.mem.startsWith(u8, basename, "zsh")) return .zsh;
 00065|     if (std.mem.startsWith(u8, basename, "fish")) return .fish;
-00066| 
+00066|
 00067|     return null;
 00068| }
-00069| 
+00069|
 00070| /// Get the user's home directory
 00071| fn getHomeDir() ?[]const u8 {
 00072|     if (comptime builtin.os.tag == .windows) {
@@ -3448,7 +3691,7 @@ Tool: read
 00074|     }
 00075|     return std.posix.getenv("HOME");
 00076| }
-00077| 
+00077|
 00078| /// Detect zsh environment type
 00079| pub fn detectZshEnv() ZshEnv {
 00080|     // Zsh environments are not applicable on Windows
@@ -3456,7 +3699,7 @@ Tool: read
 00082|         return .vanilla;
 00083|     }
 00084|     const home = getHomeDir() orelse return .vanilla;
-00085| 
+00085|
 00086|     // Check for Oh-My-Zsh (most specific first)
 00087|     // Look for $ZSH env var or ~/.oh-my-zsh directory
 00088|     if (std.posix.getenv("ZSH")) |zsh_dir| {
@@ -3467,27 +3710,27 @@ Tool: read
 00093|             return .oh_my_zsh;
 00094|         } else |_| {}
 00095|     }
-00096| 
+00096|
 00097|     // Check for ~/.oh-my-zsh directory
 00098|     var omz_buf: [512]u8 = undefined;
 00099|     const omz_path = std.fmt.bufPrint(&omz_buf, "{s}/.oh-my-zsh/oh-my-zsh.sh", .{home}) catch return .vanilla;
 00100|     if (std.fs.cwd().access(omz_path, .{})) |_| {
 00101|         return .oh_my_zsh;
 00102|     } else |_| {}
-00103| 
+00103|
 00104|     // Check for Homebrew zsh site-functions
 00105|     if (std.fs.cwd().access("/opt/homebrew/share/zsh/site-functions", .{})) |_| {
 00106|         return .homebrew;
 00107|     } else |_| {}
-00108| 
+00108|
 00109|     // Also check Intel Mac Homebrew path
 00110|     if (std.fs.cwd().access("/usr/local/share/zsh/site-functions", .{})) |_| {
 00111|         return .homebrew;
 00112|     } else |_| {}
-00113| 
+00113|
 00114|     return .vanilla;
 00115| }
-00116| 
+00116|
 00117| /// Get the best installation path for zsh completions
 00118| fn getZshInstallPath(allocator: std.mem.Allocator) !struct { path: []const u8, env: ZshEnv } {
 00119|     // Not applicable on Windows
@@ -3496,7 +3739,7 @@ Tool: read
 00122|     }
 00123|     const home = getHomeDir() orelse return error.NoHomeDir;
 00124|     const env = detectZshEnv();
-00125| 
+00125|
 00126|     const path = switch (env) {
 00127|         .oh_my_zsh => blk: {
 00128|             // Use $ZSH_CUSTOM if set, otherwise default
@@ -3517,39 +3760,39 @@ Tool: read
 00143|         },
 00144|         .vanilla => try std.fmt.allocPrint(allocator, "{s}/.zsh/completions/_jake", .{home}),
 00145|     };
-00146| 
+00146|
 00147|     return .{ .path = path, .env = env };
 00148| }
-00149| 
+00149|
 00150| /// Check if a file contains our config block
 00151| fn hasConfigBlock(content: []const u8) bool {
 00152|     return std.mem.indexOf(u8, content, CONFIG_BLOCK_START) != null;
 00153| }
-00154| 
+00154|
 00155| /// Remove existing config block from content
 00156| fn removeConfigBlock(allocator: std.mem.Allocator, content: []const u8) ![]const u8 {
 00157|     const start_idx = std.mem.indexOf(u8, content, CONFIG_BLOCK_START) orelse return try allocator.dupe(u8, content);
 00158|     const end_idx = std.mem.indexOf(u8, content, CONFIG_BLOCK_END) orelse return try allocator.dupe(u8, content);
-00159| 
+00159|
 00160|     // Find the actual end (after the end marker and newline)
 00161|     var actual_end = end_idx + CONFIG_BLOCK_END.len;
 00162|     if (actual_end < content.len and content[actual_end] == '\n') {
 00163|         actual_end += 1;
 00164|     }
-00165| 
+00165|
 00166|     // Find the start (including preceding newline if present)
 00167|     var actual_start = start_idx;
 00168|     if (actual_start > 0 and content[actual_start - 1] == '\n') {
 00169|         actual_start -= 1;
 00170|     }
-00171| 
+00171|
 00172|     // Concatenate before and after
 00173|     const before = content[0..actual_start];
 00174|     const after = if (actual_end < content.len) content[actual_end..] else "";
-00175| 
+00175|
 00176|     return try std.fmt.allocPrint(allocator, "{s}{s}", .{ before, after });
 00177| }
-00178| 
+00178|
 00179| /// Generate the config block for .zshrc
 00180| fn generateZshConfigBlock(allocator: std.mem.Allocator) ![]const u8 {
 00181|     return try std.fmt.allocPrint(allocator,
@@ -3561,14 +3804,14 @@ Tool: read
 00187|         \\{s}
 00188|     , .{ CONFIG_BLOCK_START, CONFIG_BLOCK_END });
 00189| }
-00190| 
+00190|
 00191| /// Patch .zshrc with our config block
 00192| fn patchZshrc(allocator: std.mem.Allocator, writer: anytype) !bool {
 00193|     const home = getHomeDir() orelse return error.NoHomeDir;
-00194| 
+00194|
 00195|     var path_buf: [512]u8 = undefined;
 00196|     const zshrc_path = std.fmt.bufPrint(&path_buf, "{s}/.zshrc", .{home}) catch return error.PathTooLong;
-00197| 
+00197|
 00198|     // Read existing content
 00199|     const file = std.fs.cwd().openFile(zshrc_path, .{ .mode = .read_write }) catch |err| {
 00200|         if (err == error.FileNotFound) {
@@ -3583,50 +3826,50 @@ Tool: read
 00209|         return err;
 00210|     };
 00211|     defer file.close();
-00212| 
+00212|
 00213|     // Read content
 00214|     const content = file.readToEndAlloc(allocator, 1024 * 1024) catch |err| {
 00215|         try writer.print("Warning: Could not read ~/.zshrc: {s}\n", .{@errorName(err)});
 00216|         return false;
 00217|     };
 00218|     defer allocator.free(content);
-00219| 
+00219|
 00220|     // Check if block already exists
 00221|     if (hasConfigBlock(content)) {
 00222|         // Remove old block first
 00223|         const cleaned = try removeConfigBlock(allocator, content);
 00224|         defer allocator.free(cleaned);
-00225| 
+00225|
 00226|         // Add new block at end
 00227|         const block = try generateZshConfigBlock(allocator);
 00228|         defer allocator.free(block);
-00229| 
+00229|
 00230|         const new_content = try std.fmt.allocPrint(allocator, "{s}{s}", .{ cleaned, block });
 00231|         defer allocator.free(new_content);
-00232| 
+00232|
 00233|         // Rewrite file
 00234|         try file.seekTo(0);
 00235|         try file.writeAll(new_content);
 00236|         try file.setEndPos(new_content.len);
-00237| 
+00237|
 00238|         return true;
 00239|     }
-00240| 
+00240|
 00241|     // Append block to end
 00242|     const block = try generateZshConfigBlock(allocator);
 00243|     defer allocator.free(block);
-00244| 
+00244|
 00245|     try file.seekFromEnd(0);
 00246|     try file.writeAll(block);
-00247| 
+00247|
 00248|     return true;
 00249| }
-00250| 
+00250|
 00251| /// Uninstall completion and config block
 00252| pub fn uninstall(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !void {
 00253|     const home = getHomeDir() orelse return error.NoHomeDir;
 00254|     const color = color_mod.init();
-00255| 
+00255|
 00256|     // Remove completion file
 00257|     switch (shell) {
 00258|         .bash => {
@@ -3651,7 +3894,7 @@ Tool: read
 00277|                 "/.oh-my-zsh/custom/completions/_jake",
 00278|                 "/.zsh/completions/_jake",
 00279|             };
-00280| 
+00280|
 00281|             for (paths) |suffix| {
 00282|                 var path_buf: [512]u8 = undefined;
 00283|                 const path = std.fmt.bufPrint(&path_buf, "{s}{s}", .{ home, suffix }) catch continue;
@@ -3661,13 +3904,13 @@ Tool: read
 00287|                 try writer.writeAll(color.reset());
 00288|                 try writer.print(" Removed zsh completions from: {s}\n", .{path});
 00289|             }
-00290| 
+00290|
 00291|             // Also try Homebrew paths (may fail due to permissions)
 00292|             const brew_paths = [_][]const u8{
 00293|                 "/opt/homebrew/share/zsh/site-functions/_jake",
 00294|                 "/usr/local/share/zsh/site-functions/_jake",
 00295|             };
-00296| 
+00296|
 00297|             for (brew_paths) |path| {
 00298|                 std.fs.cwd().deleteFile(path) catch continue;
 00299|                 try writer.writeAll(color.successGreen());
@@ -3675,25 +3918,25 @@ Tool: read
 00301|                 try writer.writeAll(color.reset());
 00302|                 try writer.print(" Removed zsh completions from: {s}\n", .{path});
 00303|             }
-00304| 
+00304|
 00305|             // Remove config block from .zshrc
 00306|             var zshrc_buf: [512]u8 = undefined;
 00307|             const zshrc_path = std.fmt.bufPrint(&zshrc_buf, "{s}/.zshrc", .{home}) catch return;
-00308| 
+00308|
 00309|             const file = std.fs.cwd().openFile(zshrc_path, .{ .mode = .read_write }) catch return;
 00310|             defer file.close();
-00311| 
+00311|
 00312|             const content = file.readToEndAlloc(allocator, 1024 * 1024) catch return;
 00313|             defer allocator.free(content);
-00314| 
+00314|
 00315|             if (hasConfigBlock(content)) {
 00316|                 const cleaned = try removeConfigBlock(allocator, content);
 00317|                 defer allocator.free(cleaned);
-00318| 
+00318|
 00319|                 try file.seekTo(0);
 00320|                 try file.writeAll(cleaned);
 00321|                 try file.setEndPos(cleaned.len);
-00322| 
+00322|
 00323|                 try writer.writeAll(color.successGreen());
 00324|                 try writer.writeAll(color_mod.symbols.success);
 00325|                 try writer.writeAll(color.reset());
@@ -3717,38 +3960,38 @@ Tool: read
 00343|             try writer.print(" Removed fish completions from: {s}\n", .{path});
 00344|         },
 00345|     }
-00346| 
+00346|
 00347|     try writer.writeAll("\n");
 00348|     try writer.writeAll(color.muted());
 00349|     try writer.writeAll("Uninstallation complete. Restart your shell to apply changes.\n");
 00350|     try writer.writeAll(color.reset());
 00351| }
-00352| 
+00352|
 00353| /// Install completion script with smart environment detection
 00354| pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !void {
 00355|     const home = getHomeDir() orelse return error.NoHomeDir;
 00356|     const color = color_mod.init();
-00357| 
+00357|
 00358|     // Generate the completion script to memory
 00359|     var script_buf: [16384]u8 = undefined;
 00360|     var script_stream = std.io.fixedBufferStream(&script_buf);
 00361|     try generate(script_stream.writer(), shell);
 00362|     const script = script_stream.getWritten();
-00363| 
+00363|
 00364|     switch (shell) {
 00365|         .bash => {
 00366|             var path_buf: [512]u8 = undefined;
 00367|             const path = std.fmt.bufPrint(&path_buf, "{s}/.local/share/bash-completion/completions/jake", .{home}) catch return error.PathTooLong;
-00368| 
+00368|
 00369|             // Create directory
 00370|             const dir_path = std.fs.path.dirname(path) orelse return error.InvalidPath;
 00371|             std.fs.cwd().makePath(dir_path) catch {};
-00372| 
+00372|
 00373|             // Write file
 00374|             const file = try std.fs.cwd().createFile(path, .{});
 00375|             defer file.close();
 00376|             try file.writeAll(script);
-00377| 
+00377|
 00378|             try writer.writeAll(color.successGreen());
 00379|             try writer.writeAll(color_mod.symbols.success);
 00380|             try writer.writeAll(color.reset());
@@ -3763,20 +4006,21 @@ Tool: read
 00389|         .zsh => {
 00390|             const zsh_info = try getZshInstallPath(allocator);
 00391|             defer allocator.free(zsh_info.path);
-00392| 
+00392|
 00393|             // Create directory
 00394|             const dir_path = std.fs.path.dirname(zsh_info.path) orelse return error.InvalidPath;
-00395| 
+00395|
 00396|             // Try to create directory and write file
 00397|             const write_result: ?anyerror = blk: {
 00398|                 std.fs.cwd().makePath(dir_path) catch |err| {
 00399|                     if (err == error.AccessDenied) break :blk error.AccessDenied;
 00400|                 };
-00401| 
+00401|
 
 (File has more lines. Use 'offset' parameter to read beyond line 401)
 </file>
 ```
+
 ```
 
 ---
@@ -3788,16 +4032,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "Jakefile",
   "path": "/Users/helge/code/jake/src/completions.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 4 matches
 /Users/helge/code/jake/src/completions.zig:
@@ -3806,6 +4054,7 @@ Found 4 matches
   Line 658:         \\                    local jakefile="${opt_args[-f]:-${opt_args[--jakefile]:-Jakefile}}"
   Line 684:         \\    set -l jakefile "Jakefile"
 ```
+
 ```
 
 ---
@@ -3817,9 +4066,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/suggest.zig",
@@ -3827,38 +4078,40 @@ Tool: read
   "limit": 400
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00002| //
 00003| // When a user mistypes a recipe name, this module finds similar recipes
 00004| // and suggests them in the error message.
-00005| 
+00005|
 00006| const std = @import("std");
 00007| const Recipe = @import("parser.zig").Recipe;
-00008| 
+00008|
 00009| /// Compute Levenshtein distance between two strings.
 00010| /// Uses Wagner-Fischer algorithm with O(min(m,n)) space optimization.
 00011| pub fn levenshteinDistance(a: []const u8, b: []const u8) usize {
 00012|     if (a.len == 0) return b.len;
 00013|     if (b.len == 0) return a.len;
-00014| 
+00014|
 00015|     // Ensure s1 is shorter for space optimization
 00016|     const s1 = if (a.len <= b.len) a else b;
 00017|     const s2 = if (a.len <= b.len) b else a;
-00018| 
+00018|
 00019|     // Use stack-allocated arrays (max string length 256)
 00020|     var prev_row: [257]usize = undefined;
 00021|     var curr_row: [257]usize = undefined;
-00022| 
+00022|
 00023|     // Handle strings longer than our buffer
 00024|     if (s1.len > 256) return s1.len + s2.len; // Fallback: max distance
-00025| 
+00025|
 00026|     // Initialize first row: distance from empty string
 00027|     for (0..s1.len + 1) |i| {
 00028|         prev_row[i] = i;
 00029|     }
-00030| 
+00030|
 00031|     // Fill in the matrix row by row
 00032|     for (s2, 0..) |c2, j| {
 00033|         curr_row[0] = j + 1;
@@ -3871,16 +4124,16 @@ Tool: read
 00040|         }
 00041|         @memcpy(prev_row[0 .. s1.len + 1], curr_row[0 .. s1.len + 1]);
 00042|     }
-00043| 
+00043|
 00044|     return prev_row[s1.len];
 00045| }
-00046| 
+00046|
 00047| /// Entry for a recipe match with its distance
 00048| const Match = struct {
 00049|     name: []const u8,
 00050|     distance: usize,
 00051| };
-00052| 
+00052|
 00053| /// Find recipe names within a given distance threshold.
 00054| /// Checks both recipe names and aliases.
 00055| /// Returns slice of matching names sorted by distance (caller must free).
@@ -3892,17 +4145,17 @@ Tool: read
 00061| ) ![]const []const u8 {
 00062|     var matches: std.ArrayListUnmanaged(Match) = .{};
 00063|     defer matches.deinit(allocator);
-00064| 
+00064|
 00065|     for (recipes) |*recipe| {
 00066|         // Skip private recipes
 00067|         if (recipe.name.len > 0 and recipe.name[0] == '_') continue;
-00068| 
+00068|
 00069|         // Check main recipe name
 00070|         const dist = levenshteinDistance(target, recipe.name);
 00071|         if (dist <= max_distance and dist > 0) { // dist > 0 to skip exact matches
 00072|             try matches.append(allocator, .{ .name = recipe.name, .distance = dist });
 00073|         }
-00074| 
+00074|
 00075|         // Check aliases
 00076|         for (recipe.aliases) |alias| {
 00077|             const alias_dist = levenshteinDistance(target, alias);
@@ -3911,31 +4164,31 @@ Tool: read
 00080|             }
 00081|         }
 00082|     }
-00083| 
+00083|
 00084|     // Sort by distance (closest first)
 00085|     std.mem.sort(Match, matches.items, {}, struct {
 00086|         fn lessThan(_: void, a: Match, b: Match) bool {
 00087|             return a.distance < b.distance;
 00088|         }
 00089|     }.lessThan);
-00090| 
+00090|
 00091|     // Extract just the names
 00092|     var result = try allocator.alloc([]const u8, matches.items.len);
 00093|     for (matches.items, 0..) |match, i| {
 00094|         result[i] = match.name;
 00095|     }
-00096| 
+00096|
 00097|     return result;
 00098| }
-00099| 
+00099|
 00100| /// Format a suggestion message for display.
 00101| /// Returns a slice into the provided buffer.
 00102| pub fn formatSuggestion(buf: []u8, suggestions: []const []const u8) []const u8 {
 00103|     if (suggestions.len == 0) return "";
-00104| 
+00104|
 00105|     var fbs = std.io.fixedBufferStream(buf);
 00106|     const writer = fbs.writer();
-00107| 
+00107|
 00108|     writer.writeAll("Did you mean: ") catch return "";
 00109|     for (suggestions, 0..) |name, i| {
 00110|         if (i > 0) writer.writeAll(", ") catch return fbs.getWritten();
@@ -3946,97 +4199,97 @@ Tool: read
 00115|         writer.writeAll(name) catch return fbs.getWritten();
 00116|     }
 00117|     writer.writeAll("?\n") catch return fbs.getWritten();
-00118| 
+00118|
 00119|     return fbs.getWritten();
 00120| }
-00121| 
+00121|
 00122| // ============================================================================
 00123| // Tests
 00124| // ============================================================================
-00125| 
+00125|
 00126| const testing = std.testing;
-00127| 
+00127|
 00128| test "levenshteinDistance identical strings" {
 00129|     try testing.expectEqual(@as(usize, 0), levenshteinDistance("build", "build"));
 00130|     try testing.expectEqual(@as(usize, 0), levenshteinDistance("", ""));
 00131|     try testing.expectEqual(@as(usize, 0), levenshteinDistance("test", "test"));
 00132| }
-00133| 
+00133|
 00134| test "levenshteinDistance empty strings" {
 00135|     try testing.expectEqual(@as(usize, 5), levenshteinDistance("", "build"));
 00136|     try testing.expectEqual(@as(usize, 5), levenshteinDistance("build", ""));
 00137|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("", "a"));
 00138| }
-00139| 
+00139|
 00140| test "levenshteinDistance single char difference" {
 00141|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("build", "bild")); // missing 'u'
 00142|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("test", "tast")); // 'e' -> 'a'
 00143|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("hello", "hallo")); // 'e' -> 'a'
 00144| }
-00145| 
+00145|
 00146| test "levenshteinDistance insertions" {
 00147|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("build", "builds")); // add 's'
 00148|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("test", "atest")); // add 'a' at start
 00149| }
-00150| 
+00150|
 00151| test "levenshteinDistance deletions" {
 00152|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("builds", "build")); // remove 's'
 00153|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("testing", "testin")); // remove 'g'
 00154| }
-00155| 
+00155|
 00156| test "levenshteinDistance transpositions" {
 00157|     try testing.expectEqual(@as(usize, 2), levenshteinDistance("biuld", "build")); // 'iu' -> 'ui'
 00158|     try testing.expectEqual(@as(usize, 2), levenshteinDistance("tset", "test")); // 'se' -> 'es'
 00159| }
-00160| 
+00160|
 00161| test "levenshteinDistance common typos" {
 00162|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("buld", "build")); // missing 'i'
 00163|     try testing.expectEqual(@as(usize, 2), levenshteinDistance("delpoy", "deploy")); // transposition: lp -> pl
 00164|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("dploy", "deploy")); // missing 'e'
 00165| }
-00166| 
+00166|
 00167| test "levenshteinDistance completely different" {
 00168|     try testing.expectEqual(@as(usize, 3), levenshteinDistance("abc", "xyz"));
 00169|     try testing.expectEqual(@as(usize, 4), levenshteinDistance("test", "prod"));
 00170| }
-00171| 
+00171|
 00172| test "levenshteinDistance case sensitive" {
 00173|     try testing.expectEqual(@as(usize, 1), levenshteinDistance("Build", "build"));
 00174|     try testing.expectEqual(@as(usize, 5), levenshteinDistance("BUILD", "build"));
 00175| }
-00176| 
+00176|
 00177| test "formatSuggestion single match" {
 00178|     var buf: [256]u8 = undefined;
 00179|     const suggestions = [_][]const u8{"build"};
 00180|     const result = formatSuggestion(&buf, &suggestions);
 00181|     try testing.expectEqualStrings("Did you mean: build?\n", result);
 00182| }
-00183| 
+00183|
 00184| test "formatSuggestion multiple matches" {
 00185|     var buf: [256]u8 = undefined;
 00186|     const suggestions = [_][]const u8{ "build", "built" };
 00187|     const result = formatSuggestion(&buf, &suggestions);
 00188|     try testing.expectEqualStrings("Did you mean: build, built?\n", result);
 00189| }
-00190| 
+00190|
 00191| test "formatSuggestion empty" {
 00192|     var buf: [256]u8 = undefined;
 00193|     const suggestions = [_][]const u8{};
 00194|     const result = formatSuggestion(&buf, &suggestions);
 00195|     try testing.expectEqualStrings("", result);
 00196| }
-00197| 
+00197|
 00198| test "formatSuggestion truncates at 3" {
 00199|     var buf: [256]u8 = undefined;
 00200|     const suggestions = [_][]const u8{ "a", "b", "c", "d", "e" };
 00201|     const result = formatSuggestion(&buf, &suggestions);
 00202|     try testing.expectEqualStrings("Did you mean: a, b, c, ...?\n", result);
 00203| }
-00204| 
+00204|
 00205| // ============================================================================
 00206| // Fuzz Testing
 00207| // ============================================================================
-00208| 
+00208|
 00209| test "fuzz levenshtein distance" {
 00210|     try testing.fuzz({}, struct {
 00211|         fn testOne(_: void, input: []const u8) !void {
@@ -4044,10 +4297,10 @@ Tool: read
 00213|             const mid = input.len / 2;
 00214|             const a = input[0..mid];
 00215|             const b = input[mid..];
-00216| 
+00216|
 00217|             // Levenshtein distance should never crash
 00218|             const dist = levenshteinDistance(a, b);
-00219| 
+00219|
 00220|             // Basic sanity checks that should always hold:
 00221|             // 1. Distance is at most the length of the longer string
 00222|             //    (you can always delete all chars and insert new ones)
@@ -4056,44 +4309,45 @@ Tool: read
 00225|                 // Only check for strings within our buffer limit
 00226|                 std.debug.assert(dist <= max_len + @min(a.len, b.len));
 00227|             }
-00228| 
+00228|
 00229|             // 2. Distance from string to itself is 0
 00230|             const self_dist = levenshteinDistance(a, a);
 00231|             std.debug.assert(self_dist == 0);
-00232| 
+00232|
 00233|             // 3. Distance is symmetric: d(a,b) == d(b,a)
 00234|             const reverse_dist = levenshteinDistance(b, a);
 00235|             std.debug.assert(dist == reverse_dist);
 00236|         }
 00237|     }.testOne, .{});
 00238| }
-00239| 
+00239|
 00240| test "fuzz formatSuggestion" {
 00241|     try testing.fuzz({}, struct {
 00242|         fn testOne(_: void, input: []const u8) !void {
 00243|             var buf: [1024]u8 = undefined;
-00244| 
+00244|
 00245|             // Split input into up to 5 "suggestions"
 00246|             var suggestions: [5][]const u8 = undefined;
 00247|             var count: usize = 0;
 00248|             var iter = std.mem.splitScalar(u8, input, 0);
-00249| 
+00249|
 00250|             while (iter.next()) |part| {
 00251|                 if (count >= 5) break;
 00252|                 suggestions[count] = part;
 00253|                 count += 1;
 00254|             }
-00255| 
+00255|
 00256|             // Format suggestions - should never crash
 00257|             _ = formatSuggestion(&buf, suggestions[0..count]);
 00258|         }
 00259|     }.testOne, .{});
 00260| }
-00261| 
+00261|
 
 (End of file - total 261 lines)
 </file>
 ```
+
 ```
 
 ---
@@ -4105,9 +4359,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/hooks.zig",
@@ -4115,7 +4371,9 @@ Tool: read
   "limit": 200
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00002| //
@@ -4123,11 +4381,11 @@ Tool: read
 00004| // There are two types of hooks:
 00005| // 1. Global hooks - run before/after any recipe execution
 00006| // 2. Recipe-specific hooks - run only for a specific recipe
-00007| 
+00007|
 00008| const std = @import("std");
 00009| const compat = @import("compat.zig");
 00010| const color_mod = @import("color.zig");
-00011| 
+00011|
 00012| /// Represents a single hook (pre, post, or on_error execution)
 00013| pub const Hook = struct {
 00014|     /// The command to execute
@@ -4136,14 +4394,14 @@ Tool: read
 00017|     kind: Kind,
 00018|     /// Optional: Only run for specific recipe (null = global)
 00019|     recipe_name: ?[]const u8,
-00020| 
+00020|
 00021|     pub const Kind = enum {
 00022|         pre,
 00023|         post,
 00024|         on_error, // Runs only when a recipe fails
 00025|     };
 00026| };
-00027| 
+00027|
 00028| /// Context passed to hooks during execution
 00029| pub const HookContext = struct {
 00030|     /// Name of the recipe being executed
@@ -4154,13 +4412,13 @@ Tool: read
 00035|     error_message: ?[]const u8,
 00036|     /// Variables available for substitution
 00037|     variables: *const std.StringHashMap([]const u8),
-00038| 
+00038|
 00039|     /// Get a variable value by name
 00040|     pub fn getVariable(self: *const HookContext, name: []const u8) ?[]const u8 {
 00041|         return self.variables.get(name);
 00042|     }
 00043| };
-00044| 
+00044|
 00045| /// Runs hooks with proper error handling and context
 00046| pub const HookRunner = struct {
 00047|     allocator: std.mem.Allocator,
@@ -4171,7 +4429,7 @@ Tool: read
 00052|     verbose: bool,
 00053|     color: color_mod.Color,
 00054|     theme: color_mod.Theme,
-00055| 
+00055|
 00056|     pub fn init(allocator: std.mem.Allocator) HookRunner {
 00057|         return .{
 00058|             .allocator = allocator,
@@ -4184,13 +4442,13 @@ Tool: read
 00065|             .theme = color_mod.Theme.init(),
 00066|         };
 00067|     }
-00068| 
+00068|
 00069|     pub fn deinit(self: *HookRunner) void {
 00070|         self.global_pre_hooks.deinit(self.allocator);
 00071|         self.global_post_hooks.deinit(self.allocator);
 00072|         self.global_on_error_hooks.deinit(self.allocator);
 00073|     }
-00074| 
+00074|
 00075|     /// Add a global hook
 00076|     pub fn addGlobalHook(self: *HookRunner, hook: Hook) !void {
 00077|         switch (hook.kind) {
@@ -4199,7 +4457,7 @@ Tool: read
 00080|             .on_error => try self.global_on_error_hooks.append(self.allocator, hook),
 00081|         }
 00082|     }
-00083| 
+00083|
 00084|     /// Check if a hook should run for the given recipe
 00085|     fn shouldRunHook(hook: Hook, recipe_name: []const u8) bool {
 00086|         if (hook.recipe_name) |target_recipe| {
@@ -4209,7 +4467,7 @@ Tool: read
 00090|         // Global hook: always run
 00091|         return true;
 00092|     }
-00093| 
+00093|
 00094|     /// Run all pre-hooks for a recipe
 00095|     /// Order: 1. Global @pre, 2. Targeted @before, 3. Recipe @pre
 00096|     pub fn runPreHooks(
@@ -4223,7 +4481,7 @@ Tool: read
 00104|                 try self.executeHook(hook, context);
 00105|             }
 00106|         }
-00107| 
+00107|
 00108|         // 2. Run targeted @before hooks (recipe_name matches current recipe)
 00109|         for (self.global_pre_hooks.items) |hook| {
 00110|             if (hook.recipe_name) |target| {
@@ -4232,13 +4490,13 @@ Tool: read
 00113|                 }
 00114|             }
 00115|         }
-00116| 
+00116|
 00117|         // 3. Run recipe-specific pre-hooks (inside recipe body)
 00118|         for (recipe_pre_hooks) |hook| {
 00119|             try self.executeHook(hook, context);
 00120|         }
 00121|     }
-00122| 
+00122|
 00123|     /// Run all post-hooks for a recipe (runs even on failure for cleanup)
 00124|     /// Order: 1. Recipe @post, 2. Targeted @after, 3. Global @post
 00125|     pub fn runPostHooks(
@@ -4247,14 +4505,14 @@ Tool: read
 00128|         context: *const HookContext,
 00129|     ) HookError!void {
 00130|         var first_error: ?HookError = null;
-00131| 
+00131|
 00132|         // 1. Run recipe-specific post-hooks first (inside recipe body)
 00133|         for (recipe_post_hooks) |hook| {
 00134|             self.executeHook(hook, context) catch |err| {
 00135|                 if (first_error == null) first_error = err;
 00136|             };
 00137|         }
-00138| 
+00138|
 00139|         // 2. Run targeted @after hooks (recipe_name matches current recipe)
 00140|         for (self.global_post_hooks.items) |hook| {
 00141|             if (hook.recipe_name) |target| {
@@ -4265,7 +4523,7 @@ Tool: read
 00146|                 }
 00147|             }
 00148|         }
-00149| 
+00149|
 00150|         // 3. Run truly global post-hooks last (no recipe_name specified)
 00151|         for (self.global_post_hooks.items) |hook| {
 00152|             if (hook.recipe_name == null) {
@@ -4274,11 +4532,11 @@ Tool: read
 00155|                 };
 00156|             }
 00157|         }
-00158| 
+00158|
 00159|         // Return the first error if any occurred
 00160|         if (first_error) |err| return err;
 00161|     }
-00162| 
+00162|
 00163|     /// Run all on_error hooks for a recipe (only runs when recipe fails)
 00164|     pub fn runOnErrorHooks(
 00165|         self: *HookRunner,
@@ -4286,7 +4544,7 @@ Tool: read
 00167|     ) void {
 00168|         // Only run if the recipe failed
 00169|         if (context.success) return;
-00170| 
+00170|
 00171|         // Run global on_error hooks (only if they match the current recipe)
 00172|         for (self.global_on_error_hooks.items) |hook| {
 00173|             if (shouldRunHook(hook, context.recipe_name)) {
@@ -4294,23 +4552,23 @@ Tool: read
 00175|             }
 00176|         }
 00177|     }
-00178| 
+00178|
 00179|     /// Execute a single hook command
 00180|     fn executeHook(self: *HookRunner, hook: Hook, context: *const HookContext) HookError!void {
 00181|         const expanded_cmd = self.expandHookVariables(hook.command, context) catch hook.command;
 00182|         // Track if we allocated memory (expanded_cmd ptr differs from original)
 00183|         const needs_free = expanded_cmd.ptr != hook.command.ptr;
 00184|         defer if (needs_free) self.allocator.free(expanded_cmd);
-00185| 
+00185|
 00186|         if (self.dry_run) {
 00187|             self.printHook("[dry-run @{s}] {s}\n", .{ @tagName(hook.kind), expanded_cmd });
 00188|             return;
 00189|         }
-00190| 
+00190|
 00191|         if (self.verbose) {
 00192|             self.printHook("[@{s}] {s}\n", .{ @tagName(hook.kind), expanded_cmd });
 00193|         }
-00194| 
+00194|
 00195|         // Execute via shell
 00196|         var child = std.process.Child.init(
 00197|             &[_][]const u8{ "/bin/sh", "-c", expanded_cmd },
@@ -4322,6 +4580,7 @@ Tool: read
 (File has more lines. Use 'offset' parameter to read beyond line 201)
 </file>
 ```
+
 ```
 
 ---
@@ -4333,19 +4592,24 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "HookRunner",
   "path": "/Users/helge/code/jake/src/parallel.zig"
 }
 ```
+
 **Output:**
+
 ```
 No files found
 ```
+
 ```
 
 ---
@@ -4357,19 +4621,24 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "global_pre_hooks",
   "path": "/Users/helge/code/jake/src/parallel.zig"
 }
 ```
+
 **Output:**
+
 ```
 No files found
 ```
+
 ```
 
 ---
@@ -4381,19 +4650,24 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "hooks",
   "path": "/Users/helge/code/jake/src/parallel.zig"
 }
 ```
+
 **Output:**
+
 ```
 No files found
 ```
+
 ```
 
 ---
@@ -4405,19 +4679,24 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "Environment",
   "path": "/Users/helge/code/jake/src/parallel.zig"
 }
 ```
+
 **Output:**
+
 ```
 No files found
 ```
+
 ```
 
 ---
@@ -4429,21 +4708,26 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "pub const Environment",
   "path": "/Users/helge/code/jake/src/env.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 1 matches
 /Users/helge/code/jake/src/env.zig:
   Line 12: pub const Environment = struct {
 ```
+
 ```
 
 ---
@@ -4451,9 +4735,11 @@ Found 1 matches
 ## Assistant
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/env.zig",
@@ -4461,7 +4747,9 @@ Tool: read
   "limit": 200
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00002| //
@@ -4469,10 +4757,10 @@ Tool: read
 00004| // - Parse .env files (KEY=value format, handle quotes, comments)
 00005| // - Support $VAR and ${VAR} syntax in commands
 00006| // - Manage environment for child processes
-00007| 
+00007|
 00008| const std = @import("std");
 00009| const builtin = @import("builtin");
-00010| 
+00010|
 00011| /// Environment variable storage and expansion
 00012| pub const Environment = struct {
 00013|     allocator: std.mem.Allocator,
@@ -4480,7 +4768,7 @@ Tool: read
 00015|     vars: std.StringHashMap([]const u8),
 00016|     /// Allocated strings that need to be freed
 00017|     allocated_strings: std.ArrayListUnmanaged([]const u8),
-00018| 
+00018|
 00019|     pub fn init(allocator: std.mem.Allocator) Environment {
 00020|         return .{
 00021|             .allocator = allocator,
@@ -4488,7 +4776,7 @@ Tool: read
 00023|             .allocated_strings = .empty,
 00024|         };
 00025|     }
-00026| 
+00026|
 00027|     pub fn deinit(self: *Environment) void {
 00028|         // Free all allocated strings
 00029|         for (self.allocated_strings.items) |s| {
@@ -4497,7 +4785,7 @@ Tool: read
 00032|         self.allocated_strings.deinit(self.allocator);
 00033|         self.vars.deinit();
 00034|     }
-00035| 
+00035|
 00036|     /// Set an environment variable
 00037|     pub fn set(self: *Environment, key: []const u8, value: []const u8) !void {
 00038|         // Duplicate key and value so we own them
@@ -4505,14 +4793,14 @@ Tool: read
 00040|         errdefer self.allocator.free(owned_key);
 00041|         const owned_value = try self.allocator.dupe(u8, value);
 00042|         errdefer self.allocator.free(owned_value);
-00043| 
+00043|
 00044|         // Track allocations for cleanup
 00045|         try self.allocated_strings.append(self.allocator, owned_key);
 00046|         try self.allocated_strings.append(self.allocator, owned_value);
-00047| 
+00047|
 00048|         try self.vars.put(owned_key, owned_value);
 00049|     }
-00050| 
+00050|
 00051|     /// Get an environment variable (checks local vars first, then system env)
 00052|     pub fn get(self: *const Environment, key: []const u8) ?[]const u8 {
 00053|         // First check our local vars
@@ -4522,7 +4810,7 @@ Tool: read
 00057|         // Fall back to system environment (cross-platform)
 00058|         return getSystemEnv(key);
 00059|     }
-00060| 
+00060|
 00061|     /// Cross-platform system environment variable lookup
 00062|     fn getSystemEnv(key: []const u8) ?[]const u8 {
 00063|         if (comptime builtin.os.tag == .windows) {
@@ -4532,7 +4820,7 @@ Tool: read
 00067|         }
 00068|         return std.posix.getenv(key);
 00069|     }
-00070| 
+00070|
 00071|     /// Load environment variables from a .env file
 00072|     pub fn loadDotenv(self: *Environment, path: []const u8) !void {
 00073|         const file = std.fs.cwd().openFile(path, .{}) catch |err| {
@@ -4542,53 +4830,53 @@ Tool: read
 00077|             return err;
 00078|         };
 00079|         defer file.close();
-00080| 
+00080|
 00081|         const content = try file.readToEndAlloc(self.allocator, 1024 * 1024); // 1MB max
 00082|         defer self.allocator.free(content);
-00083| 
+00083|
 00084|         try self.parseDotenv(content);
 00085|     }
-00086| 
+00086|
 00087|     /// Parse .env file content
 00088|     pub fn parseDotenv(self: *Environment, content: []const u8) !void {
 00089|         var lines = std.mem.splitScalar(u8, content, '\n');
-00090| 
+00090|
 00091|         while (lines.next()) |line| {
 00092|             const trimmed = std.mem.trim(u8, line, " \t\r");
-00093| 
+00093|
 00094|             // Skip empty lines and comments
 00095|             if (trimmed.len == 0 or trimmed[0] == '#') {
 00096|                 continue;
 00097|             }
-00098| 
+00098|
 00099|             // Parse KEY=value
 00100|             if (std.mem.indexOfScalar(u8, trimmed, '=')) |eq_pos| {
 00101|                 const key = std.mem.trim(u8, trimmed[0..eq_pos], " \t");
 00102|                 var value = std.mem.trim(u8, trimmed[eq_pos + 1 ..], " \t");
-00103| 
+00103|
 00104|                 // Handle quoted values
 00105|                 value = stripQuotes(value);
-00106| 
+00106|
 00107|                 // Handle escape sequences and variable expansion in value
 00108|                 const expanded = try self.expandInValue(value);
 00109|                 errdefer self.allocator.free(expanded);
-00110| 
+00110|
 00111|                 // Set the variable
 00112|                 const owned_key = try self.allocator.dupe(u8, key);
 00113|                 errdefer self.allocator.free(owned_key);
-00114| 
+00114|
 00115|                 try self.allocated_strings.append(self.allocator, owned_key);
 00116|                 try self.allocated_strings.append(self.allocator, expanded);
 00117|                 try self.vars.put(owned_key, expanded);
 00118|             }
 00119|         }
 00120|     }
-00121| 
+00121|
 00122|     /// Expand variables within a .env value (supports $VAR and ${VAR})
 00123|     fn expandInValue(self: *Environment, value: []const u8) ![]const u8 {
 00124|         var result: std.ArrayListUnmanaged(u8) = .empty;
 00125|         errdefer result.deinit(self.allocator);
-00126| 
+00126|
 00127|         var i: usize = 0;
 00128|         while (i < value.len) {
 00129|             // Check for escape sequences
@@ -4610,7 +4898,7 @@ Tool: read
 00145|                 i += 2;
 00146|                 continue;
 00147|             }
-00148| 
+00148|
 00149|             // Check for variable expansion
 00150|             if (value[i] == '$') {
 00151|                 if (i + 1 < value.len and value[i + 1] == '{') {
@@ -4643,20 +4931,20 @@ Tool: read
 00178|                     continue;
 00179|                 }
 00180|             }
-00181| 
+00181|
 00182|             try result.append(self.allocator, value[i]);
 00183|             i += 1;
 00184|         }
-00185| 
+00185|
 00186|         return result.toOwnedSlice(self.allocator);
 00187|     }
-00188| 
+00188|
 00189|     /// Expand environment variables in a command string
 00190|     /// Supports both $VAR and ${VAR} syntax
 00191|     pub fn expandCommand(self: *const Environment, command: []const u8, allocator: std.mem.Allocator) ![]const u8 {
 00192|         var result: std.ArrayListUnmanaged(u8) = .empty;
 00193|         errdefer result.deinit(allocator);
-00194| 
+00194|
 00195|         var i: usize = 0;
 00196|         while (i < command.len) {
 00197|             // Check for escape sequence
@@ -4668,6 +4956,7 @@ Tool: read
 (File has more lines. Use 'offset' parameter to read beyond line 201)
 </file>
 ```
+
 ```
 
 ---
@@ -4679,9 +4968,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/color.zig",
@@ -4689,25 +4980,27 @@ Tool: read
   "limit": 200
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00002| // Implements: https://no-color.org/ and CLICOLOR standard
 00003| // See docs/CLI_DESIGN.md for the full design specification
-00004| 
+00004|
 00005| const std = @import("std");
 00006| const compat = @import("compat.zig");
-00007| 
+00007|
 00008| // ============================================================================
 00009| // ANSI Escape Codes
 00010| // ============================================================================
-00011| 
+00011|
 00012| /// Raw ANSI escape codes - use these for comptime string concatenation
 00013| pub const codes = struct {
 00014|     pub const reset = "\x1b[0m";
 00015|     pub const bold = "\x1b[1m";
 00016|     pub const dim = "\x1b[2m";
-00017| 
+00017|
 00018|     // Standard 16-color codes (fallback)
 00019|     pub const red = "\x1b[31m";
 00020|     pub const green = "\x1b[32m";
@@ -4715,7 +5008,7 @@ Tool: read
 00022|     pub const blue = "\x1b[34m";
 00023|     pub const magenta = "\x1b[35m";
 00024|     pub const cyan = "\x1b[36m";
-00025| 
+00025|
 00026|     // Bold variants
 00027|     pub const bold_red = "\x1b[1;31m";
 00028|     pub const bold_green = "\x1b[1;32m";
@@ -4723,11 +5016,11 @@ Tool: read
 00030|     pub const bold_blue = "\x1b[1;34m";
 00031|     pub const bold_magenta = "\x1b[1;35m";
 00032|     pub const bold_cyan = "\x1b[1;36m";
-00033| 
+00033|
 00034|     // Dim/muted
 00035|     pub const dim_white = "\x1b[2;37m";
 00036|     pub const gray = "\x1b[90m";
-00037| 
+00037|
 00038|     // Brand colors (true color / 24-bit) - see docs/CLI_DESIGN.md
 00039|     pub const jake_rose = "\x1b[38;2;244;63;94m"; // #f43f5e
 00040|     pub const success_green = "\x1b[38;2;34;197;94m"; // #22c55e
@@ -4736,7 +5029,7 @@ Tool: read
 00043|     pub const info_blue = "\x1b[38;2;96;165;250m"; // #60a5fa
 00044|     pub const muted_gray = "\x1b[38;2;113;113;122m"; // #71717a
 00045| };
-00046| 
+00046|
 00047| /// Unicode symbols for CLI output
 00048| pub const symbols = struct {
 00049|     pub const arrow = "→";
@@ -4745,17 +5038,17 @@ Tool: read
 00052|     pub const warning = "~";
 00053|     pub const logo = "{j}";
 00054| };
-00055| 
+00055|
 00056| // ============================================================================
 00057| // ColoredText - Formattable wrapper for std.fmt
 00058| // ============================================================================
-00059| 
+00059|
 00060| /// A text string wrapped with color codes, usable with std.fmt {f}
 00061| pub const ColoredText = struct {
 00062|     prefix: []const u8,
 00063|     text: []const u8,
 00064|     suffix: []const u8,
-00065| 
+00065|
 00066|     /// Format implementation for std.fmt {f} - outputs prefix + text + suffix
 00067|     /// Note: Zig 0.15+ uses simplified format signature with just writer
 00068|     pub fn format(self: ColoredText, writer: anytype) !void {
@@ -4764,103 +5057,103 @@ Tool: read
 00071|         try writer.writeAll(self.suffix);
 00072|     }
 00073| };
-00074| 
+00074|
 00075| /// Color configuration - provides ANSI codes or empty strings based on settings
 00076| pub const Color = struct {
 00077|     enabled: bool,
-00078| 
+00078|
 00079|     // Bold colors (for emphasis)
 00080|     pub fn red(self: Color) []const u8 {
 00081|         return if (self.enabled) "\x1b[1;31m" else "";
 00082|     }
-00083| 
+00083|
 00084|     pub fn yellow(self: Color) []const u8 {
 00085|         return if (self.enabled) "\x1b[1;33m" else "";
 00086|     }
-00087| 
+00087|
 00088|     pub fn cyan(self: Color) []const u8 {
 00089|         return if (self.enabled) "\x1b[1;36m" else "";
 00090|     }
-00091| 
+00091|
 00092|     pub fn blue(self: Color) []const u8 {
 00093|         return if (self.enabled) "\x1b[1;34m" else "";
 00094|     }
-00095| 
+00095|
 00096|     pub fn green(self: Color) []const u8 {
 00097|         return if (self.enabled) "\x1b[1;32m" else "";
 00098|     }
-00099| 
+00099|
 00100|     pub fn bold(self: Color) []const u8 {
 00101|         return if (self.enabled) "\x1b[1m" else "";
 00102|     }
-00103| 
+00103|
 00104|     // Regular colors (non-bold)
 00105|     pub fn cyanRegular(self: Color) []const u8 {
 00106|         return if (self.enabled) "\x1b[36m" else "";
 00107|     }
-00108| 
+00108|
 00109|     pub fn yellowRegular(self: Color) []const u8 {
 00110|         return if (self.enabled) "\x1b[33m" else "";
 00111|     }
-00112| 
+00112|
 00113|     pub fn greenRegular(self: Color) []const u8 {
 00114|         return if (self.enabled) "\x1b[32m" else "";
 00115|     }
-00116| 
+00116|
 00117|     pub fn dim(self: Color) []const u8 {
 00118|         return if (self.enabled) "\x1b[90m" else "";
 00119|     }
-00120| 
+00120|
 00121|     pub fn reset(self: Color) []const u8 {
 00122|         return if (self.enabled) "\x1b[0m" else "";
 00123|     }
-00124| 
+00124|
 00125|     // Brand colors (24-bit true color) - see docs/CLI_DESIGN.md
 00126|     pub fn jakeRose(self: Color) []const u8 {
 00127|         return if (self.enabled) codes.jake_rose else "";
 00128|     }
-00129| 
+00129|
 00130|     pub fn muted(self: Color) []const u8 {
 00131|         return if (self.enabled) codes.muted_gray else "";
 00132|     }
-00133| 
+00133|
 00134|     pub fn successGreen(self: Color) []const u8 {
 00135|         return if (self.enabled) codes.success_green else "";
 00136|     }
-00137| 
+00137|
 00138|     pub fn errorRed(self: Color) []const u8 {
 00139|         return if (self.enabled) codes.error_red else "";
 00140|     }
-00141| 
+00141|
 00142|     pub fn warningYellow(self: Color) []const u8 {
 00143|         return if (self.enabled) codes.warning_yellow else "";
 00144|     }
-00145| 
+00145|
 00146|     pub fn infoBlue(self: Color) []const u8 {
 00147|         return if (self.enabled) codes.info_blue else "";
 00148|     }
-00149| 
+00149|
 00150|     /// Error prefix with color: "error: " in brand red (#ef4444)
 00151|     pub fn errPrefix(self: Color) []const u8 {
 00152|         return if (self.enabled) codes.error_red ++ "error:" ++ codes.reset ++ " " else "error: ";
 00153|     }
-00154| 
+00154|
 00155|     /// Warning prefix with color: "warning: " in brand yellow (#eab308)
 00156|     pub fn warnPrefix(self: Color) []const u8 {
 00157|         return if (self.enabled) codes.warning_yellow ++ "warning:" ++ codes.reset ++ " " else "warning: ";
 00158|     }
-00159| 
+00159|
 00160|     // =========================================================================
 00161|     // Writer methods - write styled text directly to a writer
 00162|     // =========================================================================
-00163| 
+00163|
 00164|     /// Write styled text: color + text + reset
 00165|     pub fn writeStyled(self: Color, writer: anytype, text: []const u8, comptime style: Style) !void {
 00166|         try writer.writeAll(self.get(style));
 00167|         try writer.writeAll(text);
 00168|         try writer.writeAll(self.reset());
 00169|     }
-00170| 
+00170|
 00171|     /// Get color code for a style
 00172|     pub fn get(self: Color, comptime style: Style) []const u8 {
 00173|         return switch (style) {
@@ -4873,29 +5166,30 @@ Tool: read
 00180|             .dim => self.dim(),
 00181|         };
 00182|     }
-00183| 
+00183|
 00184|     // Convenience methods for common styles
 00185|     pub fn writeBold(self: Color, writer: anytype, text: []const u8) !void {
 00186|         return self.writeStyled(writer, text, .bold);
 00187|     }
-00188| 
+00188|
 00189|     pub fn writeRed(self: Color, writer: anytype, text: []const u8) !void {
 00190|         return self.writeStyled(writer, text, .red);
 00191|     }
-00192| 
+00192|
 00193|     pub fn writeCyan(self: Color, writer: anytype, text: []const u8) !void {
 00194|         return self.writeStyled(writer, text, .cyan);
 00195|     }
-00196| 
+00196|
 00197|     pub fn writeGreen(self: Color, writer: anytype, text: []const u8) !void {
 00198|         return self.writeStyled(writer, text, .green);
 00199|     }
-00200| 
+00200|
 00201|     pub fn writeYellow(self: Color, writer: anytype, text: []const u8) !void {
 
 (File has more lines. Use 'offset' parameter to read beyond line 201)
 </file>
 ```
+
 ```
 
 ---
@@ -4907,19 +5201,24 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "no_color",
   "path": "/Users/helge/code/jake/src"
 }
 ```
+
 **Output:**
+
 ```
 No files found
 ```
+
 ```
 
 ---
@@ -4931,16 +5230,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "owned_index",
   "path": "/Users/helge/code/jake/src/executor.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 9 matches
 /Users/helge/code/jake/src/executor.zig:
@@ -4954,6 +5257,7 @@ Found 9 matches
   Line 641:         if (self.owned_index) |owned| {
   Line 644:             self.owned_index = null;
 ```
+
 ```
 
 ---
@@ -4965,16 +5269,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "fn stripQuotes",
   "path": "/Users/helge/code/jake/src"
 }
 ```
+
 **Output:**
+
 ```
 Found 4 matches
 /Users/helge/code/jake/src/executor.zig:
@@ -4989,6 +5297,7 @@ Found 4 matches
 /Users/helge/code/jake/src/conditions.zig:
   Line 224: fn stripQuotes(s: []const u8) []const u8 {
 ```
+
 ```
 
 ---
@@ -5000,16 +5309,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "owned_index",
   "path": "/Users/helge/code/jake/src/watch.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 9 matches
 /Users/helge/code/jake/src/watch.zig:
@@ -5023,6 +5336,7 @@ Found 9 matches
   Line 99:         if (self.owned_index) |owned| {
   Line 102:             self.owned_index = null;
 ```
+
 ```
 
 ---
@@ -5034,9 +5348,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/parser.zig",
@@ -5044,7 +5360,9 @@ Tool: read
   "limit": 80
 }
 ```
+
 **Output:**
+
 ```
 <file>
 01401|             }
@@ -5055,12 +5373,12 @@ Tool: read
 01406|             }) catch return ParseError.OutOfMemory;
 01407|             if (self.current.tag == .newline) self.advance();
 01408|         }
-01409| 
+01409|
 01410|         // Consume any pending metadata
 01411|         const aliases = try self.consumePendingAliases();
 01412|         const only_os = try self.consumePendingOnlyOs();
 01413|         const needs = try self.consumePendingNeeds();
-01414| 
+01414|
 01415|         // Use output as recipe name
 01416|         self.recipes.append(self.allocator, .{
 01417|             .name = output,
@@ -5087,7 +5405,7 @@ Tool: read
 01438|         }) catch return ParseError.OutOfMemory;
 01439|     }
 01440| };
-01441| 
+01441|
 01442| pub fn stripQuotes(s: []const u8) []const u8 {
 01443|     if (s.len >= 2) {
 01444|         if ((s[0] == '"' and s[s.len - 1] == '"') or (s[0] == '\'' and s[s.len - 1] == '\'')) {
@@ -5096,19 +5414,19 @@ Tool: read
 01447|     }
 01448|     return s;
 01449| }
-01450| 
+01450|
 01451| test "parse variable" {
 01452|     const source = "name = \"value\"";
 01453|     var lex = Lexer.init(source);
 01454|     var p = Parser.init(std.testing.allocator, &lex);
 01455|     var jakefile = try p.parseJakefile();
 01456|     defer jakefile.deinit(std.testing.allocator);
-01457| 
+01457|
 01458|     try std.testing.expectEqual(@as(usize, 1), jakefile.variables.len);
 01459|     try std.testing.expectEqualStrings("name", jakefile.variables[0].name);
 01460|     try std.testing.expectEqualStrings("value", jakefile.variables[0].value);
 01461| }
-01462| 
+01462|
 01463| test "parse task recipe" {
 01464|     const source =
 01465|         \\task build:
@@ -5118,12 +5436,12 @@ Tool: read
 01469|     var p = Parser.init(std.testing.allocator, &lex);
 01470|     var jakefile = try p.parseJakefile();
 01471|     defer jakefile.deinit(std.testing.allocator);
-01472| 
+01472|
 01473|     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
 01474|     try std.testing.expectEqualStrings("build", jakefile.recipes[0].name);
 01475|     try std.testing.expectEqual(Recipe.Kind.task, jakefile.recipes[0].kind);
 01476| }
-01477| 
+01477|
 01478| test "parse recipe with deps" {
 01479|     const source =
 01480|         \\build: [compile, test]
@@ -5131,6 +5449,7 @@ Tool: read
 (File has more lines. Use 'offset' parameter to read beyond line 1480)
 </file>
 ```
+
 ```
 
 ---
@@ -5142,9 +5461,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/context.zig",
@@ -5152,6 +5473,7 @@ Tool: edit
   "newString": "const std = @import(\"std\");\nconst color_mod = @import(\"color.zig\");\nconst cache_mod = @import(\"cache.zig\");\nconst env_mod = @import(\"env.zig\");\nconst hooks_mod = @import(\"hooks.zig\");\nconst prompt_mod = @import(\"prompt.zig\");\nconst parser = @import(\"parser.zig\");\nconst jakefile_index = @import(\"jakefile_index.zig\");\n\n/// Shared execution context passed through the app lifecycle.\n/// Replaces individual dry_run, verbose, etc. fields scattered across modules.\npub const Context = struct {\n    // CLI flags\n    dry_run: bool = false,\n    verbose: bool = false,\n    auto_yes: bool = false,\n    watch_mode: bool = false,\n    jobs: usize = 0, // 0 = sequential, >0 = parallel with N workers\n\n    // Color output configuration\n    color: color_mod.Color,\n\n    // Positional arguments for recipe parameters ($1, $2, etc.)\n    positional_args: []const []const u8 = &.{},\n\n    /// Initialize with default values and auto-detected color settings\n    pub fn init() Context {\n        return .{\n            .color = color_mod.init(),\n        };\n    }\n\n    /// Create context for testing with explicit color setting\n    pub fn initWithColor(color_enabled: bool) Context {\n        return .{\n            .color = color_mod.withEnabled(color_enabled),\n        };\n    }\n};\n\n/// Runtime services shared between executors/watchers to avoid duplicated setup.\npub const RuntimeContext = struct {\n    allocator: std.mem.Allocator,\n    cache: cache_mod.Cache,\n    environment: env_mod.Environment,\n    hook_runner: hooks_mod.HookRunner,\n    prompt: prompt_mod.Prompt,\n    color: color_mod.Color,\n    theme: color_mod.Theme,\n    cache_loaded: bool,\n\n    pub fn init(allocator: std.mem.Allocator) RuntimeContext {\n        return .{\n            .allocator = allocator,\n            .cache = cache_mod.Cache.init(allocator),\n            .environment = env_mod.Environment.init(allocator),\n            .hook_runner = hooks_mod.HookRunner.init(allocator),\n            .prompt = prompt_mod.Prompt.init(),\n            .color = color_mod.init(),\n            .theme = color_mod.Theme.init(),\n            .cache_loaded = false,\n        };\n    }\n\n    pub fn initWithColor(allocator: std.mem.Allocator, color_enabled: bool) RuntimeContext {\n        var ctx = RuntimeContext.init(allocator);\n        ctx.color = color_mod.withEnabled(color_enabled);\n        ctx.theme = color_mod.Theme.initWithColor(ctx.color);\n        return ctx;\n    }\n\n    pub fn configure(self: *RuntimeContext, jakefile: *const parser.Jakefile, index: *const jakefile_index.JakefileIndex) void {\n        self.loadCacheOnce();\n        self.resetEnvironment();\n        self.resetHookRunner();\n        self.loadDotenvDirectives(index);\n        self.applyExportDirectives(index);\n        self.loadGlobalHooks(jakefile);\n    }\n\n    pub fn deinit(self: *RuntimeContext) void {\n        self.cache.save() catch {};\n        self.cache.deinit();\n        self.environment.deinit();\n        self.hook_runner.deinit();\n    }\n\n    fn loadCacheOnce(self: *RuntimeContext) void {\n        if (self.cache_loaded) return;\n        self.cache.load() catch {};\n        self.cache_loaded = true;\n    }\n\n    fn resetEnvironment(self: *RuntimeContext) void {\n        self.environment.deinit();\n        self.environment = env_mod.Environment.init(self.allocator);\n    }\n\n    fn resetHookRunner(self: *RuntimeContext) void {\n        self.hook_runner.deinit();\n        self.hook_runner = hooks_mod.HookRunner.init(self.allocator);\n        self.hook_runner.color = self.color;\n        self.hook_runner.theme = self.theme;\n    }\n\n    fn loadDotenvDirectives(self: *RuntimeContext, index: *const jakefile_index.JakefileIndex) void {\n        for (index.getDirectives(.dotenv)) |directive_ptr| {\n            const directive = directive_ptr.*;\n            if (directive.args.len > 0) {\n                for (directive.args) |path| {\n                    self.environment.loadDotenv(stripQuotes(path)) catch {};\n                }\n            } else {\n                self.environment.loadDotenv(\".env\") catch {};\n            }\n        }\n    }\n\n    fn applyExportDirectives(self: *RuntimeContext, index: *const jakefile_index.JakefileIndex) void {\n        for (index.getDirectives(.@\"export\")) |directive_ptr| {\n            const directive = directive_ptr.*;\n            if (directive.args.len == 0) continue;\n\n            const first_arg = directive.args[0];\n            if (std.mem.indexOfScalar(u8, first_arg, '=')) |eq_pos| {\n                const key = first_arg[0..eq_pos];\n                const value = stripQuotes(first_arg[eq_pos + 1 ..]);\n                self.environment.set(key, value) catch {};\n            } else if (directive.args.len >= 2) {\n                self.environment.set(first_arg, stripQuotes(directive.args[1])) catch {};\n            } else if (index.getVariable(first_arg)) |value| {\n                self.environment.set(first_arg, value) catch {};\n            }\n        }\n    }\n\n    fn loadGlobalHooks(self: *RuntimeContext, jakefile: *const parser.Jakefile) void {\n        for (jakefile.global_pre_hooks) |hook| {\n            self.hook_runner.addGlobalHook(hook) catch {};\n        }\n        for (jakefile.global_post_hooks) |hook| {\n            self.hook_runner.addGlobalHook(hook) catch {};\n        }\n        for (jakefile.global_on_error_hooks) |hook| {\n            self.hook_runner.addGlobalHook(hook) catch {};\n        }\n    }\n};\n\nfn stripQuotes(value: []const u8) []const u8 {\n    return parser.stripQuotes(value);\n}\n"
 }
 ```
+
 ```
 
 ---
@@ -5163,16 +5485,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "Theme",
   "path": "/Users/helge/code/jake/src/color.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 40 matches
 /Users/helge/code/jake/src/color.zig:
@@ -5217,6 +5543,7 @@ Found 40 matches
   Line 620: test "Theme.successSymbol returns colored symbol" {
   Line 621:     const theme = Theme.withColor(withEnabled(true));
 ```
+
 ```
 
 ---
@@ -5228,9 +5555,11 @@ _Thinking:_
 
 
 ```
+
 Tool: read
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/color.zig",
@@ -5238,93 +5567,96 @@ Tool: read
   "limit": 80
 }
 ```
+
 **Output:**
+
 ```
 <file>
 00301| /// Maps UI concepts (error, warning, recipe, hidden) to colors.
 00302| /// See docs/CLI_DESIGN.md for the full design specification.
 00303| pub const Theme = struct {
 00304|     color: Color,
-00305| 
+00305|
 00306|     /// Initialize theme with automatic color detection
 00307|     pub fn init() Theme {
 00308|         return .{ .color = .{ .enabled = shouldUseColor() } };
 00309|     }
-00310| 
+00310|
 00311|     /// Create theme with explicit color settings (for testing)
 00312|     pub fn withColor(color: Color) Theme {
 00313|         return .{ .color = color };
 00314|     }
-00315| 
+00315|
 00316|     // =========================================================================
 00317|     // Semantic styles - return ColoredText for std.fmt {}
 00318|     // =========================================================================
-00319| 
+00319|
 00320|     /// Error text - for failures and errors (brand: #ef4444)
 00321|     pub fn err(self: Theme, text: []const u8) ColoredText {
 00322|         return self.color.styled(text, codes.error_red);
 00323|     }
-00324| 
+00324|
 00325|     /// Warning text - for warnings and skipped items (brand: #eab308)
 00326|     pub fn warning(self: Theme, text: []const u8) ColoredText {
 00327|         return self.color.styled(text, codes.warning_yellow);
 00328|     }
-00329| 
+00329|
 00330|     /// Success text - for completion and checkmarks (brand: #22c55e)
 00331|     pub fn success(self: Theme, text: []const u8) ColoredText {
 00332|         return self.color.styled(text, codes.success_green);
 00333|     }
-00334| 
+00334|
 00335|     /// Info text - for informational messages (brand: #60a5fa)
 00336|     pub fn info(self: Theme, text: []const u8) ColoredText {
 00337|         return self.color.styled(text, codes.info_blue);
 00338|     }
-00339| 
+00339|
 00340|     /// Recipe name in headers - for "→ recipe_name" (brand: #f43f5e Jake Rose)
 00341|     pub fn recipeHeader(self: Theme, text: []const u8) ColoredText {
 00342|         return self.color.styled(text, codes.jake_rose);
 00343|     }
-00344| 
+00344|
 00345|     /// Recipe name in listings - for recipe lists (brand: #f43f5e Jake Rose)
 00346|     pub fn recipeName(self: Theme, text: []const u8) ColoredText {
 00347|         return self.color.styled(text, codes.jake_rose);
 00348|     }
-00349| 
+00349|
 00350|     /// Section header (bold) - for "Available recipes:"
 00351|     pub fn section(self: Theme, text: []const u8) ColoredText {
 00352|         return self.color.styled(text, codes.bold);
 00353|     }
-00354| 
+00354|
 00355|     /// Group header - for group names in listings (brand: #f43f5e Jake Rose)
 00356|     pub fn group(self: Theme, text: []const u8) ColoredText {
 00357|         return self.color.styled(text, codes.jake_rose);
 00358|     }
-00359| 
+00359|
 00360|     /// Hidden marker (dim) - for "(hidden)" labels
 00361|     pub fn hidden(self: Theme, text: []const u8) ColoredText {
 00362|         return self.color.styled(text, codes.dim_white);
 00363|     }
-00364| 
+00364|
 00365|     /// Muted text - for comments, descriptions, secondary text (brand: #71717a)
 00366|     pub fn muted(self: Theme, text: []const u8) ColoredText {
 00367|         return self.color.styled(text, codes.muted_gray);
 00368|     }
-00369| 
+00369|
 00370|     /// Directive keyword - for @needs, @confirm, etc. (brand: #eab308)
 00371|     pub fn directive(self: Theme, text: []const u8) ColoredText {
 00372|         return self.color.styled(text, codes.warning_yellow);
 00373|     }
-00374| 
+00374|
 00375|     /// Hook label - for @pre, @post labels (brand: #22c55e)
 00376|     pub fn hook(self: Theme, text: []const u8) ColoredText {
 00377|         return self.color.styled(text, codes.success_green);
 00378|     }
-00379| 
+00379|
 00380|     // =========================================================================
 
 (File has more lines. Use 'offset' parameter to read beyond line 380)
 </file>
 ```
+
 ```
 
 ---
@@ -5336,16 +5668,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "withEnabled",
   "path": "/Users/helge/code/jake/src/color.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 23 matches
 /Users/helge/code/jake/src/color.zig:
@@ -5373,6 +5709,7 @@ Found 23 matches
   Line 614:     const disabled_theme = Theme.withColor(withEnabled(false));
   Line 621:     const theme = Theme.withColor(withEnabled(true));
 ```
+
 ```
 
 ---
@@ -5384,9 +5721,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/root.zig",
@@ -5394,6 +5733,7 @@ Tool: edit
   "newString": "pub const Context = context.Context;\npub const RuntimeContext = context.RuntimeContext;\n"
 }
 ```
+
 ```
 
 ---
@@ -5405,9 +5745,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/main.zig",
@@ -5415,6 +5757,7 @@ Tool: edit
   "newString": "const JakefileWithSource = struct {\n    jakefile: jake.Jakefile,\n    index: jake.JakefileIndex,\n    runtime: jake.RuntimeContext,\n    source: []const u8,\n    allocator: std.mem.Allocator,\n    import_allocations: ?jake.ImportAllocations,\n\n    pub fn deinit(self: *JakefileWithSource) void {\n        self.runtime.deinit();\n        self.index.deinit();\n        self.jakefile.deinit(self.allocator);\n        self.allocator.free(self.source);\n        if (self.import_allocations) |*allocs| {\n            var mutable_allocs = allocs.*;\n            mutable_allocs.deinit();\n        }\n    }\n};\n"
 }
 ```
+
 ```
 
 ---
@@ -5426,9 +5769,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/main.zig",
@@ -5436,6 +5781,7 @@ Tool: edit
   "newString": "    var index = try jake.JakefileIndex.build(allocator, &jakefile);\n    errdefer index.deinit();\n\n    var runtime = jake.RuntimeContext.init(allocator);\n    errdefer runtime.deinit();\n    runtime.configure(&jakefile, &index);\n\n    return JakefileWithSource{\n        .jakefile = jakefile,\n        .index = index,\n        .runtime = runtime,\n        .source = source,\n        .allocator = allocator,\n        .import_allocations = import_allocations,\n    };\n}\n"
 }
 ```
+
 ```
 
 ---
@@ -5447,9 +5793,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/main.zig",
@@ -5457,6 +5805,7 @@ Tool: edit
   "newString": "    var executor = jake.Executor.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);\n    defer executor.deinit();\n"
 }
 ```
+
 ```
 
 ---
@@ -5468,9 +5817,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/main.zig",
@@ -5478,6 +5829,7 @@ Tool: edit
   "newString": "        var watcher = jake.Watcher.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);\n"
 }
 ```
+
 ```
 
 ---
@@ -5489,19 +5841,24 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "context\\.zig",
   "path": "/Users/helge/code/jake/src/executor.zig"
 }
 ```
+
 **Output:**
+
 ```
 No files found
 ```
+
 ```
 
 ---
@@ -5513,9 +5870,11 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {
   "filePath": "/Users/helge/code/jake/src/executor.zig",
@@ -5523,6 +5882,7 @@ Tool: edit
   "newString": "const hooks_mod = @import(\"hooks.zig\");\nconst prompt_mod = @import(\"prompt.zig\");\nconst functions = @import(\"functions.zig\");\nconst glob_mod = @import(\"glob.zig\");\nconst color_mod = @import(\"color.zig\");\nconst RuntimeContext = @import(\"context.zig\").RuntimeContext;\n"
 }
 ```
+
 ```
 
 ---
@@ -5534,16 +5894,20 @@ _Thinking:_
 
 
 ```
+
 Tool: grep
 
 **Input:**
+
 ```json
 {
   "pattern": "Cache",
   "path": "/Users/helge/code/jake/src/executor.zig"
 }
 ```
+
 **Output:**
+
 ```
 Found 11 matches
 /Users/helge/code/jake/src/executor.zig:
@@ -5559,6 +5923,7 @@ Found 11 matches
   Line 4332: test "parseCachePatterns works for watch patterns" {
   Line 4348:     const patterns = executor.parseCachePatterns("watch **/*.zig");
 ```
+
 ```
 
 ---
@@ -5570,16 +5935,21 @@ _Thinking:_
 
 
 ```
+
 Tool: edit
 
 **Input:**
+
 ```json
 {}
 ```
+
 **Error:**
+
 ```
 Tool execution aborted
 ```
+
 ```
 
 ---
@@ -5604,3 +5974,4 @@ continue with the todo list
 
 ---
 
+```

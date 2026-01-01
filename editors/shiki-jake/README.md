@@ -15,20 +15,20 @@ npm install shiki shiki-jake
 ### Basic
 
 ```javascript
-import { createHighlighter } from 'shiki';
-import jake from 'shiki-jake';
+import { createHighlighter } from "shiki";
+import jake from "shiki-jake";
 
 const highlighter = await createHighlighter({
-  themes: ['github-dark'],
-  langs: [jake]
+  themes: ["github-dark"],
+  langs: [jake],
 });
 
 const code = `task build:
     echo "Building..."`;
 
 const html = highlighter.codeToHtml(code, {
-  lang: 'jake',
-  theme: 'github-dark'
+  lang: "jake",
+  theme: "github-dark",
 });
 
 console.log(html);
@@ -37,44 +37,44 @@ console.log(html);
 ### Load Language Dynamically
 
 ```javascript
-import { createHighlighter } from 'shiki';
-import jake from 'shiki-jake';
+import { createHighlighter } from "shiki";
+import jake from "shiki-jake";
 
 const highlighter = await createHighlighter({
-  themes: ['github-dark'],
-  langs: [] // Start with no languages
+  themes: ["github-dark"],
+  langs: [], // Start with no languages
 });
 
 // Load Jake when needed
 await highlighter.loadLanguage(jake);
 
 const html = highlighter.codeToHtml(code, {
-  lang: 'jake',
-  theme: 'github-dark'
+  lang: "jake",
+  theme: "github-dark",
 });
 ```
 
 ### Multiple Themes
 
 ```javascript
-import { createHighlighter } from 'shiki';
-import jake from 'shiki-jake';
+import { createHighlighter } from "shiki";
+import jake from "shiki-jake";
 
 const highlighter = await createHighlighter({
-  themes: ['github-dark', 'github-light'],
-  langs: [jake]
+  themes: ["github-dark", "github-light"],
+  langs: [jake],
 });
 
 // Dark theme
 const darkHtml = highlighter.codeToHtml(code, {
-  lang: 'jake',
-  theme: 'github-dark'
+  lang: "jake",
+  theme: "github-dark",
 });
 
 // Light theme
 const lightHtml = highlighter.codeToHtml(code, {
-  lang: 'jake',
-  theme: 'github-light'
+  lang: "jake",
+  theme: "github-light",
 });
 ```
 
@@ -84,15 +84,15 @@ const lightHtml = highlighter.codeToHtml(code, {
 
 ```javascript
 // astro.config.mjs
-import { defineConfig } from 'astro/config';
-import jake from 'shiki-jake';
+import { defineConfig } from "astro/config";
+import jake from "shiki-jake";
 
 export default defineConfig({
   markdown: {
     shikiConfig: {
       themes: {
-        light: 'github-light',
-        dark: 'github-dark',
+        light: "github-light",
+        dark: "github-dark",
       },
       langs: [jake],
     },
@@ -104,8 +104,8 @@ export default defineConfig({
 
 ```javascript
 // .vitepress/config.js
-import { defineConfig } from 'vitepress';
-import jake from 'shiki-jake';
+import { defineConfig } from "vitepress";
+import jake from "shiki-jake";
 
 export default defineConfig({
   markdown: {
@@ -117,11 +117,11 @@ export default defineConfig({
 #### Next.js with MDX
 
 ```javascript
-import { createHighlighter } from 'shiki';
-import jake from 'shiki-jake';
+import { createHighlighter } from "shiki";
+import jake from "shiki-jake";
 
 const highlighter = await createHighlighter({
-  themes: ['github-dark'],
+  themes: ["github-dark"],
   langs: [jake],
 });
 
@@ -184,11 +184,11 @@ file bin/app: [src/main.c, src/utils.c]
 This package exports a TextMate grammar that can be used with any compatible syntax highlighter:
 
 ```javascript
-import jake from 'shiki-jake';
+import jake from "shiki-jake";
 
 console.log(jake.scopeName); // "source.jake"
-console.log(jake.name);      // "jake"
-console.log(jake.aliases);   // ["jakefile"]
+console.log(jake.name); // "jake"
+console.log(jake.aliases); // ["jakefile"]
 ```
 
 ## License
