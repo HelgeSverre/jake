@@ -7,17 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-01-01
+
 ### Added
 
-- **"Did you mean?" Suggestions**
-  - Unknown flag typos now suggest similar flags
-  - `--vrsbose` → `Did you mean '--verbose'?`
-  - Uses Levenshtein distance from `suggest.zig`
+- **CLI v4 Output Design**
+  - Complete redesign of CLI output with brand colors
+  - Consistent visual styling across all commands
+  - Improved completion status with timing information
+
+- **Jakefile Formatter**
+  - `jake --fmt` to format Jakefiles with consistent style
+  - `jake --check` for CI validation without modifying files
+  - `jake --dump` to output formatted AST
+  - Comment preservation during formatting
+
+- **Self-Update Command**
+  - `jake upgrade` to update jake to the latest version
+  - Automatic version checking and installation
+
+- **@timeout Directive**
+  - Set maximum execution time for recipes
+  - Automatic process termination when timeout exceeded
+  - Extended fuzz testing for timeout handling
+
+- **Color Module**
+  - New `color.zig` module with ANSI color codes
+  - `NO_COLOR` environment variable support
+  - `ColoredText` helper for styled output
+  - Themed output with brand colors
+
+- **Zed Editor Extension**
+  - Complete Zed extension with syntax highlighting
+  - Custom themes and icons for Jakefiles
+
+- **CLI Improvements**
+  - `--all` flag to show all recipes including private ones
+  - Double-dash separator (`--`) for passing arguments to recipes
+  - Parent directory traversal to find Jakefile
+  - `jake init` command to create new Jakefile
+  - "Did you mean?" suggestions for unknown flags
+
+- **Jake Modules**
+  - Split Jakefile into reusable modules in `jake/` directory
+  - Better organization for build, release, perf, web, and editor tasks
 
 ### Fixed
 
 - Color.zig `Theme.init()` now correctly initializes color detection
 - ColoredText format method updated for Zig 0.15 compatibility
+
+### Changed
+
+- Refactored executor, parallel, hooks, and watch modules to use Color module
+- Simplified distribution strategy, removed `packaging/` directory
+- Restructured syntax highlighters and consolidated demos
 
 ## [0.4.0] - 2025-12-30
 
@@ -187,6 +231,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Multi-platform build support (Linux, macOS, Windows)
   - Cross-compilation for x86_64 and aarch64
 
+[0.5.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.5.0
 [0.4.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.4.0
 [0.3.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.3.0
 [0.2.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.2.0
