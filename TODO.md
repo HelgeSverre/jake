@@ -533,3 +533,38 @@ Opt-in anonymous usage telemetry via Sentry for crash reporting and usage analyt
 - Respect `DO_NOT_TRACK` env var
 - Track: crash reports, feature usage counts, OS/arch distribution
 - No PII, no Jakefile contents, no command arguments
+
+---
+
+### Bug in zed-extension Runnable, does not honor the import aliasing
+
+When importing a Jake module with an alias in Zed, the Runnable feature does not recognize the alias and fails to run
+the recipes defined in that module.
+
+```jake
+# file. Jakefile
+
+@import "jake/stats.jake" as stats
+```
+
+```jake
+
+# file: jake/stats.jake
+@import "utils.jake" as utils
+
+@group stats
+@desc "Find TODO:/FIXME:/HACK: comments in source"
+task todos: # '<-- click here in zed'
+    @ignore
+    grep -rn "TODO:\|FIXME:\|HACK:\|XXX:" src/ || echo "No TODOs found!"
+```
+
+```
+error: Recipe 'todos' not found
+Run 'jake --list' to see available recipes.
+
+⏵ Task `jake todos` finished with non-zero error code: 1
+⏵ Command: /bin/zsh -i -c 'jake'
+```
+
+because it was imported as `stats`, the correct way to reference it would be `stats.todos`, but Zed's Runnable does not know that (yet)
