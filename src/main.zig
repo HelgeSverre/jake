@@ -62,13 +62,13 @@ pub fn main() !void {
     if (args.version) {
         const stdout = getStdout();
         const color = color_mod.init();
-        // {j} logo in Jake Rose
+        // v4 format: {j} jake 0.x.x
+        // {j} in Jake Rose (#f43f5e), version in muted gray (#71717a)
         stdout.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
         stdout.writeAll(color_mod.symbols.logo) catch {};
         stdout.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
-        // jake in regular, version in gray
         stdout.writeAll(" jake ") catch {};
-        stdout.writeAll(if (color.enabled) color_mod.codes.gray else "") catch {};
+        stdout.writeAll(if (color.enabled) color_mod.codes.muted_gray else "") catch {};
         stdout.writeAll(version) catch {};
         stdout.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
         stdout.writeAll("\n") catch {};
@@ -185,10 +185,26 @@ pub fn main() !void {
     // Load Jakefile
     var jakefile_data = loadJakefile(allocator, args.jakefile) catch |err| {
         const stderr = getStderr();
+        const color = color_mod.init();
         if (err == error.FileNotFound) {
-            stderr.writeAll(args_mod.ansi.err_prefix ++ "No Jakefile found\n") catch {};
-            stderr.writeAll("Searched current directory and all parent directories.\n") catch {};
-            stderr.writeAll("Create a file named 'Jakefile' or specify one with -f.\n") catch {};
+            // v4 format: {j} error: no Jakefile found (logo only for this error type)
+            stderr.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
+            stderr.writeAll(color_mod.symbols.logo) catch {};
+            stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+            stderr.writeAll(" " ++ args_mod.ansi.err_prefix ++ "no Jakefile found\n") catch {};
+            stderr.writeAll("\n   ") catch {};
+            stderr.writeAll(if (color.enabled) color_mod.codes.muted_gray else "") catch {};
+            stderr.writeAll("Searched: Jakefile, jakefile, Jakefile.jake") catch {};
+            stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+            stderr.writeAll("\n   ") catch {};
+            stderr.writeAll(if (color.enabled) color_mod.codes.info_blue else "") catch {};
+            stderr.writeAll("hint:") catch {};
+            stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+            stderr.writeAll(" run ") catch {};
+            stderr.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
+            stderr.writeAll("jake init") catch {};
+            stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+            stderr.writeAll(" to create one\n") catch {};
         } else {
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to load Jakefile: {s}\n", .{@errorName(err)}) catch "error\n";
@@ -198,7 +214,7 @@ pub fn main() !void {
     };
     defer jakefile_data.deinit();
 
-    var executor = jake.Executor.init(allocator, &jakefile_data.jakefile);
+    var executor = jake.Executor.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);
     defer executor.deinit();
     executor.dry_run = args.dry_run;
     executor.verbose = args.verbose;
@@ -237,7 +253,7 @@ pub fn main() !void {
 
     // Get recipe to run
     const target = args.recipe orelse blk: {
-        if (jakefile_data.jakefile.getDefaultRecipe()) |r| {
+        if (jakefile_data.index.getDefaultRecipe()) |r| {
             break :blk r.name;
         }
         getStderr().writeAll(args_mod.ansi.err_prefix ++ "No default recipe and no recipe specified\n") catch {};
@@ -246,7 +262,7 @@ pub fn main() !void {
 
     // Watch mode
     if (args.watch_enabled) {
-        var watcher = jake.Watcher.init(allocator, &jakefile_data.jakefile);
+        var watcher = jake.Watcher.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);
         defer watcher.deinit();
         watcher.dry_run = args.dry_run;
         watcher.verbose = args.verbose;
@@ -277,7 +293,14 @@ pub fn main() !void {
 
         switch (err) {
             error.RecipeNotFound => {
-                // Try to find similar recipe names
+                // v4 format: error: recipe 'X' not found
+                const color = color_mod.init();
+                stderr.writeAll(args_mod.ansi.err_prefix) catch {};
+                stderr.writeAll("recipe '") catch {};
+                stderr.writeAll(target) catch {};
+                stderr.writeAll("' not found\n") catch {};
+
+                // Try to find similar recipe names for "did you mean:" suggestion
                 const suggestions = jake.suggest.findSimilarRecipes(
                     allocator,
                     target,
@@ -287,13 +310,16 @@ pub fn main() !void {
                 defer if (suggestions.len > 0) allocator.free(suggestions);
 
                 if (suggestions.len > 0) {
-                    var suggest_buf: [128]u8 = undefined;
-                    const suggest_str = jake.suggest.formatSuggestion(&suggest_buf, suggestions);
-                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Recipe '{s}' not found\n{s}", .{ target, suggest_str }) catch "error\n";
-                    stderr.writeAll(msg) catch {};
-                } else {
-                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Recipe '{s}' not found\nRun 'jake --list' to see available recipes.\n", .{target}) catch "error\n";
-                    stderr.writeAll(msg) catch {};
+                    // v4 format: "   did you mean: build" with recipe in Rose
+                    stderr.writeAll("\n   ") catch {};
+                    stderr.writeAll(if (color.enabled) color_mod.codes.muted_gray else "") catch {};
+                    stderr.writeAll("did you mean:") catch {};
+                    stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+                    stderr.writeAll(" ") catch {};
+                    stderr.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
+                    stderr.writeAll(suggestions[0]) catch {};
+                    stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+                    stderr.writeAll("\n") catch {};
                 }
             },
             error.CyclicDependency => {
@@ -315,11 +341,15 @@ pub fn main() !void {
 
 const JakefileWithSource = struct {
     jakefile: jake.Jakefile,
+    index: jake.JakefileIndex,
+    runtime: jake.RuntimeContext,
     source: []const u8,
     allocator: std.mem.Allocator,
     import_allocations: ?jake.ImportAllocations,
 
     pub fn deinit(self: *JakefileWithSource) void {
+        self.runtime.deinit();
+        self.index.deinit();
         self.jakefile.deinit(self.allocator);
         self.allocator.free(self.source);
         if (self.import_allocations) |*allocs| {
@@ -429,8 +459,17 @@ fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !JakefileWithSou
         };
     }
 
+    var index = try jake.JakefileIndex.build(allocator, &jakefile);
+    errdefer index.deinit();
+
+    var runtime = jake.RuntimeContext.init(allocator);
+    errdefer runtime.deinit();
+    runtime.configure(&jakefile, &index);
+
     return JakefileWithSource{
         .jakefile = jakefile,
+        .index = index,
+        .runtime = runtime,
         .source = source,
         .allocator = allocator,
         .import_allocations = import_allocations,

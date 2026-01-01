@@ -6,6 +6,7 @@ const compat = @import("compat.zig");
 const parser = @import("parser.zig");
 const cache_mod = @import("cache.zig");
 const conditions = @import("conditions.zig");
+const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
 const parallel_mod = @import("parallel.zig");
 const env_mod = @import("env.zig");
 const hooks_mod = @import("hooks.zig");
@@ -13,6 +14,7 @@ const prompt_mod = @import("prompt.zig");
 const functions = @import("functions.zig");
 const glob_mod = @import("glob.zig");
 const color_mod = @import("color.zig");
+const RuntimeContext = @import("context.zig").RuntimeContext;
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
@@ -39,7 +41,10 @@ pub const ExecuteError = error{
 pub const Executor = struct {
     allocator: std.mem.Allocator,
     jakefile: *const Jakefile,
+    index: *const JakefileIndex,
+    owned_index: ?*JakefileIndex = null,
     cache: Cache,
+
     executed: std.StringHashMap(void),
     in_progress: std.StringHashMap(void),
     variables: std.StringHashMap([]const u8),
@@ -60,52 +65,60 @@ pub const Executor = struct {
     theme: color_mod.Theme, // Semantic color theme (error, warning, recipe, etc.)
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
-        var variables = std.StringHashMap([]const u8).init(allocator);
+        const owned_index = allocator.create(JakefileIndex) catch {
+            @panic("failed to allocate Jakefile index");
+        };
+        owned_index.* = JakefileIndex.build(allocator, jakefile) catch {
+            allocator.destroy(owned_index);
+            @panic("failed to build Jakefile index");
+        };
+        var executor = initInternal(allocator, jakefile, owned_index);
+        executor.owned_index = owned_index;
+        executor.index = owned_index;
+        return executor;
+    }
 
-        // Load variables from jakefile (OOM here is unrecoverable)
-        for (jakefile.variables) |v| {
-            variables.put(v.name, v.value) catch {};
+    pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Executor {
+        return initInternal(allocator, jakefile, index);
+    }
+
+    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Executor {
+        var variables = std.StringHashMap([]const u8).init(allocator);
+        var var_iter = index.variablesIterator();
+        while (var_iter.next()) |entry| {
+            variables.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
         }
 
         // Initialize environment
         var environment = Environment.init(allocator);
 
         // Process directives for environment setup
-        for (jakefile.directives) |directive| {
-            switch (directive.kind) {
-                .dotenv => {
-                    // @dotenv [path] - load .env file (best-effort: missing files are ignored)
-                    if (directive.args.len > 0) {
-                        for (directive.args) |path| {
-                            environment.loadDotenv(stripQuotes(path)) catch {};
-                        }
-                    } else {
-                        environment.loadDotenv(".env") catch {};
+        for (index.getDirectives(.dotenv)) |directive_ptr| {
+            const directive = directive_ptr.*;
+            if (directive.args.len > 0) {
+                for (directive.args) |path| {
+                    environment.loadDotenv(stripQuotes(path)) catch {};
+                }
+            } else {
+                environment.loadDotenv(".env") catch {};
+            }
+        }
+
+        for (index.getDirectives(.@"export")) |directive_ptr| {
+            const directive = directive_ptr.*;
+            if (directive.args.len >= 1) {
+                const first_arg = directive.args[0];
+                if (std.mem.indexOfScalar(u8, first_arg, '=')) |eq_pos| {
+                    const key = first_arg[0..eq_pos];
+                    const value = first_arg[eq_pos + 1 ..];
+                    environment.set(key, stripQuotes(value)) catch {};
+                } else if (directive.args.len >= 2) {
+                    environment.set(first_arg, stripQuotes(directive.args[1])) catch {};
+                } else {
+                    if (variables.get(first_arg)) |value| {
+                        environment.set(first_arg, value) catch {};
                     }
-                },
-                .@"export" => {
-                    // @export KEY=value - export with explicit value
-                    // @export KEY value - export with separate value
-                    // @export KEY - export Jake variable to environment
-                    if (directive.args.len >= 1) {
-                        const first_arg = directive.args[0];
-                        if (std.mem.indexOfScalar(u8, first_arg, '=')) |eq_pos| {
-                            // @export KEY=value
-                            const key = first_arg[0..eq_pos];
-                            const value = first_arg[eq_pos + 1 ..];
-                            environment.set(key, stripQuotes(value)) catch {};
-                        } else if (directive.args.len >= 2) {
-                            // @export KEY value
-                            environment.set(first_arg, stripQuotes(directive.args[1])) catch {};
-                        } else {
-                            // @export KEY - export Jake variable to environment
-                            if (variables.get(first_arg)) |value| {
-                                environment.set(first_arg, value) catch {};
-                            }
-                        }
-                    }
-                },
-                else => {},
+                }
             }
         }
 
@@ -128,6 +141,7 @@ pub const Executor = struct {
         return .{
             .allocator = allocator,
             .jakefile = jakefile,
+            .index = index,
             .cache = cache,
             .executed = std.StringHashMap(void).init(allocator),
             .in_progress = std.StringHashMap(void).init(allocator),
@@ -165,24 +179,23 @@ pub const Executor = struct {
         }
 
         // Check all @require directives
-        for (self.jakefile.directives) |directive| {
-            if (directive.kind == .require) {
-                for (directive.args) |var_name| {
-                    // First check our loaded environment (includes @dotenv vars)
-                    if (self.environment.get(var_name)) |_| {
-                        continue; // Variable exists in our environment
-                    }
+        for (self.index.getDirectives(.require)) |directive_ptr| {
+            const directive = directive_ptr.*;
+            for (directive.args) |var_name| {
+                // First check our loaded environment (includes @dotenv vars)
+                if (self.environment.get(var_name)) |_| {
+                    continue; // Variable exists in our environment
+                }
 
-                    // Fall back to system environment
-                    if (std.process.getEnvVarOwned(self.allocator, var_name)) |value| {
-                        self.allocator.free(value);
-                        continue; // Variable exists in system environment
-                    } else |_| {
-                        // Variable not found - report error
-                        self.print("{s}Required environment variable '{s}' is not set\n", .{ self.color.errPrefix(), var_name });
-                        self.print("  hint: Set this variable in your shell or add it to .env\n", .{});
-                        return ExecuteError.MissingRequiredEnv;
-                    }
+                // Fall back to system environment
+                if (std.process.getEnvVarOwned(self.allocator, var_name)) |value| {
+                    self.allocator.free(value);
+                    continue; // Variable exists in system environment
+                } else |_| {
+                    // Variable not found - report error
+                    self.print("{s}Required environment variable '{s}' is not set\n", .{ self.color.errPrefix(), var_name });
+                    self.print("  hint: Set this variable in your shell or add it to .env\n", .{});
+                    return ExecuteError.MissingRequiredEnv;
                 }
             }
         }
@@ -217,16 +230,23 @@ pub const Executor = struct {
     fn checkRecipeLevelNeeds(self: *Executor, recipe: *const parser.Recipe) ExecuteError!void {
         for (recipe.needs) |req| {
             if (!self.commandExists(req.command)) {
-                self.print("{s}recipe '{s}' requires '{s}' but it's not installed\n", .{ self.color.errPrefix(), recipe.name, req.command });
+                // v4 format: error: recipe 'X' requires 'Y' but it's not installed
+                self.print("{s}recipe '{s}' requires '{s}{s}{s}' but it's not installed\n", .{
+                    self.color.errPrefix(),
+                    recipe.name,
+                    self.color.jakeRose(),
+                    req.command,
+                    self.color.reset(),
+                });
 
                 // Show hint if provided
                 if (req.hint) |hint| {
-                    self.print("  hint: {s}\n", .{hint});
+                    self.print("   {s}hint:{s} {s}\n", .{ self.color.infoBlue(), self.color.reset(), hint });
                 }
 
                 // Show install task suggestion if provided
                 if (req.install_task) |task| {
-                    self.print("  run: jake {s}\n", .{task});
+                    self.print("   run: jake {s}\n", .{task});
                 }
 
                 return ExecuteError.CommandFailed;
@@ -294,14 +314,24 @@ pub const Executor = struct {
 
             // Check if command exists
             if (!self.commandExists(cmd)) {
-                self.print("{s}Required command '{s}' not found\n", .{ self.color.errPrefix(), cmd });
+                // v4 format: error: required command not found: X
+                self.print("{s}required command not found: {s}{s}{s}\n", .{
+                    self.color.errPrefix(),
+                    self.color.jakeRose(),
+                    cmd,
+                    self.color.reset(),
+                });
                 if (hint) |h| {
-                    self.print("  hint: {s}\n", .{h});
+                    self.print("\n   {s}hint:{s} {s}\n", .{ self.color.infoBlue(), self.color.reset(), h });
                 } else {
-                    self.print("  hint: Install '{s}' or check your PATH\n", .{cmd});
+                    self.print("\n   {s}hint:{s} Install '{s}' or check your PATH\n", .{
+                        self.color.infoBlue(),
+                        self.color.reset(),
+                        cmd,
+                    });
                 }
                 if (install_task) |task| {
-                    self.print("  run:  jake {s}\n", .{task});
+                    self.print("   run: jake {s}\n", .{task});
                 }
                 return ExecuteError.CommandFailed;
             }
@@ -625,6 +655,12 @@ pub const Executor = struct {
             self.allocator.free(s);
         }
         self.expanded_strings.deinit(self.allocator);
+
+        if (self.owned_index) |owned| {
+            owned.deinit();
+            self.allocator.destroy(owned);
+            self.owned_index = null;
+        }
     }
 
     /// Execute a recipe by name
@@ -640,7 +676,7 @@ pub const Executor = struct {
 
     /// Execute using parallel executor for concurrent dependency execution
     fn executeParallel(self: *Executor, name: []const u8) ExecuteError!void {
-        var parallel_exec = ParallelExecutor.init(self.allocator, self.jakefile, self.jobs);
+        var parallel_exec = ParallelExecutor.initWithIndex(self.allocator, self.jakefile, self.index, self.jobs);
         defer parallel_exec.deinit();
 
         parallel_exec.dry_run = self.dry_run;
@@ -649,11 +685,11 @@ pub const Executor = struct {
         // Build dependency graph
         try parallel_exec.buildGraph(name);
 
-        // Show parallelism stats in verbose mode
+        // Show parallelism stats in verbose mode (v4: muted prefix)
         if (self.verbose) {
             const stats = parallel_exec.getParallelismStats();
-            self.print("jake: parallel execution with {d} threads\n", .{self.jobs});
-            self.print("jake: {d} recipes, max {d} parallel, critical path length {d}\n", .{ stats.total_recipes, stats.max_parallel, stats.critical_path_length });
+            self.print("   {s}jake: parallel execution with {d} threads{s}\n", .{ self.color.muted(), self.jobs, self.color.reset() });
+            self.print("   {s}jake: {d} recipes, max {d} parallel, critical path length {d}{s}\n", .{ self.color.muted(), stats.total_recipes, stats.max_parallel, stats.critical_path_length, self.color.reset() });
         }
 
         // Execute
@@ -672,7 +708,7 @@ pub const Executor = struct {
             return;
         }
 
-        const recipe = self.jakefile.getRecipe(name) orelse {
+        const recipe = self.index.getRecipe(name) orelse {
             return ExecuteError.RecipeNotFound;
         };
 
@@ -714,7 +750,8 @@ pub const Executor = struct {
             const needs_run = self.checkFileTarget(recipe) catch true;
             if (!needs_run) {
                 if (self.verbose) {
-                    self.print("jake: '{s}' is up to date\n", .{name});
+                    // v4: muted verbose prefix
+                    self.print("   {s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), name, self.color.reset() });
                 }
                 self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
                 return;
@@ -723,7 +760,12 @@ pub const Executor = struct {
 
         // Run the recipe - capture start time for duration display
         const start_time = std.time.nanoTimestamp();
-        self.print("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(name) });
+        // v4 format: use ○ for dry-run, → for normal execution
+        if (self.dry_run) {
+            self.print("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(name) });
+        } else {
+            self.print("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(name) });
+        }
 
         // Update hook runner settings
         self.hook_runner.dry_run = self.dry_run;
@@ -1201,12 +1243,13 @@ pub const Executor = struct {
                         if (self.dry_run) {
                             const patterns = self.parseCachePatterns(cmd.line);
                             defer self.allocator.free(patterns);
-                            self.print("  [dry-run] @watch would monitor: ", .{});
+                            // v4 format: muted color for dry-run details
+                            self.print("     {s}@watch would monitor: ", .{self.color.muted()});
                             for (patterns, 0..) |pattern, idx| {
                                 if (idx > 0) self.print(", ", .{});
                                 self.print("{s}", .{pattern});
                             }
-                            self.print("\n", .{});
+                            self.print("{s}\n", .{self.color.reset()});
                         }
                         continue;
                     },
@@ -1219,7 +1262,8 @@ pub const Executor = struct {
                         const expanded_target = try self.expandJakeVariables(target);
                         try self.expanded_strings.append(self.allocator, expanded_target);
                         if (self.dry_run) {
-                            self.print("  [dry-run] @launch {s}\n", .{expanded_target});
+                            // v4 format: muted color for dry-run details
+                            self.print("     {s}@launch {s}{s}\n", .{ self.color.muted(), expanded_target, self.color.reset() });
                             continue;
                         }
                         try self.executeLaunch(expanded_target);
@@ -1274,12 +1318,14 @@ pub const Executor = struct {
         }
 
         if (self.dry_run) {
-            self.print("  [dry-run] {s}\n", .{line});
+            // v4 format: indented command in muted color
+            self.print("     {s}{s}{s}\n", .{ self.color.muted(), line, self.color.reset() });
             return;
         }
 
         if (self.verbose and !suppress_echo and !self.current_quiet) {
-            self.print("  $ {s}\n", .{line});
+            // v4: verbose command execution with jake: prefix
+            self.print("   {s}jake: executing '{s}'{s}\n", .{ self.color.muted(), line, self.color.reset() });
         }
 
         const shell_cmd = if (self.current_shell) |shell| shell else "/bin/sh";
@@ -1525,8 +1571,39 @@ pub const Executor = struct {
             return;
         }
 
+        // v4 format: {j} jake N recipes • M groups
+        // Count visible recipes and groups
+        var recipe_count: usize = 0;
+        var unique_groups = std.StringHashMap(void).init(self.allocator);
+        defer unique_groups.deinit();
+
+        for (self.jakefile.recipes) |*recipe| {
+            if (!show_all and isPrivateRecipe(recipe)) continue;
+            recipe_count += 1;
+            if (recipe.group) |g| {
+                unique_groups.put(g, {}) catch continue;
+            }
+        }
+        const group_count = unique_groups.count();
+
+        // Print header
+        stdout.writeAll(self.color.jakeRose()) catch {};
+        stdout.writeAll(color_mod.symbols.logo) catch {};
+        stdout.writeAll(self.color.reset()) catch {};
+        stdout.writeAll(" ") catch {};
         stdout.writeAll(self.color.bold()) catch {};
-        stdout.writeAll("Available recipes:") catch {};
+        stdout.writeAll("jake") catch {};
+        stdout.writeAll(self.color.reset()) catch {};
+        stdout.writeAll(" ") catch {};
+        stdout.writeAll(self.color.muted()) catch {};
+        var header_buf: [64]u8 = undefined;
+        const header_msg = std.fmt.bufPrint(&header_buf, "{d} recipes", .{recipe_count}) catch "recipes";
+        stdout.writeAll(header_msg) catch {};
+        if (group_count > 0) {
+            var group_buf: [32]u8 = undefined;
+            const group_msg = std.fmt.bufPrint(&group_buf, " • {d} groups", .{group_count}) catch "";
+            stdout.writeAll(group_msg) catch {};
+        }
         stdout.writeAll(self.color.reset()) catch {};
         stdout.writeAll("\n") catch {};
 
@@ -1584,13 +1661,12 @@ pub const Executor = struct {
             }
         }.lessThan);
 
-        // Print grouped recipes
+        // Print grouped recipes - v4: bold group names (not Rose)
         for (group_names.items) |group_name| {
             if (groups.get(group_name)) |recipes| {
                 stdout.writeAll("\n") catch {};
-                stdout.writeAll(self.color.jakeRose()) catch {};
+                stdout.writeAll(self.color.bold()) catch {};
                 stdout.writeAll(group_name) catch {};
-                stdout.writeAll(":") catch {};
                 stdout.writeAll(self.color.reset()) catch {};
                 stdout.writeAll("\n") catch {};
 
@@ -1641,76 +1717,42 @@ pub const Executor = struct {
         stdout.writeAll("\n") catch {};
     }
 
-    /// Print a single recipe with its metadata
+    /// Print a single recipe with its metadata (v4 format - no type badges)
     fn printRecipe(self: *Executor, stdout: std.fs.File, recipe: *const Recipe) void {
-        const kind_str = switch (recipe.kind) {
-            .task => "task",
-            .file => "file",
-            .simple => "",
-        };
-        const default_str: []const u8 = if (recipe.is_default) " (default)" else "";
+        // v4: Removed [task]/[file] badges - too noisy
+        // Format: "  recipe-name  Description in muted"
 
-        // Build aliases string
-        var alias_buf: [256]u8 = undefined;
-        var alias_str: []const u8 = "";
-        if (recipe.aliases.len > 0) {
-            var fbs = std.io.fixedBufferStream(&alias_buf);
-            fbs.writer().writeAll(" (aliases: ") catch {};
-            for (recipe.aliases, 0..) |al, idx| {
-                if (idx > 0) fbs.writer().writeAll(", ") catch {};
-                fbs.writer().writeAll(al) catch {};
-            }
-            fbs.writer().writeAll(")") catch {};
-            alias_str = fbs.getWritten();
-        }
+        // Calculate padding for aligned descriptions
+        const name_len = recipe.name.len;
+        const pad_target: usize = 16; // Column for descriptions
+        const padding = if (name_len < pad_target) pad_target - name_len else 2;
 
         // Print recipe name with brand color (Jake Rose)
         stdout.writeAll("  ") catch {};
         stdout.writeAll(self.color.jakeRose()) catch {};
         stdout.writeAll(recipe.name) catch {};
         stdout.writeAll(self.color.reset()) catch {};
-        if (kind_str.len > 0) {
-            stdout.writeAll(" [") catch {};
-            stdout.writeAll(kind_str) catch {};
-            stdout.writeAll("]") catch {};
-        }
-        stdout.writeAll(default_str) catch {};
-        stdout.writeAll(alias_str) catch {};
 
-        // Show description inline if available (muted brand gray)
+        // Add padding
+        var pad_buf: [32]u8 = undefined;
+        const pad_slice = pad_buf[0..padding];
+        @memset(pad_slice, ' ');
+        stdout.writeAll(pad_slice) catch {};
+
+        // Show description inline if available (muted, no # prefix)
         if (recipe.description) |desc| {
-            stdout.writeAll("  ") catch {};
             stdout.writeAll(self.color.muted()) catch {};
-            stdout.writeAll("# ") catch {};
             stdout.writeAll(desc) catch {};
             stdout.writeAll(self.color.reset()) catch {};
         }
         stdout.writeAll("\n") catch {};
-
-        // Show doc_comment on next line if available (and different from description)
-        if (recipe.doc_comment) |doc| {
-            // Only show if there's no description or if doc is different from description
-            const should_show = if (recipe.description) |desc| !std.mem.eql(u8, doc, desc) else true;
-            if (should_show) {
-                stdout.writeAll("    ") catch {};
-                stdout.writeAll(self.color.muted()) catch {};
-                stdout.writeAll(doc) catch {};
-                stdout.writeAll(self.color.reset()) catch {};
-                stdout.writeAll("\n") catch {};
-            }
-        }
     }
 
     /// Show detailed information about a specific recipe
     pub fn showRecipe(self: *Executor, name: []const u8) bool {
         const stdout = compat.getStdOut();
 
-        const recipe = self.jakefile.getRecipe(name) orelse {
-            const stderr = compat.getStdErr();
-            stderr.writeAll(self.color.errPrefix()) catch {};
-            stderr.writeAll("Recipe '") catch {};
-            stderr.writeAll(name) catch {};
-            stderr.writeAll("' not found\n") catch {};
+        const recipe = self.index.getRecipe(name) orelse {
             return false;
         };
 

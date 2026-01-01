@@ -7,6 +7,7 @@ const std = @import("std");
 const compat = @import("compat.zig");
 const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
+const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
 const glob_mod = @import("glob.zig");
 const color_mod = @import("color.zig");
 
@@ -26,6 +27,8 @@ pub const WatchError = error{
 pub const Watcher = struct {
     allocator: std.mem.Allocator,
     jakefile: *const Jakefile,
+    index: *const JakefileIndex,
+    owned_index: ?*JakefileIndex = null,
     watch_patterns: std.ArrayListUnmanaged([]const u8),
     file_mtimes: std.StringHashMapUnmanaged(i128),
     resolved_files: std.ArrayListUnmanaged([]const u8),
@@ -41,9 +44,28 @@ pub const Watcher = struct {
     const DEBOUNCE_MS: u64 = 100;
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Watcher {
+        const owned_index = allocator.create(JakefileIndex) catch {
+            @panic("failed to allocate Jakefile index");
+        };
+        owned_index.* = JakefileIndex.build(allocator, jakefile) catch {
+            allocator.destroy(owned_index);
+            @panic("failed to build Jakefile index");
+        };
+        var watcher = initInternal(allocator, jakefile, owned_index);
+        watcher.owned_index = owned_index;
+        watcher.index = owned_index;
+        return watcher;
+    }
+
+    pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {
+        return initInternal(allocator, jakefile, index);
+    }
+
+    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {
         return .{
             .allocator = allocator,
             .jakefile = jakefile,
+            .index = index,
             .watch_patterns = .empty,
             .file_mtimes = .empty,
             .resolved_files = .empty,
@@ -73,6 +95,12 @@ pub const Watcher = struct {
             self.allocator.free(file);
         }
         self.resolved_files.deinit(self.allocator);
+
+        if (self.owned_index) |owned| {
+            owned.deinit();
+            self.allocator.destroy(owned);
+            self.owned_index = null;
+        }
     }
 
     /// Add a glob pattern or file path to watch
@@ -83,7 +111,7 @@ pub const Watcher = struct {
 
     /// Add patterns from a recipe's file dependencies
     pub fn addRecipeDeps(self: *Watcher, recipe_name: []const u8) !void {
-        const recipe = self.jakefile.getRecipe(recipe_name) orelse return;
+        const recipe = self.index.getRecipe(recipe_name) orelse return;
 
         // Add file dependencies from the recipe
         for (recipe.file_deps) |dep| {
@@ -277,17 +305,20 @@ pub const Watcher = struct {
         // Resolve initial patterns
         try self.resolvePatterns();
 
-        self.print("{s}[watch]{s} Watching {d} file(s) for changes...\n", .{ self.color.muted(), self.color.reset(), self.resolved_files.items.len });
-
-        // Show the patterns being watched
+        // v4 format: ◉ watching <pattern> with ◉ in info blue, pattern in muted
+        self.print("   {s} ", .{self.theme.watchingSymbol()});
+        self.print("{s}watching{s} ", .{ self.color.bold(), self.color.reset() });
         if (self.watch_patterns.items.len > 0) {
-            self.print("{s}[watch]{s} Patterns: ", .{ self.color.muted(), self.color.reset() });
+            self.print("{s}", .{self.color.muted()});
             for (self.watch_patterns.items, 0..) |pattern, i| {
                 if (i > 0) self.print(", ", .{});
                 self.print("{s}", .{pattern});
             }
-            self.print("\n", .{});
+            self.print("{s}", .{self.color.reset()});
+        } else {
+            self.print("{s}{d} file(s){s}", .{ self.color.muted(), self.resolved_files.items.len, self.color.reset() });
         }
+        self.print("\n", .{});
 
         if (self.verbose) {
             for (self.resolved_files.items) |file| {
@@ -295,7 +326,6 @@ pub const Watcher = struct {
             }
         }
 
-        self.print("{s}[watch]{s} Press Ctrl+C to stop\n", .{ self.color.muted(), self.color.reset() });
         self.print("\n", .{});
 
         // Initial execution
@@ -311,7 +341,15 @@ pub const Watcher = struct {
             // Check for changes
             if (try self.checkForChanges()) |changed_file| {
                 if (!pending_change) {
-                    self.print("{s}[watch]{s} Change detected: {s}\n", .{ self.color.warningYellow(), self.color.reset(), changed_file });
+                    // v4 format: ⟳ changed <file> with ⟳ in warning yellow, file in muted
+                    self.print("   {s} {s}changed{s} {s}{s}{s}\n", .{
+                        self.theme.changedSymbol(),
+                        self.color.muted(),
+                        self.color.reset(),
+                        self.color.muted(),
+                        changed_file,
+                        self.color.reset(),
+                    });
                     pending_change = true;
                     change_detected_time = std.time.nanoTimestamp();
                 } else {
@@ -335,15 +373,6 @@ pub const Watcher = struct {
 
     /// Execute the recipe (handles errors gracefully for watch mode)
     fn executeRecipe(self: *Watcher, recipe_name: []const u8) void {
-        self.print("{s}[watch]{s} Running '{s}{s}{s}'...\n", .{
-            self.color.muted(),
-            self.color.reset(),
-            self.color.jakeRose(),
-            recipe_name,
-            self.color.reset(),
-        });
-        self.print("\n", .{});
-
         var exec = Executor.init(self.allocator, self.jakefile);
         defer exec.deinit();
         exec.dry_run = self.dry_run;
@@ -352,13 +381,17 @@ pub const Watcher = struct {
 
         exec.execute(recipe_name) catch |err| {
             const err_name = @errorName(err);
-            self.print("{s}[watch]{s} Recipe failed: {s}\n", .{ self.color.errorRed(), self.color.reset(), err_name });
-            self.print("{s}[watch]{s} Waiting for changes...\n", .{ self.color.muted(), self.color.reset() });
+            self.print("\n   {s}Recipe failed: {s}{s}\n", .{ self.color.errorRed(), err_name, self.color.reset() });
+            self.printWatchFooter();
             return;
         };
 
-        self.print("\n{s}[watch]{s} Recipe completed successfully\n", .{ self.color.successGreen(), self.color.reset() });
-        self.print("{s}[watch]{s} Waiting for changes...\n", .{ self.color.muted(), self.color.reset() });
+        self.printWatchFooter();
+    }
+
+    /// Print the v4 watch mode footer
+    fn printWatchFooter(self: *Watcher) void {
+        self.print("\n   {s}watching for changes (ctrl+c to stop){s}\n", .{ self.color.muted(), self.color.reset() });
     }
 
     fn print(self: *Watcher, comptime fmt: []const u8, args: anytype) void {

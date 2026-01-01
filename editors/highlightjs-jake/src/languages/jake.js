@@ -1,187 +1,198 @@
 /**
  * highlight.js syntax highlighting for Jake
  *
- * Usage:
- *   // Modern (recommended)
- *   import hljs from 'highlight.js/lib/core';
- *   import { Jakefile } from 'highlightjs-jake';
- *   Jakefile.register(hljs);
+ * @example
+ * // Node.js / ES Modules
+ * import hljs from 'highlight.js/lib/core';
+ * import jake from 'highlightjs-jake';
+ * hljs.registerLanguage('jake', jake);
+ * hljs.registerLanguage('jakefile', jake);
  *
- *   // Or with legacy API
- *   import hljs from 'highlight.js/lib/core';
- *   import jake from 'highlightjs-jake';
- *   hljs.registerLanguage('jake', jake);
- *
- *   // Browser
- *   <script src="highlight.min.js"></script>
- *   <script src="highlightjs-jake.min.js"></script>
- *   <script>Jakefile.register(hljs);</script>
+ * @example
+ * // Browser (after loading highlight.js)
+ * <script src="highlightjs-jake.js"></script>
+ * <script>hljs.registerLanguage('jake', hljsDefineJake);</script>
  */
 
-function hljsDefineJake(hljs) {
-    const DIRECTIVES = [
-        '@import', '@dotenv', '@require', '@export', '@default',
-        '@pre', '@post', '@before', '@after', '@on_error',
-        '@group', '@desc', '@description', '@alias', '@quiet',
-        '@only', '@only-os', '@platform', '@needs',
-        '@if', '@elif', '@else', '@end', '@each',
-        '@cd', '@cache', '@watch', '@confirm', '@ignore', '@shell'
+(function (root, factory) {
+  if (typeof define === "function" && define.amd) {
+    // AMD
+    define([], factory);
+  } else if (typeof module === "object" && module.exports) {
+    // CommonJS
+    module.exports = factory();
+  } else {
+    // Browser globals
+    root.hljsDefineJake = factory();
+  }
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  return function (hljs) {
+    const BUILTIN_FUNCTIONS = [
+      "dirname",
+      "basename",
+      "extension",
+      "without_extension",
+      "without_extensions",
+      "absolute_path",
+      "abs_path",
+      "uppercase",
+      "lowercase",
+      "trim",
+      "home",
+      "local_bin",
+      "shell_config",
+      "env",
+      "exists",
+      "eq",
+      "neq",
+      "is_watching",
+      "is_dry_run",
+      "is_verbose",
     ];
 
     const PLATFORMS = [
-        'linux', 'macos', 'darwin', 'windows', 'freebsd', 'openbsd', 'netbsd'
+      "linux",
+      "macos",
+      "darwin",
+      "windows",
+      "freebsd",
+      "openbsd",
+      "netbsd",
     ];
 
     const INTERPOLATION = {
-        className: 'subst',
-        begin: /\{\{/,
-        end: /\}\}/,
-        contains: [
-            {
-                className: 'title.function',
-                begin: /[a-zA-Z_][a-zA-Z0-9_]*(?=\()/
-            },
-            {
-                className: 'variable',
-                begin: /[a-zA-Z_][a-zA-Z0-9_]*/
-            },
-            hljs.QUOTE_STRING_MODE,
-            hljs.APOS_STRING_MODE
-        ]
+      className: "subst",
+      begin: /\{\{/,
+      end: /\}\}/,
+      contains: [
+        {
+          // Built-in functions (must come before generic function)
+          className: "built_in",
+          begin: new RegExp(
+            "\\b(" + BUILTIN_FUNCTIONS.join("|") + ")\\b(?=\\()",
+          ),
+        },
+        {
+          className: "title.function",
+          begin: /[a-zA-Z_][a-zA-Z0-9_]*(?=\()/,
+        },
+        {
+          className: "variable",
+          begin: /[a-zA-Z_][a-zA-Z0-9_]*/,
+        },
+        hljs.QUOTE_STRING_MODE,
+        hljs.APOS_STRING_MODE,
+      ],
     };
 
     const STRING = {
-        className: 'string',
-        variants: [
-            {begin: /"""/, end: /"""/},
-            {begin: /'''/, end: /'''/},
-            {begin: /"/, end: /"/, contains: [hljs.BACKSLASH_ESCAPE, INTERPOLATION]},
-            {begin: /'/, end: /'/}
-        ]
+      className: "string",
+      variants: [
+        { begin: /"""/, end: /"""/ },
+        { begin: /'''/, end: /'''/ },
+        {
+          begin: /"/,
+          end: /"/,
+          contains: [hljs.BACKSLASH_ESCAPE, INTERPOLATION],
+        },
+        { begin: /'/, end: /'/ },
+      ],
     };
 
     const SHELL_VARIABLE = {
-        className: 'variable',
-        variants: [
-            {begin: /\$\{[a-zA-Z_][a-zA-Z0-9_]*\}/},
-            {begin: /\$[a-zA-Z_][a-zA-Z0-9_]*/},
-            {begin: /\$[0-9@]/}
-        ]
+      className: "variable",
+      variants: [
+        { begin: /\$\{[a-zA-Z_][a-zA-Z0-9_]*\}/ },
+        { begin: /\$[a-zA-Z_][a-zA-Z0-9_]*/ },
+        { begin: /\$[0-9@]/ },
+      ],
     };
 
-    const COMMENT = hljs.COMMENT('#', '$');
+    const COMMENT = hljs.COMMENT("#", "$");
 
     return {
-        name: 'Jake',
-        aliases: ['jakefile'],
-        case_insensitive: false,
-        keywords: {
-            keyword: 'task file as if else',
-            built_in: PLATFORMS.join(' ')
+      name: "Jake",
+      aliases: ["jakefile"],
+      case_insensitive: false,
+      keywords: {
+        keyword: "task file as if else",
+        built_in: PLATFORMS.join(" "),
+      },
+      contains: [
+        COMMENT,
+        STRING,
+        INTERPOLATION,
+        SHELL_VARIABLE,
+        {
+          // Directives (generic pattern to catch all)
+          className: "keyword",
+          begin: /^\s*@[a-zA-Z_][a-zA-Z0-9_-]*/,
+          relevance: 10,
         },
-        contains: [
-            COMMENT,
-            STRING,
-            INTERPOLATION,
-            SHELL_VARIABLE,
+        {
+          // Recipe header: task name or file name
+          className: "title.function",
+          begin: /^(task|file)\s+/,
+          end: /:/,
+          excludeEnd: true,
+          contains: [
             {
-                // Directives
-                className: 'keyword',
-                begin: new RegExp(DIRECTIVES.map(d => d.replace(/[-@]/g, '\\$&')).join('|'))
+              className: "keyword",
+              begin: /^(task|file)\b/,
             },
             {
-                // Recipe header: task name or file name
-                className: 'title.function',
-                begin: /^(task|file)\s+/,
-                end: /:/,
-                excludeEnd: true,
-                contains: [
-                    {
-                        className: 'keyword',
-                        begin: /^(task|file)\b/
-                    },
-                    {
-                        className: 'title.function',
-                        begin: /[a-zA-Z_][a-zA-Z0-9_-]*/
-                    },
-                    {
-                        // Parameters
-                        className: 'params',
-                        begin: /[a-zA-Z_][a-zA-Z0-9_]*/,
-                        relevance: 0
-                    }
-                ]
+              className: "title.function",
+              begin: /[a-zA-Z_][a-zA-Z0-9_-]*/,
             },
             {
-                // Simple recipe header (no task/file keyword)
-                className: 'title.function',
-                begin: /^[a-zA-Z_][a-zA-Z0-9_-]*(?=\s*:)/
+              // Parameters
+              className: "params",
+              begin: /[a-zA-Z_][a-zA-Z0-9_]*/,
+              relevance: 0,
             },
+          ],
+        },
+        {
+          // Simple recipe header (no task/file keyword)
+          className: "title.function",
+          begin: /^[a-zA-Z_][a-zA-Z0-9_-]*(?=\s*:)/,
+        },
+        {
+          // Variable assignment
+          className: "variable",
+          begin: /^[a-zA-Z_][a-zA-Z0-9_]*(?=\s*[:=])/,
+        },
+        {
+          // Dependency list
+          className: "meta",
+          begin: /\[/,
+          end: /\]/,
+          contains: [
             {
-                // Variable assignment
-                className: 'variable',
-                begin: /^[a-zA-Z_][a-zA-Z0-9_]*(?=\s*[:=])/
+              className: "title.function",
+              begin: /[a-zA-Z_][a-zA-Z0-9_:-]*/,
             },
-            {
-                // Dependency list
-                className: 'meta',
-                begin: /\[/,
-                end: /\]/,
-                contains: [
-                    {
-                        className: 'title.function',
-                        begin: /[a-zA-Z_][a-zA-Z0-9_:-]*/
-                    }
-                ]
-            },
-            {
-                // Command prefix
-                className: 'operator',
-                begin: /^(\s*)[@-]+/
-            },
-            {
-                // Operators
-                className: 'operator',
-                begin: /->|==|!=|:=|=/
-            },
-            {
-                // Backtick commands
-                className: 'code',
-                begin: /`/,
-                end: /`/
-            }
-        ]
+          ],
+        },
+        {
+          // Command prefix
+          className: "operator",
+          begin: /^(\s*)[@-]+/,
+        },
+        {
+          // Operators
+          className: "operator",
+          begin: /->|==|!=|:=|=/,
+        },
+        {
+          // Backtick commands
+          className: "code",
+          begin: /`/,
+          end: /`/,
+        },
+      ],
     };
-}
-
-/**
- * Unified Jakefile API for highlight.js
- */
-var Jakefile = {
-    /** Language definition function (for manual registration) */
-    definition: hljsDefineJake,
-
-    /**
-     * Register Jake syntax with highlight.js
-     * @param {Object} hljs - highlight.js instance
-     * @returns {Object} Jakefile object (chainable)
-     */
-    register: function(hljs) {
-        hljs.registerLanguage('jake', hljsDefineJake);
-        hljs.registerLanguage('jakefile', hljsDefineJake);
-        return this;
-    }
-};
-
-// CommonJS exports
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = hljsDefineJake;
-    module.exports.Jakefile = Jakefile;
-    module.exports.default = hljsDefineJake;
-}
-
-// Browser globals
-if (typeof window !== 'undefined') {
-    window.hljsDefineJake = hljsDefineJake;
-    window.Jakefile = Jakefile;
-}
+  };
+});

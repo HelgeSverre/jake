@@ -1,102 +1,265 @@
 ---
-import '../styles/global.css';
+import "../styles/global.css";
 
 interface Props {
-  title: string;
-  description?: string;
+    title: string;
+    description?: string;
 }
 
-const { title, description = "The best of Make and Just, combined. File dependencies, clean syntax, parallel execution, and more." } = Astro.props;
+const {
+    title,
+    description = "The best of Make and Just, combined. File dependencies, clean syntax, parallel execution, and more.",
+} = Astro.props;
 const logo = "{j}";
 ---
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" class="dark">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{title}</title>
-  <meta name="description" content={description} />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <meta property="og:title" content={title} />
-  <meta property="og:description" content={description} />
-  <meta property="og:image" content="https://jakefile.dev/og-image.png" />
-  <meta name="twitter:card" content="summary_large_image" />
-</head>
-<body class="bg-bg-primary text-text-primary antialiased">
-  <!-- Navigation -->
-  <nav class="fixed top-0 left-0 right-0 z-50 bg-bg-primary/80 backdrop-blur-xl border-b border-border">
-    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2 text-xl font-semibold">
-        <span class="text-jake font-mono" style="font-family: 'Fira Code', monospace;">{logo}</span>
-        <span>jake</span>
-      </a>
-      <div class="flex items-center gap-6">
-        <!-- Features Dropdown -->
-        <div class="relative group">
-          <a href="/features" class="text-text-secondary hover:text-text-primary transition-colors text-sm flex items-center gap-1">
-            Features
-            <svg class="w-4 h-4 transition-transform group-hover:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </a>
-          <div class="absolute top-full left-0 mt-2 w-56 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-            <div class="bg-bg-secondary border border-border rounded-lg shadow-xl overflow-hidden">
-              <a href="/features/file-targets" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
-                <div class="font-medium">File Targets</div>
-                <div class="text-xs text-text-muted">Incremental builds with caching</div>
-              </a>
-              <a href="/features/parallel-execution" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
-                <div class="font-medium">Parallel Execution</div>
-                <div class="text-xs text-text-muted">Run tasks concurrently</div>
-              </a>
-              <a href="/features/hooks" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
-                <div class="font-medium">Hooks</div>
-                <div class="text-xs text-text-muted">Setup and cleanup automation</div>
-              </a>
-              <a href="/features/imports" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
-                <div class="font-medium">Imports & Modules</div>
-                <div class="text-xs text-text-muted">Modular Jakefiles</div>
-              </a>
-              <a href="/features/watch-mode" class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
-                <div class="font-medium">Watch Mode</div>
-                <div class="text-xs text-text-muted">Auto-rebuild on changes</div>
-              </a>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+            rel="stylesheet"
+        />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:image" content="https://jakefile.dev/og-image.png" />
+        <meta name="twitter:card" content="summary_large_image" />
+    </head>
+    <body class="bg-bg-primary text-text-primary antialiased">
+        <!-- Navigation -->
+        <nav
+            class="fixed top-0 left-0 right-0 z-50 bg-bg-primary/80 backdrop-blur-xl border-b border-border"
+        >
+            <div
+                class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between"
+            >
+                <a
+                    href="/"
+                    class="flex items-center gap-2 text-xl font-semibold"
+                >
+                    <span
+                        class="text-jake font-mono"
+                        style="font-family: 'Fira Code', monospace;"
+                        >{logo}</span
+                    >
+                    <span>jake</span>
+                </a>
+                <div class="flex items-center gap-6">
+                    <!-- Features Dropdown -->
+                    <div class="relative group" id="features-dropdown">
+                        <button
+                            id="features-toggle"
+                            class="text-text-secondary hover:text-text-primary transition-colors text-sm flex items-center gap-1 cursor-pointer bg-transparent border-0 p-0"
+                        >
+                            Features
+                            <svg
+                                class="w-4 h-4 transition-transform group-hover:rotate-180"
+                                id="features-arrow"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </button>
+                        <div
+                            class="absolute top-full left-0 mt-2 w-56 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50"
+                            id="features-menu"
+                        >
+                            <div
+                                class="bg-bg-secondary border border-border rounded-lg shadow-xl overflow-hidden"
+                            >
+                                <a
+                                    href="/features"
+                                    class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                                >
+                                    <div class="font-medium">Overview</div>
+                                    <div class="text-xs text-text-muted">
+                                        All features at a glance
+                                    </div>
+                                </a>
+                                <a
+                                    href="/features/file-targets"
+                                    class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                                >
+                                    <div class="font-medium">File Targets</div>
+                                    <div class="text-xs text-text-muted">
+                                        Incremental builds with caching
+                                    </div>
+                                </a>
+                                <a
+                                    href="/features/parallel-execution"
+                                    class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                                >
+                                    <div class="font-medium">
+                                        Parallel Execution
+                                    </div>
+                                    <div class="text-xs text-text-muted">
+                                        Run tasks concurrently
+                                    </div>
+                                </a>
+                                <a
+                                    href="/features/hooks"
+                                    class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                                >
+                                    <div class="font-medium">Hooks</div>
+                                    <div class="text-xs text-text-muted">
+                                        Setup and cleanup automation
+                                    </div>
+                                </a>
+                                <a
+                                    href="/features/imports"
+                                    class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                                >
+                                    <div class="font-medium">
+                                        Imports & Modules
+                                    </div>
+                                    <div class="text-xs text-text-muted">
+                                        Modular Jakefiles
+                                    </div>
+                                </a>
+                                <a
+                                    href="/features/watch-mode"
+                                    class="block px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                                >
+                                    <div class="font-medium">Watch Mode</div>
+                                    <div class="text-xs text-text-muted">
+                                        Auto-rebuild on changes
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <a
+                        href="/docs/introduction"
+                        class="text-text-secondary hover:text-text-primary transition-colors text-sm"
+                        >Docs</a
+                    >
+                    <a
+                        href="https://github.com/HelgeSverre/jake"
+                        class="text-text-secondary hover:text-text-primary transition-colors text-sm"
+                        >GitHub</a
+                    >
+                    <a
+                        href="/docs/installation"
+                        class="bg-jake hover:bg-jake-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                        Get Started
+                    </a>
+                </div>
             </div>
-          </div>
-        </div>
-        <a href="/docs/introduction" class="text-text-secondary hover:text-text-primary transition-colors text-sm">Docs</a>
-        <a href="https://github.com/HelgeSverre/jake" class="text-text-secondary hover:text-text-primary transition-colors text-sm">GitHub</a>
-        <a href="/docs/installation" class="bg-jake hover:bg-jake-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-          Get Started
-        </a>
-      </div>
-    </div>
-  </nav>
+        </nav>
 
-  <slot />
+        <script>
+            // Mobile-friendly dropdown toggle
+            const isTouchDevice = () => {
+                return "ontouchstart" in window || navigator.maxTouchPoints > 0;
+            };
 
-  <!-- Footer -->
-  <footer class="py-12 border-t border-border">
-    <div class="max-w-6xl mx-auto px-6">
-      <div class="flex flex-col md:flex-row justify-between items-center gap-6">
-        <div class="flex items-center gap-2">
-          <span class="text-jake font-mono text-xl" style="font-family: 'Fira Code', monospace;">{logo}</span>
-          <span class="text-text-secondary">jake</span>
-          <span class="text-text-muted text-sm">· Modern command running</span>
-        </div>
-        <div class="flex items-center gap-6 text-sm text-text-secondary">
-          <a href="/docs/introduction" class="hover:text-text-primary transition-colors">Docs</a>
-          <a href="https://github.com/HelgeSverre/jake" class="hover:text-text-primary transition-colors">GitHub</a>
-          <a href="https://github.com/HelgeSverre/jake/issues" class="hover:text-text-primary transition-colors">Issues</a>
-          <a href="/brand" class="hover:text-text-primary transition-colors">Brand</a>
-          <span class="text-text-muted">MIT License</span>
-        </div>
-      </div>
-    </div>
-  </footer>
-</body>
+            const dropdown = document.getElementById("features-dropdown");
+            const toggle = document.getElementById("features-toggle");
+            const menu = document.getElementById("features-menu");
+            const arrow = document.getElementById("features-arrow");
+
+            if (dropdown && toggle && menu) {
+                let isOpen = false;
+
+                // Handle click on the toggle button
+                toggle.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    isOpen = !isOpen;
+
+                    if (isOpen) {
+                        menu.classList.remove("opacity-0", "invisible");
+                        menu.classList.add("opacity-100", "visible");
+                        arrow.style.transform = "rotate(180deg)";
+                    } else {
+                        menu.classList.add("opacity-0", "invisible");
+                        menu.classList.remove("opacity-100", "visible");
+                        arrow.style.transform = "rotate(0deg)";
+                    }
+                });
+
+                // Close dropdown when clicking outside
+                document.addEventListener("click", (e) => {
+                    if (isOpen && !dropdown.contains(e.target)) {
+                        isOpen = false;
+                        menu.classList.add("opacity-0", "invisible");
+                        menu.classList.remove("opacity-100", "visible");
+                        arrow.style.transform = "rotate(0deg)";
+                    }
+                });
+
+                // Close dropdown when navigating to a menu item
+                const menuLinks = menu.querySelectorAll("a");
+                menuLinks.forEach((link) => {
+                    link.addEventListener("click", () => {
+                        isOpen = false;
+                        menu.classList.add("opacity-0", "invisible");
+                        menu.classList.remove("opacity-100", "visible");
+                        arrow.style.transform = "rotate(0deg)";
+                    });
+                });
+            }
+        </script>
+
+        <slot />
+
+        <!-- Footer -->
+        <footer class="py-12 border-t border-border">
+            <div class="max-w-6xl mx-auto px-6">
+                <div
+                    class="flex flex-col md:flex-row justify-between items-center gap-6"
+                >
+                    <div class="flex items-center gap-2">
+                        <span
+                            class="text-jake font-mono text-xl"
+                            style="font-family: 'Fira Code', monospace;"
+                            >{logo}</span
+                        >
+                        <span class="text-text-secondary">jake</span>
+                        <span class="text-text-muted text-sm"
+                            >· Modern command running</span
+                        >
+                    </div>
+                    <div
+                        class="flex items-center gap-6 text-sm text-text-secondary"
+                    >
+                        <a
+                            href="/docs/introduction"
+                            class="hover:text-text-primary transition-colors"
+                            >Docs</a
+                        >
+                        <a
+                            href="https://github.com/HelgeSverre/jake"
+                            class="hover:text-text-primary transition-colors"
+                            >GitHub</a
+                        >
+                        <a
+                            href="https://github.com/HelgeSverre/jake/issues"
+                            class="hover:text-text-primary transition-colors"
+                            >Issues</a
+                        >
+                        <a
+                            href="/brand"
+                            class="hover:text-text-primary transition-colors"
+                            >Brand</a
+                        >
+                        <span class="text-text-muted">MIT License</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </body>
 </html>

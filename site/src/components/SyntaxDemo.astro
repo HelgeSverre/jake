@@ -149,16 +149,17 @@ file dist/app.js: [src/**/*.ts]
     });
   }
 
-  // highlight.js - using Jakefile.register() API
+  // highlight.js - using standard API
   async function initHljs() {
     try {
       if (typeof hljs === 'undefined') {
         await loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js');
       }
-      if (typeof Jakefile === 'undefined' || !Jakefile.definition) {
+      if (typeof hljsDefineJake === 'undefined') {
         await loadScript('/libs/highlightjs-jake.min.js');
       }
-      Jakefile.register(hljs);
+      hljs.registerLanguage('jake', hljsDefineJake);
+      hljs.registerLanguage('jakefile', hljsDefineJake);
       document.getElementById('hljs-code').innerHTML = hljs.highlight(sampleCode, {language: 'jake'}).value;
       document.getElementById('hljs-status').textContent = 'OK';
       document.getElementById('hljs-status').className = 'panel-badge ok';
@@ -188,7 +189,7 @@ file dist/app.js: [src/**/*.ts]
     }
   }
 
-  // Prism - using Jakefile.register() API
+  // Prism - auto-registers when Prism is global
   async function initPrism() {
     try {
       if (typeof Prism === 'undefined') {
@@ -201,8 +202,8 @@ file dist/app.js: [src/**/*.ts]
         await loadScript('https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js');
       }
       await loadScript('/libs/prism-jake.min.js');
-      // Jakefile.register() is called automatically, but we can call it explicitly too
-      Jakefile.register(Prism);
+      // Language auto-registers when Prism is global (see prism-jake source)
+      // Grammar is also available as window.jakeGrammar if needed
       document.getElementById('prism-code').innerHTML = Prism.highlight(sampleCode, Prism.languages.jake, 'jake');
       document.getElementById('prism-status').textContent = 'OK';
       document.getElementById('prism-status').className = 'panel-badge ok';

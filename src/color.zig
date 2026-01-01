@@ -44,13 +44,33 @@ pub const codes = struct {
     pub const muted_gray = "\x1b[38;2;113;113;122m"; // #71717a
 };
 
-/// Unicode symbols for CLI output
+/// Unicode symbols for CLI output - see docs/CLI_DESIGN_V4.md
 pub const symbols = struct {
+    // Status symbols
     pub const arrow = "→";
     pub const success = "✓";
     pub const failure = "✗";
     pub const warning = "~";
     pub const logo = "{j}";
+
+    // v4 symbols
+    pub const skipped = "—"; // em-dash, U+2014 - for up-to-date/skipped tasks
+    pub const watching = "◉"; // fisheye, U+25C9 - watch mode active indicator
+    pub const changed = "⟳"; // clockwise arrow, U+27F3 - file modification in watch
+    pub const pending = "○"; // white circle, U+25CB - dry-run pending tasks
+    pub const prompt_symbol = "?"; // confirmation prompts
+    pub const mode = "▷"; // right triangle, U+25B7 - mode indicator (dry-run header)
+
+    // Box-drawing characters for parallel execution display
+    pub const box_top_left = "┌";
+    pub const box_top_right = "┐";
+    pub const box_bottom_left = "└";
+    pub const box_bottom_right = "┘";
+    pub const box_horizontal = "─";
+    pub const box_vertical = "│";
+
+    // Spinner frames for animated task progress
+    pub const spinner_frames = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 };
 
 // ============================================================================
@@ -419,6 +439,51 @@ pub const Theme = struct {
     pub fn arrowSymbol(self: Theme) []const u8 {
         return if (self.color.enabled) codes.info_blue ++ symbols.arrow ++ codes.reset else symbols.arrow;
     }
+
+    // =========================================================================
+    // v4 Symbol helpers - see docs/CLI_DESIGN_V4.md
+    // =========================================================================
+
+    /// Skipped symbol with color: "—" (brand: #71717a Muted Gray)
+    pub fn skippedSymbol(self: Theme) []const u8 {
+        return if (self.color.enabled) codes.muted_gray ++ symbols.skipped ++ codes.reset else symbols.skipped;
+    }
+
+    /// Watching symbol with color: "◉" (brand: #60a5fa Info Blue)
+    pub fn watchingSymbol(self: Theme) []const u8 {
+        return if (self.color.enabled) codes.info_blue ++ symbols.watching ++ codes.reset else symbols.watching;
+    }
+
+    /// Changed symbol with color: "⟳" (brand: #eab308 Warning Yellow)
+    pub fn changedSymbol(self: Theme) []const u8 {
+        return if (self.color.enabled) codes.warning_yellow ++ symbols.changed ++ codes.reset else symbols.changed;
+    }
+
+    /// Pending symbol with color: "○" (brand: #71717a Muted Gray)
+    pub fn pendingSymbol(self: Theme) []const u8 {
+        return if (self.color.enabled) codes.muted_gray ++ symbols.pending ++ codes.reset else symbols.pending;
+    }
+
+    /// Prompt symbol with color: "?" (brand: #eab308 Warning Yellow)
+    pub fn promptSymbol(self: Theme) []const u8 {
+        return if (self.color.enabled) codes.warning_yellow ++ symbols.prompt_symbol ++ codes.reset else symbols.prompt_symbol;
+    }
+
+    /// Mode symbol with color: "▷" (brand: #60a5fa Info Blue)
+    pub fn modeSymbol(self: Theme) []const u8 {
+        return if (self.color.enabled) codes.info_blue ++ symbols.mode ++ codes.reset else symbols.mode;
+    }
+
+    /// Logo with color: "{j}" (brand: #f43f5e Jake Rose)
+    pub fn logoSymbol(self: Theme) []const u8 {
+        return if (self.color.enabled) codes.jake_rose ++ symbols.logo ++ codes.reset else symbols.logo;
+    }
+
+    /// Get spinner frame (brand: #f43f5e Jake Rose)
+    /// Note: Returns uncolored frame - caller should wrap with jakeRose color
+    pub fn spinnerFrame(_: Theme, index: usize) []const u8 {
+        return symbols.spinner_frames[index % symbols.spinner_frames.len];
+    }
 };
 
 // ============================================================================
@@ -638,4 +703,100 @@ test "symbols namespace has Unicode symbols" {
     try std.testing.expectEqualStrings("→", symbols.arrow);
     try std.testing.expectEqualStrings("✓", symbols.success);
     try std.testing.expectEqualStrings("✗", symbols.failure);
+}
+
+// ============================================================================
+// v4 Symbol tests
+// ============================================================================
+
+test "v4 symbols namespace has all required symbols" {
+    try std.testing.expectEqualStrings("—", symbols.skipped);
+    try std.testing.expectEqualStrings("◉", symbols.watching);
+    try std.testing.expectEqualStrings("⟳", symbols.changed);
+    try std.testing.expectEqualStrings("○", symbols.pending);
+    try std.testing.expectEqualStrings("?", symbols.prompt_symbol);
+    try std.testing.expectEqualStrings("▷", symbols.mode);
+    try std.testing.expectEqualStrings("{j}", symbols.logo);
+}
+
+test "v4 box-drawing symbols are correct" {
+    try std.testing.expectEqualStrings("┌", symbols.box_top_left);
+    try std.testing.expectEqualStrings("┐", symbols.box_top_right);
+    try std.testing.expectEqualStrings("└", symbols.box_bottom_left);
+    try std.testing.expectEqualStrings("┘", symbols.box_bottom_right);
+    try std.testing.expectEqualStrings("─", symbols.box_horizontal);
+    try std.testing.expectEqualStrings("│", symbols.box_vertical);
+}
+
+test "spinner_frames has 10 frames" {
+    try std.testing.expectEqual(@as(usize, 10), symbols.spinner_frames.len);
+    try std.testing.expectEqualStrings("⠋", symbols.spinner_frames[0]);
+    try std.testing.expectEqualStrings("⠏", symbols.spinner_frames[9]);
+}
+
+test "Theme.skippedSymbol returns colored symbol when enabled" {
+    const theme = Theme.withColor(withEnabled(true));
+    const symbol = theme.skippedSymbol();
+    try std.testing.expect(std.mem.indexOf(u8, symbol, symbols.skipped) != null);
+    try std.testing.expect(std.mem.indexOf(u8, symbol, codes.muted_gray) != null);
+}
+
+test "Theme.watchingSymbol returns colored symbol when enabled" {
+    const theme = Theme.withColor(withEnabled(true));
+    const symbol = theme.watchingSymbol();
+    try std.testing.expect(std.mem.indexOf(u8, symbol, symbols.watching) != null);
+    try std.testing.expect(std.mem.indexOf(u8, symbol, codes.info_blue) != null);
+}
+
+test "Theme.changedSymbol returns colored symbol when enabled" {
+    const theme = Theme.withColor(withEnabled(true));
+    const symbol = theme.changedSymbol();
+    try std.testing.expect(std.mem.indexOf(u8, symbol, symbols.changed) != null);
+    try std.testing.expect(std.mem.indexOf(u8, symbol, codes.warning_yellow) != null);
+}
+
+test "Theme.pendingSymbol returns colored symbol when enabled" {
+    const theme = Theme.withColor(withEnabled(true));
+    const symbol = theme.pendingSymbol();
+    try std.testing.expect(std.mem.indexOf(u8, symbol, symbols.pending) != null);
+    try std.testing.expect(std.mem.indexOf(u8, symbol, codes.muted_gray) != null);
+}
+
+test "Theme.promptSymbol returns colored symbol when enabled" {
+    const theme = Theme.withColor(withEnabled(true));
+    const symbol = theme.promptSymbol();
+    try std.testing.expect(std.mem.indexOf(u8, symbol, symbols.prompt_symbol) != null);
+    try std.testing.expect(std.mem.indexOf(u8, symbol, codes.warning_yellow) != null);
+}
+
+test "Theme.modeSymbol returns colored symbol when enabled" {
+    const theme = Theme.withColor(withEnabled(true));
+    const symbol = theme.modeSymbol();
+    try std.testing.expect(std.mem.indexOf(u8, symbol, symbols.mode) != null);
+    try std.testing.expect(std.mem.indexOf(u8, symbol, codes.info_blue) != null);
+}
+
+test "Theme.logoSymbol returns colored symbol when enabled" {
+    const theme = Theme.withColor(withEnabled(true));
+    const symbol = theme.logoSymbol();
+    try std.testing.expect(std.mem.indexOf(u8, symbol, symbols.logo) != null);
+    try std.testing.expect(std.mem.indexOf(u8, symbol, codes.jake_rose) != null);
+}
+
+test "v4 Theme symbols return plain symbols when disabled" {
+    const theme = Theme.withColor(withEnabled(false));
+    try std.testing.expectEqualStrings(symbols.skipped, theme.skippedSymbol());
+    try std.testing.expectEqualStrings(symbols.watching, theme.watchingSymbol());
+    try std.testing.expectEqualStrings(symbols.changed, theme.changedSymbol());
+    try std.testing.expectEqualStrings(symbols.pending, theme.pendingSymbol());
+    try std.testing.expectEqualStrings(symbols.prompt_symbol, theme.promptSymbol());
+    try std.testing.expectEqualStrings(symbols.mode, theme.modeSymbol());
+    try std.testing.expectEqualStrings(symbols.logo, theme.logoSymbol());
+}
+
+test "Theme.spinnerFrame returns correct frame" {
+    const theme = Theme.withColor(withEnabled(true));
+    try std.testing.expectEqualStrings("⠋", theme.spinnerFrame(0));
+    try std.testing.expectEqualStrings("⠙", theme.spinnerFrame(1));
+    try std.testing.expectEqualStrings("⠋", theme.spinnerFrame(10)); // wraps around
 }

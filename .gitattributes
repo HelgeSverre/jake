@@ -3,3 +3,6 @@
 # until Jake has its own official grammar in Linguist
 Jakefile linguist-language=Makefile
 *.jake linguist-language=Makefile
+
+# Use bd merge for beads JSONL files
+.beads/issues.jsonl merge=beads

@@ -368,21 +368,16 @@ fn isValidShell(s: []const u8) bool {
 
 /// Print help text to writer, auto-generated from flags array
 pub fn printHelp(writer: anytype) void {
-    // {j} in Jake Rose, jake in bold
-    writer.writeAll(ansi.jake_rose ++ ansi.logo ++ ansi.reset) catch {};
-    writer.writeAll(" " ++ ansi.bold ++ "jake" ++ ansi.reset ++ " - Modern command running\n") catch {};
-    // Tagline in muted gray
-    writer.writeAll(ansi.muted ++ "The best of Make and Just, combined.\n\n" ++ ansi.reset) catch {};
-    // USAGE header in secondary gray
-    writer.writeAll(ansi.secondary ++ "USAGE:" ++ ansi.reset ++ "\n") catch {};
-    // Usage lines with muted placeholders
-    writer.writeAll("  jake " ++ ansi.muted ++ "[OPTIONS] [RECIPE] [ARGS...]" ++ ansi.reset ++ "\n") catch {};
-    writer.writeAll("  jake upgrade " ++ ansi.muted ++ "[--check] [--no-verify]" ++ ansi.reset ++ "\n\n") catch {};
-    // COMMANDS header
-    writer.writeAll(ansi.secondary ++ "COMMANDS:" ++ ansi.reset ++ "\n") catch {};
-    writer.writeAll("  upgrade             Update jake to the latest version\n\n") catch {};
-    // OPTIONS header
-    writer.writeAll(ansi.secondary ++ "OPTIONS:" ++ ansi.reset ++ "\n") catch {};
+    // v4 format: {j} jake — modern command runner
+    writer.writeAll("\n" ++ ansi.jake_rose ++ ansi.logo ++ ansi.reset) catch {};
+    writer.writeAll(" " ++ ansi.bold ++ "jake" ++ ansi.reset) catch {};
+    writer.writeAll(ansi.muted ++ " — modern command runner" ++ ansi.reset ++ "\n\n") catch {};
+
+    // Usage: header in bold
+    writer.writeAll(ansi.bold ++ "Usage:" ++ ansi.reset ++ " jake [options] [recipe] [args...]\n\n") catch {};
+
+    // Options: header in bold
+    writer.writeAll(ansi.bold ++ "Options:" ++ ansi.reset ++ "\n") catch {};
 
     // Auto-generate options from flags array
     for (flags) |flag| {
@@ -434,22 +429,17 @@ pub fn printHelp(writer: anytype) void {
         writer.writeAll("\n") catch {};
     }
 
-    // EXAMPLES header in secondary gray
-    writer.writeAll("\n" ++ ansi.secondary ++ "EXAMPLES:" ++ ansi.reset ++ "\n") catch {};
-    writer.writeAll(
-        \\  jake                    Run default recipe (or list if none)
-        \\  jake build              Run the 'build' recipe
-        \\  jake -n deploy          Dry-run the 'deploy' recipe
-        \\  jake -l                 List all recipes
-        \\  jake -l --short         List recipes (one per line, for scripting)
-        \\  jake -s build           Show detailed info for 'build' recipe
-        \\  jake -w build           Watch and re-run 'build' on changes
-        \\  jake -w "src/**" build  Watch src/ and re-run 'build'
-        \\  jake -j4 build          Run 'build' with 4 parallel jobs
-        \\  jake --completions bash Print bash completion script
-        \\  jake --completions --install  Install completions for current shell
-        \\
-    ) catch {};
+    // Examples: header in bold (v4 format)
+    writer.writeAll("\n" ++ ansi.bold ++ "Examples:" ++ ansi.reset ++ "\n") catch {};
+    // Commands in default, descriptions in muted
+    writer.writeAll("  jake build            ") catch {};
+    writer.writeAll(ansi.muted ++ "Run the build recipe" ++ ansi.reset ++ "\n") catch {};
+    writer.writeAll("  jake test -v          ") catch {};
+    writer.writeAll(ansi.muted ++ "Run tests with verbose output" ++ ansi.reset ++ "\n") catch {};
+    writer.writeAll("  jake -w dev           ") catch {};
+    writer.writeAll(ansi.muted ++ "Watch and rebuild on changes" ++ ansi.reset ++ "\n") catch {};
+    writer.writeAll("  jake release.all -j4  ") catch {};
+    writer.writeAll(ansi.muted ++ "Parallel release builds" ++ ansi.reset ++ "\n") catch {};
 }
 
 /// Find similar flag names for "Did you mean?" suggestions.
@@ -709,10 +699,11 @@ test "printHelp generates correct output" {
     try expect(std.mem.indexOf(u8, output, "-f") != null);
     try expect(std.mem.indexOf(u8, output, "--jakefile") != null);
     try expect(std.mem.indexOf(u8, output, "FILE") != null);
-    // Check branded elements
+    // Check branded elements (v4 format)
     try expect(std.mem.indexOf(u8, output, ansi.logo) != null);
-    try expect(std.mem.indexOf(u8, output, "USAGE:") != null);
-    try expect(std.mem.indexOf(u8, output, "OPTIONS:") != null);
+    try expect(std.mem.indexOf(u8, output, "Usage:") != null);
+    try expect(std.mem.indexOf(u8, output, "Options:") != null);
+    try expect(std.mem.indexOf(u8, output, "Examples:") != null);
 }
 
 test "combined short flags -vn" {

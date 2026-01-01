@@ -13,6 +13,7 @@ const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
 const cache_mod = @import("cache.zig");
 const conditions = @import("conditions.zig");
+const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
 const color_mod = @import("color.zig");
 
 const Jakefile = parser.Jakefile;
@@ -90,6 +91,8 @@ const OutputBuffer = struct {
 pub const ParallelExecutor = struct {
     allocator: std.mem.Allocator,
     jakefile: *const Jakefile,
+    index: *const JakefileIndex,
+    owned_index: ?*JakefileIndex = null,
     nodes: std.ArrayListUnmanaged(GraphNode),
     name_to_index: std.StringHashMap(usize),
     thread_count: usize,
@@ -112,16 +115,34 @@ pub const ParallelExecutor = struct {
     first_error: ?ExecuteError,
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, thread_count: usize) ParallelExecutor {
-        var variables = std.StringHashMap([]const u8).init(allocator);
+        const owned_index = allocator.create(JakefileIndex) catch {
+            @panic("failed to allocate Jakefile index");
+        };
+        owned_index.* = JakefileIndex.build(allocator, jakefile) catch {
+            allocator.destroy(owned_index);
+            @panic("failed to build Jakefile index");
+        };
+        var exec = initInternal(allocator, jakefile, owned_index, thread_count);
+        exec.owned_index = owned_index;
+        exec.index = owned_index;
+        return exec;
+    }
 
-        // Load variables from jakefile (OOM here is unrecoverable)
-        for (jakefile.variables) |v| {
-            variables.put(v.name, v.value) catch {};
+    pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, thread_count: usize) ParallelExecutor {
+        return initInternal(allocator, jakefile, index, thread_count);
+    }
+
+    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, thread_count: usize) ParallelExecutor {
+        var variables = std.StringHashMap([]const u8).init(allocator);
+        var var_iter = index.variablesIterator();
+        while (var_iter.next()) |entry| {
+            variables.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
         }
 
         return .{
             .allocator = allocator,
             .jakefile = jakefile,
+            .index = index,
             .nodes = .empty,
             .name_to_index = std.StringHashMap(usize).init(allocator),
             .thread_count = if (thread_count == 0) getDefaultThreadCount() else thread_count,
@@ -151,6 +172,12 @@ pub const ParallelExecutor = struct {
         self.ready_queue.deinit(self.allocator);
         self.variables.deinit();
         self.cache.deinit();
+
+        if (self.owned_index) |owned| {
+            owned.deinit();
+            self.allocator.destroy(owned);
+            self.owned_index = null;
+        }
     }
 
     /// Get the default number of threads (CPU count)
@@ -177,7 +204,7 @@ pub const ParallelExecutor = struct {
         }
 
         // Find the recipe
-        const recipe = self.jakefile.getRecipe(name) orelse {
+        const recipe = self.index.getRecipe(name) orelse {
             return ExecuteError.RecipeNotFound;
         };
 

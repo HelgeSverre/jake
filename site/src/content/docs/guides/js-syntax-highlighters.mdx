@@ -8,7 +8,7 @@ tableOfContents:
 
 import SyntaxDemo from '../../../components/SyntaxDemo.astro';
 
-Jake provides syntax highlighting plugins for three popular JavaScript libraries: **highlight.js**, **Shiki**, and **Prism.js**. All three use a unified `Jakefile.register()` API for consistent usage.
+Jake provides syntax highlighting plugins for three popular JavaScript libraries: **highlight.js**, **Shiki**, and **Prism.js**. Each plugin exports the grammar in the format that library expects, following standard conventions.
 
 | Library | Best For | Size | Notes |
 |---------|----------|------|-------|
@@ -24,67 +24,207 @@ See how each library renders Jake code:
 
 ## Installation
 
-All plugins are available via CDN at `jakefile.dev/libs/` and use the same `Jakefile.register()` API.
+### npm
+
+All three packages are available on npm:
+
+```bash
+npm install highlightjs-jake
+npm install prism-jake
+npm install shiki-jake
+```
+
+### CDN
+
+You can also load them directly from `jakefile.dev/libs/`:
+
+- `https://jakefile.dev/libs/highlightjs-jake.min.js`
+- `https://jakefile.dev/libs/prism-jake.min.js`
+- `https://jakefile.dev/libs/shiki-jake.tmLanguage.json`
+
+## Usage
 
 ### highlight.js
 
+**Browser:**
+
 ```html
-<!-- Load highlight.js core -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+</head>
+<body>
+  <pre><code class="language-jake">
+task build:
+    echo "Building..."
+  </code></pre>
 
-<!-- Load Jake language -->
-<script src="https://jakefile.dev/libs/highlightjs-jake.min.js"></script>
-
-<script>
-  // Register Jake syntax
-  Jakefile.register(hljs);
-
-  // Highlight all code blocks
-  hljs.highlightAll();
-</script>
+  <!-- Load highlight.js core -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+  
+  <!-- Load Jake language -->
+  <script src="https://jakefile.dev/libs/highlightjs-jake.min.js"></script>
+  
+  <script>
+    // Register Jake syntax (standard highlight.js API)
+    hljs.registerLanguage('jake', hljsDefineJake);
+    hljs.registerLanguage('jakefile', hljsDefineJake);
+    
+    // Highlight all code blocks
+    hljs.highlightAll();
+  </script>
+</body>
+</html>
 ```
 
-Then use in your HTML:
+**Node.js / ES Modules:**
 
-```html
-<pre><code class="language-jake">task build:
-    echo "Building..."
-</code></pre>
+```javascript
+import hljs from 'highlight.js/lib/core';
+import jake from 'highlightjs-jake';
+
+// Register the language (standard highlight.js pattern)
+hljs.registerLanguage('jake', jake);
+hljs.registerLanguage('jakefile', jake);
+
+// Highlight code
+const code = `task build:
+    echo "Building..."`;
+
+const result = hljs.highlight(code, { language: 'jake' });
+console.log(result.value);
 ```
 
 ### Prism.js
 
+**Browser:**
+
 ```html
-<!-- Load Prism.js core -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+  <pre><code class="language-jake">
+task build:
+    echo "Building..."
+  </code></pre>
 
-<!-- Load Jake language (auto-registers if Prism is global) -->
-<script src="https://jakefile.dev/libs/prism-jake.min.js"></script>
-
-<script>
-  // Or register explicitly
-  Jakefile.register(Prism);
-</script>
+  <!-- Load Prism.js core -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  
+  <!-- Load Jake language (auto-registers when Prism is global) -->
+  <script src="https://jakefile.dev/libs/prism-jake.min.js"></script>
+</body>
+</html>
 ```
 
-Then use in your HTML:
+**Node.js / ES Modules:**
 
-```html
-<pre><code class="language-jake">task build:
-    echo "Building..."
-</code></pre>
+```javascript
+import Prism from 'prismjs';
+import jake from 'prism-jake';
+
+// Register the language (standard Prism pattern)
+Prism.languages.jake = jake;
+Prism.languages.jakefile = jake;
+
+// Highlight code
+const code = `task build:
+    echo "Building..."`;
+
+const html = Prism.highlight(code, jake, 'jake');
+console.log(html);
 ```
 
 ### Shiki
 
-Shiki is ideal for static site generators and build-time highlighting. Load the grammar from CDN:
+**Basic Usage:**
 
-```js
+```javascript
+import { createHighlighter } from 'shiki';
+import jake from 'shiki-jake';
+
+// Create highlighter with Jake language
+const highlighter = await createHighlighter({
+  themes: ['github-dark'],
+  langs: [jake]  // Pass grammar directly
+});
+
+// Highlight code
+const code = `task build:
+    echo "Building..."`;
+
+const html = highlighter.codeToHtml(code, {
+  lang: 'jake',
+  theme: 'github-dark'
+});
+
+console.log(html);
+```
+
+**Load Dynamically:**
+
+```javascript
+import { createHighlighter } from 'shiki';
+import jake from 'shiki-jake';
+
+const highlighter = await createHighlighter({
+  themes: ['github-dark'],
+  langs: []  // Start with no languages
+});
+
+// Load Jake when needed
+await highlighter.loadLanguage(jake);
+
+const html = highlighter.codeToHtml(code, {
+  lang: 'jake',
+  theme: 'github-dark'
+});
+```
+
+**With Astro:**
+
+```javascript
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+import jake from 'shiki-jake';
+
+export default defineConfig({
+  markdown: {
+    shikiConfig: {
+      themes: {
+        light: 'github-light',
+        dark: 'github-dark',
+      },
+      langs: [jake],
+    },
+  },
+});
+```
+
+**With VitePress:**
+
+```javascript
+// .vitepress/config.js
+import { defineConfig } from 'vitepress';
+import jake from 'shiki-jake';
+
+export default defineConfig({
+  markdown: {
+    languages: [jake],
+  },
+});
+```
+
+**From CDN (TextMate Grammar):**
+
+```javascript
 import { createHighlighter } from 'shiki';
 
-// Fetch the Jake grammar
+// Fetch the Jake grammar from CDN
 const grammar = await fetch('https://jakefile.dev/libs/shiki-jake.tmLanguage.json')
   .then(r => r.json());
 
@@ -94,59 +234,87 @@ const highlighter = await createHighlighter({
   langs: [{
     name: 'jake',
     scopeName: 'source.jake',
+    aliases: ['jakefile'],
     ...grammar
   }]
 });
 
-// Highlight code
 const html = highlighter.codeToHtml(code, {
   lang: 'jake',
   theme: 'github-dark'
 });
 ```
 
-## Unified API
+## Standard Library Patterns
 
-All three plugins export a `Jakefile` object with consistent methods:
+Each package follows the standard pattern for its library:
 
-```js
-// highlight.js
-Jakefile.register(hljs);
-
-// Prism.js
-Jakefile.register(Prism);
-
-// Shiki (async)
-await Jakefile.register(highlighter);
-// Or pass the grammar directly
-createHighlighter({ langs: [Jakefile.grammar] });
+**highlight.js:**
+```javascript
+hljs.registerLanguage('jake', definitionFunction);
 ```
 
-## CDN URLs
+**Prism.js:**
+```javascript
+Prism.languages.jake = grammarObject;
+```
 
-| File | URL | Size |
-|------|-----|------|
-| highlight.js plugin | `https://jakefile.dev/libs/highlightjs-jake.min.js` | ~2KB |
-| Prism.js plugin | `https://jakefile.dev/libs/prism-jake.min.js` | ~1.5KB |
-| Shiki grammar | `https://jakefile.dev/libs/shiki-jake.tmLanguage.json` | ~8KB |
+**Shiki:**
+```javascript
+createHighlighter({ langs: [grammarObject] });
+// or
+highlighter.loadLanguage(grammarObject);
+```
 
-## Source Code
+These are the same patterns used by all other language packages in each ecosystem (go, python, rust, etc.).
 
-The syntax highlighter sources are available on GitHub:
+## Package Sources
 
-- [prism-jake](https://github.com/helgesverre/jake/tree/main/editors/prism-jake)
-- [highlightjs-jake](https://github.com/helgesverre/jake/tree/main/editors/highlightjs-jake)
-- [shiki-jake](https://github.com/helgesverre/jake/tree/main/editors/shiki-jake)
+The syntax highlighter packages are available on npm and GitHub:
 
-## What Gets Highlighted
+- **npm:** [`prism-jake`](https://www.npmjs.com/package/prism-jake), [`highlightjs-jake`](https://www.npmjs.com/package/highlightjs-jake), [`shiki-jake`](https://www.npmjs.com/package/shiki-jake)
+- **GitHub:** [editors/prism-jake](https://github.com/helgesverre/jake/tree/main/editors/prism-jake), [editors/highlightjs-jake](https://github.com/helgesverre/jake/tree/main/editors/highlightjs-jake), [editors/shiki-jake](https://github.com/helgesverre/jake/tree/main/editors/shiki-jake)
+
+## Supported Syntax
 
 All three libraries highlight the same Jake syntax elements:
 
 - **Comments** - Lines starting with `#`
 - **Directives** - `@import`, `@dotenv`, `@require`, `@if`, `@needs`, etc.
-- **Keywords** - `task`, `file`, `as`
-- **Strings** - Single and double quoted
+- **Keywords** - `task`, `file`, `as`, `if`, `else`
+- **Strings** - Single, double, and triple-quoted
 - **Interpolation** - `{{variable}}` and `{{function(arg)}}`
 - **Shell variables** - `$VAR`, `${VAR}`, `$1`, `$@`
 - **Dependencies** - `[dep1, dep2]`
-- **Functions** - `env()`, `exists()`, `local_bin()`, etc.
+- **Built-in functions** - `dirname()`, `env()`, `exists()`, `uppercase()`, etc.
+- **Platform keywords** - `linux`, `macos`, `windows`, etc.
+- **Command prefixes** - `@`, `-`
+
+## Example
+
+Here's what a fully highlighted Jakefile looks like:
+
+```jake
+# Build configuration
+CC := gcc
+CFLAGS := -Wall -O2
+
+@import "common.jake"
+@dotenv
+
+task build target="release": [clean]
+    @if eq(target, "debug")
+        echo "Debug build"
+        {{CC}} {{CFLAGS}} -g src/*.c -o bin/app
+    @else
+        echo "Release build"
+        {{CC}} {{CFLAGS}} src/*.c -o bin/app
+    @end
+
+task clean:
+    rm -rf bin/
+
+file bin/app: [src/main.c, src/utils.c]
+    mkdir -p bin
+    {{CC}} {{CFLAGS}} $^ -o $@
+```

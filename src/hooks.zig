@@ -189,7 +189,8 @@ pub const HookRunner = struct {
         }
 
         if (self.verbose) {
-            self.printHook("[@{s}] {s}\n", .{ @tagName(hook.kind), expanded_cmd });
+            // v4: verbose hook execution with jake: prefix in muted
+            self.printHook("   {s}jake: running @{s} hook: {s}{s}\n", .{ self.color.muted(), @tagName(hook.kind), expanded_cmd, self.color.reset() });
         }
 
         // Execute via shell

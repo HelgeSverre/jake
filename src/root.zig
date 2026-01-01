@@ -9,6 +9,7 @@ pub const watch = @import("watch.zig");
 pub const parallel = @import("parallel.zig");
 pub const env = @import("env.zig");
 pub const import_mod = @import("import.zig");
+pub const jakefile_index = @import("jakefile_index.zig");
 pub const functions = @import("functions.zig");
 pub const compat = @import("compat.zig");
 pub const suggest = @import("suggest.zig");
@@ -28,6 +29,7 @@ pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;
 pub const Executor = executor.Executor;
 pub const Jakefile = parser.Jakefile;
+pub const JakefileIndex = jakefile_index.JakefileIndex;
 pub const ImportDirective = parser.ImportDirective;
 pub const Watcher = watch.Watcher;
 pub const ParallelExecutor = parallel.ParallelExecutor;
@@ -37,6 +39,7 @@ pub const ImportAllocations = import_mod.ImportAllocations;
 pub const resolveImports = import_mod.resolveImports;
 pub const Color = color.Color;
 pub const Context = context.Context;
+pub const RuntimeContext = context.RuntimeContext;
 
 /// Parse a Jakefile from source
 pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Jakefile {
@@ -67,6 +70,7 @@ comptime {
     _ = parallel;
     _ = env;
     _ = import_mod;
+    _ = jakefile_index;
     _ = functions;
     _ = suggest;
     _ = hooks;
