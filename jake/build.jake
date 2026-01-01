@@ -33,8 +33,9 @@ task lint:
 @group test
 @desc "Auto-format source code"
 task format:
-    @needs zig
+    @needs zig bunx
     zig fmt src/
+    bunx prettier --write "**/*.md"
 
 @group build
 @desc "Remove build artifacts"
