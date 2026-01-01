@@ -567,13 +567,15 @@ Run 'jake --list' to see available recipes.
 ⏵ Command: /bin/zsh -i -c 'jake'
 ```
 
-because it was imported as `stats`, the correct way to reference it would be `stats.todos`, but Zed's Runnable does not know that (yet)
+because it was imported as `stats`, the correct way to reference it would be `stats.todos`, but Zed's Runnable does not
+know that (yet)
 
 ---
 
 ### ~~SHIKI, prismjs and highlijs - overengineering~~ ✅
 
-~~SHIKI, prismjs and highlijs distribtion abstraction "Jakefile.register()" is overly complicated, jsut provide the data and instructions on how to use the grammar/language definition tailored for each library, dont overengineer it.~~
+~~SHIKI, prismjs and highlijs distribtion abstraction "Jakefile.register()" is overly complicated, jsut provide the data
+and instructions on how to use the grammar/language definition tailored for each library, dont overengineer it.~~
 
 **COMPLETED**: Simplified all three packages to just export the grammar/language definition directly:
 
@@ -601,3 +603,10 @@ Removed the `Jakefile.register()` abstraction and updated:
 - Ensured pattern order prioritizes built-ins before generic patterns
 - Created `CONSISTENCY_IMPROVEMENTS.md` and `GRAMMAR_COMPARISON.md`
 - All three now highlight the same elements while respecting each library's architecture
+
+---
+
+# Stabilize v0.6.0
+
+Ensure documents are up to date with coedbase, archive useless odl reports, remove old verisons of specs, remove
+prototype sh scripts, cleanup and prepare for a stable release.
