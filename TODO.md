@@ -130,7 +130,8 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 ### List Filtering
 
 - [ ] `--group GROUP` - Filter recipes to specified group (aka, show only "dev" commands with `jake --group dev`, etc.)
-- [ ] `--filter PATTERN` - Filter recipes by glob pattern: `jake --filter "test*"` shows all recipes starting with "test"
+- [ ] `--filter PATTERN` - Filter recipes by glob pattern: `jake --filter "test*"` shows all recipes starting with "
+      test"
 - [ ] `--type TYPE` - Filter recipes by type: `jake --type file` or `jake --type task` or `jake --type simple` (?)
 - [ ] `--groups` - List available group names
 
@@ -170,7 +171,8 @@ task backup:
 - [ ] `snake()` - Example Text -> example_text
 - [ ] `upper()` - Example Text -> EXAMPLE TEXT
 - [ ] `lower()` - Example Text -> example text
-- [ ] `timestamp()` - Current Unix timestamp (seconds since epoch, 1970-01-01 eg: `1700000000` -> `Tue Nov 14 2023 22:13:20 GMT+0000`)
+- [ ] `timestamp()` - Current Unix timestamp (seconds since epoch, 1970-01-01 eg: `1700000000` ->
+      `Tue Nov 14 2023 22:13:20 GMT+0000`)
 - [ ] `datetime(format)` - Formatted date/time string (Which format patterns? PHP, JS, Python?)
 - [ ] `read_file(path)` - Read file contents into variable
 - [ ] `json(file, path)` - Extract JSON value
@@ -233,6 +235,7 @@ Custom tap - no popularity requirements.
 **File:** `Formula/jake.rb`
 
 ```ruby
+
 class Jake < Formula
   desc "Modern command runner/build system"
   homepage "https://github.com/<user>/jake"
@@ -376,6 +379,30 @@ For edge cases requiring containerized builds.
   - Extract expansion.zig (~80 lines)
   - Extract directive_parser.zig (~200 lines)
   - Extract display.zig (~360 lines)
+
+---
+
+### Ability to add group level descriptions
+
+```just
+@group "build" "Build-related tasks"
+task build:
+  bun format
+  bun run dev
+  # etc etc
+```
+
+### Ability to hide modules from list output (or do i mean groups?)
+
+sometimes you want to have helper modules that define common recipes or variables, but don't want them to show up in the
+main `jake -l` output, (eg: profiling commands like in @jake/profiling.jake)
+
+1. should it be:
+
+- a: directive in the module (@hide in .jake)
+- b: a modifier on import (@import "x.jake" hidden (would work for per-import hiding, or reuse "as name" syntax eg "
+  import "debug.jake" as \_debug")) whick can still be called and referenced, but implicitly jsut wont show up in the
+  listing
 
 ---
 
