@@ -66,7 +66,8 @@ pub const Recipe = struct {
 pub const NeedsRequirement = struct {
     command: []const u8,
     hint: ?[]const u8, // Optional install hint
-    install_task: ?[]const u8, // Optional -> task reference
+    install_task: ?[]const u8, // Optional -> task reference (todo: support arbitrary (shell) commands as install action)
+
 };
 
 /// Tracks where a recipe originated from (for imported recipes)
