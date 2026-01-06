@@ -240,8 +240,8 @@ pub fn main() !void {
     };
 
     // List recipes or run default if no recipe specified
-    // --short implies listing (it's a listing format option)
-    if (args.list or args.short or (args.recipe == null and raw_args.len == 1)) {
+    // --short and --all imply listing (they're listing format/filter options)
+    if (args.list or args.short or args.all or (args.recipe == null and raw_args.len == 1)) {
         executor.listRecipes(args.short, args.all);
         return;
     }
