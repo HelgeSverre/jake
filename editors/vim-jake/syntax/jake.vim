@@ -49,7 +49,7 @@ syn match jakeLoop "^\s\+@each\>"
 syn match jakeDirective "^\s\+@\(needs\|require\|confirm\|cache\|watch\)\>"
 syn match jakeDirective "^\s\+@\(cd\|shell\|group\|desc\|description\|alias\)\>"
 syn match jakeDirective "^\s\+@\(quiet\|ignore\|only\|only-os\|platform\)\>"
-syn match jakeDirective "^\s\+@\(export\|pre\|post\)\>"
+syn match jakeDirective "^\s\+@\(export\|pre\|post\|timeout\|launch\)\>"
 
 " Variable definitions (top-level)
 syn match jakeVarDef "^[a-zA-Z_][a-zA-Z0-9_]*\s*\(:=\|=\)" contains=jakeVarName,jakeOperator
@@ -75,8 +75,8 @@ syn region jakeString start=+'+ end=+'+ skip=+\\'+ contains=jakeEscape
 syn match jakeEscape "\\[nrt\"'\\]" contained
 
 " Condition functions (in @if)
-syn match jakeCondFunc "\<\(env\|exists\|eq\|neq\|is_watching\|is_dry_run\|is_verbose\|is_platform\|is_macos\|is_linux\|is_windows\|is_unix\)\s*(" contains=jakeCondFuncName
-syn match jakeCondFuncName "\<\(env\|exists\|eq\|neq\|is_watching\|is_dry_run\|is_verbose\|is_platform\|is_macos\|is_linux\|is_windows\|is_unix\)\>" contained
+syn match jakeCondFunc "\<\(env\|exists\|eq\|neq\|command\|is_watching\|is_dry_run\|is_verbose\|is_platform\|is_macos\|is_linux\|is_windows\|is_unix\)\s*(" contains=jakeCondFuncName
+syn match jakeCondFuncName "\<\(env\|exists\|eq\|neq\|command\|is_watching\|is_dry_run\|is_verbose\|is_platform\|is_macos\|is_linux\|is_windows\|is_unix\)\>" contained
 
 " Platform names
 syn keyword jakePlatform linux macos windows darwin freebsd openbsd netbsd

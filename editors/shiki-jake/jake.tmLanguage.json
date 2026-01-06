@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "jake",
+  "name": "Jake",
   "scopeName": "source.jake",
   "patterns": [
     { "include": "#comments" },
@@ -299,6 +299,22 @@
             "1": { "name": "keyword.control.directive.jake" },
             "2": { "patterns": [{ "include": "#shell-content" }] }
           }
+        },
+        {
+          "name": "meta.directive.timeout.jake",
+          "match": "^\\s*(@timeout)\\s+(\\d+[smh])\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.directive.jake" },
+            "2": { "name": "constant.numeric.jake" }
+          }
+        },
+        {
+          "name": "meta.directive.launch.jake",
+          "match": "^\\s*(@launch)\\s+(.*)$",
+          "captures": {
+            "1": { "name": "keyword.control.directive.jake" },
+            "2": { "name": "string.unquoted.jake" }
+          }
         }
       ]
     },
@@ -306,7 +322,7 @@
     "condition-expression": {
       "patterns": [
         {
-          "match": "\\b(env|exists|eq|neq|is_watching|is_dry_run|is_verbose)\\s*\\(",
+          "match": "\\b(env|exists|eq|neq|command|is_watching|is_dry_run|is_verbose|is_platform|is_macos|is_linux|is_windows|is_unix)\\s*\\(",
           "captures": {
             "1": { "name": "support.function.condition.jake" }
           }
@@ -361,7 +377,7 @@
           },
           "patterns": [
             {
-              "match": "\\b(dirname|basename|extension|without_extension|without_extensions|absolute_path|abs_path|uppercase|lowercase|trim|home|local_bin|shell_config|env|exists|eq|neq|is_watching|is_dry_run|is_verbose)\\s*\\(",
+              "match": "\\b(dirname|basename|extension|without_extension|without_extensions|absolute_path|abs_path|uppercase|lowercase|trim|home|local_bin|shell_config|launch|env|exists|eq|neq|command|is_watching|is_dry_run|is_verbose|is_platform|is_macos|is_linux|is_windows|is_unix|item)\\s*\\(",
               "captures": {
                 "1": { "name": "support.function.jake" }
               }

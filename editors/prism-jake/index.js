@@ -68,7 +68,7 @@
         punctuation: /^\{\{|\}\}$/,
         // Built-in functions (must come before generic function)
         "builtin-function":
-          /\b(?:dirname|basename|extension|without_extension|without_extensions|absolute_path|abs_path|uppercase|lowercase|trim|home|local_bin|shell_config|env|exists|eq|neq|is_watching|is_dry_run|is_verbose)\b(?=\()/,
+          /\b(?:dirname|basename|extension|without_extension|without_extensions|absolute_path|abs_path|uppercase|lowercase|trim|home|local_bin|shell_config|launch|env|exists|eq|neq|command|is_watching|is_dry_run|is_verbose|is_platform|is_macos|is_linux|is_windows|is_unix|item)\b(?=\()/,
         function: /\b[a-zA-Z_][a-zA-Z0-9_]*(?=\()/,
         variable: /\b[a-zA-Z_][a-zA-Z0-9_]*\b/,
         string: /"(?:[^"\\]|\\.)*"|'[^']*'/,

@@ -43,13 +43,21 @@
       "home",
       "local_bin",
       "shell_config",
+      "launch",
       "env",
       "exists",
       "eq",
       "neq",
+      "command",
       "is_watching",
       "is_dry_run",
       "is_verbose",
+      "is_platform",
+      "is_macos",
+      "is_linux",
+      "is_windows",
+      "is_unix",
+      "item",
     ];
 
     const PLATFORMS = [

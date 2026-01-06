@@ -7,12 +7,7 @@ repository = "https://github.com/HelgeSverre/jake"
 authors = ["Helge Sverre <helge.sverre@gmail.com>"]
 
 [grammars.jake]
-# For release: use HTTPS with pinned commit
-# repository = "https://github.com/HelgeSverre/jake"
-# rev = "<commit-sha>"
-
-# For local development: use file:// URL
-repository = "file:///Users/helge/code/jake"
+repository = "https://github.com/HelgeSverre/jake"
 rev = "ba0d4d373438f7f3d46644338f54ad607bd29580"
 path = "editors/tree-sitter-jake"
 
