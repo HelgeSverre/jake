@@ -86,7 +86,15 @@
           "named": true
         },
         {
+          "type": "launch_directive",
+          "named": true
+        },
+        {
           "type": "shell_directive",
+          "named": true
+        },
+        {
+          "type": "timeout_directive",
           "named": true
         },
         {
@@ -186,11 +194,11 @@
         "required": true,
         "types": [
           {
-            "type": "glob_pattern",
+            "type": "file_path",
             "named": true
           },
           {
-            "type": "identifier",
+            "type": "glob_pattern",
             "named": true
           },
           {
@@ -210,7 +218,7 @@
         "required": true,
         "types": [
           {
-            "type": "identifier",
+            "type": "file_path",
             "named": true
           },
           {
@@ -325,6 +333,10 @@
         "required": true,
         "types": [
           {
+            "type": "command",
+            "named": false
+          },
+          {
             "type": "env",
             "named": false
           },
@@ -341,11 +353,31 @@
             "named": false
           },
           {
+            "type": "is_linux",
+            "named": false
+          },
+          {
+            "type": "is_macos",
+            "named": false
+          },
+          {
+            "type": "is_platform",
+            "named": false
+          },
+          {
+            "type": "is_unix",
+            "named": false
+          },
+          {
             "type": "is_verbose",
             "named": false
           },
           {
             "type": "is_watching",
+            "named": false
+          },
+          {
+            "type": "is_windows",
             "named": false
           },
           {
@@ -795,6 +827,30 @@
     }
   },
   {
+    "type": "launch_directive",
+    "named": true,
+    "fields": {
+      "target": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "file_path",
+            "named": true
+          },
+          {
+            "type": "interpolation",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "parameter",
     "named": true,
     "fields": {
@@ -1115,8 +1171,28 @@
         {
           "type": "escape_sequence",
           "named": true
+        },
+        {
+          "type": "interpolation",
+          "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "timeout_directive",
+    "named": true,
+    "fields": {
+      "duration": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "timeout_value",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -1197,11 +1273,11 @@
         "required": true,
         "types": [
           {
-            "type": "glob_pattern",
+            "type": "file_path",
             "named": true
           },
           {
-            "type": "identifier",
+            "type": "glob_pattern",
             "named": true
           },
           {
@@ -1361,6 +1437,10 @@
     "named": false
   },
   {
+    "type": "@launch",
+    "named": false
+  },
+  {
     "type": "@needs",
     "named": false
   },
@@ -1401,6 +1481,10 @@
     "named": false
   },
   {
+    "type": "@timeout",
+    "named": false
+  },
+  {
     "type": "@watch",
     "named": false
   },
@@ -1422,6 +1506,10 @@
   },
   {
     "type": "as",
+    "named": false
+  },
+  {
+    "type": "command",
     "named": false
   },
   {
@@ -1465,6 +1553,10 @@
     "named": false
   },
   {
+    "type": "file_path",
+    "named": true
+  },
+  {
     "type": "glob_pattern",
     "named": true
   },
@@ -1485,11 +1577,31 @@
     "named": false
   },
   {
+    "type": "is_linux",
+    "named": false
+  },
+  {
+    "type": "is_macos",
+    "named": false
+  },
+  {
+    "type": "is_platform",
+    "named": false
+  },
+  {
+    "type": "is_unix",
+    "named": false
+  },
+  {
     "type": "is_verbose",
     "named": false
   },
   {
     "type": "is_watching",
+    "named": false
+  },
+  {
+    "type": "is_windows",
     "named": false
   },
   {
@@ -1514,6 +1626,10 @@
   },
   {
     "type": "text",
+    "named": true
+  },
+  {
+    "type": "timeout_value",
     "named": true
   },
   {

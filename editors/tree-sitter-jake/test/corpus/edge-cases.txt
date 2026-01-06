@@ -1,147 +1,10 @@
 ================================================================================
-if directive
+@needs with comma separation
 ================================================================================
 
-task build:
-    @if env(DEBUG)
-        echo "debug mode"
-    @end
-
---------------------------------------------------------------------------------
-
-(source_file
-  (recipe
-    (recipe_header
-      name: (identifier))
-    (recipe_body
-      (body_directive
-        (if_directive
-          condition: (condition_expression
-            (condition_function
-              arguments: (sequence
-                (expression
-                  (value
-                    (identifier))))))))
-      (command_line
-        (text))
-      (body_directive
-        (end_directive)))))
-
-================================================================================
-if else directive
-================================================================================
-
-task build:
-    @if env(DEBUG)
-        echo "debug"
-    @else
-        echo "release"
-    @end
-
---------------------------------------------------------------------------------
-
-(source_file
-  (recipe
-    (recipe_header
-      name: (identifier))
-    (recipe_body
-      (body_directive
-        (if_directive
-          condition: (condition_expression
-            (condition_function
-              arguments: (sequence
-                (expression
-                  (value
-                    (identifier))))))))
-      (command_line
-        (text))
-      (body_directive
-        (else_directive))
-      (command_line
-        (text))
-      (body_directive
-        (end_directive)))))
-
-================================================================================
-each directive
-================================================================================
-
-task build:
-    @each foo bar baz
-        echo {{$1}}
-    @end
-
---------------------------------------------------------------------------------
-
-(source_file
-  (recipe
-    (recipe_header
-      name: (identifier))
-    (recipe_body
-      (body_directive
-        (each_directive
-          (identifier)
-          (identifier)
-          (identifier)))
-      (command_line
-        (text)
-        (interpolation
-          (expression
-            (value
-              (shell_variable)))))
-      (body_directive
-        (end_directive)))))
-
-================================================================================
-cd directive
-================================================================================
-
-task build:
-    @cd src
-        make
-
---------------------------------------------------------------------------------
-
-(source_file
-  (recipe
-    (recipe_header
-      name: (identifier))
-    (recipe_body
-      (body_directive
-        (cd_directive
-          path: (file_path)))
-      (command_line
-        (text)))))
-
-================================================================================
-cache directive
-================================================================================
-
-task build:
-    @cache src/*.c Makefile
-        make
-
---------------------------------------------------------------------------------
-
-(source_file
-  (recipe
-    (recipe_header
-      name: (identifier))
-    (recipe_body
-      (body_directive
-        (cache_directive
-          path: (glob_pattern)
-          path: (file_path)))
-      (command_line
-        (text)))))
-
-================================================================================
-needs directive in body
-================================================================================
-
-task build:
-    @needs gcc make
-    make
+task coverage:
+    @needs zig, kcov
+    echo test
 
 --------------------------------------------------------------------------------
 
@@ -158,12 +21,34 @@ task build:
         (text)))))
 
 ================================================================================
-confirm directive
+@needs with hint and fallback combined
 ================================================================================
 
-task deploy:
-    @confirm
-    kubectl apply -f deploy.yaml
+@needs tracy-capture "Install: brew install tracy" -> _install-tracy
+task tracy:
+    echo test
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_attribute
+      (identifier)
+      (string)
+      (identifier))
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+@cd with path containing slash
+================================================================================
+
+task e2e:
+    @cd tests/e2e
+    echo test
 
 --------------------------------------------------------------------------------
 
@@ -173,58 +58,17 @@ task deploy:
       name: (identifier))
     (recipe_body
       (body_directive
-        (confirm_directive))
+        (cd_directive
+          path: (file_path)))
       (command_line
         (text)))))
 
 ================================================================================
-ignore directive
+@launch with file path
 ================================================================================
 
-task clean:
-    @ignore
-    rm -rf build
-
---------------------------------------------------------------------------------
-
-(source_file
-  (recipe
-    (recipe_header
-      name: (identifier))
-    (recipe_body
-      (body_directive
-        (ignore_directive))
-      (command_line
-        (text)))))
-
-================================================================================
-timeout directive
-================================================================================
-
-task slow:
-    @timeout 30s
-    sleep 25
-
---------------------------------------------------------------------------------
-
-(source_file
-  (recipe
-    (recipe_header
-      name: (identifier))
-    (recipe_body
-      (body_directive
-        (timeout_directive
-          duration: (timeout_value)))
-      (command_line
-        (text)))))
-
-================================================================================
-launch directive
-================================================================================
-
-task docs:
-    @launch "https://example.com"
-    echo done
+task open:
+    @launch coverage-out/index.html
 
 --------------------------------------------------------------------------------
 
@@ -235,6 +79,189 @@ task docs:
     (recipe_body
       (body_directive
         (launch_directive
-          target: (string)))
+          target: (file_path))))))
+
+================================================================================
+@cache with mixed glob and file patterns
+================================================================================
+
+task build:
+    @cache src/**/*.zig build.zig.zon Jakefile
+    zig build
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (cache_directive
+          path: (glob_pattern)
+          path: (file_path)
+          path: (file_path)))
       (command_line
         (text)))))
+
+================================================================================
+@watch with multiple patterns
+================================================================================
+
+task dev:
+    @watch src/**/*.zig jake/*.jake Jakefile
+    zig build
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (watch_directive
+          pattern: (glob_pattern)
+          pattern: (glob_pattern)
+          pattern: (file_path)))
+      (command_line
+        (text)))))
+
+================================================================================
+namespaced dependency
+================================================================================
+
+task deploy: [release:build, test:integration]
+    ./deploy.sh
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier)
+      (dependencies
+        (dependency
+          name: (dependency_name))
+        (dependency
+          name: (dependency_name))))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+condition with quoted path
+================================================================================
+
+task check:
+    @if exists("src/main.zig")
+        echo "found"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (if_directive
+          condition: (condition_expression
+            (condition_function
+              arguments: (sequence
+                (expression
+                  (value
+                    (string))))))))
+      (command_line
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+complex @needs with multiple items
+================================================================================
+
+task profile:
+    @needs samply zig make
+    samply record ./app
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (body_needs_directive
+          (identifier)
+          (identifier)
+          (identifier)))
+      (command_line
+        (text)))))
+
+================================================================================
+@each with numbers
+================================================================================
+
+task sizes:
+    @each 10 50 100
+        echo "Size: {{item}}"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (each_directive
+          (number)
+          (number)
+          (number)))
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (identifier))))
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+backtick command with interpolation
+================================================================================
+
+GIT_SHA = `git rev-parse --short HEAD`
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (external_command
+          (command_body))))))
+
+================================================================================
+triple backtick command
+================================================================================
+
+LONG_CMD = ```
+git log --oneline
+```
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (external_command
+          (command_body))))))

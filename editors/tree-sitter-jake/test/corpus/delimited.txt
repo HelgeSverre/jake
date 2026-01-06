@@ -108,3 +108,22 @@ GIT_SHA = `git rev-parse HEAD`
       (value
         (external_command
           (command_body))))))
+
+================================================================================
+interpolation in string assignment
+================================================================================
+
+MSG = "Hello {{name}}!"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (string
+          (interpolation
+            (expression
+              (value
+                (identifier)))))))))

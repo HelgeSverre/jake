@@ -1,0 +1,1030 @@
+================================================================================
+import with namespace
+================================================================================
+
+@import "jake/build.jake" as build
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_statement
+    path: (string)
+    namespace: (identifier)))
+
+================================================================================
+multiple imports
+================================================================================
+
+@import "jake/build.jake"
+@import "jake/dev.jake" as dev
+@import "jake/test.jake" as test
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_statement
+    path: (string))
+  (import_statement
+    path: (string)
+    namespace: (identifier))
+  (import_statement
+    path: (string)
+    namespace: (identifier)))
+
+================================================================================
+dotenv directive
+================================================================================
+
+@dotenv
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (global_directive
+    (dotenv_directive)))
+
+================================================================================
+before and after hooks
+================================================================================
+
+@before build echo "PRE-BUILD"
+@after build echo "POST-BUILD"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (global_directive
+    (global_hook
+      target: (identifier)
+      command: (hook_command
+        (text))))
+  (global_directive
+    (global_hook
+      target: (identifier)
+      command: (hook_command
+        (text)))))
+
+================================================================================
+on_error global hook
+================================================================================
+
+@on_error echo "GLOBAL ERROR"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (global_directive
+    (global_hook
+      command: (hook_command
+        (text)))))
+
+================================================================================
+variable assignment
+================================================================================
+
+version = "2.0.0"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (string)))))
+
+================================================================================
+unquoted variable assignment
+================================================================================
+
+targets = "x86_64-linux aarch64-linux"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (string)))))
+
+================================================================================
+task with group and description
+================================================================================
+
+@group build
+@desc "Build the project"
+task build:
+    make
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_attribute
+      name: (identifier))
+    (recipe_attribute
+      text: (string))
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+task with multiple dependencies
+================================================================================
+
+task release: [clean, build, test]
+    echo "Releasing"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier)
+      (dependencies
+        (dependency
+          name: (dependency_name))
+        (dependency
+          name: (dependency_name))
+        (dependency
+          name: (dependency_name))))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+file recipe simple
+================================================================================
+
+file output:
+    echo "compiling"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+task with @needs in body
+================================================================================
+
+task build:
+    @needs zig
+    zig build
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (body_needs_directive
+          (identifier)))
+      (command_line
+        (text)))))
+
+================================================================================
+task with @cache directive
+================================================================================
+
+task build:
+    @cache src/*.zig build.zig
+    zig build
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (cache_directive
+          path: (glob_pattern)
+          path: (file_path)))
+      (command_line
+        (text)))))
+
+================================================================================
+task with @watch directive
+================================================================================
+
+task dev:
+    @watch src/*.zig build.zig
+    zig build
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (watch_directive
+          pattern: (glob_pattern)
+          pattern: (file_path)))
+      (command_line
+        (text)))))
+
+================================================================================
+task with @pre and @post hooks in body
+================================================================================
+
+task build:
+    @pre echo "Starting..."
+    zig build
+    @post echo "Done!"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (body_hook
+          command: (text)))
+      (command_line
+        (text))
+      (body_directive
+        (body_hook
+          command: (text))))))
+
+================================================================================
+task with @ignore directive
+================================================================================
+
+task clean:
+    @ignore
+    rm -rf build
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (ignore_directive))
+      (command_line
+        (text)))))
+
+================================================================================
+task with @cd directive
+================================================================================
+
+task e2e:
+    @cd tests
+    ./run-tests.sh
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (cd_directive
+          path: (file_path)))
+      (command_line
+        (text)))))
+
+================================================================================
+task with @shell directive
+================================================================================
+
+task with-shell:
+    @shell bash
+    echo "Running in bash"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (shell_directive
+          shell: (identifier)))
+      (command_line
+        (text)))))
+
+================================================================================
+task with @confirm directive with message
+================================================================================
+
+task dangerous:
+    @confirm "Are you sure?"
+    echo "Proceeding"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (confirm_directive
+          message: (text)))
+      (command_line
+        (text)))))
+
+================================================================================
+simple if else end
+================================================================================
+
+task deploy:
+    @if env(DEBUG)
+        echo "debug"
+    @else
+        echo "release"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (if_directive
+          condition: (condition_expression
+            (condition_function
+              arguments: (sequence
+                (expression
+                  (value
+                    (identifier))))))))
+      (command_line
+        (text))
+      (body_directive
+        (else_directive))
+      (command_line
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+if elif else
+================================================================================
+
+task deploy:
+    @if eq(mode, "prod")
+        echo "production"
+    @elif eq(mode, "staging")
+        echo "staging"
+    @else
+        echo "dev"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (if_directive
+          condition: (condition_expression
+            (condition_function
+              arguments: (sequence
+                (expression
+                  (value
+                    (identifier)))
+                (expression
+                  (value
+                    (string))))))))
+      (command_line
+        (text))
+      (body_directive
+        (elif_directive
+          condition: (condition_expression
+            (condition_function
+              arguments: (sequence
+                (expression
+                  (value
+                    (identifier)))
+                (expression
+                  (value
+                    (string))))))))
+      (command_line
+        (text))
+      (body_directive
+        (else_directive))
+      (command_line
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+nested if simple
+================================================================================
+
+task nested:
+    @if exists(/bin)
+        echo "A"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (if_directive
+          condition: (condition_expression
+            (condition_function
+              arguments: (sequence
+                (expression
+                  (value
+                    (identifier))))))))
+      (command_line
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+command condition function
+================================================================================
+
+task check:
+    @if command(git)
+        echo "git found"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (if_directive
+          condition: (condition_expression
+            (condition_function
+              arguments: (sequence
+                (expression
+                  (value
+                    (identifier))))))))
+      (command_line
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+platform condition
+================================================================================
+
+task install:
+    @if is_macos()
+        brew install pkg
+    @elif is_linux()
+        apt install pkg
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (if_directive
+          condition: (condition_expression
+            (condition_function))))
+      (command_line
+        (text))
+      (body_directive
+        (elif_directive
+          condition: (condition_expression
+            (condition_function))))
+      (command_line
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+each directive with items
+================================================================================
+
+task process:
+    @each apple banana cherry
+        echo "Item: {{item}}"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (each_directive
+          (identifier)
+          (identifier)
+          (identifier)))
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (identifier))))
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+each with interpolated variable
+================================================================================
+
+task build-all:
+    @each {{targets}}
+        echo "Building {{item}}"
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (each_directive
+          (interpolation
+            (expression
+              (value
+                (identifier))))))
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (identifier))))
+        (text))
+      (body_directive
+        (end_directive)))))
+
+================================================================================
+builtin function in interpolation
+================================================================================
+
+task install:
+    cp bin {{local_bin("jake")}}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (function_call
+                name: (identifier)
+                arguments: (sequence
+                  (expression
+                    (value
+                      (string))))))))))))
+
+================================================================================
+home function
+================================================================================
+
+task setup:
+    mkdir -p {{home()}}/.local/bin
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)
+        (interpolation
+          (expression
+            (value
+              (function_call
+                name: (identifier)))))
+        (text)))))
+
+================================================================================
+alias attribute
+================================================================================
+
+@alias b
+task build:
+    make
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_attribute
+      name: (identifier))
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+quiet attribute
+================================================================================
+
+@quiet
+task silent:
+    echo "silent"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_attribute)
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+only-os attribute
+================================================================================
+
+@only-os macos
+task mac-only:
+    brew install pkg
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_attribute
+      platform: (identifier))
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+needs attribute with hint
+================================================================================
+
+@needs samply "Install with: cargo install samply"
+task profile:
+    samply record ./app
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_attribute
+      (identifier)
+      (string))
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+needs attribute with fallback task
+================================================================================
+
+@needs tracy-capture -> _install-tracy
+task tracy:
+    tracy-capture -o trace.tracy
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_attribute
+      (identifier)
+      (identifier))
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+private task underscore prefix
+================================================================================
+
+task _private:
+    echo "internal"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+default directive
+================================================================================
+
+@default
+task main:
+    echo "default"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (global_directive
+    (default_directive))
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+require directive
+================================================================================
+
+@require API_KEY DATABASE_URL
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (global_directive
+    (require_directive
+      variable: (identifier)
+      variable: (identifier))))
+
+================================================================================
+export directive with value
+================================================================================
+
+@export NODE_ENV = "production"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (global_directive
+    (export_directive
+      name: (identifier)
+      value: (expression
+        (value
+          (string))))))
+
+================================================================================
+before hook with interpolation
+================================================================================
+
+@before build echo "Building v{{version}}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (global_directive
+    (global_hook
+      target: (identifier)
+      command: (hook_command
+        (text)))))
+
+================================================================================
+complex command with shell variable
+================================================================================
+
+task show-env:
+    echo "Home: $HOME"
+    echo "Path: ${PATH}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text))
+      (command_line
+        (text)))))
+
+================================================================================
+command prefix combinations
+================================================================================
+
+task quiet-task:
+    @echo "silent"
+    -rm -f temp
+    @-ignore errors silently
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (command_prefix)
+        (text))
+      (command_line
+        (command_prefix)
+        (text))
+      (command_line
+        (command_prefix)
+        (text)))))
+
+================================================================================
+multiple attributes on recipe
+================================================================================
+
+@group release
+@only-os linux
+@desc "Linux release build"
+task linux-release:
+    make release
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_attribute
+      name: (identifier))
+    (recipe_attribute
+      platform: (identifier))
+    (recipe_attribute
+      text: (string))
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+dependency with colon format
+================================================================================
+
+task deploy: [build:release, test:integration]
+    ./deploy.sh
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier)
+      (dependencies
+        (dependency
+          name: (dependency_name))
+        (dependency
+          name: (dependency_name))))
+    (recipe_body
+      (command_line
+        (text)))))
+
+================================================================================
+task with body require
+================================================================================
+
+task deploy:
+    @require VERSION
+    echo "Deploying $VERSION"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (body_require_directive
+          variable: (identifier)))
+      (command_line
+        (text)))))
+
+================================================================================
+body export directive
+================================================================================
+
+task setup:
+    @export PATH = "{{home()}}/.local/bin:$PATH"
+    echo "Path updated"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (recipe
+    (recipe_header
+      name: (identifier))
+    (recipe_body
+      (body_directive
+        (body_export_directive
+          name: (identifier)
+          value: (expression
+            (value
+              (string
+                (interpolation
+                  (expression
+                    (value
+                      (function_call
+                        name: (identifier))))))))))
+      (command_line
+        (text)))))
+
+================================================================================
+full integration example
+================================================================================
+
+version = "2.0.0"
+
+@before build echo "Starting build"
+@on_error echo "Build failed"
+
+@desc "Build project"
+task build: [lint, test]
+    @needs make
+    @if env(DEBUG)
+        make debug
+    @else
+        make release
+    @end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment
+    name: (identifier)
+    value: (expression
+      (value
+        (string))))
+  (global_directive
+    (global_hook
+      target: (identifier)
+      command: (hook_command
+        (text))))
+  (global_directive
+    (global_hook
+      command: (hook_command
+        (text))))
+  (recipe
+    (recipe_attribute
+      text: (string))
+    (recipe_header
+      name: (identifier)
+      (dependencies
+        (dependency
+          name: (dependency_name))
+        (dependency
+          name: (dependency_name))))
+    (recipe_body
+      (body_directive
+        (body_needs_directive
+          (identifier)))
+      (body_directive
+        (if_directive
+          condition: (condition_expression
+            (condition_function
+              arguments: (sequence
+                (expression
+                  (value
+                    (identifier))))))))
+      (command_line
+        (text))
+      (body_directive
+        (else_directive))
+      (command_line
+        (text))
+      (body_directive
+        (end_directive)))))

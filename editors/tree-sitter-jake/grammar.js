@@ -282,6 +282,7 @@ module.exports = grammar({
         seq("@quiet", $._newline),
         seq(choice("@only", "@only-os", "@platform"), repeat1(field("platform", $.identifier)), $._newline),
         seq("@needs", repeat1(choice(
+          seq($.identifier, $.string, "->", $.identifier),  // cmd "hint" -> install_task
           seq($.identifier, "->", $.identifier),  // cmd -> install_task
           seq($.identifier, $.string),             // cmd "install hint"
           $.identifier,                            // just cmd
@@ -360,6 +361,8 @@ module.exports = grammar({
         $.confirm_directive,
         $.ignore_directive,
         $.shell_directive,
+        $.timeout_directive,
+        $.launch_directive,
         $.body_needs_directive,
         $.body_require_directive,
         $.body_export_directive,
@@ -389,15 +392,15 @@ module.exports = grammar({
 
     // @cd path
     cd_directive: ($) =>
-      seq("@cd", field("path", choice($.string, $.identifier, $.interpolation))),
+      seq("@cd", field("path", choice($.string, $.file_path, $.interpolation))),
 
     // @cache file1 file2
     cache_directive: ($) =>
-      seq("@cache", repeat1(field("path", choice($.string, $.identifier, $.glob_pattern)))),
+      seq("@cache", repeat1(field("path", choice($.string, $.glob_pattern, $.file_path)))),
 
     // @watch pattern
     watch_directive: ($) =>
-      seq("@watch", repeat1(field("pattern", choice($.string, $.identifier, $.glob_pattern)))),
+      seq("@watch", repeat1(field("pattern", choice($.string, $.glob_pattern, $.file_path)))),
 
     // @confirm "message" or @confirm unquoted message with {{interpolation}}
     confirm_directive: ($) =>
@@ -413,13 +416,28 @@ module.exports = grammar({
     shell_directive: ($) =>
       seq("@shell", field("shell", $.identifier)),
 
+    // @timeout 30s or @timeout 5m or @timeout 1h
+    timeout_directive: ($) =>
+      seq("@timeout", field("duration", $.timeout_value)),
+
+    // Timeout value with unit: 30s, 5m, 1h
+    timeout_value: (_) => /\d+[smh]/,
+
+    // @launch url or @launch file
+    launch_directive: ($) =>
+      seq("@launch", field("target", choice($.string, $.file_path, $.interpolation))),
+
     // @needs cmd or @needs cmd "hint" or @needs cmd -> task (inside recipe body)
+    // Supports both space-separated and comma-separated: @needs zig make or @needs zig, make
     body_needs_directive: ($) =>
-      seq("@needs", repeat1(choice(
+      seq("@needs", $._needs_item, repeat(seq(optional(","), $._needs_item))),
+
+    _needs_item: ($) =>
+      choice(
         seq($.identifier, "->", $.identifier),  // cmd -> install_task
         seq($.identifier, $.string),             // cmd "install hint"
         $.identifier,                            // just cmd
-      ))),
+      ),
 
     // @require VAR (inside recipe body)
     body_require_directive: ($) =>
@@ -452,8 +470,12 @@ module.exports = grammar({
     condition_function: ($) =>
       seq(
         field("name", choice(
-          "env", "exists", "eq", "neq",
+          // Environment and file checks
+          "env", "exists", "eq", "neq", "command",
+          // Runtime state checks
           "is_watching", "is_dry_run", "is_verbose",
+          // Platform checks
+          "is_macos", "is_linux", "is_windows", "is_unix", "is_platform",
         )),
         "(",
         optional(field("arguments", $.sequence)),
@@ -462,6 +484,9 @@ module.exports = grammar({
 
     // Glob pattern (contains * or **)
     glob_pattern: (_) => /[a-zA-Z0-9_.*\/\-]+\*[a-zA-Z0-9_.*\/\-]*/,
+
+    // File path (for @cache, @watch - can contain dots, slashes, etc.)
+    file_path: (_) => /[a-zA-Z0-9_.\/-]+/,
 
     // Command line in recipe body
     command_line: ($) =>
@@ -502,12 +527,12 @@ module.exports = grammar({
         /'[^']*'/,
       ),
 
-    _raw_string_indented: (_) => seq("'''", repeat(/./), "'''"),
-    _string: ($) => seq('"', repeat(choice($.escape_sequence, /[^\\"]+/)), '"'),
-    // We need try two separate munches so neither escape sequences nor
-    // potential closing quotes get eaten.
+    _raw_string_indented: (_) => seq("'''", repeat(/[^']+|'[^']|''[^']/), "'''"),
+    // Double-quoted strings support interpolation and escape sequences
+    _string: ($) => seq('"', repeat(choice($.escape_sequence, $.interpolation, /[^\\"{]+/)), '"'),
+    // Indented strings also support interpolation
     _string_indented: ($) =>
-      seq('"""', repeat(choice($.escape_sequence, /[^\\]?[^\\"]+/)), '"""'),
+      seq('"""', repeat(choice($.escape_sequence, $.interpolation, /[^\\"{]+/)), '"""'),
 
     escape_sequence: (_) => ESCAPE_SEQUENCE,
 

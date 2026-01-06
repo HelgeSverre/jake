@@ -1176,6 +1176,27 @@
                         "name": "identifier"
                       },
                       {
+                        "type": "SYMBOL",
+                        "name": "string"
+                      },
+                      {
+                        "type": "STRING",
+                        "value": "->"
+                      },
+                      {
+                        "type": "SYMBOL",
+                        "name": "identifier"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "SEQ",
+                    "members": [
+                      {
+                        "type": "SYMBOL",
+                        "name": "identifier"
+                      },
+                      {
                         "type": "STRING",
                         "value": "->"
                       },
@@ -1575,6 +1596,14 @@
         },
         {
           "type": "SYMBOL",
+          "name": "timeout_directive"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "launch_directive"
+        },
+        {
+          "type": "SYMBOL",
           "name": "body_needs_directive"
         },
         {
@@ -1685,7 +1714,7 @@
               },
               {
                 "type": "SYMBOL",
-                "name": "identifier"
+                "name": "file_path"
               },
               {
                 "type": "SYMBOL",
@@ -1717,11 +1746,11 @@
                 },
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "glob_pattern"
                 },
                 {
                   "type": "SYMBOL",
-                  "name": "glob_pattern"
+                  "name": "file_path"
                 }
               ]
             }
@@ -1750,11 +1779,11 @@
                 },
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "glob_pattern"
                 },
                 {
                   "type": "SYMBOL",
-                  "name": "glob_pattern"
+                  "name": "file_path"
                 }
               ]
             }
@@ -1833,6 +1862,57 @@
         }
       ]
     },
+    "timeout_directive": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "@timeout"
+        },
+        {
+          "type": "FIELD",
+          "name": "duration",
+          "content": {
+            "type": "SYMBOL",
+            "name": "timeout_value"
+          }
+        }
+      ]
+    },
+    "timeout_value": {
+      "type": "PATTERN",
+      "value": "\\d+[smh]"
+    },
+    "launch_directive": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "@launch"
+        },
+        {
+          "type": "FIELD",
+          "name": "target",
+          "content": {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "string"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "file_path"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "interpolation"
+              }
+            ]
+          }
+        }
+      ]
+    },
     "body_needs_directive": {
       "type": "SEQ",
       "members": [
@@ -1841,46 +1921,71 @@
           "value": "@needs"
         },
         {
-          "type": "REPEAT1",
+          "type": "SYMBOL",
+          "name": "_needs_item"
+        },
+        {
+          "type": "REPEAT",
           "content": {
-            "type": "CHOICE",
+            "type": "SEQ",
             "members": [
               {
-                "type": "SEQ",
+                "type": "CHOICE",
                 "members": [
-                  {
-                    "type": "SYMBOL",
-                    "name": "identifier"
-                  },
                   {
                     "type": "STRING",
-                    "value": "->"
+                    "value": ","
                   },
                   {
-                    "type": "SYMBOL",
-                    "name": "identifier"
-                  }
-                ]
-              },
-              {
-                "type": "SEQ",
-                "members": [
-                  {
-                    "type": "SYMBOL",
-                    "name": "identifier"
-                  },
-                  {
-                    "type": "SYMBOL",
-                    "name": "string"
+                    "type": "BLANK"
                   }
                 ]
               },
               {
                 "type": "SYMBOL",
-                "name": "identifier"
+                "name": "_needs_item"
               }
             ]
           }
+        }
+      ]
+    },
+    "_needs_item": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "identifier"
+            },
+            {
+              "type": "STRING",
+              "value": "->"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "identifier"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "identifier"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "string"
+            }
+          ]
+        },
+        {
+          "type": "SYMBOL",
+          "name": "identifier"
         }
       ]
     },
@@ -2028,6 +2133,10 @@
               },
               {
                 "type": "STRING",
+                "value": "command"
+              },
+              {
+                "type": "STRING",
                 "value": "is_watching"
               },
               {
@@ -2037,6 +2146,26 @@
               {
                 "type": "STRING",
                 "value": "is_verbose"
+              },
+              {
+                "type": "STRING",
+                "value": "is_macos"
+              },
+              {
+                "type": "STRING",
+                "value": "is_linux"
+              },
+              {
+                "type": "STRING",
+                "value": "is_windows"
+              },
+              {
+                "type": "STRING",
+                "value": "is_unix"
+              },
+              {
+                "type": "STRING",
+                "value": "is_platform"
               }
             ]
           }
@@ -2070,6 +2199,10 @@
     "glob_pattern": {
       "type": "PATTERN",
       "value": "[a-zA-Z0-9_.*\\/\\-]+\\*[a-zA-Z0-9_.*\\/\\-]*"
+    },
+    "file_path": {
+      "type": "PATTERN",
+      "value": "[a-zA-Z0-9_.\\/-]+"
     },
     "command_line": {
       "type": "SEQ",
@@ -2232,7 +2365,7 @@
           "type": "REPEAT",
           "content": {
             "type": "PATTERN",
-            "value": "."
+            "value": "[^']+|'[^']|''[^']"
           }
         },
         {
@@ -2258,8 +2391,12 @@
                 "name": "escape_sequence"
               },
               {
+                "type": "SYMBOL",
+                "name": "interpolation"
+              },
+              {
                 "type": "PATTERN",
-                "value": "[^\\\\\"]+"
+                "value": "[^\\\\\"{]+"
               }
             ]
           }
@@ -2287,8 +2424,12 @@
                 "name": "escape_sequence"
               },
               {
+                "type": "SYMBOL",
+                "name": "interpolation"
+              },
+              {
                 "type": "PATTERN",
-                "value": "[^\\\\]?[^\\\\\"]+"
+                "value": "[^\\\\\"{]+"
               }
             ]
           }

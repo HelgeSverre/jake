@@ -19,11 +19,16 @@
 (dependency
   name: (dependency_name) @function.call)
 
-; Function calls in expressions
+; Built-in functions (known list)
 (function_call
-  name: (identifier) @function.builtin)
+  name: (identifier) @function.builtin
+  (#match? @function.builtin "^(uppercase|lowercase|trim|dirname|basename|extension|without_extension|without_extensions|absolute_path|home|local_bin|shell_config|launch)$"))
 
-; Condition functions
+; Other function calls
+(function_call
+  name: (identifier) @function)
+
+; Condition functions (all are built-in)
 (condition_function
   name: _ @function.builtin)
 
@@ -35,6 +40,12 @@
 (value
   (identifier) @variable)
 
+; Variables inside interpolation
+(interpolation
+  (expression
+    (value
+      (identifier) @variable)))
+
 ; Parameters
 (parameter
   name: (identifier) @variable.parameter)
@@ -44,12 +55,16 @@
   path: (string) @string
   namespace: (identifier) @namespace)
 
-; Recipe attributes (directives above recipes)
-(recipe_attribute
-  name: (identifier) @constant)
+; Recipe metadata directives
+(recipe_attribute) @keyword.directive
 
-; Shell variables
-(shell_variable) @variable.builtin
+; Shell variables - environment ($VAR, ${VAR})
+((shell_variable) @variable.builtin
+  (#match? @variable.builtin "^\\$[A-Za-z_]"))
+
+; Shell variables - positional ($1, $2, $@)
+((shell_variable) @variable.parameter
+  (#match? @variable.parameter "^\\$[0-9@]"))
 
 ; Operators
 [
@@ -82,8 +97,14 @@
 ; Numbers
 (number) @constant.numeric
 
+; Timeout values
+(timeout_value) @constant.numeric
+
 ; Glob patterns
 (glob_pattern) @string.special
+
+; File paths
+(file_path) @string.special.path
 
 ; Shebang
 (shebang) @keyword.directive
@@ -91,19 +112,24 @@
 ; Errors
 (numeric_error) @error
 
-; Directive nodes - highlight the whole directive
-(if_directive) @keyword.control
-(elif_directive) @keyword.control
-(else_directive) @keyword.control
-(end_directive) @keyword.control
-(each_directive) @keyword.control
+; Directive keywords - control flow
+(if_directive) @keyword.control.conditional
+(elif_directive) @keyword.control.conditional
+(else_directive) @keyword.control.conditional
+(end_directive) @keyword.control.conditional
 
+; Directive keywords - loops
+(each_directive) @keyword.control.repeat
+
+; Directive keywords - other body directives
 (cd_directive) @keyword.directive
 (cache_directive) @keyword.directive
 (watch_directive) @keyword.directive
 (confirm_directive) @keyword.directive
 (ignore_directive) @keyword.directive
 (shell_directive) @keyword.directive
+(timeout_directive) @keyword.directive
+(launch_directive) @keyword.directive
 (body_needs_directive) @keyword.directive
 (body_require_directive) @keyword.directive
 (body_export_directive) @keyword.directive
