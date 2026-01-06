@@ -10,6 +10,9 @@ const prompt_mod = @import("prompt.zig");
 const parser = @import("parser.zig");
 const jakefile_index = @import("jakefile_index.zig");
 
+/// Output callback function type for streaming command output (web UI)
+pub const OutputCallback = *const fn (ctx: *anyopaque, line: []const u8, is_stderr: bool) void;
+
 /// Shared execution context passed through the app lifecycle.
 pub const Context = struct {
     // CLI flags
@@ -25,6 +28,16 @@ pub const Context = struct {
     // Positional arguments for recipe parameters ($1, $2, etc.)
     positional_args: []const []const u8 = &.{},
 
+    // Cancellation support for web UI
+    cancellation_flag: ?*std.atomic.Value(bool) = null,
+
+    // Current child process ID for killing (web UI cancellation)
+    current_child_pid: ?*std.atomic.Value(i32) = null,
+
+    // Output streaming callback for web UI (captures stdout/stderr)
+    output_callback: ?OutputCallback = null,
+    output_callback_ctx: ?*anyopaque = null,
+
     /// Initialize with default values and auto-detected color settings
     pub fn init() Context {
         return .{
@@ -37,6 +50,41 @@ pub const Context = struct {
         return .{
             .color = color_mod.withEnabled(color_enabled),
         };
+    }
+
+    /// Check if execution has been cancelled
+    pub fn isCancelled(self: *const Context) bool {
+        if (self.cancellation_flag) |flag| {
+            return !flag.load(.acquire);
+        }
+        return false;
+    }
+
+    /// Kill the current child process (for cancellation)
+    pub fn killCurrentChild(self: *const Context) void {
+        if (self.current_child_pid) |pid_atomic| {
+            const pid = pid_atomic.load(.acquire);
+            if (pid > 0) {
+                // Kill the process group to ensure all children are terminated
+                std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
+                // Also try killing just the process
+                std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+            }
+        }
+    }
+
+    /// Emit output line via callback (for web UI streaming)
+    pub fn emitOutput(self: *const Context, line: []const u8, is_stderr: bool) void {
+        if (self.output_callback) |callback| {
+            if (self.output_callback_ctx) |ctx| {
+                callback(ctx, line, is_stderr);
+            }
+        }
+    }
+
+    /// Check if output should be captured (web UI mode)
+    pub fn hasOutputCallback(self: *const Context) bool {
+        return self.output_callback != null;
     }
 };
 

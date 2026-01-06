@@ -55,7 +55,7 @@ pub const Flag = struct {
 };
 
 // Category names for help output grouping
-pub const categories = [_][]const u8{ "General", "Output", "Execution", "File", "Shell" };
+pub const categories = [_][]const u8{ "General", "Output", "Execution", "File", "Shell", "Web" };
 
 // Jake's flag definitions - single source of truth
 // Order doesn't matter - setFlag uses name-based matching
@@ -84,6 +84,9 @@ pub const flags = [_]Flag{
     .{ .short = null, .long = "completions", .desc = "Print shell completion script", .takes_value = .optional, .value_name = "SHELL", .category = "Shell", .choices = &.{ "bash", "zsh", "fish" } },
     .{ .short = null, .long = "install", .desc = "Install completions to user directory", .category = "Shell" },
     .{ .short = null, .long = "uninstall", .desc = "Remove completions and config", .category = "Shell" },
+    // Web UI
+    .{ .short = null, .long = "web", .desc = "Start web UI server", .category = "Web" },
+    .{ .short = null, .long = "port", .desc = "Port for web UI server", .takes_value = .required, .value_name = "PORT", .default_display = "8420", .validator = .positive_integer, .requires = "web", .category = "Web" },
 };
 
 // ============================================================================
@@ -196,6 +199,8 @@ pub const Args = struct {
     fmt: bool = false, // Format Jakefile
     check: bool = false, // Check formatting without writing
     dump: bool = false, // Output formatted Jakefile to stdout
+    web: bool = false, // Start web UI server
+    web_port: ?u16 = null, // Port for web UI (default 8420)
 
     /// Free allocated memory (positional args slice)
     pub fn deinit(self: *Args, allocator: std.mem.Allocator) void {
@@ -517,6 +522,8 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                 result.check = true;
             } else if (std.mem.eql(u8, name, "dump")) {
                 result.dump = true;
+            } else if (std.mem.eql(u8, name, "web")) {
+                result.web = true;
             }
         },
         .required => {
@@ -533,6 +540,10 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                 result.jakefile = value;
             } else if (std.mem.eql(u8, name, "show")) {
                 result.show = value;
+            } else if (std.mem.eql(u8, name, "port")) {
+                result.web_port = std.fmt.parseInt(u16, value, 10) catch {
+                    return error.InvalidValue;
+                };
             }
         },
         .optional => {
