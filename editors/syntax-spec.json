@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jakefile.dev/schemas/syntax-spec.json",
+  "title": "Jake Syntax Specification",
+  "description": "Canonical reference for Jake syntax elements. Use this to ensure consistency across all editor plugins.",
+  "version": "0.1.0",
+  
+  "builtinFunctions": {
+    "description": "Built-in functions available in Jake expressions (27 total)",
+    "categories": {
+      "path": {
+        "description": "Path manipulation functions",
+        "functions": [
+          "dirname",
+          "basename",
+          "extension",
+          "without_extension",
+          "without_extensions",
+          "absolute_path",
+          "abs_path"
+        ]
+      },
+      "string": {
+        "description": "String manipulation functions",
+        "functions": [
+          "uppercase",
+          "lowercase",
+          "trim"
+        ]
+      },
+      "system": {
+        "description": "System path and utility functions",
+        "functions": [
+          "home",
+          "local_bin",
+          "shell_config",
+          "launch"
+        ]
+      },
+      "condition": {
+        "description": "Condition/check functions for @if directives",
+        "functions": [
+          "env",
+          "exists",
+          "eq",
+          "neq",
+          "command"
+        ]
+      },
+      "runtime": {
+        "description": "Runtime state check functions",
+        "functions": [
+          "is_watching",
+          "is_dry_run",
+          "is_verbose"
+        ]
+      },
+      "platform": {
+        "description": "Platform detection functions",
+        "functions": [
+          "is_platform",
+          "is_macos",
+          "is_linux",
+          "is_windows",
+          "is_unix"
+        ]
+      },
+      "loop": {
+        "description": "Loop iteration helpers",
+        "functions": [
+          "item"
+        ]
+      }
+    },
+    "all": [
+      "dirname", "basename", "extension", "without_extension", "without_extensions",
+      "absolute_path", "abs_path", "uppercase", "lowercase", "trim",
+      "home", "local_bin", "shell_config", "launch",
+      "env", "exists", "eq", "neq", "command",
+      "is_watching", "is_dry_run", "is_verbose",
+      "is_platform", "is_macos", "is_linux", "is_windows", "is_unix",
+      "item"
+    ]
+  },
+  
+  "directives": {
+    "description": "All Jake directives organized by context",
+    "global": {
+      "description": "Top-level directives (not inside recipes)",
+      "directives": [
+        "@import",
+        "@dotenv",
+        "@require",
+        "@export",
+        "@default",
+        "@pre",
+        "@post",
+        "@on_error",
+        "@before",
+        "@after"
+      ]
+    },
+    "recipeAttribute": {
+      "description": "Directives that appear before recipe definitions (attributes)",
+      "directives": [
+        "@group",
+        "@desc",
+        "@description",
+        "@alias",
+        "@quiet",
+        "@only",
+        "@only-os",
+        "@platform",
+        "@needs"
+      ]
+    },
+    "body": {
+      "description": "Directives inside recipe bodies",
+      "control": {
+        "description": "Control flow directives",
+        "directives": ["@if", "@elif", "@else", "@end"]
+      },
+      "loop": {
+        "description": "Loop directives",
+        "directives": ["@each"]
+      },
+      "execution": {
+        "description": "Execution control directives",
+        "directives": [
+          "@cd",
+          "@shell",
+          "@timeout",
+          "@launch",
+          "@cache",
+          "@watch",
+          "@confirm",
+          "@ignore",
+          "@quiet"
+        ]
+      },
+      "dependencies": {
+        "description": "Dependency and requirement directives",
+        "directives": [
+          "@needs",
+          "@require",
+          "@export"
+        ]
+      },
+      "hooks": {
+        "description": "Hook directives inside recipes",
+        "directives": ["@pre", "@post"]
+      }
+    },
+    "all": [
+      "@import", "@dotenv", "@require", "@export", "@default",
+      "@pre", "@post", "@on_error", "@before", "@after",
+      "@group", "@desc", "@description", "@alias", "@quiet",
+      "@only", "@only-os", "@platform", "@needs",
+      "@if", "@elif", "@else", "@end", "@each",
+      "@cd", "@shell", "@timeout", "@launch",
+      "@cache", "@watch", "@confirm", "@ignore"
+    ]
+  },
+  
+  "keywords": {
+    "description": "Jake keywords",
+    "recipeTypes": ["task", "file"],
+    "control": ["as", "if", "else"],
+    "all": ["task", "file", "as", "if", "else"]
+  },
+  
+  "platforms": {
+    "description": "Recognized platform names",
+    "all": [
+      "linux",
+      "macos",
+      "darwin",
+      "windows",
+      "freebsd",
+      "openbsd",
+      "netbsd",
+      "unix"
+    ]
+  },
+  
+  "fileExtensions": [".jake"],
+  "fileNames": ["Jakefile", "jakefile"],
+  
+  "variableSyntax": {
+    "jake": {
+      "description": "Jake variable interpolation",
+      "pattern": "{{...}}",
+      "examples": ["{{name}}", "{{uppercase(name)}}", "{{home()}}"]
+    },
+    "shell": {
+      "description": "Shell variable references",
+      "patterns": ["$VAR", "${VAR}"],
+      "positional": ["$0", "$1", "$@"]
+    }
+  },
+  
+  "operatorSyntax": {
+    "assignment": ["=", ":="],
+    "arrow": ["->"],
+    "comparison": ["==", "!="]
+  }
+}

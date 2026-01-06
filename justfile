@@ -223,3 +223,42 @@ info:
 [group('info')]
 zig-help:
     zig build --help
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Editor Plugins
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Sync all editor plugin files from canonical sources
+[group('editors')]
+editors-sync:
+    ./editors/sync.sh
+
+# Check if editor plugin files are in sync (for CI)
+[group('editors')]
+editors-sync-check:
+    ./editors/sync.sh --check
+
+# Build tree-sitter-jake grammar
+[group('editors')]
+editors-tree-sitter:
+    cd editors/tree-sitter-jake && npm run build
+
+# Run tree-sitter-jake tests
+[group('editors')]
+editors-tree-sitter-test:
+    cd editors/tree-sitter-jake && npm test
+
+# Generate flavored tree-sitter queries
+[group('editors')]
+editors-queries:
+    cd editors/tree-sitter-jake && python3 build-flavored-queries.py
+
+# Package VS Code extension
+[group('editors')]
+editors-vscode-package:
+    cd editors/vscode-jake && npx vsce package
+
+# Build IntelliJ plugin
+[group('editors')]
+editors-intellij-build:
+    cd editors/intellij-jake && ./gradlew buildPlugin
