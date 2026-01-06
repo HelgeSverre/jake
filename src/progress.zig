@@ -15,6 +15,7 @@ pub const Spinner = struct {
     is_tty: bool,
 
     done: std.atomic.Value(bool),
+    paused: std.atomic.Value(bool),
     thread: ?std.Thread,
 
     pub fn init(label: []const u8, color: color_mod.Color) Spinner {
@@ -23,8 +24,26 @@ pub const Spinner = struct {
             .color = color,
             .is_tty = compat.getStdErr().isTty(),
             .done = std.atomic.Value(bool).init(false),
+            .paused = std.atomic.Value(bool).init(false),
             .thread = null,
         };
+    }
+
+    /// Pause the spinner animation and clear its line.
+    /// Call this before any command/hook output to prevent interleaving.
+    pub fn pause(self: *Spinner) void {
+        if (!self.is_tty) return;
+        self.paused.store(true, .seq_cst);
+        // Clear the spinner line so command output starts fresh
+        const stderr = compat.getStdErr();
+        stderr.writeAll("\r\x1b[K") catch {};
+    }
+
+    /// Unpause the spinner animation.
+    /// Call this after command/hook output completes.
+    pub fn unpause(self: *Spinner) void {
+        if (!self.is_tty) return;
+        self.paused.store(false, .seq_cst);
     }
 
     /// Start the spinner animation (non-blocking)
@@ -45,18 +64,21 @@ pub const Spinner = struct {
         var frame_idx: usize = 0;
 
         while (!self.done.load(.seq_cst)) {
-            const frames = color_mod.symbols.spinner_frames;
-            const frame = frames[frame_idx % frames.len];
-            frame_idx +%= 1;
+            // Skip rendering when paused to avoid output interleaving
+            if (!self.paused.load(.seq_cst)) {
+                const frames = color_mod.symbols.spinner_frames;
+                const frame = frames[frame_idx % frames.len];
+                frame_idx +%= 1;
 
-            var buf: [256]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "\r   {s}{s}{s} {s}\x1b[K", .{
-                self.color.jakeRose(),
-                frame,
-                self.color.reset(),
-                self.label,
-            }) catch continue;
-            stderr.writeAll(msg) catch {};
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "\r   {s}{s}{s} {s}\x1b[K", .{
+                    self.color.jakeRose(),
+                    frame,
+                    self.color.reset(),
+                    self.label,
+                }) catch continue;
+                stderr.writeAll(msg) catch {};
+            }
 
             std.Thread.sleep(80 * std.time.ns_per_ms);
         }
@@ -74,6 +96,10 @@ pub const Spinner = struct {
             const stderr = compat.getStdErr();
             stderr.writeAll("\r\x1b[K") catch {};
         }
+
+        // Blank line before status for visual separation from command output
+        const stderr = compat.getStdErr();
+        stderr.writeAll("\n") catch {};
 
         printCompletionLine(self.label, success, duration_ns, self.color);
     }
@@ -115,6 +141,7 @@ test "Spinner.init creates spinner with label" {
     const spinner = Spinner.init("test", color);
     try std.testing.expectEqualStrings("test", spinner.label);
     try std.testing.expect(!spinner.done.load(.seq_cst));
+    try std.testing.expect(!spinner.paused.load(.seq_cst));
 }
 
 test "printCompletionLine formats success correctly" {
