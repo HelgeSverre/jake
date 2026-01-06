@@ -8,6 +8,7 @@ domain "jakefile.dev"
 task dev: [editors.build-highlighters]
     @cd site
     @needs npm
+    npm install
     npm run dev
 
 @group web
@@ -15,7 +16,9 @@ task dev: [editors.build-highlighters]
 task build: [editors.build-highlighters]
     @cd site
     @needs npm
+    npm install
     npm run build
+
 
 ## todo: variables should expand in desc strings
 
