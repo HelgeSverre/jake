@@ -99,18 +99,18 @@ line ""
 line "${BOLD}Usage:${R} jake [options] [recipe] [args...]"
 line ""
 line "${BOLD}General:${R}"
-line "  -h, --help              Show this help message"
-line "  -V, --version           Show version"
+line "  ${ROSE}-h${R}, ${ROSE}--help${R}              Show this help message"
+line "  ${ROSE}-V${R}, ${ROSE}--version${R}           Show version"
 line ""
 line "${BOLD}Output:${R}"
-line "  -l, --list              List available recipes"
-line "  -s, --show RECIPE       Show detailed recipe information"
+line "  ${ROSE}-l${R}, ${ROSE}--list${R}              List available recipes"
+line "  ${ROSE}-s${R}, ${ROSE}--show${R} ${MUTED}RECIPE${R}       Show detailed recipe information"
 line ""
 line "${BOLD}Execution:${R}"
-line "  -n, --dry-run           Print commands without executing"
-line "  -v, --verbose           Show verbose output"
-line "  -w, --watch [PATTERN]   Watch files and re-run"
-line "  -j, --jobs [N]          Run N recipes in parallel"
+line "  ${ROSE}-n${R}, ${ROSE}--dry-run${R}           Print commands without executing"
+line "  ${ROSE}-v${R}, ${ROSE}--verbose${R}           Show verbose output"
+line "  ${ROSE}-w${R}, ${ROSE}--watch${R} ${MUTED}[PATTERN]${R}   Watch files and re-run"
+line "  ${ROSE}-j${R}, ${ROSE}--jobs${R} ${MUTED}[N]${R}          Run N recipes in parallel"
 line ""
 line "${BOLD}Examples:${R}"
 line "  jake build            ${MUTED}Run the build recipe${R}"
@@ -124,15 +124,16 @@ sleep $PAUSE
 
 section "SINGLE TASK EXECUTION"
 
-line "${MUTED}\$${R} jake build"
+line "${MUTED}\$${R} jake lint"
 sleep $MED
-spinner "build" 2
+line "${BLUE}→${R} lint"
+spinner "lint" 1
 printf "\r\x1b[K"
 line ""
-line "   ${GREEN}✓${R} build     ${MUTED}1.82s${R}"
+line "   ${GREEN}✓${R} lint     ${MUTED}0.21s${R}"
 line ""
 line "   ${GREEN}Successfully ran 1 task${R}"
-line "   ${MUTED}Total time: 1.82s${R}"
+line "   ${MUTED}Total time: 0.21s${R}"
 sleep $PAUSE
 
 # =============================================================================
@@ -322,21 +323,14 @@ sleep $PAUSE
 
 section "DRY RUN (-n)"
 
-line "${MUTED}\$${R} jake -n release.all"
+line "${MUTED}\$${R} jake -n build"
 sleep $MED
+line "○ build"
+line "[dry-run @pre] echo \"Building jake...\""
+line "     zig build"
+line "[dry-run @post] echo \"Build successful: zig-out/bin/jake\""
 line ""
-line "   ${BLUE}▷${R} ${BOLD}dry-run${R} ${MUTED}(no commands executed)${R}"
-line ""
-line "   ${MUTED}○${R} ${ROSE}release.linux${R}"
-line "     ${DIM}zig build -Dtarget=x86_64-linux${R}"
-line "   ${MUTED}○${R} ${ROSE}release.macos${R}"
-line "     ${DIM}zig build -Dtarget=aarch64-macos${R}"
-line "   ${MUTED}○${R} ${ROSE}release.windows${R}"
-line "     ${DIM}zig build -Dtarget=x86_64-windows${R}"
-line "   ${MUTED}○${R} ${ROSE}release.checksums${R}"
-line "     ${DIM}sha256sum zig-out/bin/*${R}"
-line ""
-line "   ${MUTED}4 tasks would run${R}"
+line "   1 task would run"
 sleep $PAUSE
 
 # =============================================================================
@@ -378,7 +372,7 @@ sleep $MED
 line ""
 line "${RED}error:${R} recipe 'biuld' not found"
 line ""
-line "   ${MUTED}did you mean:${R} ${ROSE}build${R}"
+line "   did you mean: build"
 sleep $PAUSE
 
 # =============================================================================
@@ -439,18 +433,22 @@ sleep $PAUSE
 
 section "RECIPE INSPECTION (jake -s)"
 
-line "${MUTED}\$${R} jake -s release.build"
+line "${MUTED}\$${R} jake -s build"
 sleep $MED
 line ""
-line "${ROSE}release.build${R}"
-line "${MUTED}Build optimized release for current platform${R}"
+line "Recipe: build"
+line "Type: task"
+line "Group: build"
+line "Description: Compile jake binary"
 line ""
-line "  group     ${MUTED}release${R}"
-line "  params    ${MUTED}platform=\"native\"${R}"
-line "  depends   ${MUTED}—${R}"
+line "Commands:"
+line "  @needs needs zig"
+line "  @cache cache src/*.zig build.zig build.zig.zon"
+line "  zig build"
 line ""
-line "  ${MUTED}commands${R}"
-line "    zig build -Doptimize=ReleaseFast -Dstrip=true"
+line "Hooks:"
+line "  @pre: echo \"Building jake...\""
+line "  @post: echo \"Build successful: zig-out/bin/jake\""
 sleep $PAUSE
 
 # =============================================================================
