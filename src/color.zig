@@ -77,19 +77,35 @@ pub const symbols = struct {
 // ColoredText - Formattable wrapper for std.fmt
 // ============================================================================
 
-/// A text string wrapped with color codes, usable with std.fmt {f}
+const builtin = @import("builtin");
+
+/// A text string wrapped with color codes, usable with std.fmt
 pub const ColoredText = struct {
     prefix: []const u8,
     text: []const u8,
     suffix: []const u8,
 
-    /// Format implementation for std.fmt {f} - outputs prefix + text + suffix
-    /// Note: Zig 0.15+ uses simplified format signature with just writer
-    pub fn format(self: ColoredText, writer: anytype) !void {
-        try writer.writeAll(self.prefix);
-        try writer.writeAll(self.text);
-        try writer.writeAll(self.suffix);
-    }
+    /// Format implementation for std.fmt - outputs prefix + text + suffix
+    /// Zig 0.15+ uses 'f' specifier which calls format(writer) with just 1 arg
+    /// Zig 0.14 uses format(self, comptime fmt, options, writer) with 4 args
+    pub const format = if (builtin.zig_version.order(.{ .major = 0, .minor = 15, .patch = 0 }) == .lt)
+        // Zig 0.14 and earlier: 4-arg signature with FormatOptions
+        struct {
+            fn f(self: ColoredText, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+                try writer.writeAll(self.prefix);
+                try writer.writeAll(self.text);
+                try writer.writeAll(self.suffix);
+            }
+        }.f
+    else
+        // Zig 0.15+: simplified 1-arg signature (just writer)
+        struct {
+            fn f(self: ColoredText, writer: anytype) !void {
+                try writer.writeAll(self.prefix);
+                try writer.writeAll(self.text);
+                try writer.writeAll(self.suffix);
+            }
+        }.f;
 };
 
 /// Color configuration - provides ANSI codes or empty strings based on settings
@@ -590,7 +606,8 @@ test "ColoredText formats with prefix and suffix when enabled" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format(stream.writer());
+    // Use {f} specifier to invoke the format method
+    try std.fmt.format(stream.writer(), "{f}", .{ct});
 
     try std.testing.expectEqualStrings("\x1b[1;31merror\x1b[0m", stream.getWritten());
 }
@@ -601,7 +618,8 @@ test "ColoredText formats plain text when disabled" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format(stream.writer());
+    // Use {f} specifier to invoke the format method
+    try std.fmt.format(stream.writer(), "{f}", .{ct});
 
     try std.testing.expectEqualStrings("error", stream.getWritten());
 }
@@ -632,7 +650,7 @@ test "Theme.err returns ColoredText with brand error color" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format(stream.writer());
+    try std.fmt.format(stream.writer(), "{f}", .{ct});
 
     // Brand error red: #ef4444 = rgb(239, 68, 68)
     try std.testing.expectEqualStrings(codes.error_red ++ "error message" ++ codes.reset, stream.getWritten());
@@ -645,7 +663,7 @@ test "Theme.success returns ColoredText with brand success color" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format(stream.writer());
+    try std.fmt.format(stream.writer(), "{f}", .{ct});
 
     // Brand success green: #22c55e = rgb(34, 197, 94)
     try std.testing.expectEqualStrings(codes.success_green ++ "done" ++ codes.reset, stream.getWritten());
@@ -658,7 +676,7 @@ test "Theme.hidden returns ColoredText with dim styling" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format(stream.writer());
+    try std.fmt.format(stream.writer(), "{f}", .{ct});
 
     try std.testing.expectEqualStrings("\x1b[2;37m(hidden)\x1b[0m", stream.getWritten());
 }
@@ -670,7 +688,7 @@ test "Theme returns plain text when colors disabled" {
 
     var buf: [256]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
-    try ct.format(stream.writer());
+    try std.fmt.format(stream.writer(), "{f}", .{ct});
     try std.testing.expectEqualStrings("error", stream.getWritten());
 }
 
