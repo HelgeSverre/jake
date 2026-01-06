@@ -1,0 +1,38 @@
+; Runnables for Jake task runner
+; Enables "click to run" functionality in editors like Zed
+;
+; Captures:
+;   @run - The clickable element (recipe name)
+;   @_recipe_name - Recipe name for environment variable
+;
+; Tags:
+;   jake-recipe - Standard recipe
+;   jake-task - Explicit task recipe
+;   jake-file - File recipe (build target)
+
+; Simple recipe: `name:`
+(recipe
+  (recipe_header
+    name: (identifier) @run @_recipe_name
+    (#not-eq? @_recipe_name "_")
+  )
+) @_jake-recipe
+(#set! tag jake-recipe)
+
+; Task recipe: `task name:`
+(recipe
+  (recipe_header
+    type: "task"
+    name: (identifier) @run @_recipe_name
+  )
+) @_jake-task
+(#set! tag jake-task)
+
+; File recipe: `file target.txt:`
+(recipe
+  (recipe_header
+    type: "file"
+    name: (identifier) @run @_recipe_name
+  )
+) @_jake-file
+(#set! tag jake-file)
