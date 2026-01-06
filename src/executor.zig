@@ -1741,8 +1741,12 @@ pub const Executor = struct {
     }
 
     /// Check if a recipe is private (should be hidden from listings)
+    /// Hidden if: @hidden directive is set, OR name starts with underscore
     /// Uses origin.original_name for imported recipes, otherwise uses name
     fn isPrivateRecipe(recipe: *const Recipe) bool {
+        // Hidden via @hidden directive
+        if (recipe.hidden) return true;
+        // Hidden via underscore prefix convention
         const name = if (recipe.origin) |o| o.original_name else recipe.name;
         return name.len > 0 and name[0] == '_';
     }
@@ -2843,6 +2847,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .working_dir = null,
             .only_os = &.{},
             .quiet = false,
+            .hidden = false,
             .needs = &.{},
             .timeout_seconds = null,
         },
@@ -2871,6 +2876,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .working_dir = null,
             .only_os = &.{},
             .quiet = false,
+            .hidden = false,
             .needs = &.{},
             .timeout_seconds = null,
         },
@@ -2899,6 +2905,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .working_dir = null,
             .only_os = &.{},
             .quiet = false,
+            .hidden = false,
             .needs = &.{},
             .timeout_seconds = null,
         },
@@ -2923,6 +2930,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .working_dir = null,
             .only_os = &.{},
             .quiet = false,
+            .hidden = false,
             .needs = &.{},
             .timeout_seconds = null,
         },
@@ -2967,6 +2975,7 @@ test "isPrivateRecipe detects private via origin.original_name" {
         .working_dir = null,
         .only_os = &.{},
         .quiet = false,
+        .hidden = false,
         .needs = &.{},
         .timeout_seconds = null,
     };
@@ -3016,6 +3025,7 @@ test "isPrivateRecipe edge cases" {
         .working_dir = null,
         .only_os = &.{},
         .quiet = false,
+        .hidden = false,
         .needs = &.{},
         .timeout_seconds = null,
     };

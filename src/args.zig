@@ -2125,7 +2125,7 @@ test "quickScan detects -V" {
 test "quickScan returns none for normal args" {
     try expectEqual(QuickAction.none, quickScan(&.{ "jake", "build" }));
     try expectEqual(QuickAction.none, quickScan(&.{ "jake", "-v", "test" }));
-    try expectEqual(QuickAction.none, quickScan(&.{ "jake" }));
+    try expectEqual(QuickAction.none, quickScan(&.{"jake"}));
 }
 
 test "quickScan stops at -- separator" {

@@ -28,6 +28,7 @@ pub const Recipe = struct {
     working_dir: ?[]const u8, // Working directory for recipe execution
     only_os: []const []const u8, // List of OSes this recipe runs on (e.g., ["linux", "macos"])
     quiet: bool, // Suppress command echoing for this recipe
+    hidden: bool, // Hide from recipe listings (alternative to _ prefix)
     needs: []const NeedsRequirement, // Recipe-level command requirements
     timeout_seconds: ?u64, // Timeout in seconds, null = no timeout
 
@@ -267,6 +268,7 @@ pub const Parser = struct {
     pending_description: ?[]const u8,
     pending_only_os: std.ArrayListUnmanaged([]const u8),
     pending_quiet: bool,
+    pending_hidden: bool,
     pending_doc_comment: ?[]const u8,
     pending_needs: std.ArrayListUnmanaged(NeedsRequirement),
     pending_timeout: ?u64,
@@ -291,6 +293,7 @@ pub const Parser = struct {
             .pending_description = null,
             .pending_only_os = .empty,
             .pending_quiet = false,
+            .pending_hidden = false,
             .pending_doc_comment = null,
             .pending_needs = .empty,
             .pending_timeout = null,
@@ -438,6 +441,13 @@ pub const Parser = struct {
         const quiet = self.pending_quiet;
         self.pending_quiet = false;
         return quiet;
+    }
+
+    /// Consume and return pending hidden flag, clearing it for the next recipe
+    fn consumePendingHidden(self: *Parser) bool {
+        const hidden = self.pending_hidden;
+        self.pending_hidden = false;
+        return hidden;
     }
 
     /// Consume and return pending timeout, clearing it for the next recipe
@@ -657,6 +667,18 @@ pub const Parser = struct {
         if (self.current.tag == .kw_quiet) {
             self.advance();
             self.pending_quiet = true;
+
+            // Skip to end of line
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                self.advance();
+            }
+            return;
+        }
+
+        // Handle @hidden directive for hiding recipe from listings
+        if (self.current.tag == .kw_hidden) {
+            self.advance();
+            self.pending_hidden = true;
 
             // Skip to end of line
             while (self.current.tag != .newline and self.current.tag != .eof) {
@@ -1102,6 +1124,7 @@ pub const Parser = struct {
             .working_dir = working_dir,
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
+            .hidden = self.consumePendingHidden(),
             .needs = needs,
             .timeout_seconds = self.consumePendingTimeout(),
         }) catch return ParseError.OutOfMemory;
@@ -1286,6 +1309,7 @@ pub const Parser = struct {
             .working_dir = working_dir,
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
+            .hidden = self.consumePendingHidden(),
             .needs = needs,
             .timeout_seconds = self.consumePendingTimeout(),
         }) catch return ParseError.OutOfMemory;
@@ -1434,6 +1458,7 @@ pub const Parser = struct {
             .working_dir = working_dir,
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
+            .hidden = self.consumePendingHidden(),
             .needs = needs,
             .timeout_seconds = self.consumePendingTimeout(),
         }) catch return ParseError.OutOfMemory;

@@ -11,7 +11,6 @@ const parser = @import("parser.zig");
 const jakefile_index = @import("jakefile_index.zig");
 
 /// Shared execution context passed through the app lifecycle.
-/// Replaces individual dry_run, verbose, etc. fields scattered across modules.
 pub const Context = struct {
     // CLI flags
     dry_run: bool = false,
