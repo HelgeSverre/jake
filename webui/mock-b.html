@@ -170,9 +170,8 @@
       transition: opacity .1s;
     }
     .recipe:hover .recipe-play,
-    .recipe:focus-within .recipe-play { opacity: 1; }
+    .recipe:focus-visible .recipe-play { opacity: 1; }
     .recipe-play:hover { background: var(--jake-light); }
-    .recipe-play:focus-visible { opacity: 1; }
 
     /* Content */
     .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -534,9 +533,9 @@
 
   <footer class="footer">
     <div class="footer-left">
-      <div class="footer-hint"><kbd>↑↓</kbd> Navigate</div>
+      <div class="footer-hint"><kbd>↑↓</kbd> or <kbd>jk</kbd> Navigate</div>
       <div class="footer-hint"><kbd>Enter</kbd> Run</div>
-      <div class="footer-hint"><kbd>Ctrl+K</kbd> Search</div>
+      <div class="footer-hint"><kbd>⌘K</kbd> Search</div>
     </div>
     <span>Jake Web UI v0.1</span>
   </footer>
@@ -658,7 +657,7 @@ function init() {
 function setupKeyboard() {
   document.addEventListener('keydown', e => {
     // Ctrl+K: Focus search
-    if (e.ctrlKey && e.key === 'k') {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
       $('#searchInput').focus();
       return;
@@ -674,7 +673,11 @@ function setupKeyboard() {
       return;
     }
 
-    // If search focused, let it handle keys
+    // Don't handle arrows if in an input field (except search)
+    const isInput = document.activeElement.tagName === 'INPUT' ||
+                    document.activeElement.tagName === 'TEXTAREA';
+
+    // If search focused, arrow down goes to first recipe
     if (document.activeElement === $('#searchInput')) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -684,25 +687,47 @@ function setupKeyboard() {
       return;
     }
 
-    // Navigation
-    const recipes = [...$$('.recipe')];
-    const current = document.activeElement;
-    const idx = recipes.indexOf(current);
+    // Skip if in other inputs
+    if (isInput) return;
 
-    if (e.key === 'ArrowDown') {
+    // Navigation through recipe list
+    const recipeEls = [...$$('.recipe')];
+    const current = document.activeElement;
+    const idx = recipeEls.indexOf(current);
+
+    if (e.key === 'ArrowDown' || e.key === 'j') {
       e.preventDefault();
-      if (idx < recipes.length - 1) recipes[idx + 1].focus();
-      else if (recipes.length) recipes[0].focus();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (idx > 0) recipes[idx - 1].focus();
-      else if (recipes.length) recipes[recipes.length - 1].focus();
-    } else if (e.key === 'Enter' && selected) {
-      e.preventDefault();
-      if (e.shiftKey) {
-        runSelected(true);
+      if (idx === -1) {
+        // Nothing focused, focus first
+        if (recipeEls.length) recipeEls[0].focus();
+      } else if (idx < recipeEls.length - 1) {
+        recipeEls[idx + 1].focus();
       } else {
-        runSelected();
+        // Wrap to first
+        recipeEls[0].focus();
+      }
+    } else if (e.key === 'ArrowUp' || e.key === 'k') {
+      e.preventDefault();
+      if (idx === -1) {
+        // Nothing focused, focus last
+        if (recipeEls.length) recipeEls[recipeEls.length - 1].focus();
+      } else if (idx > 0) {
+        recipeEls[idx - 1].focus();
+      } else {
+        // Wrap to last
+        recipeEls[recipeEls.length - 1].focus();
+      }
+    } else if (e.key === 'Enter' && selected) {
+      // Only handle Enter if we're focused on a recipe or the Run button area
+      const isOnRecipe = current.classList.contains('recipe');
+      const isOnButton = current.classList.contains('btn');
+      if (isOnRecipe || (!isOnButton && selected)) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          runSelected(true);
+        } else {
+          runSelected();
+        }
       }
     }
   });
@@ -713,7 +738,10 @@ function filterRecipes(value) {
   renderRecipes();
 }
 
-function renderRecipes() {
+function renderRecipes(restoreFocus = false) {
+  // Remember which element had focus before re-render
+  const focusedId = document.activeElement?.dataset?.id;
+
   const filtered = recipes.filter(r =>
     r.id.toLowerCase().includes(filter) ||
     r.desc.toLowerCase().includes(filter) ||
@@ -751,7 +779,7 @@ function renderRecipes() {
           <span class="recipe-icon ${s.status}">${icon}</span>
           <span class="recipe-name">${r.id}</span>
           ${badges.join('')}
-          <button class="recipe-play" onclick="event.stopPropagation(); runRecipe('${r.id}')" tabindex="0" title="Run">▶</button>
+          <button class="recipe-play" onclick="event.stopPropagation(); runRecipe('${r.id}')" tabindex="-1" title="Run">▶</button>
         </div>
       `;
     });
@@ -759,12 +787,48 @@ function renderRecipes() {
   }
 
   $('#recipeList').innerHTML = html;
+
+  // Restore focus if requested and element still exists
+  if (restoreFocus && focusedId) {
+    const el = $(`.recipe[data-id="${focusedId}"]`);
+    if (el) el.focus();
+  }
 }
 
-function selectRecipe(id) {
+// Update just the status icon for a recipe without full re-render
+function updateRecipeStatus(id) {
+  const el = $(`.recipe[data-id="${id}"]`);
+  if (!el) return;
+
+  const s = taskState[id];
+  const iconEl = el.querySelector('.recipe-icon');
+  if (!iconEl) return;
+
+  iconEl.className = `recipe-icon ${s.status}`;
+  iconEl.innerHTML = s.status === 'running' ? '<span class="spinner"></span>' :
+                     s.status === 'success' ? '✓' :
+                     s.status === 'failed' ? '✗' : '○';
+
+  // Update selected/active state
+  el.classList.toggle('selected', selected === id);
+}
+
+function selectRecipe(id, skipRender = false) {
+  if (selected === id) return; // No change
+
+  // Update selection visually without full re-render
+  const prevEl = $(`.recipe[data-id="${selected}"]`);
+  if (prevEl) prevEl.classList.remove('selected');
+
   selected = id;
-  renderRecipes();
-  renderDetail();
+
+  const newEl = $(`.recipe[data-id="${id}"]`);
+  if (newEl) newEl.classList.add('selected');
+
+  // Only do full render if explicitly requested (e.g., after status change)
+  if (!skipRender) {
+    renderDetail();
+  }
 }
 
 function renderDetail() {
@@ -887,7 +951,9 @@ function runSelected(dryRun = false) {
 function runRecipe(id, dryRun = false) {
   if (taskState[id].status === 'running') return;
 
-  selected = id;
+  // Select the recipe (updates visual selection)
+  selectRecipe(id);
+
   const r = recipes.find(x => x.id === id);
   const s = taskState[id];
 
@@ -897,7 +963,7 @@ function runRecipe(id, dryRun = false) {
   running = id;
   start = Date.now();
 
-  renderRecipes();
+  updateRecipeStatus(id);
   renderDetail();
   updateStatus();
 
@@ -962,7 +1028,7 @@ function finishRun(id, success, dryRun) {
   clearInterval(elapsedTimer);
   timers = [];
 
-  renderRecipes();
+  updateRecipeStatus(id);
   renderDetail();
   renderOutput();
   updateStatus();
@@ -984,7 +1050,7 @@ function stopRunning() {
 
   running = null;
 
-  renderRecipes();
+  updateRecipeStatus(id);
   renderDetail();
   renderOutput();
   updateStatus();
