@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jake - Layout C (Three Column)</title>
+  <style>
+    :root {
+      --jake: #f43f5e;
+      --jake-light: #fb7185;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #60a5fa;
+      --yellow: #eab308;
+      --muted: #71717a;
+      --bg: #0a0a0a;
+      --bg2: #111;
+      --bg3: #1a1a1a;
+      --text: #fafafa;
+      --text2: #a1a1aa;
+      --border: #27272a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 13px/1.4 system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+    #app { display: flex; flex-direction: column; height: 100%; }
+
+    /* Header */
+    .header {
+      height: 44px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 12px;
+    }
+    .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+    .logo-icon { font-family: ui-monospace, monospace; font-size: 16px; color: var(--jake); }
+    .header-path { color: var(--text2); font-size: 12px; font-family: ui-monospace, monospace; }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+    .elapsed { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+
+    /* Main - Three Columns */
+    .main { flex: 1; display: grid; grid-template-columns: 180px 280px 1fr; overflow: hidden; }
+
+    /* Column 1: Recipe List */
+    .col-recipes {
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .col-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .recipe-list { flex: 1; overflow-y: auto; padding: 4px; }
+    .recipe {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+    }
+    .recipe:hover { background: var(--bg3); }
+    .recipe.selected { background: rgba(244,63,94,.15); }
+    .recipe-icon { width: 12px; font-size: 9px; }
+    .recipe-icon.pending { color: var(--muted); }
+    .recipe-icon.running { color: var(--jake); }
+    .recipe-icon.success { color: var(--green); }
+    .recipe-icon.failed { color: var(--red); }
+    .recipe-name { flex: 1; }
+
+    /* Column 2: Recipe Detail */
+    .col-detail {
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .detail-content { flex: 1; overflow-y: auto; padding: 12px; }
+    .detail-name {
+      font-family: ui-monospace, monospace;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--jake);
+      margin-bottom: 4px;
+    }
+    .detail-desc { color: var(--text2); font-size: 12px; margin-bottom: 12px; line-height: 1.5; }
+    .detail-section { margin-bottom: 14px; }
+    .detail-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .detail-value { font-size: 12px; color: var(--text2); }
+    .dep-list { display: flex; flex-wrap: wrap; gap: 4px; }
+    .dep-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: var(--bg3);
+      border-radius: 3px;
+      color: var(--text2);
+      font-family: ui-monospace, monospace;
+    }
+    .param-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      padding: 4px 0;
+    }
+    .param-name { color: var(--blue); }
+    .param-default { color: var(--muted); }
+    .cmd-block {
+      background: var(--bg);
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      color: var(--text2);
+      line-height: 1.6;
+    }
+    .detail-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      background: var(--bg);
+      border-radius: 4px;
+    }
+    .status-icon { font-size: 12px; }
+    .status-icon.pending { color: var(--muted); }
+    .status-icon.running { color: var(--jake); }
+    .status-icon.success { color: var(--green); }
+    .status-icon.failed { color: var(--red); }
+    .status-text { flex: 1; font-size: 12px; color: var(--text2); }
+    .status-time { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
+
+    .detail-actions {
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 5px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-primary { background: var(--jake); color: white; }
+    .btn-primary:hover { background: var(--jake-light); }
+    .btn-primary:disabled { background: var(--muted); cursor: default; }
+    .btn-secondary { background: var(--bg3); color: var(--text2); }
+    .btn-secondary:hover { background: var(--border); }
+
+    /* Column 3: Output */
+    .col-output {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .output-tabs {
+      display: flex;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 0 8px;
+    }
+    .output-tab {
+      padding: 8px 12px;
+      font-size: 11px;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .output-tab:hover { color: var(--text2); }
+    .output-tab.active { color: var(--jake); border-color: var(--jake); }
+    .output-tab .badge {
+      font-size: 9px;
+      padding: 1px 5px;
+      background: var(--bg3);
+      border-radius: 8px;
+    }
+    .output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      background: #090909;
+      line-height: 1.6;
+    }
+    .out-group { margin-bottom: 12px; }
+    .out-group-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 0;
+      color: var(--jake);
+      font-weight: 500;
+    }
+    .out-line { color: var(--muted); padding: 1px 0; padding-left: 18px; }
+    .out-line.cmd { color: var(--text2); }
+    .out-line.cmd::before { content: '$ '; color: var(--muted); }
+    .out-line.success { color: var(--green); }
+    .out-line.error { color: var(--red); }
+
+    .empty-detail {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    /* Spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+
+    /* Footer */
+    .footer {
+      height: 26px;
+      background: var(--bg3);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .footer-left { display: flex; align-items: center; gap: 8px; }
+    .footer-dot { width: 5px; height: 5px; border-radius: 50%; }
+    .footer-dot.idle { background: var(--muted); }
+    .footer-dot.running { background: var(--jake); }
+    .footer-dot.success { background: var(--green); }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header class="header">
+    <div class="logo"><span class="logo-icon">{j}</span><span>Jake</span></div>
+    <span class="header-path">~/projects/myapp</span>
+    <div class="header-right">
+      <span id="elapsed" class="elapsed">0.00s</span>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- Column 1: Recipe List -->
+    <div class="col-recipes">
+      <div class="col-header">
+        <span>Recipes</span>
+        <span style="font-size:9px; color:var(--muted)">6</span>
+      </div>
+      <div id="recipeList" class="recipe-list"></div>
+    </div>
+
+    <!-- Column 2: Recipe Detail -->
+    <div class="col-detail">
+      <div class="col-header"><span>Details</span></div>
+      <div id="detailContent" class="detail-content">
+        <div class="empty-detail">Select a recipe</div>
+      </div>
+      <div id="detailActions" class="detail-actions" style="display:none;">
+        <button id="runBtn" class="btn btn-primary" onclick="runSelected()">▶ Run</button>
+        <button class="btn btn-secondary" onclick="runSelected(true)">▷ Dry Run</button>
+      </div>
+    </div>
+
+    <!-- Column 3: Output -->
+    <div class="col-output">
+      <div class="output-tabs">
+        <div class="output-tab active" data-tab="selected">Selected</div>
+        <div class="output-tab" data-tab="all">All <span class="badge" id="allCount">0</span></div>
+      </div>
+      <div id="output" class="output">
+        <span style="color:var(--muted)">Run a recipe to see output...</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-left">
+      <div id="footerDot" class="footer-dot idle"></div>
+      <span id="footerStatus">Ready</span>
+    </div>
+    <span>Layout C: Three Column</span>
+  </footer>
+</div>
+
+<script>
+const recipes = [
+  { id: 'build', desc: 'Build the application for production', deps: [], cmd: 'cargo build --release', params: [{ name: 'mode', default: 'release' }] },
+  { id: 'lint', desc: 'Check code formatting', deps: [], cmd: 'zig fmt --check src/' },
+  { id: 'test', desc: 'Run the test suite', deps: ['build'], cmd: 'zig build test' },
+  { id: 'deploy', desc: 'Deploy to production server', deps: ['build', 'test'], cmd: './scripts/deploy.sh', params: [{ name: 'env', default: 'prod' }] },
+  { id: 'clean', desc: 'Remove build artifacts', deps: [], cmd: 'rm -rf zig-out zig-cache' },
+  { id: 'dev', desc: 'Start development server', deps: [], cmd: 'zig build run' },
+];
+
+let selected = null;
+let taskState = {};
+let running = false;
+let start = 0;
+let timers = [];
+let elapsedTimer = null;
+let outputTab = 'selected';
+let allOutput = [];
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+function init() {
+  recipes.forEach(r => taskState[r.id] = { status: 'pending', duration: null, output: [] });
+  renderRecipes();
+  setupTabs();
+}
+
+function setupTabs() {
+  $$('.output-tab').forEach(tab => {
+    tab.onclick = () => {
+      outputTab = tab.dataset.tab;
+      $$('.output-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === outputTab));
+      renderOutput();
+    };
+  });
+}
+
+function renderRecipes() {
+  $('#recipeList').innerHTML = recipes.map(r => {
+    const s = taskState[r.id];
+    const icon = s.status === 'running' ? '<span class="spinner"></span>' :
+                 s.status === 'success' ? '✓' :
+                 s.status === 'failed' ? '✗' : '○';
+    return `
+      <div class="recipe ${selected === r.id ? 'selected' : ''}" onclick="selectRecipe('${r.id}')">
+        <span class="recipe-icon ${s.status}">${icon}</span>
+        <span class="recipe-name">${r.id}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectRecipe(id) {
+  selected = id;
+  renderRecipes();
+  renderDetail();
+  if (outputTab === 'selected') renderOutput();
+}
+
+function renderDetail() {
+  const content = $('#detailContent');
+  const actions = $('#detailActions');
+
+  if (!selected) {
+    content.innerHTML = '<div class="empty-detail">Select a recipe</div>';
+    actions.style.display = 'none';
+    return;
+  }
+
+  const r = recipes.find(x => x.id === selected);
+  const s = taskState[selected];
+  actions.style.display = 'flex';
+
+  const statusIcon = s.status === 'running' ? '<span class="spinner"></span>' :
+                     s.status === 'success' ? '✓' :
+                     s.status === 'failed' ? '✗' : '○';
+  const statusText = s.status === 'pending' ? 'Not run yet' :
+                     s.status === 'running' ? 'Running...' :
+                     s.status === 'success' ? 'Completed successfully' : 'Failed';
+
+  content.innerHTML = `
+    <div class="detail-name">${r.id}</div>
+    <div class="detail-desc">${r.desc}</div>
+
+    <div class="detail-section">
+      <div class="detail-label">Status</div>
+      <div class="detail-status">
+        <span class="status-icon ${s.status}">${statusIcon}</span>
+        <span class="status-text">${statusText}</span>
+        ${s.duration ? `<span class="status-time">${fmt(s.duration)}</span>` : ''}
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-label">Dependencies</div>
+      ${r.deps.length
+        ? `<div class="dep-list">${r.deps.map(d => `<span class="dep-badge">${d}</span>`).join('')}</div>`
+        : '<div class="detail-value" style="color:var(--muted);font-style:italic">None</div>'
+      }
+    </div>
+
+    ${r.params ? `
+    <div class="detail-section">
+      <div class="detail-label">Parameters</div>
+      ${r.params.map(p => `
+        <div class="param-item">
+          <span class="param-name">${p.name}</span>
+          <span class="param-default">= ${p.default}</span>
+        </div>
+      `).join('')}
+    </div>
+    ` : ''}
+
+    <div class="detail-section">
+      <div class="detail-label">Commands</div>
+      <div class="cmd-block">${r.cmd}</div>
+    </div>
+  `;
+
+  $('#runBtn').disabled = s.status === 'running';
+  $('#runBtn').innerHTML = s.status === 'running' ? '<span class="spinner"></span> Running...' : '▶ Run';
+}
+
+function renderOutput() {
+  const out = $('#output');
+
+  if (outputTab === 'all') {
+    if (allOutput.length === 0) {
+      out.innerHTML = '<span style="color:var(--muted)">No output yet...</span>';
+      return;
+    }
+    out.innerHTML = allOutput.map(g => `
+      <div class="out-group">
+        <div class="out-group-header">
+          <span>${g.status === 'success' ? '✓' : g.status === 'running' ? '→' : '○'}</span>
+          <span>${g.id}</span>
+        </div>
+        ${g.lines.map(l => `<div class="out-line ${l.type}">${l.text}</div>`).join('')}
+      </div>
+    `).join('');
+  } else {
+    if (!selected) {
+      out.innerHTML = '<span style="color:var(--muted)">Select a recipe...</span>';
+      return;
+    }
+    const s = taskState[selected];
+    if (s.output.length === 0) {
+      out.innerHTML = '<span style="color:var(--muted)">No output yet...</span>';
+      return;
+    }
+    out.innerHTML = s.output.map(l => `<div class="out-line ${l.type}">${l.text}</div>`).join('');
+  }
+
+  out.scrollTop = out.scrollHeight;
+}
+
+function runSelected(dryRun = false) {
+  if (!selected) return;
+  runRecipe(selected, dryRun);
+}
+
+function runRecipe(id, dryRun = false) {
+  const r = recipes.find(x => x.id === id);
+  const s = taskState[id];
+
+  if (s.status === 'running') return;
+
+  s.status = 'running';
+  s.duration = null;
+  s.output = [];
+  running = true;
+  start = Date.now();
+
+  // Track in all output
+  const group = { id, status: 'running', lines: [] };
+  allOutput.push(group);
+  $('#allCount').textContent = allOutput.length;
+
+  renderRecipes();
+  renderDetail();
+  updateFooter();
+
+  elapsedTimer = setInterval(() => {
+    $('#elapsed').textContent = fmt(Date.now() - start);
+  }, 100);
+
+  // Simulate
+  const prefix = dryRun ? '[dry-run] ' : '';
+  s.output.push({ type: 'cmd', text: prefix + r.cmd });
+  group.lines.push({ type: 'cmd', text: prefix + r.cmd });
+  renderOutput();
+
+  const lines = ['Compiling...', 'Building...', dryRun ? 'Dry run complete!' : 'Done!'];
+
+  lines.forEach((line, i) => {
+    timers.push(setTimeout(() => {
+      s.output.push({ type: '', text: line });
+      group.lines.push({ type: '', text: line });
+      renderOutput();
+    }, 200 + i * 300));
+  });
+
+  timers.push(setTimeout(() => {
+    s.status = 'success';
+    s.duration = Date.now() - start;
+    group.status = 'success';
+    s.output.push({ type: 'success', text: `✓ ${fmt(s.duration)}` });
+    group.lines.push({ type: 'success', text: `✓ ${fmt(s.duration)}` });
+    running = false;
+    clearInterval(elapsedTimer);
+    renderRecipes();
+    renderDetail();
+    renderOutput();
+    updateFooter();
+  }, 200 + lines.length * 300 + 100));
+}
+
+function updateFooter() {
+  const dot = $('#footerDot');
+  const txt = $('#footerStatus');
+  if (running) {
+    dot.className = 'footer-dot running';
+    txt.textContent = 'Running...';
+  } else {
+    const done = Object.values(taskState).filter(s => s.status === 'success').length;
+    dot.className = 'footer-dot' + (done > 0 ? ' success' : ' idle');
+    txt.textContent = done > 0 ? `${done} completed` : 'Ready';
+  }
+}
+
+function fmt(ms) { return (ms/1000).toFixed(2) + 's'; }
+
+init();
+</script>
+</body>
+</html>

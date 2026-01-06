@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jake - Layout D (Collapsible Sections)</title>
+  <style>
+    :root {
+      --jake: #f43f5e;
+      --jake-light: #fb7185;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #60a5fa;
+      --yellow: #eab308;
+      --muted: #71717a;
+      --bg: #0a0a0a;
+      --bg2: #111;
+      --bg3: #1a1a1a;
+      --text: #fafafa;
+      --text2: #a1a1aa;
+      --border: #27272a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 13px/1.4 system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+    #app { display: flex; flex-direction: column; height: 100%; }
+
+    /* Header */
+    .header {
+      height: 44px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 16px;
+    }
+    .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+    .logo-icon { font-family: ui-monospace, monospace; font-size: 16px; color: var(--jake); }
+    .search {
+      flex: 1;
+      max-width: 300px;
+      padding: 6px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+    }
+    .search::placeholder { color: var(--muted); }
+    .search:focus { outline: none; border-color: var(--jake); }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+    .header-stat {
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header-stat .count { color: var(--text2); font-family: ui-monospace, monospace; }
+
+    /* Main */
+    .main { flex: 1; overflow-y: auto; padding: 12px 16px; }
+
+    /* Recipe Card */
+    .recipe-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      overflow: hidden;
+      transition: border-color .15s;
+    }
+    .recipe-card:hover { border-color: var(--border); }
+    .recipe-card.expanded { border-color: rgba(244,63,94,.3); }
+    .recipe-card.running { border-color: var(--jake); }
+    .recipe-card.success { border-color: rgba(34,197,94,.3); }
+    .recipe-card.failed { border-color: rgba(239,68,68,.3); }
+
+    /* Card Header (always visible) */
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .card-header:hover { background: var(--bg3); }
+    .card-chevron {
+      width: 16px;
+      color: var(--muted);
+      font-size: 10px;
+      transition: transform .15s;
+    }
+    .recipe-card.expanded .card-chevron { transform: rotate(90deg); }
+    .card-icon { width: 18px; font-size: 12px; text-align: center; }
+    .card-icon.pending { color: var(--muted); }
+    .card-icon.running { color: var(--jake); }
+    .card-icon.success { color: var(--green); }
+    .card-icon.failed { color: var(--red); }
+    .card-name {
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .card-desc {
+      flex: 1;
+      font-size: 12px;
+      color: var(--muted);
+      margin-left: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-deps {
+      display: flex;
+      gap: 4px;
+    }
+    .dep-badge {
+      font-size: 9px;
+      padding: 2px 6px;
+      background: var(--bg);
+      border-radius: 3px;
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+    }
+    .card-time {
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      color: var(--muted);
+      min-width: 50px;
+      text-align: right;
+    }
+    .card-actions {
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity .1s;
+    }
+    .card-header:hover .card-actions { opacity: 1; }
+    .card-btn {
+      width: 26px;
+      height: 26px;
+      border: none;
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--text2);
+      font-size: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card-btn:hover { background: var(--jake); color: white; }
+    .card-btn.stop { background: var(--bg); }
+    .card-btn.stop:hover { background: var(--red); }
+
+    /* Card Body (expanded content) */
+    .card-body {
+      display: none;
+      border-top: 1px solid var(--border);
+    }
+    .recipe-card.expanded .card-body { display: block; }
+
+    .card-meta {
+      display: flex;
+      gap: 24px;
+      padding: 10px 14px;
+      background: var(--bg3);
+      font-size: 11px;
+    }
+    .meta-item { display: flex; gap: 6px; }
+    .meta-label { color: var(--muted); }
+    .meta-value { color: var(--text2); font-family: ui-monospace, monospace; }
+    .param-badge {
+      font-size: 10px;
+      padding: 1px 5px;
+      background: var(--bg);
+      border-radius: 3px;
+      color: var(--blue);
+      font-family: ui-monospace, monospace;
+    }
+
+    .card-commands {
+      padding: 10px 14px;
+      background: var(--bg3);
+      border-bottom: 1px solid var(--border);
+    }
+    .cmd-label {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .cmd-text {
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      color: var(--text2);
+    }
+
+    .card-output {
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 10px 14px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      background: #090909;
+      line-height: 1.6;
+    }
+    .out-line { color: var(--muted); padding: 1px 0; }
+    .out-line.cmd { color: var(--text2); }
+    .out-line.cmd::before { content: '$ '; color: var(--muted); }
+    .out-line.success { color: var(--green); }
+    .out-line.error { color: var(--red); }
+    .out-empty { color: var(--muted); font-style: italic; }
+
+    /* Spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+
+    /* Footer */
+    .footer {
+      height: 28px;
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .footer-left { display: flex; align-items: center; gap: 12px; }
+    .footer-status { display: flex; align-items: center; gap: 6px; }
+    .footer-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .footer-dot.idle { background: var(--muted); }
+    .footer-dot.running { background: var(--jake); }
+    .footer-dot.success { background: var(--green); }
+    .footer-actions { display: flex; gap: 12px; }
+    .footer-link {
+      color: var(--muted);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .footer-link:hover { color: var(--text2); }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header class="header">
+    <div class="logo"><span class="logo-icon">{j}</span><span>Jake</span></div>
+    <input type="text" class="search" placeholder="Filter recipes..." oninput="filterRecipes(this.value)">
+    <div class="header-right">
+      <div class="header-stat">
+        <span>Recipes:</span>
+        <span class="count" id="recipeCount">6</span>
+      </div>
+      <div class="header-stat">
+        <span>Elapsed:</span>
+        <span class="count" id="elapsed">0.00s</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="main" id="recipeList"></main>
+
+  <footer class="footer">
+    <div class="footer-left">
+      <div class="footer-status">
+        <div id="footerDot" class="footer-dot idle"></div>
+        <span id="footerText">Ready</span>
+      </div>
+    </div>
+    <div class="footer-actions">
+      <span class="footer-link" onclick="expandAll()">Expand All</span>
+      <span class="footer-link" onclick="collapseAll()">Collapse All</span>
+    </div>
+    <span>Layout D: Collapsible Sections</span>
+  </footer>
+</div>
+
+<script>
+const recipes = [
+  { id: 'build', desc: 'Build the application for production', deps: [], cmd: 'cargo build --release', params: ['mode=release'] },
+  { id: 'lint', desc: 'Check code formatting', deps: [], cmd: 'zig fmt --check src/' },
+  { id: 'test', desc: 'Run the test suite', deps: ['build'], cmd: 'zig build test' },
+  { id: 'deploy', desc: 'Deploy to production server', deps: ['build', 'test'], cmd: './scripts/deploy.sh', params: ['env=prod'] },
+  { id: 'clean', desc: 'Remove build artifacts', deps: [], cmd: 'rm -rf zig-out zig-cache' },
+  { id: 'dev', desc: 'Start development server with hot reload', deps: [], cmd: 'zig build -Doptimize=Debug && ./zig-out/bin/app --watch' },
+];
+
+let taskState = {};
+let expanded = new Set();
+let running = null;
+let start = 0;
+let timers = [];
+let elapsedTimer = null;
+let filter = '';
+
+const $ = s => document.querySelector(s);
+
+function init() {
+  recipes.forEach(r => taskState[r.id] = { status: 'pending', duration: null, output: [] });
+  render();
+}
+
+function render() {
+  const filtered = recipes.filter(r =>
+    r.id.toLowerCase().includes(filter) ||
+    r.desc.toLowerCase().includes(filter)
+  );
+
+  $('#recipeCount').textContent = filtered.length;
+
+  $('#recipeList').innerHTML = filtered.map(r => {
+    const s = taskState[r.id];
+    const isExpanded = expanded.has(r.id);
+    const icon = s.status === 'running' ? '<span class="spinner"></span>' :
+                 s.status === 'success' ? '✓' :
+                 s.status === 'failed' ? '✗' : '○';
+    const timeText = s.duration ? fmt(s.duration) : '';
+
+    const depsHtml = r.deps.length
+      ? r.deps.map(d => `<span class="dep-badge">${d}</span>`).join('')
+      : '';
+
+    const paramsHtml = r.params
+      ? r.params.map(p => `<span class="param-badge">${p}</span>`).join(' ')
+      : '<span style="color:var(--muted);font-style:italic">none</span>';
+
+    const outputHtml = s.output.length
+      ? s.output.map(l => `<div class="out-line ${l.type}">${l.text}</div>`).join('')
+      : '<div class="out-empty">No output yet. Click ▶ to run.</div>';
+
+    const actionBtn = s.status === 'running'
+      ? `<button class="card-btn stop" onclick="event.stopPropagation(); stopRecipe('${r.id}')" title="Stop">■</button>`
+      : `<button class="card-btn" onclick="event.stopPropagation(); runRecipe('${r.id}')" title="Run ${r.id}">▶</button>`;
+
+    return `
+      <div class="recipe-card ${isExpanded ? 'expanded' : ''} ${s.status}" data-id="${r.id}">
+        <div class="card-header" onclick="toggleExpand('${r.id}')">
+          <span class="card-chevron">▶</span>
+          <span class="card-icon ${s.status}">${icon}</span>
+          <span class="card-name">${r.id}</span>
+          <span class="card-desc">${r.desc}</span>
+          <div class="card-deps">${depsHtml}</div>
+          <span class="card-time">${timeText}</span>
+          <div class="card-actions">
+            ${actionBtn}
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-meta">
+            <div class="meta-item">
+              <span class="meta-label">Dependencies:</span>
+              <span class="meta-value">${r.deps.length ? r.deps.join(', ') : 'none'}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Parameters:</span>
+              <span class="meta-value">${paramsHtml}</span>
+            </div>
+          </div>
+          <div class="card-commands">
+            <div class="cmd-label">Commands</div>
+            <div class="cmd-text">${r.cmd}</div>
+          </div>
+          <div class="card-output" id="output-${r.id}">
+            ${outputHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleExpand(id) {
+  if (expanded.has(id)) {
+    expanded.delete(id);
+  } else {
+    expanded.add(id);
+  }
+  render();
+}
+
+function expandAll() {
+  recipes.forEach(r => expanded.add(r.id));
+  render();
+}
+
+function collapseAll() {
+  expanded.clear();
+  render();
+}
+
+function filterRecipes(value) {
+  filter = value.toLowerCase();
+  render();
+}
+
+function runRecipe(id) {
+  const r = recipes.find(x => x.id === id);
+  const s = taskState[id];
+
+  if (s.status === 'running') return;
+
+  // Auto-expand when running
+  expanded.add(id);
+
+  s.status = 'running';
+  s.duration = null;
+  s.output = [];
+  running = id;
+  start = Date.now();
+
+  render();
+  updateFooter();
+
+  elapsedTimer = setInterval(() => {
+    $('#elapsed').textContent = fmt(Date.now() - start);
+  }, 100);
+
+  // Simulate execution
+  s.output.push({ type: 'cmd', text: r.cmd });
+  updateOutput(id);
+
+  const lines = [
+    'Starting build process...',
+    'Compiling dependencies...',
+    'Linking...',
+    'Build complete!'
+  ];
+
+  lines.forEach((line, i) => {
+    timers.push(setTimeout(() => {
+      s.output.push({ type: '', text: line });
+      updateOutput(id);
+    }, 200 + i * 350));
+  });
+
+  timers.push(setTimeout(() => {
+    s.status = 'success';
+    s.duration = Date.now() - start;
+    s.output.push({ type: 'success', text: `✓ Completed in ${fmt(s.duration)}` });
+    running = null;
+    clearInterval(elapsedTimer);
+    render();
+    updateFooter();
+  }, 200 + lines.length * 350 + 150));
+}
+
+function stopRecipe(id) {
+  const s = taskState[id];
+  if (s.status !== 'running') return;
+
+  timers.forEach(clearTimeout);
+  timers = [];
+  clearInterval(elapsedTimer);
+
+  s.status = 'failed';
+  s.duration = Date.now() - start;
+  s.output.push({ type: 'error', text: '✗ Stopped by user' });
+  running = null;
+
+  render();
+  updateFooter();
+}
+
+function updateOutput(id) {
+  const el = $(`#output-${id}`);
+  if (!el) return;
+  const s = taskState[id];
+  el.innerHTML = s.output.map(l => `<div class="out-line ${l.type}">${l.text}</div>`).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateFooter() {
+  const dot = $('#footerDot');
+  const txt = $('#footerText');
+  if (running) {
+    dot.className = 'footer-dot running';
+    txt.textContent = `Running: ${running}`;
+  } else {
+    const success = Object.values(taskState).filter(s => s.status === 'success').length;
+    const failed = Object.values(taskState).filter(s => s.status === 'failed').length;
+    if (failed > 0) {
+      dot.className = 'footer-dot failed';
+      txt.textContent = `${failed} failed`;
+    } else if (success > 0) {
+      dot.className = 'footer-dot success';
+      txt.textContent = `${success} completed`;
+    } else {
+      dot.className = 'footer-dot idle';
+      txt.textContent = 'Ready';
+    }
+  }
+}
+
+function fmt(ms) { return (ms/1000).toFixed(2) + 's'; }
+
+init();
+</script>
+</body>
+</html>
