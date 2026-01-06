@@ -26,8 +26,8 @@ task build: [editors.build-highlighters]
 @desc "Deploy website to production"
 @needs vc "Install Vercel CLI: npm i -g vercel" -> _install-vercel
 task deploy:
-    @cd site
     @confirm "Deploy to production?"
+    @cd site
     vc --prod --yes
 
 @group web
