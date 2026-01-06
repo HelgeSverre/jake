@@ -407,27 +407,48 @@ pub fn parse(allocator: std.mem.Allocator, raw_args: []const []const u8) ParseEr
     applyEnvFallbacks(&result);
 
     // Validate mutual exclusivity and required-together constraints
-    try validateConstraints(&result);
+    if (validateConstraints(&result)) |violation| {
+        // Print the constraint error with full context
+        const stderr = compat.getStdErr();
+        var buf: [256]u8 = undefined;
+        const msg = switch (violation.err) {
+            error.MutuallyExclusive => std.fmt.bufPrint(&buf, ansi.err_prefix ++ "Options {s} and {s} cannot be used together\n", .{ violation.flag1, violation.flag2 }) catch "error\n",
+            error.RequiredTogether => std.fmt.bufPrint(&buf, ansi.err_prefix ++ "Option {s} requires {s} to also be specified\n", .{ violation.flag1, violation.flag2 }) catch "error\n",
+            else => "error\n",
+        };
+        stderr.writeAll(msg) catch {};
+        return violation.err;
+    }
 
     return result;
 }
 
+/// Constraint violation info for rich error messages
+pub const ConstraintViolation = struct {
+    err: ParseError,
+    flag1: []const u8,
+    flag2: []const u8,
+};
+
 /// Validate mutual exclusivity and required-together constraints
-fn validateConstraints(result: *const Args) ParseError!void {
+/// Returns constraint violation info if validation fails
+fn validateConstraints(result: *const Args) ?ConstraintViolation {
     // Check --list and --show mutual exclusivity
     if (result.list and result.show != null) {
-        return error.MutuallyExclusive;
+        return .{ .err = error.MutuallyExclusive, .flag1 = "--list", .flag2 = "--show" };
     }
 
     // Check required-together constraints
     // --check requires --fmt
     if (result.check and !result.fmt) {
-        return error.RequiredTogether;
+        return .{ .err = error.RequiredTogether, .flag1 = "--check", .flag2 = "--fmt" };
     }
     // --dump requires --fmt
     if (result.dump and !result.fmt) {
-        return error.RequiredTogether;
+        return .{ .err = error.RequiredTogether, .flag1 = "--dump", .flag2 = "--fmt" };
     }
+
+    return null;
 }
 
 fn matchLongFlag(name: []const u8) ?usize {
