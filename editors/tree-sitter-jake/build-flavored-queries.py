@@ -98,6 +98,7 @@ ALLOWED_CAPS_NVIM = {
     "injections.scm": [
         "@injection.language",
         "@injection.content",
+        "@injection.shebang",
         "@comment",
     ],
     "locals.scm": [
@@ -158,6 +159,14 @@ ALLOWED_CAPS_NVIM = {
         "@frame.inner",
         "@frame.outer",
     ],
+    "runnables.scm": [
+        "@run",
+    ],
+    "outline.scm": [
+        "@name",
+        "@item",
+        "@context",
+    ],
 }
 
 ALLOWED_SETTINGS_NVIM = {
@@ -165,7 +174,11 @@ ALLOWED_SETTINGS_NVIM = {
         "injection.combined",
         "injection.language",
         "injection.include-children",
-    ]
+    ],
+    "runnables.scm": [
+        "tag",
+    ],
+    "outline.scm": [],
 }
 
 # Old nvim-treesitter before updates
@@ -174,8 +187,12 @@ REPLACEMENTS_NVIM = [
     (r"@comment.line", r"@comment"),
     (r"@constant.builtin.boolean", r"@boolean"),
     (r"@constant.character.escape", r"@string.escape"),
+    (r"@constant.numeric", r"@number"),
     (r"@keyword.module", r"@module"),
-    (r"@keyword.control.", r"@keyword."),
+    (r"@keyword\.control\.import", r"@keyword.import"),
+    (r"@keyword\.control\.repeat", r"@keyword.repeat"),
+    (r"@keyword\.control\.conditional", r"@keyword.conditional"),
+    (r"@keyword\.control\b", r"@keyword.conditional"),
     (r"@namespace", r"@module"),
     # Changes to indent queries
     (r"@indent\s+@extend", r"@indent.begin"),
@@ -195,6 +212,7 @@ ALLOWED_CAPS_HELIX = {
         "@type.parameter",
         "@type.enum.variant",
         "@constructor",
+        "@constant",
         "@constant.builtin",
         "@constant.builtin.boolean",
         "@constant.character",
@@ -204,6 +222,7 @@ ALLOWED_CAPS_HELIX = {
         "@constant.numeric.float",
         "@string",
         "@string.regexp",
+        "@string.special",
         "@string.special.path",
         "@string.special.url",
         "@string.special.symbol",
@@ -276,6 +295,14 @@ ALLOWED_CAPS_HELIX = {
         "@comment.inside",
         "@comment.around",
     ],
+    "runnables.scm": [
+        "@run",
+    ],
+    "outline.scm": [
+        "@name",
+        "@item",
+        "@context",
+    ],
 }
 
 ALLOWED_SETTINGS_HELIX = {
@@ -284,12 +311,17 @@ ALLOWED_SETTINGS_HELIX = {
         "injection.language",
         "injection.include-children",
         "injection.include-unnamed-children",
-    ]
+    ],
+    "runnables.scm": [
+        "tag",
+    ],
+    "outline.scm": [],
 }
 
 REPLACEMENTS_HELIX = [
     (r"@keyword.module", r"@keyword.directive"),
     (r"@function.call", r"@function"),
+    (r"@string\.escape", r"@constant.character.escape"),
     (r"@spell ?", r""),
     # nothing more specific than `@local.(reference,definition)`
     (r"(@local\.\w+)\.[.\w]+", r"\1"),

@@ -8,8 +8,8 @@
 (parameters
   ((_) @parameter.inside . ","? @parameter.around)) @parameter.around
 
-(dependency_expression
-  (_) @parameter.inside) @parameter.around
+(dependencies
+  (dependency) @parameter.inside) @parameter.around
 
 (function_call
   arguments: (sequence

@@ -9,13 +9,7 @@
 
 ; Definitions
 
-(alias
-  left: (identifier) @local.definition)
-
 (assignment
-  left: (identifier) @local.definition)
-
-(module
   name: (identifier) @local.definition)
 
 (parameter
@@ -24,19 +18,16 @@
 (recipe_header
   name: (identifier) @local.definition)
 
-; References
+(import_statement
+  namespace: (identifier) @local.definition)
 
-(alias
-  right: (identifier) @local.reference)
+; References
 
 (function_call
   name: (identifier) @local.reference)
 
 (dependency
-  name: (identifier) @local.reference)
-
-(dependency_expression
-  name: (identifier) @local.reference)
+  name: (dependency_name) @local.reference)
 
 (value
   (identifier) @local.reference)
