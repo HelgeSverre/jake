@@ -39,6 +39,7 @@ pub const ExecuteError = error{
     SystemResources,
     Unexpected,
     MissingRequiredEnv,
+    Cancelled,
 };
 
 /// Default CLI context used by init() and initWithIndex() for backwards compatibility.
@@ -263,6 +264,16 @@ pub const Executor = struct {
         // Handle absolute paths
         if (cmd.len > 0 and cmd[0] == '/') {
             return std.fs.accessAbsolute(cmd, .{}) != error.FileNotFound;
+        }
+
+        // Handle relative paths (contain '/')
+        if (std.mem.indexOf(u8, cmd, "/") != null) {
+            // Try to access the file relative to cwd
+            const cwd = std.fs.cwd();
+            if (cwd.access(cmd, .{})) |_| {
+                return true;
+            } else |_| {}
+            return false;
         }
 
         // Search in PATH
@@ -771,6 +782,11 @@ pub const Executor = struct {
 
     /// Execute sequentially (original behavior)
     fn executeSequential(self: *Executor, name: []const u8) ExecuteError!void {
+        // Check for cancellation
+        if (self.ctx.isCancelled()) {
+            return ExecuteError.Cancelled;
+        }
+
         // Check for cycles
         if (self.in_progress.contains(name)) {
             return ExecuteError.CyclicDependency;
@@ -834,14 +850,14 @@ pub const Executor = struct {
         // Run the recipe - capture start time for duration display
         const start_time = std.time.nanoTimestamp();
 
-        // v4: animated spinner for TTY, static output for non-TTY/dry-run
+        // v4: simple header format (spinner disabled due to output interleaving issues)
         var spinner: ?progress_mod.Spinner = null;
-        if (self.is_tty and !self.ctx.dry_run) {
-            spinner = progress_mod.Spinner.init(name, self.color);
-            spinner.?.start();
-        } else if (self.ctx.dry_run) {
-            // v4 format: use ○ for dry-run
+        if (self.ctx.dry_run) {
+            // Dry-run: use ○ symbol
             self.print("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(name) });
+        } else {
+            // Execution: use → header with 3-space indent (matches status line)
+            self.print("   {s}→{s} {s}\n", .{ self.color.jakeRose(), self.color.reset(), name });
         }
 
         // Update hook runner settings
@@ -1147,6 +1163,11 @@ pub const Executor = struct {
 
         var i: usize = 0;
         while (i < cmds.len) : (i += 1) {
+            // Check cancellation before each command
+            if (self.ctx.isCancelled()) {
+                return ExecuteError.Cancelled;
+            }
+
             // Check timeout before each command
             if (has_timeout) {
                 if (timeout_ctx.timeout_expired.load(.acquire)) {
@@ -1413,8 +1434,16 @@ pub const Executor = struct {
             &[_][]const u8{ shell_cmd, "-c", line },
             self.allocator,
         );
-        child.stderr_behavior = .Inherit;
-        child.stdout_behavior = .Inherit;
+
+        // Use Pipe if we have an output callback (web UI), otherwise Inherit for terminal
+        const capture_output = self.ctx.hasOutputCallback();
+        if (capture_output) {
+            child.stderr_behavior = .Pipe;
+            child.stdout_behavior = .Pipe;
+        } else {
+            child.stderr_behavior = .Inherit;
+            child.stdout_behavior = .Inherit;
+        }
 
         if (self.current_working_dir) |working_dir| {
             child.cwd = working_dir;
@@ -1460,19 +1489,38 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
+        // Register child PID for external cancellation (web UI)
+        if (self.ctx.current_child_pid) |pid_atomic| {
+            pid_atomic.store(@intCast(child.id), .release);
+        }
+
         // Register child with timeout context so watchdog can kill it
         if (has_timeout) {
             timeout_ctx.current_child.store(&child, .release);
         }
 
+        // If capturing output, read from pipes and stream to callback
+        if (capture_output) {
+            // Read stdout and stderr and emit via callback
+            self.streamChildOutput(&child);
+        }
+
+        // Wait for child to complete
         const result = child.wait() catch |err| {
-            // Clear child from context
+            if (self.ctx.current_child_pid) |pid_atomic| {
+                pid_atomic.store(0, .release);
+            }
             if (has_timeout) {
                 timeout_ctx.current_child.store(null, .release);
             }
             self.print("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return ExecuteError.CommandFailed;
         };
+
+        // Clear child PID
+        if (self.ctx.current_child_pid) |pid_atomic| {
+            pid_atomic.store(0, .release);
+        }
 
         // Clear child from context
         if (has_timeout) {
@@ -1483,23 +1531,98 @@ pub const Executor = struct {
         switch (result) {
             .Exited => |code| {
                 if (code != 0) {
-                    self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
+                    if (capture_output) {
+                        var buf: [64]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "command exited with code {d}", .{code}) catch "command failed";
+                        self.ctx.emitOutput(msg, true);
+                    } else {
+                        self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
+                    }
                     return ExecuteError.CommandFailed;
                 }
             },
             .Signal => |sig| {
-                // Process was killed by signal (e.g., SIGKILL from timeout)
-                self.print("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
+                // Process was killed by signal (e.g., SIGKILL from timeout/cancellation)
+                if (capture_output) {
+                    // Check if this was a user cancellation
+                    if (self.ctx.isCancelled()) {
+                        return ExecuteError.Cancelled;
+                    }
+                    var buf: [64]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "command killed by signal {d}", .{sig}) catch "command killed";
+                    self.ctx.emitOutput(msg, true);
+                } else {
+                    self.print("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
+                }
                 return ExecuteError.CommandFailed;
             },
             .Stopped => |sig| {
-                self.print("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
+                if (capture_output) {
+                    var buf: [64]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "command stopped by signal {d}", .{sig}) catch "command stopped";
+                    self.ctx.emitOutput(msg, true);
+                } else {
+                    self.print("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
+                }
                 return ExecuteError.CommandFailed;
             },
             .Unknown => |code| {
-                self.print("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
+                if (capture_output) {
+                    var buf: [64]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "command terminated with unknown status {d}", .{code}) catch "command failed";
+                    self.ctx.emitOutput(msg, true);
+                } else {
+                    self.print("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
+                }
                 return ExecuteError.CommandFailed;
             },
+        }
+    }
+
+    /// Stream output from child process stdout/stderr to callback
+    fn streamChildOutput(self: *Executor, child: *std.process.Child) void {
+        var line_buf: [4096]u8 = undefined;
+
+        // Read stdout
+        if (child.stdout) |stdout| {
+            while (true) {
+                const bytes_read = stdout.read(&line_buf) catch break;
+                if (bytes_read == 0) break;
+
+                // Emit each line
+                var start: usize = 0;
+                for (line_buf[0..bytes_read], 0..) |c, i| {
+                    if (c == '\n') {
+                        self.ctx.emitOutput(line_buf[start..i], false);
+                        start = i + 1;
+                    }
+                }
+                // Emit remaining partial line
+                if (start < bytes_read) {
+                    self.ctx.emitOutput(line_buf[start..bytes_read], false);
+                }
+            }
+        }
+
+        // Read stderr
+        if (child.stderr) |stderr| {
+            while (true) {
+                const bytes_read = stderr.read(&line_buf) catch break;
+                if (bytes_read == 0) break;
+
+                // Emit each line
+                var start: usize = 0;
+                for (line_buf[0..bytes_read], 0..) |c, i| {
+                    if (c == '\n') {
+                        self.ctx.emitOutput(line_buf[start..i], true);
+                        start = i + 1;
+                    }
+                }
+                // Emit remaining partial line
+                if (start < bytes_read) {
+                    self.ctx.emitOutput(line_buf[start..bytes_read], true);
+                }
+            }
         }
     }
 
@@ -1657,7 +1780,8 @@ pub const Executor = struct {
             s.stop(success, duration_ns);
             spinner.* = null;
         } else {
-            // Non-TTY: use regular completion status
+            // Non-TTY: blank line before status for visual separation from command output
+            compat.getStdErr().writeAll("\n") catch {};
             self.printCompletionStatusWithDuration(name, success, duration_ns);
         }
     }
