@@ -7,6 +7,7 @@ const completions = jake.completions;
 const upgrade = jake.upgrade;
 const init = jake.init;
 const color_mod = jake.color;
+const webui = jake.webui;
 
 const version = build_options.version;
 
@@ -182,6 +183,57 @@ pub fn main() !void {
                 stdout.writeAll(args.jakefile) catch {};
                 stdout.writeAll("\n") catch {};
             }
+        }
+        return;
+    }
+
+    // Handle web UI mode
+    if (args.web) {
+        // Load Jakefile first to get recipes
+        var jakefile_data = loadJakefile(allocator, args.jakefile) catch |err| {
+            const stderr = getStderr();
+            const color = color_mod.init();
+            if (err == error.FileNotFound) {
+                stderr.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
+                stderr.writeAll(color_mod.symbols.logo) catch {};
+                stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+                stderr.writeAll(" " ++ args_mod.ansi.err_prefix ++ "no Jakefile found\n") catch {};
+            } else {
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to load Jakefile: {s}\n", .{@errorName(err)}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+            }
+            std.process.exit(1);
+        };
+        defer jakefile_data.deinit();
+
+        const port = args.web_port orelse 8420;
+        var server = webui.WebUIServer.init(allocator, port);
+        defer server.deinit();
+
+        // Provide Jakefile data to the web server
+        server.setJakefileData(jakefile_data.jakefile.recipes, jakefile_data.jakefile.variables);
+
+        // Provide execution context for running recipes from the web UI
+        server.setExecutionContext(&jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);
+
+        server.start() catch |err| {
+            const stderr = getStderr();
+            var buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to start web server: {s}\n", .{@errorName(err)}) catch "error\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        };
+
+        // Open browser
+        webui.openBrowser(server.getURL()) catch {};
+
+        // Accept connections until interrupted
+        while (server.isRunning()) {
+            server.acceptOne() catch |err| {
+                if (err == error.ConnectionResetByPeer or err == error.BrokenPipe) continue;
+                break;
+            };
         }
         return;
     }
