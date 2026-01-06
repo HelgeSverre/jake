@@ -52,9 +52,13 @@ pub fn main() !void {
 
     // Parse arguments using args module
     var args = args_mod.parse(allocator, raw_args) catch |err| {
-        const err_arg = if (raw_args.len > 1) raw_args[1] else "";
-        const stderr_writer = FileWriter{ .file = getStderr() };
-        args_mod.printError(stderr_writer, err, err_arg);
+        // Constraint errors (MutuallyExclusive, RequiredTogether) print their own messages
+        // with full context in parse(). Only print for other errors.
+        if (err != error.MutuallyExclusive and err != error.RequiredTogether) {
+            const err_arg = if (raw_args.len > 1) raw_args[1] else "";
+            const stderr_writer = FileWriter{ .file = getStderr() };
+            args_mod.printError(stderr_writer, err, err_arg);
+        }
         std.process.exit(1);
     };
     defer args.deinit(allocator);
@@ -214,14 +218,19 @@ pub fn main() !void {
     };
     defer jakefile_data.deinit();
 
-    var executor = jake.Executor.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);
+    // Create CLI context from parsed args
+    var ctx = jake.Context{
+        .dry_run = args.dry_run,
+        .verbose = args.verbose,
+        .watch_mode = args.watch_enabled,
+        .auto_yes = args.yes,
+        .jobs = args.jobs orelse 0,
+        .positional_args = args.positional,
+        .color = color_mod.init(),
+    };
+
+    var executor = jake.Executor.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &ctx, &jakefile_data.runtime);
     defer executor.deinit();
-    executor.dry_run = args.dry_run;
-    executor.verbose = args.verbose;
-    executor.watch_mode = args.watch_enabled;
-    executor.auto_yes = args.yes;
-    executor.jobs = args.jobs orelse 0;
-    executor.setPositionalArgs(args.positional);
 
     // Validate required environment variables (@require directives)
     executor.validateRequiredEnv() catch |err| {
@@ -262,10 +271,8 @@ pub fn main() !void {
 
     // Watch mode
     if (args.watch_enabled) {
-        var watcher = jake.Watcher.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);
+        var watcher = jake.Watcher.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &ctx, &jakefile_data.runtime);
         defer watcher.deinit();
-        watcher.dry_run = args.dry_run;
-        watcher.verbose = args.verbose;
 
         // Add explicit watch pattern from CLI if provided
         if (args.watch) |pattern| {

@@ -572,7 +572,7 @@ pub const ParallelExecutor = struct {
                         }
 
                         // Evaluate condition
-                        const ctx = conditions.RuntimeContext{
+                        const ctx = conditions.ConditionContext{
                             .watch_mode = false,
                             .dry_run = self.dry_run,
                             .verbose = self.verbose,
@@ -597,7 +597,7 @@ pub const ParallelExecutor = struct {
                             continue;
                         }
 
-                        const ctx = conditions.RuntimeContext{
+                        const ctx = conditions.ConditionContext{
                             .watch_mode = false,
                             .dry_run = self.dry_run,
                             .verbose = self.verbose,

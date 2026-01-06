@@ -15,7 +15,9 @@ const functions = @import("functions.zig");
 const glob_mod = @import("glob.zig");
 const color_mod = @import("color.zig");
 const progress_mod = @import("progress.zig");
-const RuntimeContext = @import("context.zig").RuntimeContext;
+const context_mod = @import("context.zig");
+const RuntimeContext = context_mod.RuntimeContext;
+const Context = context_mod.Context;
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
@@ -39,6 +41,12 @@ pub const ExecuteError = error{
     MissingRequiredEnv,
 };
 
+/// Default CLI context used by init() and initWithIndex() for backwards compatibility.
+/// For production use, pass a Context explicitly via initWithContext().
+var default_context: Context = .{
+    .color = color_mod.Color{ .enabled = false }, // Will be auto-detected when needed
+};
+
 pub const Executor = struct {
     allocator: std.mem.Allocator,
     jakefile: *const Jakefile,
@@ -52,16 +60,15 @@ pub const Executor = struct {
     expanded_strings: std.ArrayListUnmanaged([]const u8),
     environment: Environment,
     hook_runner: HookRunner,
-    dry_run: bool,
-    verbose: bool,
-    auto_yes: bool, // Auto-confirm all @confirm prompts
-    jobs: usize, // Number of parallel jobs (0 = sequential, 1 = single-threaded, 2+ = parallel)
-    positional_args: []const []const u8, // Positional args from command line ($1, $2, etc.)
+
+    // CLI context (flags from user, conceptually immutable but mutable for test setup)
+    ctx: *Context,
+
+    // Runtime state (not CLI flags)
     current_shell: ?[]const u8, // Shell to use for current recipe (from @shell directive)
     current_working_dir: ?[]const u8, // Working directory for current recipe (from @cd directive)
     current_quiet: bool, // Suppress command output for current recipe (from @quiet directive)
     prompt: Prompt, // Confirmation prompt handler
-    watch_mode: bool, // Whether jake is running in watch mode (-w/--watch)
     color: color_mod.Color, // Color output configuration (respects NO_COLOR etc.)
     theme: color_mod.Theme, // Semantic color theme (error, warning, recipe, etc.)
     is_tty: bool, // Whether stderr is a TTY (for animated output)
@@ -91,7 +98,8 @@ pub const Executor = struct {
     }
 
     /// Initialize with a pre-configured RuntimeContext (shares cache, environment, hooks, etc.)
-    pub fn initWithIndexAndContext(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, runtime: *RuntimeContext) Executor {
+    /// and a Context for CLI flags. This is the preferred initialization method.
+    pub fn initWithIndexAndContext(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, ctx: *Context, runtime: *RuntimeContext) Executor {
         var variables = std.StringHashMap([]const u8).init(allocator);
         var var_iter = index.variablesIterator();
         while (var_iter.next()) |entry| {
@@ -109,16 +117,11 @@ pub const Executor = struct {
             .expanded_strings = .empty,
             .environment = runtime.environment,
             .hook_runner = runtime.hook_runner,
-            .dry_run = false,
-            .verbose = false,
-            .auto_yes = false,
-            .jobs = 0,
-            .positional_args = &.{},
+            .ctx = ctx,
             .current_shell = null,
             .current_working_dir = null,
             .current_quiet = false,
             .prompt = runtime.prompt,
-            .watch_mode = false,
             .color = runtime.color,
             .theme = runtime.theme,
             .is_tty = compat.getStdErr().isTty(),
@@ -130,6 +133,11 @@ pub const Executor = struct {
     }
 
     fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Executor {
+        // Reset default context to initial state (important for tests that reuse this)
+        default_context = .{
+            .color = color_mod.Color{ .enabled = false },
+        };
+
         var variables = std.StringHashMap([]const u8).init(allocator);
         var var_iter = index.variablesIterator();
         while (var_iter.next()) |entry| {
@@ -196,16 +204,11 @@ pub const Executor = struct {
             .expanded_strings = .empty,
             .environment = environment,
             .hook_runner = hook_runner,
-            .dry_run = false,
-            .verbose = false,
-            .auto_yes = false,
-            .jobs = 0, // Default to sequential execution
-            .positional_args = &.{}, // Empty by default
+            .ctx = &default_context,
             .current_shell = null,
             .current_working_dir = null,
             .current_quiet = false,
             .prompt = Prompt.init(),
-            .watch_mode = false,
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
             .is_tty = compat.getStdErr().isTty(),
@@ -217,8 +220,9 @@ pub const Executor = struct {
     }
 
     /// Set positional arguments from command line (for $1, $2, $@, etc.)
+    /// Note: This modifies the context, which should be done before execution begins.
     pub fn setPositionalArgs(self: *Executor, args: []const []const u8) void {
-        self.positional_args = args;
+        self.ctx.positional_args = args;
     }
 
     /// Validate that all required environment variables are set.
@@ -226,7 +230,7 @@ pub const Executor = struct {
     /// In dry-run mode, validation is skipped.
     pub fn validateRequiredEnv(self: *Executor) ExecuteError!void {
         // Skip validation in dry-run mode
-        if (self.dry_run) {
+        if (self.ctx.dry_run) {
             return;
         }
 
@@ -405,8 +409,8 @@ pub const Executor = struct {
         }
 
         // Update prompt settings from executor state
-        self.prompt.auto_yes = self.auto_yes;
-        self.prompt.dry_run = self.dry_run;
+        self.prompt.auto_yes = self.ctx.auto_yes;
+        self.prompt.dry_run = self.ctx.dry_run;
 
         return self.prompt.confirm(message);
     }
@@ -576,10 +580,10 @@ pub const Executor = struct {
 
                         // Extract condition from line (strip "if " prefix)
                         const condition = extractCondition(expanded_line, "if ");
-                        const ctx = conditions.RuntimeContext{
-                            .watch_mode = self.watch_mode,
-                            .dry_run = self.dry_run,
-                            .verbose = self.verbose,
+                        const ctx = conditions.ConditionContext{
+                            .watch_mode = self.ctx.watch_mode,
+                            .dry_run = self.ctx.dry_run,
+                            .verbose = self.ctx.verbose,
                         };
                         const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch false;
 
@@ -607,10 +611,10 @@ pub const Executor = struct {
                         }
                         // Extract condition from line (strip "elif " prefix)
                         const condition = extractCondition(expanded_line, "elif ");
-                        const ctx = conditions.RuntimeContext{
-                            .watch_mode = self.watch_mode,
-                            .dry_run = self.dry_run,
-                            .verbose = self.verbose,
+                        const ctx = conditions.ConditionContext{
+                            .watch_mode = self.ctx.watch_mode,
+                            .dry_run = self.ctx.dry_run,
+                            .verbose = self.ctx.verbose,
                         };
                         const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch false;
 
@@ -726,7 +730,7 @@ pub const Executor = struct {
         self.tasks_failed = 0;
 
         // Use parallel execution if jobs > 1
-        if (self.jobs > 1) {
+        if (self.ctx.jobs > 1) {
             self.executeParallel(name) catch |err| {
                 self.printExecutionSummary();
                 return err;
@@ -745,19 +749,19 @@ pub const Executor = struct {
 
     /// Execute using parallel executor for concurrent dependency execution
     fn executeParallel(self: *Executor, name: []const u8) ExecuteError!void {
-        var parallel_exec = ParallelExecutor.initWithIndex(self.allocator, self.jakefile, self.index, self.jobs);
+        var parallel_exec = ParallelExecutor.initWithIndex(self.allocator, self.jakefile, self.index, self.ctx.jobs);
         defer parallel_exec.deinit();
 
-        parallel_exec.dry_run = self.dry_run;
-        parallel_exec.verbose = self.verbose;
+        parallel_exec.dry_run = self.ctx.dry_run;
+        parallel_exec.verbose = self.ctx.verbose;
 
         // Build dependency graph
         try parallel_exec.buildGraph(name);
 
         // Show parallelism stats in verbose mode (v4: muted prefix)
-        if (self.verbose) {
+        if (self.ctx.verbose) {
             const stats = parallel_exec.getParallelismStats();
-            self.print("   {s}jake: parallel execution with {d} threads{s}\n", .{ self.color.muted(), self.jobs, self.color.reset() });
+            self.print("   {s}jake: parallel execution with {d} threads{s}\n", .{ self.color.muted(), self.ctx.jobs, self.color.reset() });
             self.print("   {s}jake: {d} recipes, max {d} parallel, critical path length {d}{s}\n", .{ self.color.muted(), stats.total_recipes, stats.max_parallel, stats.critical_path_length, self.color.reset() });
         }
 
@@ -818,7 +822,7 @@ pub const Executor = struct {
         if (recipe.kind == .file) {
             const needs_run = self.checkFileTarget(recipe) catch true;
             if (!needs_run) {
-                if (self.verbose) {
+                if (self.ctx.verbose) {
                     // v4: muted verbose prefix
                     self.print("   {s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), name, self.color.reset() });
                 }
@@ -832,17 +836,17 @@ pub const Executor = struct {
 
         // v4: animated spinner for TTY, static output for non-TTY/dry-run
         var spinner: ?progress_mod.Spinner = null;
-        if (self.is_tty and !self.dry_run) {
+        if (self.is_tty and !self.ctx.dry_run) {
             spinner = progress_mod.Spinner.init(name, self.color);
             spinner.?.start();
-        } else if (self.dry_run) {
+        } else if (self.ctx.dry_run) {
             // v4 format: use ○ for dry-run
             self.print("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(name) });
         }
 
         // Update hook runner settings
-        self.hook_runner.dry_run = self.dry_run;
-        self.hook_runner.verbose = self.verbose;
+        self.hook_runner.dry_run = self.ctx.dry_run;
+        self.hook_runner.verbose = self.ctx.verbose;
 
         // Create hook context
         var hook_context = HookContext{
@@ -924,7 +928,7 @@ pub const Executor = struct {
         var cli_args = std.StringHashMap([]const u8).init(self.allocator);
         defer cli_args.deinit();
 
-        for (self.positional_args) |arg| {
+        for (self.ctx.positional_args) |arg| {
             if (std.mem.indexOfScalar(u8, arg, '=')) |eq_pos| {
                 const key = arg[0..eq_pos];
                 const value = arg[eq_pos + 1 ..];
@@ -1165,10 +1169,10 @@ pub const Executor = struct {
                             continue;
                         }
                         const condition = extractCondition(cmd.line, "if ");
-                        const ctx = conditions.RuntimeContext{
-                            .watch_mode = self.watch_mode,
-                            .dry_run = self.dry_run,
-                            .verbose = self.verbose,
+                        const ctx = conditions.ConditionContext{
+                            .watch_mode = self.ctx.watch_mode,
+                            .dry_run = self.ctx.dry_run,
+                            .verbose = self.ctx.verbose,
                         };
                         const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch false;
                         if (condition_result) {
@@ -1188,10 +1192,10 @@ pub const Executor = struct {
                             continue;
                         }
                         const condition = extractCondition(cmd.line, "elif ");
-                        const ctx = conditions.RuntimeContext{
-                            .watch_mode = self.watch_mode,
-                            .dry_run = self.dry_run,
-                            .verbose = self.verbose,
+                        const ctx = conditions.ConditionContext{
+                            .watch_mode = self.ctx.watch_mode,
+                            .dry_run = self.ctx.dry_run,
+                            .verbose = self.ctx.verbose,
                         };
                         const condition_result = conditions.evaluate(condition, &self.variables, ctx) catch false;
                         if (condition_result) {
@@ -1315,7 +1319,7 @@ pub const Executor = struct {
                     },
                     .watch => {
                         if (!executing) continue;
-                        if (self.dry_run) {
+                        if (self.ctx.dry_run) {
                             const patterns = self.parseCachePatterns(cmd.line);
                             defer self.allocator.free(patterns);
                             // v4 format: muted color for dry-run details
@@ -1336,7 +1340,7 @@ pub const Executor = struct {
                         }
                         const expanded_target = try self.expandJakeVariables(target);
                         try self.expanded_strings.append(self.allocator, expanded_target);
-                        if (self.dry_run) {
+                        if (self.ctx.dry_run) {
                             // v4 format: muted color for dry-run details
                             self.print("     {s}@launch {s}{s}\n", .{ self.color.muted(), expanded_target, self.color.reset() });
                             continue;
@@ -1392,13 +1396,13 @@ pub const Executor = struct {
             line = line[at_pos + 1 ..];
         }
 
-        if (self.dry_run) {
+        if (self.ctx.dry_run) {
             // v4 format: indented command in muted color
             self.print("     {s}{s}{s}\n", .{ self.color.muted(), line, self.color.reset() });
             return;
         }
 
-        if (self.verbose and !suppress_echo and !self.current_quiet) {
+        if (self.ctx.verbose and !suppress_echo and !self.current_quiet) {
             // v4: verbose command execution with jake: prefix
             self.print("   {s}jake: executing '{s}'{s}\n", .{ self.color.muted(), line, self.color.reset() });
         }
@@ -1534,14 +1538,14 @@ pub const Executor = struct {
                         const arg_spec = var_name[1..];
                         if (std.mem.eql(u8, arg_spec, "@")) {
                             // $@ - all positional args joined with space
-                            for (self.positional_args, 0..) |arg, idx| {
+                            for (self.ctx.positional_args, 0..) |arg, idx| {
                                 if (idx > 0) try result.append(self.allocator, ' ');
                                 try result.appendSlice(self.allocator, arg);
                             }
                         } else if (std.fmt.parseInt(usize, arg_spec, 10)) |num| {
                             // $1, $2, etc. (1-indexed)
-                            if (num > 0 and num <= self.positional_args.len) {
-                                try result.appendSlice(self.allocator, self.positional_args[num - 1]);
+                            if (num > 0 and num <= self.ctx.positional_args.len) {
+                                try result.appendSlice(self.allocator, self.ctx.positional_args[num - 1]);
                             }
                             // If out of range, expand to empty string
                         } else |_| {
@@ -1591,7 +1595,7 @@ pub const Executor = struct {
         const total_time_s = @as(f64, @floatFromInt(total_time_ms)) / 1000.0;
 
         // Don't print summary in dry-run mode or if no tasks ran
-        if (self.dry_run) {
+        if (self.ctx.dry_run) {
             // Print dry-run summary
             const total = self.tasks_run + self.tasks_failed;
             if (total > 0) {
@@ -1642,7 +1646,7 @@ pub const Executor = struct {
     /// Used for animated spinner mode - stops the animation thread and prints final status
     fn stopSpinnerOrPrintStatus(self: *Executor, spinner: *?progress_mod.Spinner, name: []const u8, success: bool, start_time: i128) void {
         // In dry-run mode, don't print completion line (tasks don't actually run)
-        if (self.dry_run) {
+        if (self.ctx.dry_run) {
             return;
         }
 
@@ -2264,7 +2268,7 @@ test "executor basic" {
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
     try executor.execute("hello");
 }
 
@@ -2290,7 +2294,7 @@ test "executor executes dependencies first" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Execute third, which should trigger first, then second, then third
     try executor.execute("third");
@@ -2319,7 +2323,7 @@ test "executor executes each dependency once" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("top");
 
@@ -2346,7 +2350,7 @@ test "executor detects direct cycle" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     const result = executor.execute("a");
     try std.testing.expectError(ExecuteError.CyclicDependency, result);
@@ -2364,7 +2368,7 @@ test "executor detects self cycle" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     const result = executor.execute("a");
     try std.testing.expectError(ExecuteError.CyclicDependency, result);
@@ -2386,7 +2390,7 @@ test "executor detects indirect cycle" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     const result = executor.execute("a");
     try std.testing.expectError(ExecuteError.CyclicDependency, result);
@@ -2469,7 +2473,7 @@ test "executor dry run does not execute commands" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should succeed because dry_run doesn't actually execute the failing command
     try executor.execute("test");
@@ -2489,7 +2493,7 @@ test "executor returns error for non-existent recipe" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     const result = executor.execute("nonexistent");
     try std.testing.expectError(ExecuteError.RecipeNotFound, result);
@@ -2507,7 +2511,7 @@ test "executor returns error for missing dependency" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     const result = executor.execute("build");
     try std.testing.expectError(ExecuteError.RecipeNotFound, result);
@@ -2527,7 +2531,7 @@ test "executor handles simple recipe" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("build");
     try std.testing.expect(executor.executed.contains("build"));
@@ -2545,7 +2549,7 @@ test "executor handles task recipe" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("build");
     try std.testing.expect(executor.executed.contains("build"));
@@ -2567,7 +2571,7 @@ test "executor runs multiple commands in recipe" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("setup");
 }
@@ -2588,7 +2592,7 @@ test "executor tracks executed recipes" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("a");
     try std.testing.expect(executor.executed.contains("a"));
@@ -2611,7 +2615,7 @@ test "executor skips already executed recipe" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("base");
     try executor.execute("base"); // Should not re-execute
@@ -2652,7 +2656,7 @@ test "executor handles empty recipe" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("empty");
     try std.testing.expect(executor.executed.contains("empty"));
@@ -2696,8 +2700,8 @@ test "executor @ prefix suppresses echo but still executes" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
-    executor.verbose = true;
+    executor.ctx.dry_run = true;
+    executor.ctx.verbose = true;
 
     // Should execute without errors (dry-run mode)
     try executor.execute("deploy");
@@ -2745,7 +2749,7 @@ test "private recipes are hidden from list but still executable" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Private recipes should still be executable directly
     try executor.execute("_internal-helper");
@@ -3110,7 +3114,7 @@ test "executor @ignore in dry run mode" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should succeed in dry-run mode (commands aren't actually executed)
     try executor.execute("test");
@@ -3545,7 +3549,7 @@ test "@require skips validation in dry-run mode" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // In dry-run mode, should not fail
     try executor.validateRequiredEnv();
@@ -3646,7 +3650,7 @@ test "@needs verifies command exists in PATH" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // 'sh' should exist on all systems
     try executor.execute("test");
@@ -3665,7 +3669,7 @@ test "@needs fails with helpful error when command missing" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should fail because command doesn't exist
     const err = executor.execute("test");
@@ -3685,7 +3689,7 @@ test "@needs checks multiple space-separated commands" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // All commands should exist
     try executor.execute("test");
@@ -3704,7 +3708,7 @@ test "@needs works with full path to binary" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -3722,7 +3726,7 @@ test "@needs with non-existent command in middle of list fails" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should fail on the non-existent command
     const err = executor.execute("test");
@@ -3742,7 +3746,7 @@ test "@needs with comma-separated commands" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should handle comma-separated list
     try executor.execute("test");
@@ -3763,7 +3767,7 @@ test "@needs only checks once per command" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should succeed with multiple @needs for same command
     try executor.execute("test");
@@ -3782,7 +3786,7 @@ test "@needs with custom hint shows hint on failure" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should fail with custom hint
     const err = executor.execute("test");
@@ -3802,7 +3806,7 @@ test "@needs with task reference shows run suggestion" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should fail and suggest running the install task
     const err = executor.execute("test");
@@ -3822,7 +3826,7 @@ test "@needs with hint and task reference" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should fail with both hint and task reference
     const err = executor.execute("test");
@@ -3842,7 +3846,7 @@ test "@needs with hint still works when command exists" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should succeed - hint only shown on failure
     try executor.execute("test");
@@ -3861,7 +3865,7 @@ test "@needs with task reference still works when command exists" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should succeed - task reference only used on failure
     try executor.execute("test");
@@ -3882,7 +3886,7 @@ test "recipe-level @needs verifies command exists before execution" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // 'sh' should exist - recipe-level @needs checked before commands run
     try executor.execute("test");
@@ -3901,7 +3905,7 @@ test "recipe-level @needs fails with helpful error when command missing" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should fail because command doesn't exist - checked before commands run
     const err = executor.execute("test");
@@ -3921,7 +3925,7 @@ test "recipe-level @needs with hint and task reference" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should fail - hint and task reference will be shown in error
     const err = executor.execute("test");
@@ -3965,7 +3969,7 @@ test "recipe-level @needs checks multiple commands on same line" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should fail because third command doesn't exist
     const err = executor.execute("test");
@@ -3987,8 +3991,8 @@ test "@confirm with --yes flag auto-confirms" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
-    executor.auto_yes = true; // Enable auto-yes flag
+    executor.ctx.dry_run = true;
+    executor.ctx.auto_yes = true; // Enable auto-yes flag
 
     // Should succeed because auto_yes is enabled
     try executor.execute("test");
@@ -4007,7 +4011,7 @@ test "@confirm in dry-run mode shows message but doesn't prompt" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // In dry-run mode, @confirm should show message but auto-confirm
     try executor.execute("test");
@@ -4026,7 +4030,7 @@ test "@confirm with default message" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should use default "Continue?" message
     try executor.execute("test");
@@ -4048,7 +4052,7 @@ test "@each iterates over space-separated items" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should iterate and print each item
     try executor.execute("test");
@@ -4068,7 +4072,7 @@ test "@each expands {{item}} variable in command" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4089,7 +4093,7 @@ test "@each expands variable to multiple items" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should iterate 3 times (foo, bar, baz), not once with the whole string
     try executor.execute("test");
@@ -4113,7 +4117,7 @@ test "@each with empty list executes zero times" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should skip loop body but execute "done"
     try executor.execute("test");
@@ -4136,7 +4140,7 @@ test "@each nested in conditional block respects condition" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should skip the @each block due to false condition
     try executor.execute("test");
@@ -4156,7 +4160,7 @@ test "@each with comma-separated items" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4175,7 +4179,7 @@ test "@each with single item" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4195,7 +4199,7 @@ test "@each with multiple commands" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4216,7 +4220,7 @@ test "@each with glob pattern expands matching files" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should iterate over the literal file (not a glob)
     try executor.execute("test");
@@ -4258,7 +4262,7 @@ test "@each with non-matching glob returns empty" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should skip the loop (no matches) but execute "done"
     try executor.execute("test");
@@ -4278,7 +4282,7 @@ test "@each with mixed literal and glob items" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should process both literal items
     try executor.execute("test");
@@ -4301,7 +4305,7 @@ test "@cache first run always executes" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true; // Use dry-run to see command output
+    executor.ctx.dry_run = true; // Use dry-run to see command output
 
     // Should execute because file doesn't exist (stale)
     try executor.execute("test");
@@ -4340,7 +4344,7 @@ test "@cache with existing file updates cache" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // First run - should execute and cache
     try executor.execute("test");
@@ -4384,7 +4388,7 @@ test "@cache skips command when inputs unchanged" {
     try executor.cache.update("test.txt");
 
     // Set dry_run after cache is populated
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Second run - should skip (cached)
     try executor.execute("test");
@@ -4404,7 +4408,7 @@ test "@cache with multiple files" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4422,7 +4426,7 @@ test "@cache with comma-separated files" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4440,7 +4444,7 @@ test "@cache with empty deps always runs" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4486,7 +4490,7 @@ test "@watch in dry-run mode shows what would be watched" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4504,7 +4508,7 @@ test "@watch is informational in normal mode" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true; // Still dry-run for safety in tests
+    executor.ctx.dry_run = true; // Still dry-run for safety in tests
 
     try executor.execute("test");
 }
@@ -4522,7 +4526,7 @@ test "@watch with multiple patterns" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4541,7 +4545,7 @@ test "@watch continues to next command" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4582,7 +4586,7 @@ test "@watch with empty pattern is no-op" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4613,7 +4617,7 @@ test "deeply nested @if blocks (5 levels)" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4642,7 +4646,7 @@ test "nested @if with @else does not execute outer else" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // This should not error - previously the outer @else would wrongly execute
     try executor.execute("test");
@@ -4669,7 +4673,7 @@ test "nested @if with false outer does not execute inner" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4688,7 +4692,7 @@ test "@ignore with command that doesn't exist still continues" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4706,7 +4710,7 @@ test "empty recipe with only directives executes without error" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4727,7 +4731,7 @@ test "@each inside @if only runs when condition true" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4749,7 +4753,7 @@ test "@each inside @if false is skipped" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4776,7 +4780,7 @@ test "recipe with all directives combined" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4799,7 +4803,7 @@ test "multiple @if/@else chains" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4874,7 +4878,7 @@ test "@needs continues checking after first found command" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4893,7 +4897,7 @@ test "variable expansion in commands works with special chars" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4910,7 +4914,7 @@ test "environment variable expansion with default fallback" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4929,7 +4933,7 @@ test "recipe with only comments parses correctly" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4946,7 +4950,7 @@ test "executor handles recipe with spaces in command" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -4968,8 +4972,8 @@ test "@quiet suppresses verbose output for recipe" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
-    executor.verbose = true; // Even with verbose, quiet should suppress
+    executor.ctx.dry_run = true;
+    executor.ctx.verbose = true; // Even with verbose, quiet should suppress
 
     try executor.execute("test");
 }
@@ -5009,7 +5013,7 @@ test "recipe parameter with default value binds to variable" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("greet");
 
@@ -5029,7 +5033,7 @@ test "recipe parameter CLI arg overrides default" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Simulate CLI args: jake greet name=Alice
     const args = [_][]const u8{"name=Alice"};
@@ -5053,7 +5057,7 @@ test "recipe parameter without default stays unset if no CLI arg" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("greet");
 
@@ -5073,7 +5077,7 @@ test "recipe multiple parameters bind correctly" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Override just one param
     const args = [_][]const u8{"env=prod"};
@@ -5097,7 +5101,7 @@ test "recipe parameter with quoted value in CLI" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // CLI args with value containing spaces (shell would handle quotes)
     const args = [_][]const u8{"name=John Doe"};
@@ -5120,7 +5124,7 @@ test "recipe parameter value with equals sign" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // CLI arg with value containing equals: expr=2+2=4
     const args = [_][]const u8{"expr=2+2=4"};
@@ -5297,7 +5301,7 @@ test "stress: deeply nested conditionals with mixed branches" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -5328,7 +5332,7 @@ test "stress: complex dependency chain" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("h");
 }
@@ -5351,7 +5355,7 @@ test "stress: @each inside conditional" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -5374,7 +5378,7 @@ test "stress: conditional inside @each" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -5399,7 +5403,7 @@ test "stress: multiple directives in single recipe" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -5431,7 +5435,7 @@ test "stress: hooks with dependencies" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -5454,7 +5458,7 @@ test "stress: recipe with parameters and conditionals" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("deploy");
 }
@@ -5482,7 +5486,7 @@ test "stress: targeted hooks with multiple recipes" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("deploy");
 }
@@ -5502,7 +5506,7 @@ test "stress: file target with multiple deps" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("build");
 }
@@ -5522,7 +5526,7 @@ test "stress: empty @each list produces no iterations" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -5682,7 +5686,7 @@ test "stress: diamond dependency pattern" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("a");
 }
@@ -5742,7 +5746,7 @@ test "stress: 20+ recipes large project" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("all");
 }
@@ -5780,7 +5784,7 @@ test "@cd directive works in dry run" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Should succeed without error
     try executor.execute("test");
@@ -5819,7 +5823,7 @@ test "@shell directive works in dry run" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     try executor.execute("test");
 }
@@ -5838,7 +5842,7 @@ test "@cd and @shell combined" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     const recipe = jakefile.getRecipe("test").?;
     try std.testing.expectEqualStrings("/tmp", recipe.working_dir.?);
@@ -5907,7 +5911,7 @@ test "@timeout with dry run does not hang" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.dry_run = true;
+    executor.ctx.dry_run = true;
 
     // Dry run should complete immediately without timeout logic
     try executor.execute("test");
@@ -5943,7 +5947,7 @@ test "@timeout kills long-running command" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.verbose = false;
+    executor.ctx.verbose = false;
 
     // Capture start time
     const start = std.time.milliTimestamp();
@@ -5973,7 +5977,7 @@ test "@timeout allows fast commands to complete" {
 
     var executor = Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
-    executor.verbose = false;
+    executor.ctx.verbose = false;
 
     // Should complete successfully
     try executor.execute("quick");
