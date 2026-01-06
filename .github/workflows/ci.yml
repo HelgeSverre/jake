@@ -67,3 +67,23 @@ jobs:
         run: |
           cd tests/e2e
           ../../zig-out/bin/jake test-all
+
+  editors:
+    name: Editor Plugins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check Editor Plugin Sync
+        run: ./editors/sync.sh --check
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Test Tree-sitter Grammar
+        run: |
+          cd editors/tree-sitter-jake
+          npm ci
+          npx tree-sitter test
