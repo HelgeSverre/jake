@@ -18,7 +18,7 @@ If you're coming from Just, the transition to Jake is smooth. Most syntax is sim
 | `@recipe` (quiet) | `@quiet` decorator                |
 | `[group: 'x']`    | `@group x`                        |
 | `[confirm]`       | `@confirm "message"`              |
-| `[private]`       | Prefix with `_`                   |
+| `[private]`       | `@hidden` or prefix with `_`      |
 
 ## Key Differences
 
@@ -73,16 +73,21 @@ task deploy:
 
 ### Private Recipes
 
-Just uses an attribute. Jake uses a naming convention:
+Just uses an attribute. Jake supports both `@hidden` directive and underscore prefix:
 
 ```jake
 # Just: [private]
-# Jake: prefix with underscore
-task _helper:
+# Jake option 1: @hidden directive
+@hidden
+task helper:
     echo "I'm hidden from --list"
 
-task public: [_helper]
-    echo "I use the hidden helper"
+# Jake option 2: underscore prefix
+task _other-helper:
+    echo "Also hidden from --list"
+
+task public: [helper, _other-helper]
+    echo "I use the hidden helpers"
 ```
 
 ## Example Migration

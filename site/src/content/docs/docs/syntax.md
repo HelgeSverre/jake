@@ -153,7 +153,11 @@ Now `jake build`, `jake b`, and `jake compile` all work.
 
 ## Private Recipes
 
-Prefix with `_` to hide from listings:
+Hide recipes from `jake --list` using either method:
+
+### Underscore Prefix
+
+Prefix the recipe name with `_`:
 
 ```jake
 task _internal-helper:
@@ -162,3 +166,18 @@ task _internal-helper:
 task public-task: [_internal-helper]
     echo "Uses the private helper"
 ```
+
+### @hidden Directive
+
+Use the `@hidden` directive before the recipe:
+
+```jake
+@hidden
+task internal-helper:
+    echo "Hidden from jake --list"
+
+task public-task: [internal-helper]
+    echo "Uses the private helper"
+```
+
+Both methods hide the recipe from normal listings. Use `jake --all` or `jake -a` to see all recipes including hidden ones.
