@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jake</title>
+  <style>
+    :root {
+      --jake: #f43f5e;
+      --jake-light: #fb7185;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --blue: #60a5fa;
+      --muted: #71717a;
+      --bg: #0a0a0a;
+      --bg2: #111;
+      --bg3: #1a1a1a;
+      --text: #fafafa;
+      --text2: #a1a1aa;
+      --border: #27272a;
+      --sidebar: 220px;
+      --header: 44px;
+      --status: 28px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 13px/1.4 system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+    #app { display: flex; flex-direction: column; height: 100%; }
+
+    /* Header */
+    .header {
+      height: var(--header);
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+    .logo-icon {
+      font-family: ui-monospace, monospace;
+      font-size: 16px;
+      color: var(--jake);
+    }
+    .controls { display: flex; gap: 6px; }
+    .btn {
+      padding: 5px 12px;
+      border: none;
+      border-radius: 4px;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-run { background: var(--jake); color: #fff; }
+    .btn-run:hover { background: var(--jake-light); }
+    .btn-run:disabled { background: var(--muted); cursor: default; }
+    .btn-stop { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+    .btn-stop:disabled { opacity: .4; cursor: default; }
+
+    /* Main */
+    .main { flex: 1; display: flex; overflow: hidden; }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar);
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .section { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    .section:last-child { border: none; flex: 1; overflow-y: auto; }
+    .section-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .recipe {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+    }
+    .recipe:hover { background: var(--bg3); }
+    .recipe.active { background: rgba(244,63,94,.1); }
+    .recipe-icon { width: 14px; text-align: center; }
+    .recipe-icon.pending { color: var(--muted); }
+    .recipe-icon.running { color: var(--jake); }
+    .recipe-icon.success { color: var(--green); }
+    .recipe-icon.failed { color: var(--red); }
+    .recipe-name { flex: 1; }
+    .recipe-time { font-size: 10px; color: var(--muted); }
+    .recipe-deps {
+      display: flex;
+      gap: 4px;
+      padding-left: 30px;
+      margin-top: 2px;
+    }
+    .dep {
+      font-size: 9px;
+      padding: 1px 5px;
+      background: var(--bg3);
+      border-radius: 3px;
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+    }
+    .var-list { font-family: ui-monospace, monospace; font-size: 11px; }
+    .var { display: flex; gap: 6px; padding: 2px 0; color: var(--text2); }
+    .var-name { color: var(--blue); }
+    .var-val { color: var(--green); }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 0 12px;
+    }
+    .tab {
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .tab:hover { color: var(--text2); }
+    .tab.active { color: var(--jake); border-color: var(--jake); }
+
+    /* Output */
+    .output-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      background: #090909;
+      line-height: 1.5;
+    }
+    .output.hidden { display: none; }
+    .task-hdr { color: var(--jake); margin-top: 8px; display: flex; align-items: center; gap: 6px; }
+    .task-hdr:first-child { margin-top: 0; }
+    .cmd { color: var(--text2); padding-left: 20px; }
+    .cmd::before { content: '$ '; color: var(--muted); }
+    .out { color: var(--muted); padding-left: 20px; white-space: pre-wrap; }
+    .done { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+    .done.success .icon { color: var(--green); }
+    .done.failed .icon { color: var(--red); }
+    .done .time { color: var(--muted); margin-left: auto; }
+    .summary { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); color: var(--text2); }
+
+    /* Parallel */
+    .parallel {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+      padding: 10px;
+      overflow-y: auto;
+      background: var(--bg);
+    }
+    .parallel.hidden { display: none; }
+    .lane {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .lane-hdr {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      background: var(--bg3);
+      border-bottom: 1px solid var(--border);
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+    }
+    .lane-hdr .icon.pending { color: var(--muted); }
+    .lane-hdr .icon.running { color: var(--jake); }
+    .lane-hdr .icon.success { color: var(--green); }
+    .lane-hdr .icon.failed { color: var(--red); }
+    .lane-hdr .name { flex: 1; font-weight: 500; }
+    .lane-hdr .time { font-size: 10px; color: var(--muted); }
+    .lane-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      background: #090909;
+      max-height: 200px;
+    }
+    .lane-body .line { padding: 1px 0; }
+    .lane-body .cmd-line { color: var(--text2); }
+    .lane-body .out-line { color: var(--muted); }
+
+    /* Spinner - CSS only */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--jake);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+
+    /* Status */
+    .status {
+      height: var(--status);
+      background: var(--bg3);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .status-left { display: flex; align-items: center; gap: 6px; }
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .status-dot.running { background: var(--jake); }
+    .status-dot.success { background: var(--green); }
+    .status-dot.failed { background: var(--red); }
+    .status-right { display: flex; align-items: center; gap: 4px; }
+    .conn-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header class="header">
+    <div class="logo"><span class="logo-icon">{j}</span><span>Jake</span></div>
+    <div class="controls">
+      <button id="runBtn" class="btn btn-run" onclick="run()">▶ Run</button>
+      <button id="stopBtn" class="btn btn-stop" onclick="stop()" disabled>■ Stop</button>
+    </div>
+  </header>
+  <main class="main">
+    <aside class="sidebar">
+      <div class="section">
+        <div class="section-title">Recipes</div>
+        <div id="recipes"></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Variables</div>
+        <div id="vars" class="var-list"></div>
+      </div>
+    </aside>
+    <div class="output-wrap">
+      <div class="tabs">
+        <div class="tab active" data-mode="seq" onclick="setMode('seq')">Sequential</div>
+        <div class="tab" data-mode="par" onclick="setMode('par')">Parallel</div>
+      </div>
+      <div id="seqOut" class="output"></div>
+      <div id="parOut" class="parallel hidden"></div>
+    </div>
+  </main>
+  <footer class="status">
+    <div class="status-left">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusTxt">Ready</span>
+    </div>
+    <span id="elapsed">0.00s</span>
+    <div class="status-right"><div class="conn-dot"></div><span>Local</span></div>
+  </footer>
+</div>
+<script>
+const tasks = [
+  { id: 'build', deps: [], cmd: 'cargo build --release', lines: ['Compiling jake v0.4.0', 'Compiling lexer v0.1.0', 'Finished release'], time: 1820 },
+  { id: 'lint', deps: [], cmd: 'zig fmt --check src/', lines: ['All 47 files formatted'], time: 340 },
+  { id: 'test', deps: ['build'], cmd: 'zig build test', lines: ['Test [1/12] lexer...', 'Test [6/12] parser...', '12 passed'], time: 2100 },
+  { id: 'deploy', deps: ['build','test'], cmd: './deploy.sh', lines: ['Uploading...', 'Deploy complete!'], time: 820 }
+];
+const vars = { app_name: '"myapp"', version: '"0.4.0"' };
+
+let mode = 'seq', running = false, start = 0, timers = [], elapsedTimer = null;
+let taskState = {}; // { id: { status, duration } }
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+function init() {
+  resetState();
+  renderRecipes();
+  renderVars();
+  renderParallel();
+  $('#seqOut').innerHTML = '<span style="color:var(--muted)">Click Run to start...</span>';
+}
+
+function resetState() {
+  taskState = {};
+  tasks.forEach(t => taskState[t.id] = { status: 'pending', duration: null });
+}
+
+function renderRecipes() {
+  $('#recipes').innerHTML = tasks.map(t => {
+    const s = taskState[t.id];
+    const icon = s.status === 'running' ? '<span class="spinner"></span>' :
+                 s.status === 'success' ? '✓' :
+                 s.status === 'failed' ? '✗' : '○';
+    const time = s.duration ? fmt(s.duration) : '';
+    const deps = t.deps.length ? `<div class="recipe-deps">${t.deps.map(d=>`<span class="dep">${d}</span>`).join('')}</div>` : '';
+    return `<div class="recipe ${s.status === 'running' ? 'active' : ''}" data-id="${t.id}">
+      <span class="recipe-icon ${s.status}">${icon}</span>
+      <span class="recipe-name">${t.id}</span>
+      <span class="recipe-time">${time}</span>
+    </div>${deps}`;
+  }).join('');
+}
+
+function renderVars() {
+  $('#vars').innerHTML = Object.entries(vars).map(([k,v]) =>
+    `<div class="var"><span class="var-name">${k}</span>=<span class="var-val">${v}</span></div>`
+  ).join('');
+}
+
+function renderParallel() {
+  $('#parOut').innerHTML = tasks.map(t => {
+    const s = taskState[t.id];
+    const icon = s.status === 'running' ? '<span class="spinner"></span>' :
+                 s.status === 'success' ? '✓' :
+                 s.status === 'failed' ? '✗' : '○';
+    const time = s.duration ? fmt(s.duration) : '';
+    return `<div class="lane" id="lane-${t.id}">
+      <div class="lane-hdr">
+        <span class="icon ${s.status}">${icon}</span>
+        <span class="name">${t.id}</span>
+        <span class="time">${time}</span>
+      </div>
+      <div class="lane-body" id="laneBody-${t.id}"></div>
+    </div>`;
+  }).join('');
+}
+
+function updateRecipe(id) {
+  const s = taskState[id];
+  const el = $(`.recipe[data-id="${id}"]`);
+  if (!el) return;
+  const iconEl = el.querySelector('.recipe-icon');
+  const timeEl = el.querySelector('.recipe-time');
+  iconEl.className = `recipe-icon ${s.status}`;
+  iconEl.innerHTML = s.status === 'running' ? '<span class="spinner"></span>' :
+                     s.status === 'success' ? '✓' :
+                     s.status === 'failed' ? '✗' : '○';
+  timeEl.textContent = s.duration ? fmt(s.duration) : '';
+  el.classList.toggle('active', s.status === 'running');
+}
+
+function updateLane(id) {
+  const s = taskState[id];
+  const hdr = $(`#lane-${id} .lane-hdr`);
+  if (!hdr) return;
+  const iconEl = hdr.querySelector('.icon');
+  const timeEl = hdr.querySelector('.time');
+  iconEl.className = `icon ${s.status}`;
+  iconEl.innerHTML = s.status === 'running' ? '<span class="spinner"></span>' :
+                     s.status === 'success' ? '✓' :
+                     s.status === 'failed' ? '✗' : '○';
+  timeEl.textContent = s.duration ? fmt(s.duration) : '';
+}
+
+function appendSeq(html) {
+  const out = $('#seqOut');
+  out.insertAdjacentHTML('beforeend', html);
+  out.scrollTop = out.scrollHeight;
+}
+
+function appendLane(id, html) {
+  const body = $(`#laneBody-${id}`);
+  if (body) {
+    body.insertAdjacentHTML('beforeend', html);
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
+function updateStatus() {
+  const dot = $('#statusDot');
+  const txt = $('#statusTxt');
+  if (running) {
+    const r = tasks.filter(t => taskState[t.id].status === 'running').length;
+    dot.className = 'status-dot running';
+    txt.textContent = `Running ${r}/${tasks.length}`;
+  } else {
+    const done = tasks.filter(t => taskState[t.id].status === 'success').length;
+    const fail = tasks.filter(t => taskState[t.id].status === 'failed').length;
+    dot.className = 'status-dot ' + (fail ? 'failed' : done === tasks.length ? 'success' : '');
+    txt.textContent = fail ? `Failed: ${fail}` : done === tasks.length ? `Done: ${done} tasks` : 'Ready';
+  }
+}
+
+function updateElapsed() {
+  $('#elapsed').textContent = fmt(Date.now() - start);
+}
+
+function fmt(ms) { return (ms/1000).toFixed(2) + 's'; }
+
+function setMode(m) {
+  mode = m;
+  $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.mode === m));
+  $('#seqOut').classList.toggle('hidden', m !== 'seq');
+  $('#parOut').classList.toggle('hidden', m !== 'par');
+}
+
+function run() {
+  running = true;
+  start = Date.now();
+  resetState();
+  renderRecipes();
+  renderParallel();
+  $('#seqOut').innerHTML = '';
+  $('#runBtn').disabled = true;
+  $('#stopBtn').disabled = false;
+  updateStatus();
+  elapsedTimer = setInterval(updateElapsed, 100);
+
+  if (mode === 'seq') runSeq();
+  else runPar();
+}
+
+function stop() {
+  running = false;
+  timers.forEach(clearTimeout);
+  timers = [];
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  $('#runBtn').disabled = false;
+  $('#stopBtn').disabled = true;
+  updateStatus();
+}
+
+function finish() {
+  running = false;
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  $('#runBtn').disabled = false;
+  $('#stopBtn').disabled = true;
+  const total = Date.now() - start;
+  appendSeq(`<div class="summary">✓ ${tasks.length} tasks in ${fmt(total)}</div>`);
+  updateStatus();
+}
+
+// Sequential simulation
+function runSeq() {
+  let delay = 0;
+  tasks.forEach((t, i) => {
+    // Start
+    timers.push(setTimeout(() => {
+      taskState[t.id].status = 'running';
+      updateRecipe(t.id);
+      updateStatus();
+      const deps = t.deps.length ? ` <span style="color:var(--muted);font-size:10px">[${t.deps.join(', ')}]</span>` : '';
+      appendSeq(`<div class="task-hdr"><span class="spinner"></span> ${t.id}${deps}</div>`);
+    }, delay));
+
+    // Command
+    timers.push(setTimeout(() => appendSeq(`<div class="cmd">${t.cmd}</div>`), delay + 50));
+
+    // Output lines
+    t.lines.forEach((line, li) => {
+      timers.push(setTimeout(() => appendSeq(`<div class="out">${line}</div>`), delay + 100 + li * 150));
+    });
+
+    // Complete
+    const endDelay = delay + 100 + t.lines.length * 150 + 100;
+    timers.push(setTimeout(() => {
+      taskState[t.id].status = 'success';
+      taskState[t.id].duration = t.time;
+      updateRecipe(t.id);
+      updateStatus();
+      // Replace spinner with checkmark in output
+      const hdrs = $$('#seqOut .task-hdr');
+      const hdr = hdrs[i];
+      if (hdr) hdr.innerHTML = `<span style="color:var(--green)">✓</span> ${t.id}`;
+      appendSeq(`<div class="done success"><span class="icon">✓</span>${t.id}<span class="time">${fmt(t.time)}</span></div>`);
+
+      if (i === tasks.length - 1) finish();
+    }, endDelay));
+
+    delay = endDelay + 50;
+  });
+}
+
+// Parallel simulation
+function runPar() {
+  const completed = new Set();
+
+  function canRun(t) {
+    return t.deps.every(d => completed.has(d));
+  }
+
+  function tryStart() {
+    tasks.forEach(t => {
+      if (taskState[t.id].status === 'pending' && canRun(t)) {
+        startTask(t);
+      }
+    });
+  }
+
+  function startTask(t) {
+    taskState[t.id].status = 'running';
+    updateRecipe(t.id);
+    updateLane(t.id);
+    updateStatus();
+
+    // Also show in sequential output
+    const deps = t.deps.length ? ` <span style="color:var(--muted);font-size:10px">[${t.deps.join(', ')}]</span>` : '';
+    appendSeq(`<div class="task-hdr"><span class="spinner"></span> ${t.id}${deps}</div>`);
+
+    // Command
+    timers.push(setTimeout(() => {
+      appendLane(t.id, `<div class="line cmd-line">$ ${t.cmd}</div>`);
+      appendSeq(`<div class="cmd">${t.cmd}</div>`);
+    }, 50));
+
+    // Output
+    t.lines.forEach((line, i) => {
+      timers.push(setTimeout(() => {
+        appendLane(t.id, `<div class="line out-line">${line}</div>`);
+        appendSeq(`<div class="out">${line}</div>`);
+      }, 100 + i * 120));
+    });
+
+    // Complete
+    timers.push(setTimeout(() => {
+      taskState[t.id].status = 'success';
+      taskState[t.id].duration = t.time;
+      completed.add(t.id);
+      updateRecipe(t.id);
+      updateLane(t.id);
+      updateStatus();
+      appendSeq(`<div class="done success"><span class="icon">✓</span>${t.id}<span class="time">${fmt(t.time)}</span></div>`);
+
+      if (completed.size === tasks.length) {
+        finish();
+      } else {
+        tryStart();
+      }
+    }, 100 + t.lines.length * 120 + 150));
+  }
+
+  tryStart();
+}
+
+init();
+</script>
+</body>
+</html>
