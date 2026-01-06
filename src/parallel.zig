@@ -21,14 +21,6 @@ const Recipe = parser.Recipe;
 const Executor = executor_mod.Executor;
 const ExecuteError = executor_mod.ExecuteError;
 
-/// Result of a parallel recipe execution
-pub const RecipeResult = struct {
-    name: []const u8,
-    success: bool,
-    error_info: ?ExecuteError,
-    output: []const u8,
-};
-
 /// Dependency graph node
 const GraphNode = struct {
     recipe: *const Recipe,
@@ -44,47 +36,6 @@ const GraphNode = struct {
         completed,
         failed,
     };
-};
-
-/// Thread-safe output buffer for capturing recipe output
-const OutputBuffer = struct {
-    mutex: std.Thread.Mutex,
-    buffers: std.StringHashMap(std.ArrayList(u8)),
-    allocator: std.mem.Allocator,
-
-    fn init(allocator: std.mem.Allocator) OutputBuffer {
-        return .{
-            .mutex = .{},
-            .buffers = std.StringHashMap(std.ArrayList(u8)).init(allocator),
-            .allocator = allocator,
-        };
-    }
-
-    fn deinit(self: *OutputBuffer) void {
-        var iter = self.buffers.iterator();
-        while (iter.next()) |entry| {
-            entry.value_ptr.deinit();
-        }
-        self.buffers.deinit();
-    }
-
-    fn getBuffer(self: *OutputBuffer, name: []const u8) !*std.ArrayList(u8) {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const result = try self.buffers.getOrPut(name);
-        if (!result.found_existing) {
-            result.value_ptr.* = std.ArrayList(u8).init(self.allocator);
-        }
-        return result.value_ptr;
-    }
-
-    fn write(self: *OutputBuffer, name: []const u8, data: []const u8) !void {
-        const buf = try self.getBuffer(name);
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        try buf.appendSlice(data);
-    }
 };
 
 /// Parallel executor that runs independent recipes concurrently
@@ -107,6 +58,7 @@ pub const ParallelExecutor = struct {
     mutex: std.Thread.Mutex,
     condition: std.Thread.Condition,
     output_mutex: std.Thread.Mutex,
+    cache_mutex: std.Thread.Mutex,
 
     // Execution state
     ready_queue: std.ArrayListUnmanaged(usize),
@@ -143,6 +95,9 @@ pub const ParallelExecutor = struct {
             variables.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
         }
 
+        var cache = cache_mod.Cache.init(allocator);
+        cache.load() catch {};
+
         return .{
             .allocator = allocator,
             .jakefile = jakefile,
@@ -153,12 +108,13 @@ pub const ParallelExecutor = struct {
             .dry_run = false,
             .verbose = false,
             .variables = variables,
-            .cache = cache_mod.Cache.init(allocator),
+            .cache = cache,
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
             .mutex = .{},
             .condition = .{},
             .output_mutex = .{},
+            .cache_mutex = .{},
             .ready_queue = .empty,
             .completed_count = 0,
             .failed = false,
@@ -179,6 +135,7 @@ pub const ParallelExecutor = struct {
         self.name_to_index.deinit();
         self.ready_queue.deinit(self.allocator);
         self.variables.deinit();
+        self.cache.save() catch {};
         self.cache.deinit();
 
         if (self.owned_index) |owned| {
@@ -444,9 +401,11 @@ pub const ParallelExecutor = struct {
             return false;
         }
 
-        // Update cache for file targets
+        // Update cache for file targets (thread-safe)
         if (recipe.kind == .file) {
             if (recipe.output) |output| {
+                self.cache_mutex.lock();
+                defer self.cache_mutex.unlock();
                 self.cache.update(output) catch {};
             }
         }
@@ -524,6 +483,10 @@ pub const ParallelExecutor = struct {
         std.fs.cwd().access(output, .{}) catch {
             return true; // Output doesn't exist
         };
+
+        // Thread-safe cache access
+        self.cache_mutex.lock();
+        defer self.cache_mutex.unlock();
 
         for (recipe.file_deps) |dep| {
             if (try self.cache.isGlobStale(dep)) {

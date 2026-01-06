@@ -681,16 +681,29 @@ pub const Executor = struct {
         }
 
         var result: std.ArrayListUnmanaged(u8) = .empty;
+        errdefer result.deinit(self.allocator);
         var pos: usize = 0;
 
         while (std.mem.indexOfPos(u8, input, pos, needle)) |idx| {
-            result.appendSlice(self.allocator, input[pos..idx]) catch return input;
-            result.appendSlice(self.allocator, item) catch return input;
+            result.appendSlice(self.allocator, input[pos..idx]) catch {
+                result.deinit(self.allocator);
+                return input;
+            };
+            result.appendSlice(self.allocator, item) catch {
+                result.deinit(self.allocator);
+                return input;
+            };
             pos = idx + needle.len;
         }
-        result.appendSlice(self.allocator, input[pos..]) catch return input;
+        result.appendSlice(self.allocator, input[pos..]) catch {
+            result.deinit(self.allocator);
+            return input;
+        };
 
-        return result.toOwnedSlice(self.allocator) catch input;
+        return result.toOwnedSlice(self.allocator) catch {
+            result.deinit(self.allocator);
+            return input;
+        };
     }
 
     pub fn deinit(self: *Executor) void {

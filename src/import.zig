@@ -183,13 +183,20 @@ pub const ImportResolver = struct {
 
     /// Extract allocations that must persist after the resolver is deinitialized.
     /// The caller is responsible for freeing these when the Jakefile is no longer needed.
-    pub fn extractPersistentAllocations(self: *ImportResolver) ImportAllocations {
-        const allocations = ImportAllocations{
-            .sources = self.loaded_sources.toOwnedSlice(self.allocator) catch &.{},
-            .names = self.allocated_names.toOwnedSlice(self.allocator) catch &.{},
+    /// Returns OutOfMemory if allocation fails (caller should not call deinit in this case
+    /// as the resolver still owns the allocations).
+    pub fn extractPersistentAllocations(self: *ImportResolver) ImportError!ImportAllocations {
+        const sources = self.loaded_sources.toOwnedSlice(self.allocator) catch return ImportError.OutOfMemory;
+        const names = self.allocated_names.toOwnedSlice(self.allocator) catch {
+            // Put sources back so deinit can clean them up
+            self.loaded_sources = std.ArrayListUnmanaged([]const u8).fromOwnedSlice(sources);
+            return ImportError.OutOfMemory;
+        };
+        return ImportAllocations{
+            .sources = sources,
+            .names = names,
             .allocator = self.allocator,
         };
-        return allocations;
     }
 
     /// Resolve all imports for a Jakefile, merging imported content into it.
@@ -492,7 +499,7 @@ pub fn resolveImports(
     // Add the main jakefile to import_stack for cycle detection
     const real_path = std.fs.cwd().realpathAlloc(allocator, jakefile_path) catch {
         try resolver.resolveImports(jakefile, base_path);
-        const allocations = resolver.extractPersistentAllocations();
+        const allocations = try resolver.extractPersistentAllocations();
         resolver.deinit();
         return allocations;
     };
@@ -504,7 +511,7 @@ pub fn resolveImports(
     // Move from import_stack to resolved_cache after successful processing
     _ = resolver.import_stack.remove(real_path);
     resolver.resolved_cache.put(allocator, real_path, {}) catch return ImportError.OutOfMemory;
-    const allocations = resolver.extractPersistentAllocations();
+    const allocations = try resolver.extractPersistentAllocations();
     resolver.deinit();
     return allocations;
 }
@@ -640,7 +647,7 @@ test "loaded sources are tracked for cleanup" {
     try std.testing.expectEqual(@as(usize, 2), resolver.loaded_sources.items.len);
 
     // Extract allocations and then free them (this is the proper cleanup pattern)
-    var allocs = resolver.extractPersistentAllocations();
+    var allocs = try resolver.extractPersistentAllocations();
     resolver.deinit();
     allocs.deinit();
 }

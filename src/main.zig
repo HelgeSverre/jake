@@ -633,7 +633,8 @@ fn printInitHelp() void {
     init.printHelp(stdout) catch {};
 }
 
-test "main does not crash" {
-    // Just ensure the module compiles
-    _ = jake;
+test "jake module imports correctly" {
+    // Verify the jake module exports expected symbols
+    _ = jake.parse;
+    _ = jake.load;
 }

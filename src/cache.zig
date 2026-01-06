@@ -31,6 +31,7 @@ pub const Cache = struct {
     }
 
     /// Check if a file has changed since last run
+    /// Uses mtime as a fast path: if mtime matches cached value, skip hash computation
     pub fn isStale(self: *Cache, path: []const u8) !bool {
         const file = std.fs.cwd().openFile(path, .{}) catch |err| {
             if (err == error.FileNotFound) return true;
@@ -38,10 +39,24 @@ pub const Cache = struct {
         };
         defer file.close();
 
-        const current_hash = try self.computeHash(file);
+        // Fast path: check mtime first
+        const stat = file.stat() catch {
+            // If stat fails, fall back to hash comparison
+            const current_hash = try self.computeHash(file);
+            if (self.hashes.get(path)) |cached| {
+                return !std.mem.eql(u8, &cached.content_hash, &current_hash);
+            }
+            return true;
+        };
+        const current_mtime = stat.mtime;
 
         if (self.hashes.get(path)) |cached| {
-            // Check if hash matches
+            // If mtime matches, file hasn't changed - skip hash computation
+            if (cached.mtime == current_mtime) {
+                return false;
+            }
+            // mtime changed, compute hash to verify
+            const current_hash = try self.computeHash(file);
             return !std.mem.eql(u8, &cached.content_hash, &current_hash);
         }
 

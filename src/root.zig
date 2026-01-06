@@ -87,7 +87,7 @@ comptime {
     _ = progress;
 }
 
-test "basic lexer test" {
+test "basic lexer tokenizes Jakefile syntax" {
     const source =
         \\# Comment
         \\name = "value"
@@ -97,10 +97,19 @@ test "basic lexer test" {
     ;
     var lex = Lexer.init(source);
 
-    // Should get tokens for the above
+    // Verify expected token types for this source
+    var tokens: [32]lexer.Token = undefined;
     var count: usize = 0;
-    while (lex.next().tag != .eof) {
+    while (count < tokens.len) {
+        tokens[count] = lex.next();
+        if (tokens[count].tag == .eof) break;
         count += 1;
     }
-    try std.testing.expect(count > 0);
+
+    // Should have: comment, newline, identifier, equals, string, etc.
+    try std.testing.expect(count >= 8);
+    try std.testing.expectEqual(lexer.Token.Tag.comment, tokens[0].tag);
+    try std.testing.expectEqual(lexer.Token.Tag.newline, tokens[1].tag);
+    try std.testing.expectEqual(lexer.Token.Tag.ident, tokens[2].tag);
+    try std.testing.expectEqual(lexer.Token.Tag.equals, tokens[3].tag);
 }
