@@ -1,34 +1,69 @@
 # Packaging & Distribution tasks
 
-version = "0.3.0"
+# Version is set from git tags at build time, or use VERSION env var
+version = "0.6.0"
 
 @desc "Build release binary for current platform"
 @group packaging
+@cache src/*.zig build.zig build.zig.zon
 task binary:
     @needs zig
     @pre echo "Building release binary..."
     zig build -Doptimize=ReleaseSafe
     @post echo "Binary: zig-out/bin/jake"
 
-@desc "Build release binaries for all platforms (requires cross-compilation)"
+# Individual platform build tasks for parallel execution
+# Run with: jake packaging.binaries -j4
+
 @group packaging
-task binaries:
+@timeout 5m
+task _pkg-x86_64-linux:
     @needs zig
-    @pre echo "Building cross-platform binaries..."
     mkdir -p dist
-    @each x86_64-linux aarch64-linux x86_64-macos aarch64-macos
-        echo "Building for {{item}}..."
-        zig build -Doptimize=ReleaseSafe -Dtarget={{item}}
-        cp zig-out/bin/jake dist/jake-{{item}}
-    @end
+    zig build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux
+    cp zig-out/bin/jake dist/jake-x86_64-linux
+
+@group packaging
+@timeout 5m
+task _pkg-aarch64-linux:
+    @needs zig
+    mkdir -p dist
+    zig build -Doptimize=ReleaseSafe -Dtarget=aarch64-linux
+    cp zig-out/bin/jake dist/jake-aarch64-linux
+
+@group packaging
+@timeout 5m
+task _pkg-x86_64-macos:
+    @needs zig
+    mkdir -p dist
+    zig build -Doptimize=ReleaseSafe -Dtarget=x86_64-macos
+    cp zig-out/bin/jake dist/jake-x86_64-macos
+
+@group packaging
+@timeout 5m
+task _pkg-aarch64-macos:
+    @needs zig
+    mkdir -p dist
+    zig build -Doptimize=ReleaseSafe -Dtarget=aarch64-macos
+    cp zig-out/bin/jake dist/jake-aarch64-macos
+
+@desc "Build release binaries for all platforms (use -j4 for parallel)"
+@group packaging
+task binaries: [_pkg-x86_64-linux, _pkg-aarch64-linux, _pkg-x86_64-macos, _pkg-aarch64-macos]
+    @pre echo "Building cross-platform binaries... (use -j4 for parallel)"
     @post ls -lh dist/
 
 @desc "Build Docker image"
 @group packaging
+@timeout 10m
 task docker:
     @needs docker
     @pre echo "Building Docker image..."
-    docker build -t jake:{{version}} -t jake:latest -f packaging/docker/Dockerfile .
+    @if env(VERSION)
+        docker build -t jake:$VERSION -t jake:latest -f packaging/docker/Dockerfile .
+    @else
+        docker build -t jake:{{version}} -t jake:latest -f packaging/docker/Dockerfile .
+    @end
     @post docker images jake
 
 @desc "Test Homebrew formula locally"

@@ -1,37 +1,44 @@
 # Benchmarking tasks
 
+# Benchmark configuration
+BENCH_WARMUP = "3"
+BENCH_RUNS = "100"
+
 @desc "Benchmark jake vs just (requires hyperfine)"
 @group bench
+@timeout 3m
 task bench:
     @needs zig
     @needs hyperfine "brew install hyperfine"
     @pre echo "Building release binary..."
     zig build -Doptimize=ReleaseFast
     @post echo "Benchmark complete!"
-    hyperfine --warmup 3 \
+    hyperfine --warmup {{BENCH_WARMUP}} \
         './zig-out/bin/jake -l' \
         'just --list' \
         --export-markdown /dev/stdout
 
 @desc "Benchmark startup time"
 @group bench
+@timeout 2m
 task bench-startup:
     @needs zig
     @needs hyperfine "brew install hyperfine"
     zig build -Doptimize=ReleaseFast
-    hyperfine --warmup 10 --runs 100 './zig-out/bin/jake --version'
+    hyperfine --warmup 10 --runs {{BENCH_RUNS}} './zig-out/bin/jake --version'
 
 @desc "Benchmark parsing with different file sizes"
 @group bench
+@timeout 5m
 task bench-parse:
-    @needs zig
+    @needs zig python3
     @needs hyperfine "brew install hyperfine"
     @pre echo "Generating test files..."
     zig build -Doptimize=ReleaseFast
     @each 10 50 100 500
         python3 -c "for i in range({{item}}): print(f'task t{i}:\n    echo {i}\n')" > /tmp/jake-{{item}}.jake
     @end
-    hyperfine --warmup 3 \
+    hyperfine --warmup {{BENCH_WARMUP}} \
         './zig-out/bin/jake -f /tmp/jake-10.jake -l' \
         './zig-out/bin/jake -f /tmp/jake-50.jake -l' \
         './zig-out/bin/jake -f /tmp/jake-100.jake -l' \
@@ -39,6 +46,7 @@ task bench-parse:
 
 @desc "Benchmark parallel execution scaling"
 @group bench
+@timeout 3m
 task bench-parallel:
     @needs zig
     @needs hyperfine "brew install hyperfine"
@@ -69,15 +77,41 @@ task leaks:
     @post echo "Leak check complete!"
     leaks --atExit -- ./zig-out/bin/jake -l
 
-@desc "Show binary sizes for all optimization levels"
+# Individual build tasks for parallel size comparison
+# Run with: jake bench.sizes -j4
+
 @group bench
-task sizes:
+@timeout 3m
+task _size-debug:
     @needs zig
-    @pre echo "Building all optimization levels..."
-    @each Debug ReleaseSafe ReleaseFast ReleaseSmall
-        zig build -Doptimize={{item}}
-        cp zig-out/bin/jake /tmp/jake-{{lowercase(item)}}
-    @end
+    zig build -Doptimize=Debug
+    cp zig-out/bin/jake /tmp/jake-debug
+
+@group bench
+@timeout 3m
+task _size-releasesafe:
+    @needs zig
+    zig build -Doptimize=ReleaseSafe
+    cp zig-out/bin/jake /tmp/jake-releasesafe
+
+@group bench
+@timeout 3m
+task _size-releasefast:
+    @needs zig
+    zig build -Doptimize=ReleaseFast
+    cp zig-out/bin/jake /tmp/jake-releasefast
+
+@group bench
+@timeout 3m
+task _size-releasesmall:
+    @needs zig
+    zig build -Doptimize=ReleaseSmall
+    cp zig-out/bin/jake /tmp/jake-releasesmall
+
+@desc "Show binary sizes for all optimization levels (use -j4 for parallel)"
+@group bench
+task sizes: [_size-debug, _size-releasesafe, _size-releasefast, _size-releasesmall]
+    @pre echo "Building all optimization levels... (use -j4 for parallel)"
     echo ""
     echo "Binary sizes:"
     ls -lh /tmp/jake-debug /tmp/jake-releasesafe /tmp/jake-releasefast /tmp/jake-releasesmall

@@ -9,6 +9,7 @@
 
 @desc "Run internal zBench benchmarks"
 @group perf
+@timeout 5m
 task bench-internal:
     @needs zig
     @pre echo "Running internal benchmarks..."
@@ -17,6 +18,7 @@ task bench-internal:
 
 @desc "Build benchmark binary without running"
 @group perf
+@cache src/*.zig src/bench/*.zig build.zig
 task bench-build:
     @needs zig
     zig build bench-build -Doptimize=ReleaseFast
@@ -24,6 +26,7 @@ task bench-build:
 
 @desc "Run benchmarks with JSON output for CI"
 @group perf
+@timeout 5m
 task bench-json:
     @needs zig
     zig build bench-build -Doptimize=ReleaseFast
@@ -63,6 +66,7 @@ task _install-tracy:
 
 @desc "Run coverage-guided fuzz tests"
 @group perf
+@timeout 10m
 task fuzz:
     @needs zig
     @pre echo "Running coverage-guided fuzz tests..."

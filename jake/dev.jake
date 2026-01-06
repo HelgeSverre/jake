@@ -1,10 +1,7 @@
 # Development workflow tasks
 
-# Variables
-version = "0.3.0"
+# Variables (version is auto-detected from git at build time)
 binary = "jake"
-
-@export version
 
 # Default: build and test
 @default
