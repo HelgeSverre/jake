@@ -158,23 +158,27 @@ jake -j4 all  # 4 parallel workers
 
 ## 10. Use Private Helpers
 
-Hide implementation details with underscore prefix:
+Hide implementation details with underscore prefix or `@hidden`:
 
 ```jake
 # Public interface
 task build: [_setup, _compile, _bundle]
     echo "Build complete!"
 
-# Hidden implementation
+# Hidden implementation (underscore prefix)
 task _setup:
     mkdir -p dist
 
 task _compile:
     tsc
 
-task _bundle:
+# Hidden implementation (@hidden directive)
+@hidden
+task bundle:
     esbuild dist/index.js --bundle --outfile=dist/bundle.js
 ```
+
+Use `jake --all` to see hidden recipes when debugging.
 
 ## Quick Checklist
 
@@ -184,7 +188,7 @@ task _bundle:
 - [ ] Requirements validated with `@needs` and `@require`
 - [ ] Complex recipes documented with `@desc`
 - [ ] Related tasks grouped logically
-- [ ] Private helpers prefixed with `_`
+- [ ] Private helpers hidden with `_` prefix or `@hidden`
 - [ ] Cleanup handled with `@post` hooks
 
 ## See Also

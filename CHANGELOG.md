@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-01-05
+
+### Added
+
+- **Args Library Overhaul** - Comprehensive CLI argument parsing improvements
+  - **Environment variable fallback** - Flags can specify `.env` for fallback values
+    - JAKEFILE, JAKE_JOBS, JAKE_VERBOSE, JAKE_YES, JAKE_DRY_RUN supported
+    - Help output shows `[env: VARNAME]` hints
+  - **Flag aliases** - Alternative long flag names (e.g., `--dryrun` for `--dry-run`)
+  - **Short flag value attachment** - `-fcustom.jake`, `-j4`, `-sbuild` syntax
+  - **Better error messages** - Rich context with expected type and usage hints
+  - **Enum/choice restrictions** - `.choices` field for value validation
+  - **Compile-time validation** - Catch duplicate flags, invalid categories at compile time
+  - **Mutually exclusive groups** - `--list` and `--show` cannot be used together
+  - **Required-together groups** - `--check` and `--dump` require `--fmt`
+  - **Value validators** - Built-in validators for positive integers, file paths, shell names
+  - **Streaming parser** - `quickScan()` for fast `--help`/`--version` detection
+
+### Changed
+
+- Flag categories now group help output (General, Output, Execution, File, Shell)
+- Countable flags (`-vvv`) now set `verbose_level`
+- Negatable flags (`--no-verbose`) explicitly disable options
+
 ## [0.5.0] - 2026-01-01
 
 ### Added

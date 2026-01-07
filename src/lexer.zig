@@ -51,6 +51,7 @@ pub const Token = struct {
         kw_platform, // preferred name for OS filtering
         kw_alias,
         kw_quiet,
+        kw_hidden,
         kw_timeout,
         kw_launch,
         kw_before,
@@ -407,6 +408,8 @@ pub const Lexer = struct {
             .kw_alias
         else if (std.mem.eql(u8, text, "quiet"))
             .kw_quiet
+        else if (std.mem.eql(u8, text, "hidden"))
+            .kw_hidden
         else if (std.mem.eql(u8, text, "timeout"))
             .kw_timeout
         else if (std.mem.eql(u8, text, "launch"))

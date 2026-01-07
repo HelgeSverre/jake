@@ -47,49 +47,94 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 
 ---
 
-#### Phase 2 - High Impact (~12h, ~30 tests)
+#### Phase 2 - High Impact (~12h, ~30 tests) ✓ DONE
 
 - [x] **#1 "Did you mean?" suggestions** - Levenshtein for unknown flags (reuse suggest.zig)
   - `error: Unknown option: --vrsbose` → `Did you mean '--verbose'?`
   - Implemented in `args.zig` using `suggest.levenshteinDistance()`
   - Added 11 tests for flag suggestions
-- [ ] **#14 Flag categories in help** - Group flags by category
-  ```
-  GENERAL OPTIONS:
-      -h, --help          Show help
-  EXECUTION OPTIONS:
-      -n, --dry-run       Print without executing
-  ```
-- [ ] **#8 Deprecated flag warnings** - `.deprecated = "Use --new instead"`
-- [ ] **#5 Repeatable/countable flags** - `-vvv` → `verbose_level = 3`
+- [x] **#14 Flag categories in help** - Group flags by category
+  - Categories: General, Output, Execution, File, Shell
+  - Added `.category` field to Flag struct
+  - Updated `printHelp()` to group flags by category
+  - Added 5 tests for category headers
+- [x] **#8 Deprecated flag warnings** - `.deprecated = "Use --new instead"`
+  - Added `.deprecated` field to Flag struct
+  - Prints warning to stderr when deprecated flag used
+  - Infrastructure ready for future deprecations
+- [x] **#5 Repeatable/countable flags** - `-vvv` → `verbose_level = 3`
+  - Added `.countable` field to Flag struct
+  - Added `verbose_level: u8` to Args struct
+  - `-v`, `-vv`, `-vvv` increment verbose_level
+  - Added 7 tests for counting behavior
+- [x] **#4 Negatable boolean flags** - `--no-verbose` to explicitly disable
+  - Added `.negatable` field to Flag struct
+  - `--no-verbose` and `--no-yes` supported
+  - Added 7 tests for negation behavior
 
 ---
 
-#### Phase 3 - Medium Effort (~18h, ~45 tests)
+#### Phase 3 - Medium Effort (~18h, ~45 tests) ✓ DONE
 
-- [ ] **#2 Environment variable fallback** - `.env = "JAKEFILE"` for flag defaults
+- [x] **#2 Environment variable fallback** - `.env = "JAKEFILE"` for flag defaults
+  - Added `.env` field to Flag struct
   - Precedence: CLI arg → env var → default
-- [ ] **#18 Better error messages** - Rich context with usage hint
-  ```
-  error: Invalid value for --jobs: "abc"
-         Expected a positive integer
-  Usage: jake --jobs [N] [RECIPE]
-  ```
-- [ ] **#4 Negatable boolean flags** - `--no-verbose` to explicitly disable
-- [ ] **#13 Enum/choice restrictions** - `.choices = &.{"json", "yaml", "toml"}`
+  - `applyEnvFallbacks()` applies after parsing
+  - Environment vars: JAKEFILE, JAKE_JOBS, JAKE_VERBOSE, JAKE_YES, JAKE_DRY_RUN
+  - Help output shows `[env: VARNAME]` hint
+  - Added 4 tests for env fallback behavior
+- [x] **#6 Flag aliases** - `.aliases = &.{"dryrun", "simulate"}` for `--dry-run`
+  - Added `.aliases` field to Flag struct
+  - `matchLongFlag()` checks both primary name and aliases
+  - Example: `--dryrun` works as alias for `--dry-run`
+  - Added 5 tests for alias matching
+- [x] **#19 Short flag value attachment** - `-fcustom.jake` (generalize `-j4`)
+  - Generalized `-jN` to work with any short flag that takes a value
+  - `-fcustom.jake`, `-sbuild`, `-j4` all work
+  - Added 7 tests for short flag value attachment
+- [x] **#18 Better error messages** - Rich context with usage hint
+  - Added `ErrorContext` struct for rich error info
+  - `printErrorWithContext()` shows value, expected type, usage hint
+  - `printUsageHint()` shows flag-specific usage examples
+  - Added 6 tests for enhanced error messages
+- [x] **#13 Enum/choice restrictions** - `.choices = &.{"json", "yaml", "toml"}`
+  - Added `.choices` field to Flag struct
+  - `isValidChoice()` validates against allowed values
+  - `--completions` now validates bash/zsh/fish
+  - Added 4 tests for choice validation
 
 ---
 
-#### Phase 4 - Advanced (~25h, ~45 tests)
+#### Phase 4 - Advanced (~25h, ~45 tests) ✓ DONE
 
-- [ ] **#16 Compile-time validation** - Verify Args struct matches flags array
-- [ ] **#9 Mutually exclusive groups** - `--list` and `--show` can't be used together
-- [ ] **#10 Required-together groups** - If `--username`, must also have `--password`
-- [ ] **#12 Value validation callbacks** - Custom validation functions
-- [ ] **#6 Flag aliases** - `.aliases = &.{"dryrun", "simulate"}` for `--dry-run`
-- [ ] **#19 Short flag value attachment** - `-fcustom.jake` (generalize `-j4`)
-- [ ] **#17 Streaming parser** - Process args incrementally for early exit
-- [ ] **#20 Config file support** - Load defaults from `.jakeconfig`
+- [x] **#16 Compile-time validation** - Verify flags array at compile time
+  - `validateNoDuplicateShortFlags()` - catch duplicate short flags
+  - `validateNoDuplicateLongFlags()` - catch duplicate long flags
+  - `validateAliasesUnique()` - ensure aliases don't conflict with primary names
+  - `validateCategories()` - ensure all categories are valid
+  - Validation runs automatically at compile time
+- [x] **#9 Mutually exclusive groups** - `--list` and `--show` can't be used together
+  - Added `.mutually_exclusive` field to Flag struct
+  - `validateConstraints()` checks at parse time
+  - Returns `error.MutuallyExclusive` on conflict
+  - Added 4 tests for mutual exclusivity
+- [x] **#10 Required-together groups** - `--check` requires `--fmt`
+  - Added `.requires` field to Flag struct
+  - `--check` and `--dump` require `--fmt`
+  - Returns `error.RequiredTogether` when constraint violated
+  - Added 5 tests for required-together constraints
+- [x] **#12 Value validation callbacks** - Built-in validators
+  - Added `Validator` enum: none, positive_integer, non_negative_integer, file_path, shell_name
+  - Added `.validator` field to Flag struct
+  - `runValidator()` executes validation
+  - `getValidatorDescription()` provides human-readable error hints
+  - Added 10 tests for validator functions
+- [x] **#17 Streaming parser** - Quick scan for early exit
+  - Added `QuickAction` enum: none, help, version
+  - `quickScan()` scans for --help/-h/--version/-V without full parsing
+  - Enables fast exit for common info-only invocations
+  - Added 8 tests for quick scan functionality
+- [ ] **#20 Config file support** - Load defaults from `.jakeconfig` (deferred)
 
 ---
 
@@ -97,17 +142,18 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 
 ### CLI Commands
 
-- [ ] `jake upgrade` - Self-update from GitHub releases
+- [x] `jake upgrade` - Self-update from GitHub releases
   - Check version against latest release tag
   - Detect OS/arch, download appropriate binary
-  - Optional signature verification (minisign)
+  - SHA256 checksum verification
   - `--check` flag to only check for updates
 
 ---
 
-- [ ] `jake init` - Scaffold Jakefile from templates
-  - Auto-detect project type (Node, Go, Rust, Python)
-  - `--template=node` for explicit selection
+- [x] `jake init` - Scaffold Jakefile from templates
+  - `--template=starter|blank` for explicit selection
+  - `--force` to overwrite existing Jakefile
+  - [ ] Auto-detect project type (Node, Go, Rust, Python) - deferred
 
 ---
 

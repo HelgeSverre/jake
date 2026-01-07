@@ -5,26 +5,66 @@ targets = "x86_64-linux aarch64-linux x86_64-macos aarch64-macos x86_64-windows"
 
 @group release
 @desc "Build optimized release for current platform"
+@cache src/*.zig build.zig build.zig.zon
 task build:
     @needs zig
     zig build -Doptimize=ReleaseFast
     echo "Release build complete"
 
+# Individual platform build tasks for parallel execution
+# Run with: jake release.all -j5
+
 @group release
-@desc "Build for all platforms"
-task all:
+@desc "Build for x86_64-linux"
+@timeout 5m
+task _build-x86_64-linux:
     @needs zig
-    @pre echo "Building for all platforms..."
     mkdir -p dist
-    @each {{targets}}
-        echo "Building for {{item}}..."
-        zig build -Doptimize=ReleaseFast -Dtarget={{item}}
-        @if eq({{item}}, x86_64-windows)
-            cp zig-out/bin/jake.exe dist/jake-{{item}}.exe
-        @else
-            cp zig-out/bin/jake dist/jake-{{item}}
-        @end
-    @post echo "All platforms built!"
+    zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
+    cp zig-out/bin/jake dist/jake-x86_64-linux
+
+@group release
+@desc "Build for aarch64-linux"
+@timeout 5m
+task _build-aarch64-linux:
+    @needs zig
+    mkdir -p dist
+    zig build -Doptimize=ReleaseFast -Dtarget=aarch64-linux
+    cp zig-out/bin/jake dist/jake-aarch64-linux
+
+@group release
+@desc "Build for x86_64-macos"
+@timeout 5m
+task _build-x86_64-macos:
+    @needs zig
+    mkdir -p dist
+    zig build -Doptimize=ReleaseFast -Dtarget=x86_64-macos
+    cp zig-out/bin/jake dist/jake-x86_64-macos
+
+@group release
+@desc "Build for aarch64-macos"
+@timeout 5m
+task _build-aarch64-macos:
+    @needs zig
+    mkdir -p dist
+    zig build -Doptimize=ReleaseFast -Dtarget=aarch64-macos
+    cp zig-out/bin/jake dist/jake-aarch64-macos
+
+@group release
+@desc "Build for x86_64-windows"
+@timeout 5m
+task _build-x86_64-windows:
+    @needs zig
+    mkdir -p dist
+    zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
+    cp zig-out/bin/jake.exe dist/jake-x86_64-windows.exe
+
+@group release
+@desc "Build for all platforms (use -j5 for parallel builds)"
+task all: [_build-x86_64-linux, _build-aarch64-linux, _build-x86_64-macos, _build-aarch64-macos, _build-x86_64-windows]
+    @pre echo "Building for all 5 platforms... (use -j5 for parallel)"
+    @post echo "All platforms built! See dist/"
+    @post ls -lh dist/
 
 @group release
 @only-os linux

@@ -1,0 +1,153 @@
+=============================================================================
+OUTPUT FORMAT COMPARISON - How to separate Jake status from command output
+=============================================================================
+
+CURRENT (misalignment issue):
+```
+Running tests...                    <- command output at column 0
+1/10 test.lexer...OK
+2/10 test.parser...OK
+All tests passed!
+   ✓ test     1.64s                 <- jake status at column 3 (misaligned)
+
+   Successfully ran 1 task
+   Total time: 1.64s
+```
+
+-----------------------------------------------------------------------------
+
+OPTION 1: Separator lines (visual break)
+```
+   → test
+   ───────────────────────────────
+Running tests...
+1/10 test.lexer...OK
+2/10 test.parser...OK
+All tests passed!
+   ───────────────────────────────
+   ✓ test     1.64s
+
+   Successfully ran 1 task
+   Total time: 1.64s
+```
+PROS: Clear visual boundary, works with streaming output
+CONS: Extra lines, might feel verbose
+
+-----------------------------------------------------------------------------
+
+OPTION 2: Blank lines only
+```
+   → test
+
+Running tests...
+1/10 test.lexer...OK
+2/10 test.parser...OK
+All tests passed!
+
+   ✓ test     1.64s
+
+   Successfully ran 1 task
+   Total time: 1.64s
+```
+PROS: Simple, subtle separation
+CONS: Might not be obvious enough
+
+-----------------------------------------------------------------------------
+
+OPTION 3: Indented output (requires capture)
+```
+   → test
+     Running tests...
+     1/10 test.lexer...OK
+     2/10 test.parser...OK
+     All tests passed!
+   ✓ test     1.64s
+
+   Successfully ran 1 task
+   Total time: 1.64s
+```
+PROS: Consistent indentation, clear hierarchy
+CONS: Requires capturing output (loses real-time streaming)
+
+-----------------------------------------------------------------------------
+
+OPTION 4: Header before output
+```
+→ test
+Running tests...
+1/10 test.lexer...OK
+2/10 test.parser...OK
+All tests passed!
+   ✓ test     1.64s
+
+   Successfully ran 1 task
+   Total time: 1.64s
+```
+PROS: Recipe name shown at start, simple
+CONS: Header and status have different indentation
+
+-----------------------------------------------------------------------------
+
+OPTION 5: Nx/Turborepo style (requires capture)
+```
+test:
+  Running tests...
+  1/10 test.lexer...OK
+  2/10 test.parser...OK
+  All tests passed!
+
+   ✓ test     1.64s
+
+   Successfully ran 1 task
+   Total time: 1.64s
+```
+PROS: Familiar to users of Nx/Turbo, clear task grouping
+CONS: Requires capturing output
+
+-----------------------------------------------------------------------------
+
+OPTION 6: Minimal (current but no header)
+```
+Running tests...
+1/10 test.lexer...OK
+2/10 test.parser...OK
+All tests passed!
+
+   ✓ test     1.64s
+
+   Successfully ran 1 task
+   Total time: 1.64s
+```
+PROS: Clean, status tells you what ran
+CONS: Don't know what's running until it finishes
+
+-----------------------------------------------------------------------------
+
+OPTION 7: Box style
+```
+   ┌─ test
+   │
+Running tests...
+1/10 test.lexer...OK
+2/10 test.parser...OK
+All tests passed!
+   │
+   └─ ✓ 1.64s
+
+   Successfully ran 1 task
+   Total time: 1.64s
+```
+PROS: Very clear visual grouping
+CONS: More visual clutter, might feel heavy
+
+-----------------------------------------------------------------------------
+
+RECOMMENDATION:
+
+For STREAMING output (current .Inherit mode):
+- Option 1 (separator) or Option 2 (blank lines) - both work without capturing
+
+For CAPTURED output (would need code change):
+- Option 3 (indented) or Option 5 (Nx-style) - cleaner but loses real-time
+
+Simplest fix that preserves streaming: Option 2 (just add blank lines around output)

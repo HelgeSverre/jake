@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jake - Web UI</title>
+  <style>
+    :root {
+      --jake: #f43f5e;
+      --jake-light: #fb7185;
+      --jake-dark: #e11d48;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #60a5fa;
+      --yellow: #eab308;
+      --purple: #a855f7;
+      --muted: #71717a;
+      --bg: #0a0a0a;
+      --bg2: #111;
+      --bg3: #1a1a1a;
+      --bg4: #222;
+      --text: #fafafa;
+      --text2: #a1a1aa;
+      --border: #27272a;
+      --border-light: #3f3f46;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 13px/1.4 system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+    #app { display: flex; flex-direction: column; height: 100%; }
+
+    /* Focus styles */
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--jake); outline-offset: 2px; }
+    .focusable:focus { background: var(--bg3); }
+
+    /* Header */
+    .header {
+      height: 44px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 12px;
+    }
+    .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+    .logo-icon { font-family: ui-monospace, monospace; font-size: 16px; color: var(--jake); }
+    .header-path {
+      color: var(--text2);
+      font-size: 11px;
+      font-family: ui-monospace, monospace;
+      padding: 4px 8px;
+      background: var(--bg);
+      border-radius: 4px;
+    }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .status-pill {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 12px;
+      background: var(--bg3); font-size: 11px; color: var(--text2);
+    }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+    .status-dot.running { background: var(--jake); animation: pulse 1.5s infinite; }
+    .status-dot.success { background: var(--green); }
+    .status-dot.failed { background: var(--red); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+    .elapsed { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
+
+    /* Main */
+    .main { flex: 1; display: flex; overflow: hidden; }
+
+    /* Sidebar */
+    .sidebar {
+      width: 220px;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+    }
+    .sidebar-count {
+      font-size: 9px;
+      padding: 2px 6px;
+      background: var(--bg3);
+      border-radius: 8px;
+      color: var(--muted);
+    }
+    .search-box {
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .search-input {
+      width: 100%;
+      padding: 6px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font: inherit;
+      font-size: 11px;
+    }
+    .search-input::placeholder { color: var(--muted); }
+    .search-input:focus { border-color: var(--jake); }
+    .recipe-list { flex: 1; overflow-y: auto; padding: 4px; }
+    .recipe-group { margin-bottom: 8px; }
+    .recipe-group-title {
+      padding: 6px 10px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .recipe {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12px;
+      border: 1px solid transparent;
+      transition: all .1s;
+    }
+    .recipe:hover { background: var(--bg3); }
+    .recipe:focus-visible { border-color: var(--jake); background: var(--bg3); }
+    .recipe.selected { background: rgba(244,63,94,.12); border-color: rgba(244,63,94,.3); }
+    .recipe-icon { width: 14px; text-align: center; font-size: 10px; }
+    .recipe-icon.pending { color: var(--muted); }
+    .recipe-icon.running { color: var(--jake); }
+    .recipe-icon.success { color: var(--green); }
+    .recipe-icon.failed { color: var(--red); }
+    .recipe-name { font-family: ui-monospace, monospace; flex: 1; }
+    .recipe-badge {
+      font-size: 8px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      background: var(--bg);
+      color: var(--muted);
+    }
+    .recipe-badge.default { background: rgba(244,63,94,.15); color: var(--jake); }
+    .recipe-play {
+      opacity: 0;
+      width: 18px; height: 18px;
+      border: none; border-radius: 3px;
+      background: var(--jake);
+      color: white;
+      font-size: 7px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity .1s;
+    }
+    .recipe:hover .recipe-play,
+    .recipe:focus-visible .recipe-play { opacity: 1; }
+    .recipe-play:hover { background: var(--jake-light); }
+
+    /* Content */
+    .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Empty State */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      gap: 8px;
+    }
+    .empty-icon { font-size: 32px; opacity: .3; }
+    .empty-hint { font-size: 11px; }
+    kbd {
+      padding: 2px 5px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      font-family: ui-monospace, monospace;
+      font-size: 10px;
+    }
+
+    /* Detail Panel */
+    .detail-panel {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: none;
+    }
+    .detail-panel.visible { display: block; }
+    .detail-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-name {
+      font-family: ui-monospace, monospace;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--jake);
+    }
+    .detail-status {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg3);
+      color: var(--text2);
+    }
+    .detail-status.success { background: rgba(34,197,94,.15); color: var(--green); }
+    .detail-status.running { background: rgba(244,63,94,.15); color: var(--jake); }
+    .detail-status.failed { background: rgba(239,68,68,.15); color: var(--red); }
+    .detail-time { margin-left: auto; font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
+    .detail-body { padding: 12px 14px; }
+    .detail-desc { color: var(--text2); font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
+    .detail-row {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 12px;
+    }
+    .detail-section { flex: 1; }
+    .detail-label {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .detail-value { font-size: 12px; color: var(--text2); }
+    .dep-list { display: flex; flex-wrap: wrap; gap: 4px; }
+    .dep-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: var(--bg);
+      border-radius: 3px;
+      color: var(--text2);
+      font-family: ui-monospace, monospace;
+    }
+    .dep-badge:hover { background: var(--bg3); cursor: pointer; }
+
+    /* Parameters */
+    .params-list { display: flex; flex-direction: column; gap: 8px; }
+    .param-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .param-name {
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      color: var(--blue);
+      min-width: 80px;
+    }
+    .param-input {
+      flex: 1;
+      padding: 5px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font: inherit;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+    }
+    .param-input:focus { border-color: var(--jake); }
+    .param-input::placeholder { color: var(--muted); }
+    .param-default {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    /* Command Preview */
+    .cmd-block {
+      background: var(--bg);
+      border-radius: 5px;
+      padding: 10px 12px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      color: var(--text2);
+      line-height: 1.6;
+      margin-top: 12px;
+      position: relative;
+    }
+    .cmd-block::before {
+      content: 'COMMANDS';
+      position: absolute;
+      top: -8px;
+      left: 8px;
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: .5px;
+      color: var(--muted);
+      background: var(--bg2);
+      padding: 0 4px;
+    }
+    .cmd-line { padding: 1px 0; }
+    .cmd-line .keyword { color: var(--jake); }
+    .cmd-line .string { color: var(--green); }
+    .cmd-line .comment { color: var(--muted); }
+
+    /* Action Bar */
+    .action-bar {
+      display: flex;
+      gap: 8px;
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--bg3);
+    }
+    .btn {
+      padding: 7px 14px;
+      border: none;
+      border-radius: 5px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all .1s;
+    }
+    .btn-primary { background: var(--jake); color: white; }
+    .btn-primary:hover { background: var(--jake-light); }
+    .btn-primary:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--jake); }
+    .btn-primary:disabled { background: var(--muted); cursor: default; }
+    .btn-secondary { background: var(--bg); color: var(--text2); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--bg4); border-color: var(--border-light); }
+    .btn-secondary:focus-visible { border-color: var(--jake); }
+    .btn-stop { background: var(--bg); color: var(--red); border: 1px solid var(--border); }
+    .btn-stop:hover { background: rgba(239,68,68,.1); border-color: var(--red); }
+    .btn-kbd {
+      font-size: 9px;
+      padding: 1px 4px;
+      background: rgba(255,255,255,.1);
+      border-radius: 2px;
+      margin-left: 4px;
+    }
+
+    /* Output Section */
+    .output-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .output-header {
+      padding: 8px 14px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .output-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+    }
+    .output-actions { display: flex; gap: 8px; }
+    .output-btn {
+      font-size: 10px;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .output-btn:hover { color: var(--text2); background: var(--bg3); }
+    .output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      background: #090909;
+      line-height: 1.6;
+    }
+    .out-line { padding: 1px 0; }
+    .out-line.muted { color: var(--muted); }
+    .out-line.cmd { color: var(--text2); }
+    .out-line.cmd::before { content: '$ '; color: var(--muted); }
+    .out-line.info { color: var(--blue); }
+    .out-line.success { color: var(--green); }
+    .out-line.error { color: var(--red); }
+    .out-line.warning { color: var(--yellow); }
+    .out-line.dim { color: var(--muted); }
+    .out-task {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 0 4px;
+      color: var(--jake);
+      font-weight: 500;
+    }
+    .out-task:first-child { padding-top: 0; }
+    .out-task .deps { font-weight: 400; font-size: 10px; color: var(--muted); }
+    .out-done {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 0 6px;
+    }
+    .out-done.success { color: var(--green); }
+    .out-done.failed { color: var(--red); }
+    .out-done .time { margin-left: auto; color: var(--muted); }
+
+    /* Spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+
+    /* Footer */
+    .footer {
+      height: 26px;
+      background: var(--bg3);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .footer-left { display: flex; align-items: center; gap: 16px; }
+    .footer-hint { display: flex; align-items: center; gap: 4px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header class="header">
+    <div class="logo"><span class="logo-icon">{j}</span><span>Jake</span></div>
+    <span class="header-path">~/projects/jake</span>
+    <div class="header-right">
+      <span id="elapsed" class="elapsed">0.00s</span>
+      <div class="status-pill">
+        <div id="statusDot" class="status-dot"></div>
+        <span id="statusText">Ready</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Recipes</span>
+        <span class="sidebar-count" id="recipeCount">0</span>
+      </div>
+      <div class="search-box">
+        <input type="text" class="search-input" placeholder="Filter... (Ctrl+K)" id="searchInput" oninput="filterRecipes(this.value)">
+      </div>
+      <div id="recipeList" class="recipe-list"></div>
+    </aside>
+
+    <div class="content">
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon">◇</div>
+        <div>Select a recipe to view details</div>
+        <div class="empty-hint">Use <kbd>↑</kbd> <kbd>↓</kbd> to navigate, <kbd>Enter</kbd> to run</div>
+      </div>
+
+      <div id="detailPanel" class="detail-panel">
+        <div class="detail-header">
+          <span id="detailName" class="detail-name"></span>
+          <span id="detailStatus" class="detail-status"></span>
+          <span id="detailTime" class="detail-time"></span>
+        </div>
+        <div class="detail-body">
+          <div id="detailDesc" class="detail-desc"></div>
+          <div class="detail-row">
+            <div class="detail-section">
+              <div class="detail-label">Dependencies</div>
+              <div id="detailDeps" class="detail-value"></div>
+            </div>
+            <div class="detail-section">
+              <div class="detail-label">Group</div>
+              <div id="detailGroup" class="detail-value"></div>
+            </div>
+          </div>
+          <div id="paramsSection" style="display:none;">
+            <div class="detail-label">Parameters</div>
+            <div id="paramsList" class="params-list"></div>
+          </div>
+          <div id="cmdBlock" class="cmd-block"></div>
+        </div>
+        <div class="action-bar">
+          <button id="runBtn" class="btn btn-primary" onclick="runSelected()">
+            ▶ Run <span class="btn-kbd">Enter</span>
+          </button>
+          <button class="btn btn-secondary" onclick="runSelected(true)">
+            ▷ Dry Run <span class="btn-kbd">Shift+Enter</span>
+          </button>
+          <button id="stopBtn" class="btn btn-stop" onclick="stopRunning()" style="display:none;">
+            ■ Stop <span class="btn-kbd">Esc</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="outputSection" class="output-section" style="display:none;">
+        <div class="output-header">
+          <span class="output-title">Output</span>
+          <div class="output-actions">
+            <button class="output-btn" onclick="copyOutput()">Copy</button>
+            <button class="output-btn" onclick="clearOutput()">Clear</button>
+          </div>
+        </div>
+        <div id="output" class="output"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-left">
+      <div class="footer-hint"><kbd>↑↓</kbd> or <kbd>jk</kbd> Navigate</div>
+      <div class="footer-hint"><kbd>Enter</kbd> Run</div>
+      <div class="footer-hint"><kbd>⌘K</kbd> Search</div>
+    </div>
+    <span>Jake Web UI v0.1</span>
+  </footer>
+</div>
+
+<script>
+// Recipe definitions from Jake's own Jakefile
+const recipes = [
+  // Build group
+  { id: 'build', group: 'build', desc: 'Compile jake binary', deps: [], cmd: ['zig build'], default: true, needs: ['zig'] },
+  { id: 'build-release', group: 'build', desc: 'Optimized release build', deps: [], cmd: ['zig build -Doptimize=ReleaseFast'], needs: ['zig'] },
+  { id: 'rebuild', group: 'build', desc: 'Clean and rebuild from scratch', deps: ['clean', 'build'], cmd: ['echo "Rebuild complete"'] },
+  { id: 'clean', group: 'build', desc: 'Remove build artifacts', deps: [], cmd: ['rm -rf zig-out', 'rm -rf .zig-cache', 'rm -rf .jake'] },
+
+  // Test group
+  { id: 'test', group: 'test', desc: 'Run all tests', deps: [], cmd: ['zig build test --summary all'], needs: ['zig'] },
+  { id: 'lint', group: 'test', desc: 'Check code formatting', deps: [], cmd: ['zig fmt --check src/'], needs: ['zig'] },
+  { id: 'e2e', group: 'test', desc: 'Run end-to-end tests', deps: ['build-release'], cmd: ['cd tests/e2e', '../../zig-out/bin/jake test-all'] },
+
+  // Dev group
+  { id: 'dev', group: 'dev', desc: 'Development build with watch support', deps: [], cmd: ['zig build'], watch: ['src/*.zig', 'build.zig'], needs: ['zig'] },
+
+  // Install group
+  { id: 'install', group: 'install', desc: 'Install jake to ~/.local/bin', deps: ['build-release'], cmd: ['mkdir -p ~/.local/bin', 'cp zig-out/bin/jake ~/.local/bin/jake'] },
+
+  // Performance group
+  { id: 'perf.bench', group: 'perf', desc: 'Run internal zBench benchmarks', deps: [], cmd: ['zig build bench -Doptimize=ReleaseFast'], timeout: '5m', needs: ['zig'] },
+  { id: 'perf.fuzz', group: 'perf', desc: 'Run coverage-guided fuzz tests', deps: [], cmd: ['zig build fuzz --fuzz'], timeout: '10m', needs: ['zig'] },
+  { id: 'perf.profile', group: 'perf', desc: 'Profile with samply (flamegraph)', deps: [], cmd: ['zig build -Doptimize=ReleaseFast', 'samply record ./zig-out/bin/jake -l'], needs: ['samply', 'zig'] },
+  { id: 'perf.leaks', group: 'perf', desc: 'Memory leak check (macOS)', deps: [], cmd: ['zig build -Doptimize=ReleaseSafe', 'leaks --atExit -- ./zig-out/bin/jake -l'], os: 'macos', needs: ['leaks', 'zig'] },
+
+  // Release group
+  { id: 'release.build', group: 'release', desc: 'Build optimized release for current platform', deps: [], cmd: ['zig build -Doptimize=ReleaseFast'], needs: ['zig'] },
+  { id: 'release.all', group: 'release', desc: 'Build for all platforms', deps: ['release._linux', 'release._macos', 'release._windows'], cmd: ['ls -lh dist/'], params: [{ name: 'jobs', default: '5', desc: 'Parallel jobs' }] },
+  { id: 'release.package', group: 'release', desc: 'Create versioned release package', deps: ['release.checksums'], cmd: ['mkdir -p releases/v$VERSION', 'cp dist/* releases/v$VERSION/'], params: [{ name: 'VERSION', default: '', desc: 'Release version (e.g., 0.5.0)' }], confirm: true },
+];
+
+// Realistic output simulations
+const outputSimulations = {
+  'build': [
+    { type: 'muted', text: '@pre echo "Building jake..."' },
+    { type: '', text: 'Building jake...' },
+    { type: 'cmd', text: 'zig build' },
+    { type: 'dim', text: 'info: Compiling src/main.zig...' },
+    { type: 'dim', text: 'info: Compiling src/lexer.zig...' },
+    { type: 'dim', text: 'info: Compiling src/parser.zig...' },
+    { type: 'dim', text: 'info: Compiling src/executor.zig...' },
+    { type: 'dim', text: 'info: Linking...' },
+    { type: 'muted', text: '@post echo "Build successful: zig-out/bin/jake"' },
+    { type: 'success', text: 'Build successful: zig-out/bin/jake' },
+  ],
+  'test': [
+    { type: 'muted', text: '@pre echo "Running tests..."' },
+    { type: '', text: 'Running tests...' },
+    { type: 'cmd', text: 'zig build test --summary all' },
+    { type: 'dim', text: 'Test [1/47] lexer.tokenize_basic...' },
+    { type: 'dim', text: 'Test [2/47] lexer.tokenize_strings...' },
+    { type: 'dim', text: 'Test [3/47] parser.parse_recipe...' },
+    { type: 'dim', text: '...' },
+    { type: 'dim', text: 'Test [45/47] executor.variable_expansion...' },
+    { type: 'dim', text: 'Test [46/47] executor.dependency_resolution...' },
+    { type: 'dim', text: 'Test [47/47] glob.pattern_matching...' },
+    { type: 'success', text: '47 passed, 0 skipped, 0 failed.' },
+    { type: 'muted', text: '@post echo "All tests passed!"' },
+    { type: 'success', text: 'All tests passed!' },
+  ],
+  'lint': [
+    { type: 'cmd', text: 'zig fmt --check src/' },
+    { type: 'success', text: 'All 52 source files formatted correctly.' },
+  ],
+  'clean': [
+    { type: 'muted', text: '@pre echo "Cleaning..."' },
+    { type: '', text: 'Cleaning...' },
+    { type: 'cmd', text: 'rm -rf zig-out' },
+    { type: 'cmd', text: 'rm -rf .zig-cache' },
+    { type: 'cmd', text: 'rm -rf .jake' },
+    { type: 'muted', text: '@post echo "Clean complete"' },
+    { type: 'success', text: 'Clean complete' },
+  ],
+  'perf.bench': [
+    { type: 'muted', text: '@pre echo "Running internal benchmarks..."' },
+    { type: '', text: 'Running internal benchmarks...' },
+    { type: 'cmd', text: 'zig build bench -Doptimize=ReleaseFast' },
+    { type: 'dim', text: 'benchmark: lexer_tokenize' },
+    { type: '', text: '  mean: 1.234ms, std: 0.045ms, min: 1.156ms, max: 1.389ms' },
+    { type: 'dim', text: 'benchmark: parser_parse' },
+    { type: '', text: '  mean: 2.567ms, std: 0.123ms, min: 2.345ms, max: 2.890ms' },
+    { type: 'dim', text: 'benchmark: executor_run' },
+    { type: '', text: '  mean: 0.456ms, std: 0.012ms, min: 0.423ms, max: 0.501ms' },
+    { type: 'muted', text: '@post echo "Benchmarks complete!"' },
+    { type: 'success', text: 'Benchmarks complete!' },
+  ],
+};
+
+let selected = null;
+let taskState = {};
+let running = null;
+let start = 0;
+let timers = [];
+let elapsedTimer = null;
+let filter = '';
+let paramValues = {};
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+function init() {
+  recipes.forEach(r => {
+    taskState[r.id] = { status: 'pending', duration: null, output: [] };
+    paramValues[r.id] = {};
+    if (r.params) {
+      r.params.forEach(p => paramValues[r.id][p.name] = p.default);
+    }
+  });
+  renderRecipes();
+  setupKeyboard();
+}
+
+function setupKeyboard() {
+  document.addEventListener('keydown', e => {
+    // Ctrl+K: Focus search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      $('#searchInput').focus();
+      return;
+    }
+
+    // Escape: Stop or blur
+    if (e.key === 'Escape') {
+      if (running) {
+        stopRunning();
+      } else {
+        document.activeElement.blur();
+      }
+      return;
+    }
+
+    // Don't handle arrows if in an input field (except search)
+    const isInput = document.activeElement.tagName === 'INPUT' ||
+                    document.activeElement.tagName === 'TEXTAREA';
+
+    // If search focused, arrow down goes to first recipe
+    if (document.activeElement === $('#searchInput')) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const first = $('.recipe');
+        if (first) first.focus();
+      }
+      return;
+    }
+
+    // Skip if in other inputs
+    if (isInput) return;
+
+    // Navigation through recipe list
+    const recipeEls = [...$$('.recipe')];
+    const current = document.activeElement;
+    const idx = recipeEls.indexOf(current);
+
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      e.preventDefault();
+      if (idx === -1) {
+        // Nothing focused, focus first
+        if (recipeEls.length) recipeEls[0].focus();
+      } else if (idx < recipeEls.length - 1) {
+        recipeEls[idx + 1].focus();
+      } else {
+        // Wrap to first
+        recipeEls[0].focus();
+      }
+    } else if (e.key === 'ArrowUp' || e.key === 'k') {
+      e.preventDefault();
+      if (idx === -1) {
+        // Nothing focused, focus last
+        if (recipeEls.length) recipeEls[recipeEls.length - 1].focus();
+      } else if (idx > 0) {
+        recipeEls[idx - 1].focus();
+      } else {
+        // Wrap to last
+        recipeEls[recipeEls.length - 1].focus();
+      }
+    } else if (e.key === 'Enter' && selected) {
+      // Only handle Enter if we're focused on a recipe or the Run button area
+      const isOnRecipe = current.classList.contains('recipe');
+      const isOnButton = current.classList.contains('btn');
+      if (isOnRecipe || (!isOnButton && selected)) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          runSelected(true);
+        } else {
+          runSelected();
+        }
+      }
+    }
+  });
+}
+
+function filterRecipes(value) {
+  filter = value.toLowerCase();
+  renderRecipes();
+}
+
+function renderRecipes(restoreFocus = false) {
+  // Remember which element had focus before re-render
+  const focusedId = document.activeElement?.dataset?.id;
+
+  const filtered = recipes.filter(r =>
+    r.id.toLowerCase().includes(filter) ||
+    r.desc.toLowerCase().includes(filter) ||
+    r.group.toLowerCase().includes(filter)
+  );
+
+  $('#recipeCount').textContent = filtered.length;
+
+  // Group recipes
+  const groups = {};
+  filtered.forEach(r => {
+    if (!groups[r.group]) groups[r.group] = [];
+    groups[r.group].push(r);
+  });
+
+  let html = '';
+  for (const [group, items] of Object.entries(groups)) {
+    html += `<div class="recipe-group">`;
+    html += `<div class="recipe-group-title">${group}</div>`;
+    items.forEach(r => {
+      const s = taskState[r.id];
+      const icon = s.status === 'running' ? '<span class="spinner"></span>' :
+                   s.status === 'success' ? '✓' :
+                   s.status === 'failed' ? '✗' : '○';
+      const badges = [];
+      if (r.default) badges.push('<span class="recipe-badge default">default</span>');
+      if (r.os) badges.push(`<span class="recipe-badge">${r.os}</span>`);
+
+      html += `
+        <div class="recipe ${selected === r.id ? 'selected' : ''}"
+             data-id="${r.id}"
+             tabindex="0"
+             onclick="selectRecipe('${r.id}')"
+             onfocus="selectRecipe('${r.id}')">
+          <span class="recipe-icon ${s.status}">${icon}</span>
+          <span class="recipe-name">${r.id}</span>
+          ${badges.join('')}
+          <button class="recipe-play" onclick="event.stopPropagation(); runRecipe('${r.id}')" tabindex="-1" title="Run">▶</button>
+        </div>
+      `;
+    });
+    html += `</div>`;
+  }
+
+  $('#recipeList').innerHTML = html;
+
+  // Restore focus if requested and element still exists
+  if (restoreFocus && focusedId) {
+    const el = $(`.recipe[data-id="${focusedId}"]`);
+    if (el) el.focus();
+  }
+}
+
+// Update just the status icon for a recipe without full re-render
+function updateRecipeStatus(id) {
+  const el = $(`.recipe[data-id="${id}"]`);
+  if (!el) return;
+
+  const s = taskState[id];
+  const iconEl = el.querySelector('.recipe-icon');
+  if (!iconEl) return;
+
+  iconEl.className = `recipe-icon ${s.status}`;
+  iconEl.innerHTML = s.status === 'running' ? '<span class="spinner"></span>' :
+                     s.status === 'success' ? '✓' :
+                     s.status === 'failed' ? '✗' : '○';
+
+  // Update selected/active state
+  el.classList.toggle('selected', selected === id);
+}
+
+function selectRecipe(id, skipRender = false) {
+  if (selected === id) return; // No change
+
+  // Update selection visually without full re-render
+  const prevEl = $(`.recipe[data-id="${selected}"]`);
+  if (prevEl) prevEl.classList.remove('selected');
+
+  selected = id;
+
+  const newEl = $(`.recipe[data-id="${id}"]`);
+  if (newEl) newEl.classList.add('selected');
+
+  // Only do full render if explicitly requested (e.g., after status change)
+  if (!skipRender) {
+    renderDetail();
+  }
+}
+
+function renderDetail() {
+  if (!selected) {
+    $('#detailPanel').classList.remove('visible');
+    $('#emptyState').style.display = 'flex';
+    $('#outputSection').style.display = 'none';
+    return;
+  }
+
+  const r = recipes.find(x => x.id === selected);
+  const s = taskState[selected];
+
+  $('#emptyState').style.display = 'none';
+  $('#detailPanel').classList.add('visible');
+  $('#outputSection').style.display = 'flex';
+
+  // Header
+  $('#detailName').textContent = r.id;
+
+  const statusClass = s.status === 'pending' ? '' : s.status;
+  const statusText = s.status === 'pending' ? 'Not run' :
+                     s.status === 'running' ? 'Running...' :
+                     s.status === 'success' ? 'Completed' : 'Failed';
+  $('#detailStatus').className = 'detail-status ' + statusClass;
+  $('#detailStatus').textContent = statusText;
+  $('#detailTime').textContent = s.duration ? fmt(s.duration) : '';
+
+  // Body
+  $('#detailDesc').textContent = r.desc;
+
+  // Dependencies
+  if (r.deps.length) {
+    $('#detailDeps').innerHTML = `<div class="dep-list">${r.deps.map(d =>
+      `<span class="dep-badge" onclick="selectRecipe('${d}')">${d}</span>`
+    ).join('')}</div>`;
+  } else {
+    $('#detailDeps').innerHTML = '<span style="color:var(--muted);font-style:italic">none</span>';
+  }
+
+  // Group
+  $('#detailGroup').innerHTML = `<span style="color:var(--purple)">${r.group}</span>`;
+
+  // Parameters
+  if (r.params && r.params.length) {
+    $('#paramsSection').style.display = 'block';
+    $('#paramsList').innerHTML = r.params.map(p => `
+      <div class="param-row">
+        <span class="param-name">${p.name}</span>
+        <input type="text"
+               class="param-input"
+               value="${paramValues[r.id][p.name] || ''}"
+               placeholder="${p.default || 'required'}"
+               oninput="paramValues['${r.id}']['${p.name}'] = this.value"
+               title="${p.desc || p.name}">
+        ${p.default ? `<span class="param-default">default: ${p.default}</span>` : ''}
+      </div>
+    `).join('');
+  } else {
+    $('#paramsSection').style.display = 'none';
+  }
+
+  // Commands
+  const cmdHtml = r.cmd.map(c => {
+    // Simple syntax highlighting
+    let highlighted = c
+      .replace(/(@\w+)/g, '<span class="keyword">$1</span>')
+      .replace(/"([^"]*)"/g, '"<span class="string">$1</span>"')
+      .replace(/(#.*)$/g, '<span class="comment">$1</span>');
+    return `<div class="cmd-line">${highlighted}</div>`;
+  }).join('');
+  $('#cmdBlock').innerHTML = cmdHtml;
+
+  // Buttons
+  $('#runBtn').disabled = s.status === 'running';
+  $('#runBtn').innerHTML = s.status === 'running'
+    ? '<span class="spinner"></span> Running...'
+    : '▶ Run <span class="btn-kbd">Enter</span>';
+  $('#stopBtn').style.display = s.status === 'running' ? 'inline-flex' : 'none';
+
+  renderOutput();
+}
+
+function renderOutput() {
+  if (!selected) return;
+  const s = taskState[selected];
+  const out = $('#output');
+
+  if (s.output.length === 0) {
+    out.innerHTML = '<div class="out-line muted">No output yet. Click Run to execute.</div>';
+    return;
+  }
+
+  out.innerHTML = s.output.map(l => `<div class="out-line ${l.type}">${escapeHtml(l.text)}</div>`).join('');
+  out.scrollTop = out.scrollHeight;
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function clearOutput() {
+  if (selected) {
+    taskState[selected].output = [];
+    renderOutput();
+  }
+}
+
+function copyOutput() {
+  if (!selected) return;
+  const text = taskState[selected].output.map(l => l.text).join('\n');
+  navigator.clipboard.writeText(text);
+}
+
+function runSelected(dryRun = false) {
+  if (!selected) return;
+  runRecipe(selected, dryRun);
+}
+
+function runRecipe(id, dryRun = false) {
+  if (taskState[id].status === 'running') return;
+
+  // Select the recipe (updates visual selection)
+  selectRecipe(id);
+
+  const r = recipes.find(x => x.id === id);
+  const s = taskState[id];
+
+  s.status = 'running';
+  s.duration = null;
+  s.output = [];
+  running = id;
+  start = Date.now();
+
+  updateRecipeStatus(id);
+  renderDetail();
+  updateStatus();
+
+  elapsedTimer = setInterval(() => {
+    $('#elapsed').textContent = fmt(Date.now() - start);
+  }, 100);
+
+  // Get simulation or generate default
+  const sim = outputSimulations[id] || generateDefaultOutput(r, dryRun);
+
+  // Add task header
+  const depsText = r.deps.length ? ` [${r.deps.join(', ')}]` : '';
+  s.output.push({ type: 'task', text: `→ ${id}${depsText}` });
+
+  if (dryRun) {
+    s.output.push({ type: 'info', text: '[dry-run] Would execute:' });
+    r.cmd.forEach(c => s.output.push({ type: 'muted', text: `  ${c}` }));
+    renderOutput();
+
+    timers.push(setTimeout(() => {
+      finishRun(id, true, dryRun);
+    }, 500));
+    return;
+  }
+
+  // Simulate output
+  let delay = 0;
+  sim.forEach((line, i) => {
+    delay += 80 + Math.random() * 120;
+    timers.push(setTimeout(() => {
+      s.output.push(line);
+      renderOutput();
+    }, delay));
+  });
+
+  // Finish
+  timers.push(setTimeout(() => {
+    finishRun(id, true, dryRun);
+  }, delay + 200));
+}
+
+function generateDefaultOutput(r, dryRun) {
+  const lines = [];
+  r.cmd.forEach(c => {
+    lines.push({ type: 'cmd', text: c });
+    lines.push({ type: 'dim', text: '...' });
+  });
+  lines.push({ type: 'success', text: 'Done.' });
+  return lines;
+}
+
+function finishRun(id, success, dryRun) {
+  const s = taskState[id];
+  s.status = success ? 'success' : 'failed';
+  s.duration = Date.now() - start;
+
+  const icon = success ? '✓' : '✗';
+  const suffix = dryRun ? ' (dry run)' : '';
+  s.output.push({ type: success ? 'success' : 'error', text: `${icon} ${id} completed in ${fmt(s.duration)}${suffix}` });
+
+  running = null;
+  clearInterval(elapsedTimer);
+  timers = [];
+
+  updateRecipeStatus(id);
+  renderDetail();
+  renderOutput();
+  updateStatus();
+}
+
+function stopRunning() {
+  if (!running) return;
+
+  const id = running;
+  const s = taskState[id];
+
+  timers.forEach(clearTimeout);
+  timers = [];
+  clearInterval(elapsedTimer);
+
+  s.status = 'failed';
+  s.duration = Date.now() - start;
+  s.output.push({ type: 'error', text: '✗ Stopped by user' });
+
+  running = null;
+
+  updateRecipeStatus(id);
+  renderDetail();
+  renderOutput();
+  updateStatus();
+}
+
+function updateStatus() {
+  const dot = $('#statusDot');
+  const txt = $('#statusText');
+
+  if (running) {
+    dot.className = 'status-dot running';
+    txt.textContent = `Running: ${running}`;
+  } else {
+    const success = Object.values(taskState).filter(s => s.status === 'success').length;
+    const failed = Object.values(taskState).filter(s => s.status === 'failed').length;
+
+    if (failed > 0) {
+      dot.className = 'status-dot failed';
+      txt.textContent = `${failed} failed`;
+    } else if (success > 0) {
+      dot.className = 'status-dot success';
+      txt.textContent = `${success} completed`;
+    } else {
+      dot.className = 'status-dot';
+      txt.textContent = 'Ready';
+    }
+  }
+}
+
+function fmt(ms) { return (ms/1000).toFixed(2) + 's'; }
+
+init();
+</script>
+</body>
+</html>

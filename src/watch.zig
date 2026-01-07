@@ -10,7 +10,9 @@ const executor_mod = @import("executor.zig");
 const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
 const glob_mod = @import("glob.zig");
 const color_mod = @import("color.zig");
-const RuntimeContext = @import("context.zig").RuntimeContext;
+const context_mod = @import("context.zig");
+const RuntimeContext = context_mod.RuntimeContext;
+const Context = context_mod.Context;
 
 const Jakefile = parser.Jakefile;
 const Executor = executor_mod.Executor;
@@ -24,6 +26,11 @@ pub const WatchError = error{
     Unexpected,
 };
 
+/// Default CLI context used by init() and initWithIndex() for backwards compatibility.
+var default_context: Context = .{
+    .color = color_mod.Color{ .enabled = false },
+};
+
 /// File watcher that monitors files/directories for changes and triggers recipe re-execution
 pub const Watcher = struct {
     allocator: std.mem.Allocator,
@@ -35,11 +42,12 @@ pub const Watcher = struct {
     resolved_files: std.ArrayListUnmanaged([]const u8),
     poll_interval_ns: u64,
     debounce_ns: u64,
-    verbose: bool,
-    dry_run: bool,
     last_change_time: i128,
     color: color_mod.Color,
     theme: color_mod.Theme,
+
+    // CLI context (flags from user)
+    ctx: *Context,
 
     const POLL_INTERVAL_MS: u64 = 500;
     const DEBOUNCE_MS: u64 = 100;
@@ -62,8 +70,9 @@ pub const Watcher = struct {
         return initInternal(allocator, jakefile, index);
     }
 
-    /// Initialize with a pre-configured RuntimeContext (shares color, theme)
-    pub fn initWithIndexAndContext(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, runtime: *RuntimeContext) Watcher {
+    /// Initialize with a pre-configured RuntimeContext (shares color, theme) and CLI Context.
+    /// This is the preferred initialization method.
+    pub fn initWithIndexAndContext(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, ctx: *Context, runtime: *RuntimeContext) Watcher {
         return .{
             .allocator = allocator,
             .jakefile = jakefile,
@@ -73,15 +82,19 @@ pub const Watcher = struct {
             .resolved_files = .empty,
             .poll_interval_ns = POLL_INTERVAL_MS * std.time.ns_per_ms,
             .debounce_ns = DEBOUNCE_MS * std.time.ns_per_ms,
-            .verbose = false,
-            .dry_run = false,
             .last_change_time = 0,
             .color = runtime.color,
             .theme = runtime.theme,
+            .ctx = ctx,
         };
     }
 
     fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {
+        // Reset default context to initial state (important for tests that reuse this)
+        default_context = .{
+            .color = color_mod.Color{ .enabled = false },
+        };
+
         return .{
             .allocator = allocator,
             .jakefile = jakefile,
@@ -91,11 +104,10 @@ pub const Watcher = struct {
             .resolved_files = .empty,
             .poll_interval_ns = POLL_INTERVAL_MS * std.time.ns_per_ms,
             .debounce_ns = DEBOUNCE_MS * std.time.ns_per_ms,
-            .verbose = false,
-            .dry_run = false,
             .last_change_time = 0,
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
+            .ctx = &default_context,
         };
     }
 
@@ -234,7 +246,7 @@ pub const Watcher = struct {
             // Direct file path - check if it exists
             std.fs.cwd().access(pattern, .{}) catch {
                 // File doesn't exist, skip
-                if (self.verbose) {
+                if (self.ctx.verbose) {
                     self.print("warning: file not found: {s}\n", .{pattern});
                 }
                 return;
@@ -340,7 +352,7 @@ pub const Watcher = struct {
         }
         self.print("\n", .{});
 
-        if (self.verbose) {
+        if (self.ctx.verbose) {
             for (self.resolved_files.items) |file| {
                 self.print("  - {s}\n", .{file});
             }
@@ -395,9 +407,10 @@ pub const Watcher = struct {
     fn executeRecipe(self: *Watcher, recipe_name: []const u8) void {
         var exec = Executor.init(self.allocator, self.jakefile);
         defer exec.deinit();
-        exec.dry_run = self.dry_run;
-        exec.verbose = self.verbose;
-        exec.watch_mode = true;
+        // Copy CLI flags from watcher's context to executor's context
+        exec.ctx.dry_run = self.ctx.dry_run;
+        exec.ctx.verbose = self.ctx.verbose;
+        exec.ctx.watch_mode = true;
 
         exec.execute(recipe_name) catch |err| {
             const err_name = @errorName(err);
@@ -498,15 +511,15 @@ test "watcher settings" {
     var watcher = Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
-    // Default settings
-    try std.testing.expect(!watcher.verbose);
-    try std.testing.expect(!watcher.dry_run);
+    // Default settings (accessed via ctx)
+    try std.testing.expect(!watcher.ctx.verbose);
+    try std.testing.expect(!watcher.ctx.dry_run);
 
-    // Change settings
-    watcher.verbose = true;
-    watcher.dry_run = true;
-    try std.testing.expect(watcher.verbose);
-    try std.testing.expect(watcher.dry_run);
+    // Change settings via ctx
+    watcher.ctx.verbose = true;
+    watcher.ctx.dry_run = true;
+    try std.testing.expect(watcher.ctx.verbose);
+    try std.testing.expect(watcher.ctx.dry_run);
 }
 
 test "watcher deinit cleans up patterns" {

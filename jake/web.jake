@@ -8,6 +8,7 @@ domain "jakefile.dev"
 task dev: [editors.build-highlighters]
     @cd site
     @needs npm
+    npm install
     npm run dev
 
 @group web
@@ -15,7 +16,9 @@ task dev: [editors.build-highlighters]
 task build: [editors.build-highlighters]
     @cd site
     @needs npm
+    npm install
     npm run build
+
 
 ## todo: variables should expand in desc strings
 
@@ -23,8 +26,8 @@ task build: [editors.build-highlighters]
 @desc "Deploy website to production"
 @needs vc "Install Vercel CLI: npm i -g vercel" -> _install-vercel
 task deploy:
-    @cd site
     @confirm "Deploy to production?"
+    @cd site
     vc --prod --yes
 
 @group web

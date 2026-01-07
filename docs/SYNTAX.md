@@ -274,6 +274,7 @@ Appear before a recipe definition to set metadata.
 | `@desc` / `@description`           | Recipe description              | `@desc "Build the project"` |
 | `@alias`                           | Alternative recipe names        | `@alias b`                  |
 | `@quiet`                           | Suppress command echoing        | `@quiet`                    |
+| `@hidden`                          | Hide from recipe listings       | `@hidden`                   |
 | `@only` / `@only-os` / `@platform` | OS-specific recipe              | `@platform macos linux`     |
 | `@needs`                           | Require commands (recipe-level) | `@needs docker kubectl`     |
 

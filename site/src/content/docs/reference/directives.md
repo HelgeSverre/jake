@@ -26,11 +26,12 @@ Placed at the top level of a Jakefile.
 
 Placed before a recipe definition.
 
-| Directive        | Description              |
-| ---------------- | ------------------------ |
-| `@group name`    | Group recipe in listings |
-| `@only-os os...` | Only run on specified OS |
-| `@quiet`         | Suppress command echoing |
+| Directive        | Description                           |
+| ---------------- | ------------------------------------- |
+| `@group name`    | Group recipe in listings              |
+| `@only-os os...` | Only run on specified OS              |
+| `@quiet`         | Suppress command echoing              |
+| `@hidden`        | Hide from listings (like `_` prefix)  |
 
 ## Recipe Directives
 

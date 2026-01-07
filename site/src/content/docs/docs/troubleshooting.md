@@ -14,12 +14,13 @@ Run 'jake --list' to see available recipes.
 
 - Typo in recipe name
 - Jakefile not in current directory
-- Recipe is private (prefixed with `_`)
+- Recipe is hidden (prefixed with `_` or has `@hidden`)
 
 **Solutions:**
 
 - Check spelling - Jake suggests similar names if you're close
 - Use `jake --list` to see available recipes
+- Use `jake --all` to see hidden recipes too
 - Use `-f` to specify Jakefile path: `jake -f path/to/Jakefile`
 
 ## Cyclic Dependency

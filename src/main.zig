@@ -7,6 +7,7 @@ const completions = jake.completions;
 const upgrade = jake.upgrade;
 const init = jake.init;
 const color_mod = jake.color;
+const webui = jake.webui;
 
 const version = build_options.version;
 
@@ -52,9 +53,13 @@ pub fn main() !void {
 
     // Parse arguments using args module
     var args = args_mod.parse(allocator, raw_args) catch |err| {
-        const err_arg = if (raw_args.len > 1) raw_args[1] else "";
-        const stderr_writer = FileWriter{ .file = getStderr() };
-        args_mod.printError(stderr_writer, err, err_arg);
+        // Constraint errors (MutuallyExclusive, RequiredTogether) print their own messages
+        // with full context in parse(). Only print for other errors.
+        if (err != error.MutuallyExclusive and err != error.RequiredTogether) {
+            const err_arg = if (raw_args.len > 1) raw_args[1] else "";
+            const stderr_writer = FileWriter{ .file = getStderr() };
+            args_mod.printError(stderr_writer, err, err_arg);
+        }
         std.process.exit(1);
     };
     defer args.deinit(allocator);
@@ -182,6 +187,57 @@ pub fn main() !void {
         return;
     }
 
+    // Handle web UI mode
+    if (args.web) {
+        // Load Jakefile first to get recipes
+        var jakefile_data = loadJakefile(allocator, args.jakefile) catch |err| {
+            const stderr = getStderr();
+            const color = color_mod.init();
+            if (err == error.FileNotFound) {
+                stderr.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
+                stderr.writeAll(color_mod.symbols.logo) catch {};
+                stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
+                stderr.writeAll(" " ++ args_mod.ansi.err_prefix ++ "no Jakefile found\n") catch {};
+            } else {
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to load Jakefile: {s}\n", .{@errorName(err)}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+            }
+            std.process.exit(1);
+        };
+        defer jakefile_data.deinit();
+
+        const port = args.web_port orelse 8420;
+        var server = webui.WebUIServer.init(allocator, port);
+        defer server.deinit();
+
+        // Provide Jakefile data to the web server
+        server.setJakefileData(jakefile_data.jakefile.recipes, jakefile_data.jakefile.variables);
+
+        // Provide execution context for running recipes from the web UI
+        server.setExecutionContext(&jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);
+
+        server.start() catch |err| {
+            const stderr = getStderr();
+            var buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to start web server: {s}\n", .{@errorName(err)}) catch "error\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        };
+
+        // Open browser
+        webui.openBrowser(server.getURL()) catch {};
+
+        // Accept connections until interrupted
+        while (server.isRunning()) {
+            server.acceptOne() catch |err| {
+                if (err == error.ConnectionResetByPeer or err == error.BrokenPipe) continue;
+                break;
+            };
+        }
+        return;
+    }
+
     // Load Jakefile
     var jakefile_data = loadJakefile(allocator, args.jakefile) catch |err| {
         const stderr = getStderr();
@@ -214,14 +270,19 @@ pub fn main() !void {
     };
     defer jakefile_data.deinit();
 
-    var executor = jake.Executor.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);
+    // Create CLI context from parsed args
+    var ctx = jake.Context{
+        .dry_run = args.dry_run,
+        .verbose = args.verbose,
+        .watch_mode = args.watch_enabled,
+        .auto_yes = args.yes,
+        .jobs = args.jobs orelse 0,
+        .positional_args = args.positional,
+        .color = color_mod.init(),
+    };
+
+    var executor = jake.Executor.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &ctx, &jakefile_data.runtime);
     defer executor.deinit();
-    executor.dry_run = args.dry_run;
-    executor.verbose = args.verbose;
-    executor.watch_mode = args.watch_enabled;
-    executor.auto_yes = args.yes;
-    executor.jobs = args.jobs orelse 0;
-    executor.setPositionalArgs(args.positional);
 
     // Validate required environment variables (@require directives)
     executor.validateRequiredEnv() catch |err| {
@@ -231,8 +292,8 @@ pub fn main() !void {
     };
 
     // List recipes or run default if no recipe specified
-    // --short implies listing (it's a listing format option)
-    if (args.list or args.short or (args.recipe == null and raw_args.len == 1)) {
+    // --short and --all imply listing (they're listing format/filter options)
+    if (args.list or args.short or args.all or (args.recipe == null and raw_args.len == 1)) {
         executor.listRecipes(args.short, args.all);
         return;
     }
@@ -262,10 +323,8 @@ pub fn main() !void {
 
     // Watch mode
     if (args.watch_enabled) {
-        var watcher = jake.Watcher.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);
+        var watcher = jake.Watcher.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &ctx, &jakefile_data.runtime);
         defer watcher.deinit();
-        watcher.dry_run = args.dry_run;
-        watcher.verbose = args.verbose;
 
         // Add explicit watch pattern from CLI if provided
         if (args.watch) |pattern| {

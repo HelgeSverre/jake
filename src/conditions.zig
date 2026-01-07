@@ -10,8 +10,9 @@ pub const ConditionError = error{
     OutOfMemory,
 };
 
-/// Runtime context passed from the Executor for runtime state conditions
-pub const RuntimeContext = struct {
+/// Condition evaluation context passed from the Executor for runtime state conditions.
+/// Note: This is separate from context.RuntimeContext which holds execution services.
+pub const ConditionContext = struct {
     watch_mode: bool = false,
     dry_run: bool = false,
     verbose: bool = false,
@@ -21,7 +22,7 @@ pub const RuntimeContext = struct {
 pub fn evaluate(
     condition: []const u8,
     variables: *const std.StringHashMap([]const u8),
-    context: RuntimeContext,
+    context: ConditionContext,
 ) ConditionError!bool {
     const trimmed = std.mem.trim(u8, condition, " \t");
 
@@ -233,7 +234,7 @@ fn stripQuotes(s: []const u8) []const u8 {
 // Tests
 
 // Default context for tests (no runtime flags set)
-const test_context = RuntimeContext{};
+const test_context = ConditionContext{};
 
 // Regression tests for bare boolean literals (fixed in issue with @if true/@if false)
 test "bare true literal returns true" {
@@ -441,8 +442,8 @@ test "is_watching condition" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const ctx_watching = RuntimeContext{ .watch_mode = true };
-    const ctx_not = RuntimeContext{ .watch_mode = false };
+    const ctx_watching = ConditionContext{ .watch_mode = true };
+    const ctx_not = ConditionContext{ .watch_mode = false };
 
     try std.testing.expect(try evaluate("is_watching()", &variables, ctx_watching));
     try std.testing.expect(!try evaluate("is_watching()", &variables, ctx_not));
@@ -452,8 +453,8 @@ test "is_dry_run condition" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const ctx_dry = RuntimeContext{ .dry_run = true };
-    const ctx_not = RuntimeContext{ .dry_run = false };
+    const ctx_dry = ConditionContext{ .dry_run = true };
+    const ctx_not = ConditionContext{ .dry_run = false };
 
     try std.testing.expect(try evaluate("is_dry_run()", &variables, ctx_dry));
     try std.testing.expect(!try evaluate("is_dry_run()", &variables, ctx_not));
@@ -463,8 +464,8 @@ test "is_verbose condition" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const ctx_verbose = RuntimeContext{ .verbose = true };
-    const ctx_not = RuntimeContext{ .verbose = false };
+    const ctx_verbose = ConditionContext{ .verbose = true };
+    const ctx_not = ConditionContext{ .verbose = false };
 
     try std.testing.expect(try evaluate("is_verbose()", &variables, ctx_verbose));
     try std.testing.expect(!try evaluate("is_verbose()", &variables, ctx_not));
@@ -715,7 +716,7 @@ test "fuzz condition evaluation" {
             variables.put("mode", "debug") catch return;
             variables.put("version", "1.0.0") catch return;
 
-            const context = RuntimeContext{
+            const context = ConditionContext{
                 .watch_mode = false,
                 .dry_run = false,
                 .verbose = false,
