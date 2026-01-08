@@ -51,7 +51,9 @@ const logo = "{j}";
                     >
                     <span>jake</span>
                 </a>
-                <div class="flex items-center gap-6">
+
+                <!-- Desktop Navigation -->
+                <div class="hidden md:flex items-center gap-6">
                     <!-- Features Dropdown -->
                     <div class="relative group" id="features-dropdown">
                         <button
@@ -60,7 +62,7 @@ const logo = "{j}";
                         >
                             Features
                             <svg
-                                class="w-4 h-4 transition-transform group-hover:rotate-180"
+                                class="w-4 h-4 transition-transform duration-200"
                                 id="features-arrow"
                                 fill="none"
                                 stroke="currentColor"
@@ -74,7 +76,7 @@ const logo = "{j}";
                             </svg>
                         </button>
                         <div
-                            class="absolute top-full left-0 mt-2 w-56 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50"
+                            class="absolute top-full left-0 mt-2 w-56 opacity-0 invisible transition-all duration-200 z-50"
                             id="features-menu"
                         >
                             <div
@@ -158,15 +160,163 @@ const logo = "{j}";
                         Get Started
                     </a>
                 </div>
+
+                <!-- Mobile Menu Button -->
+                <button
+                    id="mobile-menu-button"
+                    class="md:hidden p-2 text-text-secondary hover:text-text-primary transition-colors"
+                    aria-label="Toggle menu"
+                >
+                    <svg
+                        id="hamburger-icon"
+                        class="w-6 h-6"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                    <svg
+                        id="close-icon"
+                        class="w-6 h-6 hidden"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Mobile Menu -->
+            <div
+                id="mobile-menu"
+                class="md:hidden bg-bg-primary border-t border-border overflow-hidden transition-all duration-200 ease-out"
+                style="max-height: 0; opacity: 0;"
+            >
+                <div class="px-6 py-4 space-y-4">
+                    <!-- Features Section -->
+                    <div class="space-y-2">
+                        <div class="text-xs font-medium text-text-muted uppercase tracking-wider">
+                            Features
+                        </div>
+                        <a
+                            href="/features"
+                            class="block py-2 text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            Overview
+                        </a>
+                        <a
+                            href="/features/file-targets"
+                            class="block py-2 text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            File Targets
+                        </a>
+                        <a
+                            href="/features/parallel-execution"
+                            class="block py-2 text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            Parallel Execution
+                        </a>
+                        <a
+                            href="/features/hooks"
+                            class="block py-2 text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            Hooks
+                        </a>
+                        <a
+                            href="/features/imports"
+                            class="block py-2 text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            Imports & Modules
+                        </a>
+                        <a
+                            href="/features/watch-mode"
+                            class="block py-2 text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            Watch Mode
+                        </a>
+                    </div>
+
+                    <div class="border-t border-border pt-4 space-y-2">
+                        <a
+                            href="/docs/introduction"
+                            class="block py-2 text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            Docs
+                        </a>
+                        <a
+                            href="https://github.com/HelgeSverre/jake"
+                            class="block py-2 text-text-secondary hover:text-text-primary transition-colors"
+                        >
+                            GitHub
+                        </a>
+                    </div>
+
+                    <div class="pt-2">
+                        <a
+                            href="/docs/installation"
+                            class="block w-full text-center bg-jake hover:bg-jake-dark text-white px-4 py-3 rounded-lg text-sm font-medium transition-colors"
+                        >
+                            Get Started
+                        </a>
+                    </div>
+                </div>
             </div>
         </nav>
 
         <script>
-            // Mobile-friendly dropdown toggle
-            const isTouchDevice = () => {
-                return "ontouchstart" in window || navigator.maxTouchPoints > 0;
-            };
+            // Mobile menu toggle
+            const mobileMenuButton = document.getElementById("mobile-menu-button");
+            const mobileMenu = document.getElementById("mobile-menu");
+            const hamburgerIcon = document.getElementById("hamburger-icon");
+            const closeIcon = document.getElementById("close-icon");
 
+            if (mobileMenuButton && mobileMenu && hamburgerIcon && closeIcon) {
+                let mobileMenuOpen = false;
+
+                const openMenu = () => {
+                    mobileMenu.style.maxHeight = mobileMenu.scrollHeight + "px";
+                    mobileMenu.style.opacity = "1";
+                    hamburgerIcon.classList.add("hidden");
+                    closeIcon.classList.remove("hidden");
+                };
+
+                const closeMenu = () => {
+                    mobileMenu.style.maxHeight = "0";
+                    mobileMenu.style.opacity = "0";
+                    hamburgerIcon.classList.remove("hidden");
+                    closeIcon.classList.add("hidden");
+                };
+
+                mobileMenuButton.addEventListener("click", () => {
+                    mobileMenuOpen = !mobileMenuOpen;
+                    if (mobileMenuOpen) {
+                        openMenu();
+                    } else {
+                        closeMenu();
+                    }
+                });
+
+                // Close mobile menu when clicking a link
+                const mobileLinks = mobileMenu.querySelectorAll("a");
+                mobileLinks.forEach((link) => {
+                    link.addEventListener("click", () => {
+                        mobileMenuOpen = false;
+                        closeMenu();
+                    });
+                });
+            }
+
+            // Desktop features dropdown toggle
             const dropdown = document.getElementById("features-dropdown");
             const toggle = document.getElementById("features-toggle");
             const menu = document.getElementById("features-menu");
@@ -175,7 +325,6 @@ const logo = "{j}";
             if (dropdown && toggle && menu) {
                 let isOpen = false;
 
-                // Handle click on the toggle button
                 toggle.addEventListener("click", (e) => {
                     e.preventDefault();
                     isOpen = !isOpen;
@@ -191,7 +340,6 @@ const logo = "{j}";
                     }
                 });
 
-                // Close dropdown when clicking outside
                 document.addEventListener("click", (e) => {
                     if (isOpen && !dropdown.contains(e.target)) {
                         isOpen = false;
@@ -201,7 +349,6 @@ const logo = "{j}";
                     }
                 });
 
-                // Close dropdown when navigating to a menu item
                 const menuLinks = menu.querySelectorAll("a");
                 menuLinks.forEach((link) => {
                     link.addEventListener("click", () => {
