@@ -17,7 +17,7 @@
 # Utilities
 @import "jake/web.jake" as web
 @import "jake/editors.jake" as editors
-@import "jake/ai.jake" as ai
+#  @import "jake/ai.jake" as ai
 
 @dotenv
 
