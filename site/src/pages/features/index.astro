@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { Package, Zap, Anchor, FolderInput, RefreshCw, ArrowRight } from 'lucide-astro';
+import { Package, Zap, Anchor, FolderInput, RefreshCw, Monitor, ArrowRight } from 'lucide-astro';
 
 const features = [
   {
@@ -42,6 +42,14 @@ const features = [
     tagline: 'Iterate faster',
     description: 'Automatically re-run tasks when files change. Built-in file watching with conditional behavior during development.',
     benefits: ['Automatic file detection', 'Custom watch patterns', 'Conditional watch logic'],
+  },
+  {
+    icon: Monitor,
+    slug: 'web-ui',
+    title: 'Web UI',
+    tagline: 'Browser-based control',
+    description: 'Run tasks from a dark-themed browser interface with real-time streaming output, recipe discovery, and keyboard navigation.',
+    benefits: ['Visual recipe browser', 'Live output streaming', 'Keyboard shortcuts'],
   },
 ];
 ---
@@ -132,6 +140,12 @@ const features = [
                 <td class="px-6 py-3">.env loading</td>
                 <td class="px-6 py-3 text-center text-text-muted">No</td>
                 <td class="px-6 py-3 text-center text-green-500">Yes</td>
+                <td class="px-6 py-3 text-center text-green-500">Yes</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3">Web UI</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
+                <td class="px-6 py-3 text-center text-text-muted">No</td>
                 <td class="px-6 py-3 text-center text-green-500">Yes</td>
               </tr>
             </tbody>

@@ -1,0 +1,317 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { Monitor, Terminal, CheckCircle, ArrowRight, ArrowLeft, Search, Play, Zap, Settings } from 'lucide-astro';
+
+const codeExample = `<span class="text-syntax-comment"># Start the web UI</span>
+<span class="text-text-muted">$</span> jake --web
+
+<span class="text-blue-400">[webui]</span> Starting web server...
+<span class="text-blue-400">[webui]</span> Listening on <span class="text-jake">http://127.0.0.1:8420</span>
+<span class="text-blue-400">[webui]</span> Opening browser...
+
+<span class="text-syntax-comment"># Or specify a custom port</span>
+<span class="text-text-muted">$</span> jake --web --port 3000`;
+
+const outputExample = `<span class="text-blue-400">[webui]</span> Client connected
+<span class="text-blue-400">[webui]</span> Loaded 12 recipes from Jakefile
+
+<span class="text-text-muted"># User clicks "Run" on build task...</span>
+
+<span class="text-jake">→</span> build
+  Running TypeScript compiler...
+  tsc --noEmit
+<span class="text-green-500">✓</span> build <span class="text-text-muted">(2.34s)</span>
+
+<span class="text-blue-400">[webui]</span> Task completed successfully`;
+
+const features = [
+  {
+    icon: 'Search',
+    title: 'Recipe Browser',
+    description: 'Browse all recipes with search and filter. Use Ctrl+K for quick search, j/k for navigation.',
+  },
+  {
+    icon: 'Zap',
+    title: 'Live Output',
+    description: 'Real-time streaming via WebSocket. Watch command output as it happens with color-coded status.',
+  },
+  {
+    icon: 'Settings',
+    title: 'Parameters & Dry-run',
+    description: 'Input fields for recipe parameters. Preview commands with dry-run before executing.',
+  },
+  {
+    icon: 'Play',
+    title: 'Quick Actions',
+    description: 'One-click run buttons for each recipe. Stop running tasks instantly with cancel support.',
+  },
+];
+
+const commands = [
+  { cmd: 'jake --web', desc: 'Start web UI on default port 8420' },
+  { cmd: 'jake --web --port 3000', desc: 'Use a custom port' },
+];
+
+const uiSections = [
+  { name: 'Sidebar', desc: 'Recipe list with search, groups, and keyboard navigation' },
+  { name: 'Detail Panel', desc: 'Recipe info, dependencies, parameters, and action buttons' },
+  { name: 'Output Area', desc: 'Real-time command output with status indicators' },
+];
+---
+
+<BaseLayout title="Web UI - Jake">
+  <!-- Hero -->
+  <section class="relative pt-32 pb-16 bg-grid bg-radial overflow-hidden">
+    <div class="max-w-6xl mx-auto px-6">
+      <a href="/features" class="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors mb-8">
+        <ArrowLeft size={16} />
+        All Features
+      </a>
+
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <div class="space-y-6">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-jake/30 bg-jake/5 text-sm text-jake">
+            <Monitor size={14} />
+            Browser-Based Control
+          </div>
+
+          <h1 class="text-5xl font-bold">
+            <span class="text-gradient">Web UI</span>
+          </h1>
+
+          <p class="text-xl text-text-secondary leading-relaxed">
+            Run your build tasks from a beautiful dark-themed browser interface.
+            Visual recipe discovery, real-time output streaming, and keyboard navigation.
+          </p>
+
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Visual recipe browser</span> — See all tasks with descriptions and dependencies</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Real-time streaming</span> — Watch output as commands execute via WebSocket</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Keyboard navigation</span> — <code class="text-jake">j/k</code> to navigate, <code class="text-jake">Ctrl+K</code> to search</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <CheckCircle class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+              <span class="text-text-secondary"><span class="text-text-primary font-medium">Localhost only</span> — Secure by default, only accessible from your machine</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="space-y-4">
+          <div class="bg-bg-code border border-border rounded-xl overflow-hidden glow-sm">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+              <Terminal size={16} class="text-text-muted" />
+              <span class="text-xs text-text-muted font-mono">Terminal</span>
+            </div>
+            <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={codeExample}></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">How It Works</h2>
+      <p class="text-text-secondary text-center mb-12 max-w-2xl mx-auto">
+        Start a local web server and control Jake from your browser.
+      </p>
+
+      <div class="grid lg:grid-cols-2 gap-8 items-start">
+        <div class="space-y-4">
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-full bg-jake/10 text-jake flex items-center justify-center font-semibold">1</span>
+              <h3 class="font-semibold">Start the Server</h3>
+            </div>
+            <p class="text-text-secondary text-sm">
+              Run <code class="text-jake">jake --web</code> to start the web server. Your browser opens automatically to the UI.
+            </p>
+          </div>
+
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-full bg-jake/10 text-jake flex items-center justify-center font-semibold">2</span>
+              <h3 class="font-semibold">Browse Recipes</h3>
+            </div>
+            <p class="text-text-secondary text-sm">
+              The sidebar shows all recipes with descriptions. Use search or keyboard navigation to find tasks quickly.
+            </p>
+          </div>
+
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-full bg-jake/10 text-jake flex items-center justify-center font-semibold">3</span>
+              <h3 class="font-semibold">Run with Live Output</h3>
+            </div>
+            <p class="text-text-secondary text-sm">
+              Click Run or press Enter. Output streams in real-time via WebSocket. Cancel anytime with the Stop button.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-bg-secondary">
+            <Terminal size={16} class="text-text-muted" />
+            <span class="text-xs text-text-muted font-mono">Terminal</span>
+          </div>
+          <pre class="p-5 text-sm leading-relaxed overflow-x-auto"><code set:html={outputExample}></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Features</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Everything you need to run tasks visually.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        {features.map((feature) => (
+          <div class="bg-bg-card border border-border rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-3">
+              {feature.icon === 'Search' && <Search size={20} class="text-jake" />}
+              {feature.icon === 'Zap' && <Zap size={20} class="text-jake" />}
+              {feature.icon === 'Settings' && <Settings size={20} class="text-jake" />}
+              {feature.icon === 'Play' && <Play size={20} class="text-jake" />}
+              <h3 class="font-semibold">{feature.title}</h3>
+            </div>
+            <p class="text-text-secondary text-sm">{feature.description}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Interface Layout -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Interface Layout</h2>
+      <p class="text-text-secondary text-center mb-12">
+        A clean, focused interface for running tasks.
+      </p>
+
+      <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+        <div class="grid md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-zinc-800">
+          {uiSections.map((section) => (
+            <div class="p-6 text-center">
+              <h3 class="font-semibold mb-2">{section.name}</h3>
+              <p class="text-text-secondary text-sm">{section.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="mt-8 bg-bg-code border border-border rounded-xl p-6">
+        <div class="grid md:grid-cols-3 gap-4 text-sm">
+          <div class="bg-bg-secondary rounded-lg p-4 border border-border">
+            <div class="text-jake font-medium mb-2">Sidebar</div>
+            <div class="text-text-muted space-y-1 text-xs">
+              <div>build</div>
+              <div>test</div>
+              <div class="text-jake">deploy ←</div>
+              <div>clean</div>
+            </div>
+          </div>
+          <div class="bg-bg-secondary rounded-lg p-4 border border-border">
+            <div class="text-text-primary font-medium mb-2">deploy</div>
+            <div class="text-text-muted text-xs mb-2">Deploy to production server</div>
+            <div class="text-xs text-text-secondary">Depends on: build, test</div>
+          </div>
+          <div class="bg-bg-secondary rounded-lg p-4 border border-border font-mono">
+            <div class="text-green-500 text-xs">✓ build (1.2s)</div>
+            <div class="text-green-500 text-xs">✓ test (3.4s)</div>
+            <div class="text-jake text-xs">→ deploy...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Commands -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-3xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Usage</h2>
+      <p class="text-text-secondary text-center mb-12">
+        Start the web UI with a single command.
+      </p>
+
+      <div class="bg-bg-code border border-border rounded-xl overflow-hidden">
+        <div class="divide-y divide-zinc-800">
+          {commands.map((item) => (
+            <div class="flex items-center justify-between px-6 py-4">
+              <code class="text-jake font-mono">{item.cmd}</code>
+              <span class="text-text-muted text-sm">{item.desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- vs CLI -->
+  <section class="py-20 border-t border-border">
+    <div class="max-w-4xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">vs Command Line</h2>
+      <p class="text-text-secondary text-center mb-12">
+        The Web UI complements the CLI for different workflows.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="bg-bg-card border border-border rounded-xl overflow-hidden">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-text-secondary">Command Line</span>
+          </div>
+          <div class="p-5 text-sm text-text-secondary space-y-2">
+            <p>• Fast for known commands</p>
+            <p>• Scriptable and automatable</p>
+            <p>• Works over SSH</p>
+            <p>• Integrates with shell history</p>
+          </div>
+        </div>
+
+        <div class="bg-bg-card border border-jake/30 rounded-xl overflow-hidden glow-sm">
+          <div class="px-4 py-3 border-b border-border">
+            <span class="font-mono text-sm text-jake">Web UI</span>
+          </div>
+          <div class="p-5 text-sm text-text-secondary space-y-2">
+            <p>• <span class="text-text-primary">Visual recipe discovery</span></p>
+            <p>• <span class="text-text-primary">See all dependencies at a glance</span></p>
+            <p>• <span class="text-text-primary">Persistent output history</span></p>
+            <p>• <span class="text-text-primary">Parameter inputs with validation</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-4">Try the Web UI</h2>
+      <p class="text-text-secondary text-lg mb-8">Run <code class="text-jake">jake --web</code> in any project with a Jakefile.</p>
+
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="/docs/introduction" class="inline-flex items-center gap-2 bg-jake hover:bg-jake-dark text-white px-6 py-3 rounded-lg font-medium transition-all hover:scale-105">
+          Read the Docs
+          <ArrowRight size={18} />
+        </a>
+        <a href="/features/watch-mode" class="inline-flex items-center gap-2 border border-border hover:border-jake/50 px-6 py-3 rounded-lg font-medium transition-colors">
+          Next: Watch Mode
+          <ArrowRight size={18} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
