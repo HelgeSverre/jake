@@ -169,8 +169,33 @@ const uiSections = [
     </div>
   </section>
 
-  <!-- Features Grid -->
+  <!-- Interactive Demo -->
   <section class="py-20 border-t border-border bg-bg-secondary">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-bold mb-4 text-center">Try It</h2>
+      <p class="text-text-secondary text-center mb-8 max-w-2xl mx-auto">
+        Explore the interface with this interactive demo. Click <strong class="text-jake">Take a Tour</strong> for a guided walkthrough.
+      </p>
+
+      <div class="relative rounded-xl overflow-hidden border border-border glow-sm">
+        <div class="aspect-[16/10] bg-bg-code">
+          <iframe
+            src="/demos/webui-demo.html"
+            class="w-full h-full border-0"
+            title="Jake Web UI Interactive Demo"
+            loading="lazy"
+          ></iframe>
+        </div>
+      </div>
+
+      <p class="text-text-muted text-sm text-center mt-4">
+        Use <kbd class="px-1.5 py-0.5 bg-bg-code border border-border rounded text-xs">j</kbd> / <kbd class="px-1.5 py-0.5 bg-bg-code border border-border rounded text-xs">k</kbd> to navigate, <kbd class="px-1.5 py-0.5 bg-bg-code border border-border rounded text-xs">Enter</kbd> to run
+      </p>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section class="py-20 border-t border-border">
     <div class="max-w-6xl mx-auto px-6">
       <h2 class="text-3xl font-bold mb-4 text-center">Features</h2>
       <p class="text-text-secondary text-center mb-12">
