@@ -33,7 +33,7 @@ DEDENT            = indentation decrease
 
 ## Grammar
 
-```
+````
 source_file     : shebang? item*
 
 item            : recipe
@@ -194,47 +194,47 @@ string          : STRING
 interpolation   : '{{' expression '}}'
 
 shebang         : '#!' path? ('env' flag*)? IDENTIFIER .*
-```
+````
 
 ## Condition Functions
 
 Functions available in `@if` and `@elif` conditions:
 
-| Function | Description |
-|----------|-------------|
-| `env(VAR)` | True if environment variable is set |
-| `exists(path)` | True if file/directory exists |
-| `eq(a, b)` | True if strings are equal |
-| `neq(a, b)` | True if strings are not equal |
-| `command(name)` | True if command exists in PATH |
-| `is_watching()` | True if running in watch mode |
-| `is_dry_run()` | True if running in dry-run mode |
-| `is_verbose()` | True if verbose mode enabled |
-| `is_macos()` | True on macOS |
-| `is_linux()` | True on Linux |
-| `is_windows()` | True on Windows |
-| `is_unix()` | True on Unix-like systems |
-| `is_platform(name)` | True if OS matches name |
+| Function            | Description                         |
+| ------------------- | ----------------------------------- |
+| `env(VAR)`          | True if environment variable is set |
+| `exists(path)`      | True if file/directory exists       |
+| `eq(a, b)`          | True if strings are equal           |
+| `neq(a, b)`         | True if strings are not equal       |
+| `command(name)`     | True if command exists in PATH      |
+| `is_watching()`     | True if running in watch mode       |
+| `is_dry_run()`      | True if running in dry-run mode     |
+| `is_verbose()`      | True if verbose mode enabled        |
+| `is_macos()`        | True on macOS                       |
+| `is_linux()`        | True on Linux                       |
+| `is_windows()`      | True on Windows                     |
+| `is_unix()`         | True on Unix-like systems           |
+| `is_platform(name)` | True if OS matches name             |
 
 ## Built-in Functions
 
 Functions available in `{{ ... }}` interpolations:
 
-| Function | Description |
-|----------|-------------|
-| `uppercase(s)` | Convert to uppercase |
-| `lowercase(s)` | Convert to lowercase |
-| `trim(s)` | Remove leading/trailing whitespace |
-| `dirname(path)` | Directory portion of path |
-| `basename(path)` | Filename portion of path |
-| `extension(path)` | File extension |
-| `without_extension(path)` | Path without extension |
-| `without_extensions(path)` | Path without all extensions |
-| `absolute_path(path)` | Absolute path |
-| `home()` | User's home directory |
-| `local_bin(name)` | Path to ~/.local/bin/name |
-| `shell_config()` | Path to shell config file |
-| `launch(target)` | Platform-specific open command |
+| Function                   | Description                        |
+| -------------------------- | ---------------------------------- |
+| `uppercase(s)`             | Convert to uppercase               |
+| `lowercase(s)`             | Convert to lowercase               |
+| `trim(s)`                  | Remove leading/trailing whitespace |
+| `dirname(path)`            | Directory portion of path          |
+| `basename(path)`           | Filename portion of path           |
+| `extension(path)`          | File extension                     |
+| `without_extension(path)`  | Path without extension             |
+| `without_extensions(path)` | Path without all extensions        |
+| `absolute_path(path)`      | Absolute path                      |
+| `home()`                   | User's home directory              |
+| `local_bin(name)`          | Path to ~/.local/bin/name          |
+| `shell_config()`           | Path to shell config file          |
+| `launch(target)`           | Platform-specific open command     |
 
 ## Notes
 

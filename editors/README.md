@@ -4,17 +4,17 @@ This directory contains syntax highlighting and language support plugins for var
 
 ## Plugin Overview
 
-| Plugin | Type | Status | Distribution |
-|--------|------|--------|--------------|
-| [tree-sitter-jake](tree-sitter-jake/) | Tree-sitter grammar | ✅ Canonical | npm, crates.io |
-| [vscode-jake](vscode-jake/) | VS Code extension | ✅ Canonical (TextMate) | VS Code Marketplace |
-| [sublime-jake](sublime-jake/) | Sublime Text package | ⬅️ Synced from VS Code | Package Control |
-| [shiki-jake](shiki-jake/) | Shiki grammar | ⬅️ Synced from VS Code | npm |
-| [intellij-jake](intellij-jake/) | IntelliJ plugin | ⬅️ Copies VS Code at build | JetBrains Marketplace |
-| [zed-jake](zed-jake/) | Zed extension | ⬅️ Synced from tree-sitter | Zed Extensions |
-| [vim-jake](vim-jake/) | Vim/Neovim syntax | ✅ Standalone | vim-plug, etc. |
-| [highlightjs-jake](highlightjs-jake/) | highlight.js language | ✅ Standalone | npm |
-| [prism-jake](prism-jake/) | Prism.js language | ✅ Standalone | npm |
+| Plugin                                | Type                  | Status                     | Distribution          |
+| ------------------------------------- | --------------------- | -------------------------- | --------------------- |
+| [tree-sitter-jake](tree-sitter-jake/) | Tree-sitter grammar   | ✅ Canonical               | npm, crates.io        |
+| [vscode-jake](vscode-jake/)           | VS Code extension     | ✅ Canonical (TextMate)    | VS Code Marketplace   |
+| [sublime-jake](sublime-jake/)         | Sublime Text package  | ⬅️ Synced from VS Code     | Package Control       |
+| [shiki-jake](shiki-jake/)             | Shiki grammar         | ⬅️ Synced from VS Code     | npm                   |
+| [intellij-jake](intellij-jake/)       | IntelliJ plugin       | ⬅️ Copies VS Code at build | JetBrains Marketplace |
+| [zed-jake](zed-jake/)                 | Zed extension         | ⬅️ Synced from tree-sitter | Zed Extensions        |
+| [vim-jake](vim-jake/)                 | Vim/Neovim syntax     | ✅ Standalone              | vim-plug, etc.        |
+| [highlightjs-jake](highlightjs-jake/) | highlight.js language | ✅ Standalone              | npm                   |
+| [prism-jake](prism-jake/)             | Prism.js language     | ✅ Standalone              | npm                   |
 
 ## Canonical Sources
 
@@ -25,6 +25,7 @@ There are two canonical sources for syntax definitions:
 **Source:** `vscode-jake/syntaxes/jake.tmLanguage.json`
 
 Used by editors that support TextMate grammars:
+
 - **VS Code** - Uses directly
 - **Sublime Text** - Synced copy
 - **Shiki** - Synced copy (for documentation sites)
@@ -35,6 +36,7 @@ Used by editors that support TextMate grammars:
 **Source:** `tree-sitter-jake/queries-src/*.scm`
 
 The tree-sitter grammar generates flavored queries for different editors:
+
 - **queries/jake/** - NeoVim/standard format
 - **queries-flavored/zed/** - Zed-specific format
 - **queries-flavored/helix/** - Helix-specific format
@@ -80,6 +82,7 @@ just editors-sync-check  # Check sync status (CI)
 ### tree-sitter-jake
 
 The tree-sitter parser is the most complete and accurate grammar. It:
+
 - Parses Jake syntax into an AST
 - Provides 93+ test cases
 - Generates editor-specific queries via `build-flavored-queries.py`
@@ -133,6 +136,7 @@ cd editors/intellij-jake
 Zed extension using tree-sitter queries.
 
 The extension.toml points to the tree-sitter-jake grammar in this repo:
+
 ```toml
 [grammars.jake]
 repository = "https://github.com/HelgeSverre/jake"
@@ -178,15 +182,15 @@ npm test
 
 All plugins should recognize these 27 built-in functions:
 
-| Category | Functions |
-|----------|-----------|
-| **Path** | `dirname`, `basename`, `extension`, `without_extension`, `without_extensions`, `absolute_path`, `abs_path` |
-| **String** | `uppercase`, `lowercase`, `trim` |
-| **System** | `home`, `local_bin`, `shell_config`, `launch` |
-| **Condition** | `env`, `exists`, `eq`, `neq`, `command` |
-| **Runtime** | `is_watching`, `is_dry_run`, `is_verbose` |
-| **Platform** | `is_platform`, `is_macos`, `is_linux`, `is_windows`, `is_unix` |
-| **Loop** | `item` |
+| Category      | Functions                                                                                                  |
+| ------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Path**      | `dirname`, `basename`, `extension`, `without_extension`, `without_extensions`, `absolute_path`, `abs_path` |
+| **String**    | `uppercase`, `lowercase`, `trim`                                                                           |
+| **System**    | `home`, `local_bin`, `shell_config`, `launch`                                                              |
+| **Condition** | `env`, `exists`, `eq`, `neq`, `command`                                                                    |
+| **Runtime**   | `is_watching`, `is_dry_run`, `is_verbose`                                                                  |
+| **Platform**  | `is_platform`, `is_macos`, `is_linux`, `is_windows`, `is_unix`                                             |
+| **Loop**      | `item`                                                                                                     |
 
 ## Advanced Features
 
@@ -209,6 +213,7 @@ The `runnables.scm` query enables click-to-run functionality in Zed. When viewin
 ### Document Outline
 
 The `outline.scm` query provides symbol navigation:
+
 - Document outline panel (Cmd+Shift+O in most editors)
 - Breadcrumb navigation
 - Go to symbol functionality
@@ -227,7 +232,7 @@ Example approach (not yet implemented):
 
 ```typescript
 // In vscode-jake extension
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
 
 class JakeTaskProvider implements vscode.TaskProvider {
   async provideTasks(): Promise<vscode.Task[]> {
@@ -237,21 +242,24 @@ class JakeTaskProvider implements vscode.TaskProvider {
 }
 
 // Register in extension activation
-vscode.tasks.registerTaskProvider('jake', new JakeTaskProvider());
+vscode.tasks.registerTaskProvider("jake", new JakeTaskProvider());
 ```
 
 ## Directives Reference
 
 ### Global Directives (top-level)
+
 - `@import`, `@dotenv`, `@require`, `@export`, `@default`
 - `@pre`, `@post`, `@on_error`, `@before`, `@after`
 
 ### Recipe Attributes (before recipe)
+
 - `@group`, `@desc`, `@description`, `@alias`, `@quiet`
 - `@only`, `@only-os`, `@platform`
 - `@needs` (with hint/fallback variants)
 
 ### Body Directives (inside recipes)
+
 - `@if`, `@elif`, `@else`, `@end`
 - `@each`
 - `@cd`, `@cache`, `@watch`, `@confirm`, `@ignore`, `@shell`
@@ -277,6 +285,7 @@ When adding new syntax features (directives, functions, etc.):
    - `prism-jake/index.js`
 
 4. **Run sync script**
+
    ```bash
    ./editors/sync.sh
    ```

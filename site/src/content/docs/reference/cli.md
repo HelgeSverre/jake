@@ -18,18 +18,18 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 
 ## Options
 
-| Option              | Short | Description                             |
-| ------------------- | ----- | --------------------------------------- |
-| `--help`            | `-h`  | Show help message                       |
-| `--version`         | `-V`  | Show version                            |
-| `--list`            | `-l`  | List available recipes                  |
-| `--all`             | `-a`  | Show all recipes including hidden       |
-| `--dry-run`         | `-n`  | Print commands without executing        |
-| `--verbose`         | `-v`  | Show verbose output                     |
-| `--yes`             | `-y`  | Auto-confirm all `@confirm` prompts     |
-| `--jakefile PATH`   | `-f`  | Use specified Jakefile                  |
-| `--watch [PATTERN]` | `-w`  | Watch and re-run on changes             |
-| `--jobs [N]`        | `-j`  | Parallel jobs (default: CPU count)      |
+| Option              | Short | Description                         |
+| ------------------- | ----- | ----------------------------------- |
+| `--help`            | `-h`  | Show help message                   |
+| `--version`         | `-V`  | Show version                        |
+| `--list`            | `-l`  | List available recipes              |
+| `--all`             | `-a`  | Show all recipes including hidden   |
+| `--dry-run`         | `-n`  | Print commands without executing    |
+| `--verbose`         | `-v`  | Show verbose output                 |
+| `--yes`             | `-y`  | Auto-confirm all `@confirm` prompts |
+| `--jakefile PATH`   | `-f`  | Use specified Jakefile              |
+| `--watch [PATTERN]` | `-w`  | Watch and re-run on changes         |
+| `--jobs [N]`        | `-j`  | Parallel jobs (default: CPU count)  |
 
 ## Examples
 

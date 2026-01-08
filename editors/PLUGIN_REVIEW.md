@@ -15,23 +15,24 @@ After reviewing all 9 editor plugins, I identified several consistency issues an
 
 ## Plugin Overview
 
-| Plugin | Type | Quality | Missing Features |
-|--------|------|---------|------------------|
-| **tree-sitter-jake** | Parser | ✅ Excellent (93 tests) | None |
-| **vscode-jake** | TextMate | ⚠️ Good | `@timeout`, `@launch`, `command()` |
-| **sublime-jake** | TextMate | ⚠️ Good | Same as VS Code (identical file) |
-| **intellij-jake** | TextMate (via VS Code) | ⚠️ Good | Inherits VS Code issues |
-| **zed-jake** | Tree-sitter queries | ⚠️ Needs update | Outdated highlights.scm |
-| **vim-jake** | Vim syntax | ⚠️ Good | `@timeout`, `@launch`, `command()` |
-| **highlightjs-jake** | highlight.js | ⚠️ Fair | Platform funcs, `launch`, `command`, `item` |
-| **prism-jake** | Prism.js | ⚠️ Fair | Same as highlight.js |
-| **shiki-jake** | TextMate | ⚠️ Good | Should sync with VS Code |
+| Plugin               | Type                   | Quality                 | Missing Features                            |
+| -------------------- | ---------------------- | ----------------------- | ------------------------------------------- |
+| **tree-sitter-jake** | Parser                 | ✅ Excellent (93 tests) | None                                        |
+| **vscode-jake**      | TextMate               | ⚠️ Good                 | `@timeout`, `@launch`, `command()`          |
+| **sublime-jake**     | TextMate               | ⚠️ Good                 | Same as VS Code (identical file)            |
+| **intellij-jake**    | TextMate (via VS Code) | ⚠️ Good                 | Inherits VS Code issues                     |
+| **zed-jake**         | Tree-sitter queries    | ⚠️ Needs update         | Outdated highlights.scm                     |
+| **vim-jake**         | Vim syntax             | ⚠️ Good                 | `@timeout`, `@launch`, `command()`          |
+| **highlightjs-jake** | highlight.js           | ⚠️ Fair                 | Platform funcs, `launch`, `command`, `item` |
+| **prism-jake**       | Prism.js               | ⚠️ Fair                 | Same as highlight.js                        |
+| **shiki-jake**       | TextMate               | ⚠️ Good                 | Should sync with VS Code                    |
 
 ## Detailed Findings
 
 ### 1. TextMate Grammars (VS Code, Sublime, IntelliJ)
 
 **Files:**
+
 - `vscode-jake/syntaxes/jake.tmLanguage.json`
 - `sublime-jake/Jake.tmLanguage.json` (identical copy)
 - IntelliJ copies VS Code at build time
@@ -39,8 +40,9 @@ After reviewing all 9 editor plugins, I identified several consistency issues an
 **Issues:**
 
 1. **Missing body directives: `@timeout`, `@launch`**
-   
+
    These newer directives are supported by Jake but not highlighted:
+
    ```jake
    task slow:
        @timeout 30s  # Not highlighted as directive
@@ -48,8 +50,9 @@ After reviewing all 9 editor plugins, I identified several consistency issues an
    ```
 
 2. **Missing condition function: `command()`**
-   
+
    The `command()` function for checking if a command exists isn't in the condition pattern:
+
    ```jake
    @if command(git)  # "command" not highlighted as built-in
        git pull
@@ -57,8 +60,9 @@ After reviewing all 9 editor plugins, I identified several consistency issues an
    ```
 
 3. **Potential: Add `item` as built-in**
-   
+
    The `{{item}}` variable in `@each` loops is Jake-specific:
+
    ```jake
    @each foo bar baz
        echo "{{item}}"  # "item" could be highlighted specially
@@ -95,32 +99,34 @@ After reviewing all 9 editor plugins, I identified several consistency issues an
 ### 2. Zed Extension (zed-jake)
 
 **Files:**
+
 - `zed-jake/languages/jake/highlights.scm`
 - `zed-jake/extension.toml` (points to tree-sitter-jake)
 
 **Issues:**
 
 1. **Outdated highlights.scm**
-   
+
    The Zed highlights.scm is missing newer tree-sitter-jake nodes:
    - `file_path` (added in recent grammar update)
    - `timeout_value`
    - Proper distinction between `@function.builtin` and `@function`
 
 2. **Incomplete built-in function list**
-   
+
    Current pattern only matches a subset:
+
    ```scheme
    ; Current (missing many):
    (#match? @function.builtin "^(uppercase|lowercase|trim|dirname|basename|extension|without_extension|without_extensions|absolute_path|home|local_bin|shell_config|launch)$")
-   
+
    ; Should include:
    ; abs_path, env, exists, eq, neq, is_watching, is_dry_run, is_verbose,
    ; is_platform, is_macos, is_linux, is_windows, is_unix, item, command
    ```
 
 3. **Extension.toml uses local path**
-   
+
    ```toml
    repository = "file:///Users/helge/code/jake"  # Should be GitHub URL for release
    ```
@@ -138,14 +144,15 @@ After reviewing all 9 editor plugins, I identified several consistency issues an
 **Issues:**
 
 1. **Missing directives: `@timeout`, `@launch`**
-   
+
    Need to add:
+
    ```vim
    syn match jakeDirective "^\s\+@\(timeout\|launch\)\>"
    ```
 
 2. **Missing `command` in condition functions**
-   
+
    ```vim
    " Add 'command' to the pattern:
    syn match jakeCondFunc "\<\(env\|exists\|eq\|neq\|command\|is_watching\|is_dry_run\|is_verbose\|is_platform\|is_macos\|is_linux\|is_windows\|is_unix\)\s*("
@@ -158,12 +165,14 @@ After reviewing all 9 editor plugins, I identified several consistency issues an
 ### 4. Web Grammars (highlight.js, Prism)
 
 **Files:**
+
 - `highlightjs-jake/src/languages/jake.js`
 - `prism-jake/index.js`
 
 **Issues:**
 
 Both are missing from their `BUILTIN_FUNCTIONS` list:
+
 - `launch`
 - `is_platform`, `is_macos`, `is_linux`, `is_windows`, `is_unix`
 - `command`
@@ -174,19 +183,38 @@ Both are missing from their `BUILTIN_FUNCTIONS` list:
 ```javascript
 const BUILTIN_FUNCTIONS = [
   // Path functions
-  "dirname", "basename", "extension",
-  "without_extension", "without_extensions",
-  "absolute_path", "abs_path",
+  "dirname",
+  "basename",
+  "extension",
+  "without_extension",
+  "without_extensions",
+  "absolute_path",
+  "abs_path",
   // String functions
-  "uppercase", "lowercase", "trim",
+  "uppercase",
+  "lowercase",
+  "trim",
   // System functions
-  "home", "local_bin", "shell_config", "launch",
+  "home",
+  "local_bin",
+  "shell_config",
+  "launch",
   // Condition/check functions
-  "env", "exists", "eq", "neq", "command",
+  "env",
+  "exists",
+  "eq",
+  "neq",
+  "command",
   // Runtime state
-  "is_watching", "is_dry_run", "is_verbose",
+  "is_watching",
+  "is_dry_run",
+  "is_verbose",
   // Platform checks
-  "is_platform", "is_macos", "is_linux", "is_windows", "is_unix",
+  "is_platform",
+  "is_macos",
+  "is_linux",
+  "is_windows",
+  "is_unix",
   // Loop helper
   "item",
 ];
@@ -211,15 +239,18 @@ To maintain consistency, all plugins should recognize these elements:
 ### Directives
 
 **Global (top-level):**
+
 - `@import`, `@dotenv`, `@require`, `@export`, `@default`
 - `@pre`, `@post`, `@on_error`, `@before`, `@after`
 
 **Recipe attributes (before recipe):**
+
 - `@group`, `@desc`, `@description`, `@alias`, `@quiet`
 - `@only`, `@only-os`, `@platform`
 - `@needs` (with hint/fallback variants)
 
 **Body directives (inside recipes):**
+
 - `@if`, `@elif`, `@else`, `@end`
 - `@each`
 - `@cd`, `@cache`, `@watch`, `@confirm`, `@ignore`, `@shell`
@@ -230,26 +261,33 @@ To maintain consistency, all plugins should recognize these elements:
 ### Built-in Functions (27 total)
 
 **Path functions:**
+
 - `dirname`, `basename`, `extension`
 - `without_extension`, `without_extensions`
 - `absolute_path`, `abs_path`
 
 **String functions:**
+
 - `uppercase`, `lowercase`, `trim`
 
 **System functions:**
+
 - `home`, `local_bin`, `shell_config`, `launch`
 
 **Condition functions:**
+
 - `env`, `exists`, `eq`, `neq`, `command`
 
 **Runtime state:**
+
 - `is_watching`, `is_dry_run`, `is_verbose`
 
 **Platform checks:**
+
 - `is_platform`, `is_macos`, `is_linux`, `is_windows`, `is_unix`
 
 **Loop helper:**
+
 - `item`
 
 ---
@@ -300,22 +338,23 @@ To maintain consistency, all plugins should recognize these elements:
 
 ## Consistency Matrix
 
-| Feature | tree-sitter | VS Code | Sublime | Zed | Vim | hljs | Prism |
-|---------|-------------|---------|---------|-----|-----|------|-------|
-| `@timeout` | ✅ | ❌ | ❌ | ⚠️ | ❌ | ✅* | ✅* |
-| `@launch` | ✅ | ❌ | ❌ | ⚠️ | ❌ | ✅* | ✅* |
-| `command()` | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| `item` | ⚠️ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| Platform funcs | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `file_path` | ✅ | N/A | N/A | ❌ | N/A | N/A | N/A |
+| Feature        | tree-sitter | VS Code | Sublime | Zed | Vim | hljs | Prism |
+| -------------- | ----------- | ------- | ------- | --- | --- | ---- | ----- |
+| `@timeout`     | ✅          | ❌      | ❌      | ⚠️  | ❌  | ✅\* | ✅\*  |
+| `@launch`      | ✅          | ❌      | ❌      | ⚠️  | ❌  | ✅\* | ✅\*  |
+| `command()`    | ✅          | ❌      | ❌      | ✅  | ❌  | ❌   | ❌    |
+| `item`         | ⚠️          | ❌      | ❌      | ❌  | ✅  | ❌   | ❌    |
+| Platform funcs | ✅          | ✅      | ✅      | ✅  | ✅  | ❌   | ❌    |
+| `file_path`    | ✅          | N/A     | N/A     | ❌  | N/A | N/A  | N/A   |
 
-*Web grammars use generic `@directive` pattern, so they catch these but don't distinguish
+\*Web grammars use generic `@directive` pattern, so they catch these but don't distinguish
 
 ---
 
 ## Conclusion
 
 The editor plugin ecosystem is in good shape overall, with the main issues being:
+
 1. Some newer directives (`@timeout`, `@launch`) missing from TextMate/Vim
 2. The `command()` condition function missing everywhere except tree-sitter
 3. Zed needing an updated highlights.scm
