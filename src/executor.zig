@@ -905,7 +905,16 @@ pub const Executor = struct {
         };
 
         // Execute the recipe commands (with timeout if specified)
-        const exec_result = if (recipe.timeout_seconds) |timeout_secs|
+        // For external recipes (Makefile/Justfile), delegate to the external tool
+        const exec_result = if (recipe.origin) |origin| blk: {
+            if (origin.external_kind) |kind| {
+                break :blk self.executeExternalRecipe(origin, kind, recipe.name);
+            }
+            break :blk if (recipe.timeout_seconds) |timeout_secs|
+                self.executeCommandsWithTimeout(recipe.commands, recipe.name, timeout_secs)
+            else
+                self.executeCommands(recipe.commands);
+        } else if (recipe.timeout_seconds) |timeout_secs|
             self.executeCommandsWithTimeout(recipe.commands, recipe.name, timeout_secs)
         else
             self.executeCommands(recipe.commands);
@@ -1639,6 +1648,113 @@ pub const Executor = struct {
         }
     }
 
+    /// Execute an external recipe by delegating to make or just
+    fn executeExternalRecipe(
+        self: *Executor,
+        origin: parser.RecipeOrigin,
+        kind: parser.RecipeOrigin.ExternalKind,
+        recipe_name: []const u8,
+    ) ExecuteError!void {
+        const tool = switch (kind) {
+            .makefile => "make",
+            .justfile => "just",
+        };
+        const flag = switch (kind) {
+            .makefile => "-f",
+            .justfile => "--justfile",
+        };
+
+        const source_file = origin.source_file orelse switch (kind) {
+            .makefile => "Makefile",
+            .justfile => "justfile",
+        };
+
+        // Dry-run: just print what would be executed
+        if (self.ctx.dry_run) {
+            self.print("   {s} {s} {s} {s}\n", .{ tool, flag, source_file, origin.original_name });
+            return;
+        }
+
+        // Print command being executed (like regular commands)
+        if (!self.current_quiet) {
+            self.print("   {s}{s} {s} {s} {s}{s}\n", .{
+                self.color.muted(),
+                tool,
+                flag,
+                source_file,
+                origin.original_name,
+                self.color.reset(),
+            });
+        }
+
+        _ = recipe_name; // Used for context, but tool uses original_name
+
+        // Spawn the external process
+        var child = std.process.Child.init(&[_][]const u8{
+            tool,
+            flag,
+            source_file,
+            origin.original_name,
+        }, self.allocator);
+
+        // Set up stdio
+        if (self.ctx.hasOutputCallback()) {
+            child.stdout_behavior = .Pipe;
+            child.stderr_behavior = .Pipe;
+        } else {
+            child.stdout_behavior = .Inherit;
+            child.stderr_behavior = .Inherit;
+        }
+
+        _ = child.spawn() catch |err| {
+            self.print("{s}failed to run {s}: {s}\n", .{ self.color.errPrefix(), tool, @errorName(err) });
+            return ExecuteError.CommandFailed;
+        };
+
+        // Handle output streaming if we have a callback
+        if (self.ctx.hasOutputCallback()) {
+            // Stream stdout and stderr to the callback
+            var stdout_reader = child.stdout.?;
+            var stderr_reader = child.stderr.?;
+
+            var stdout_buf: [4096]u8 = undefined;
+            var stderr_buf: [4096]u8 = undefined;
+
+            while (true) {
+                const stdout_read = stdout_reader.read(&stdout_buf) catch 0;
+                const stderr_read = stderr_reader.read(&stderr_buf) catch 0;
+
+                if (stdout_read > 0) {
+                    self.ctx.emitOutput(stdout_buf[0..stdout_read], false);
+                }
+                if (stderr_read > 0) {
+                    self.ctx.emitOutput(stderr_buf[0..stderr_read], true);
+                }
+
+                if (stdout_read == 0 and stderr_read == 0) break;
+            }
+        }
+
+        const result = child.wait() catch |err| {
+            self.print("{s}failed to wait for {s}: {s}\n", .{ self.color.errPrefix(), tool, @errorName(err) });
+            return ExecuteError.CommandFailed;
+        };
+
+        switch (result) {
+            .Exited => |code| {
+                if (code != 0) {
+                    self.print("{s}{s} exited with code {d}\n", .{ self.color.errPrefix(), tool, code });
+                    return ExecuteError.CommandFailed;
+                }
+            },
+            .Signal => |sig| {
+                self.print("{s}{s} killed by signal {d}\n", .{ self.color.errPrefix(), tool, sig });
+                return ExecuteError.CommandFailed;
+            },
+            else => {},
+        }
+    }
+
     /// Execute commands with conditional block support (no timeout)
     fn executeCommands(self: *Executor, cmds: []const Recipe.Command) ExecuteError!void {
         // Delegate to core with no timeout context
@@ -1877,71 +1993,97 @@ pub const Executor = struct {
         }
     }
 
-    /// Check if a recipe is private (should be hidden from listings)
-    /// Hidden if: @hidden directive is set, OR name starts with underscore
-    /// Uses origin.original_name for imported recipes, otherwise uses name
-    fn isPrivateRecipe(recipe: *const Recipe) bool {
-        // Hidden via @hidden directive
-        if (recipe.hidden) return true;
-        // Hidden via underscore prefix convention
-        const name = if (recipe.origin) |o| o.original_name else recipe.name;
-        return name.len > 0 and name[0] == '_';
-    }
-
     /// List all available recipes
     // TODO: Highlight the default recipe in the list output (e.g., with a star or "default" label).
     // Currently `jake --verbose` runs the default but `-> build` appears first because it's a
     // dependency, which can confuse users into thinking `build` is the target instead of `all`.
-    pub fn listRecipes(self: *Executor, short_mode: bool, show_all: bool) void {
+    pub fn listRecipes(self: *Executor, short_mode: bool, show_all: bool, external_filter: ?[]const u8, external_only: bool, hide_externals: bool) void {
         const stdout = compat.getStdOut();
 
         // Short mode: one recipe name per line, no colors, no formatting
         if (short_mode) {
             for (self.jakefile.recipes) |*recipe| {
-                if (!show_all and isPrivateRecipe(recipe)) continue;
+                if (!show_all and recipe.isPrivate()) continue;
+
+                // Check if external filtering applies
+                if (recipe.origin) |origin| {
+                    if (origin.external_kind) |kind| {
+                        // Skip external if --no-externals
+                        if (hide_externals) continue;
+                        // Filter by type if specified
+                        if (external_filter) |filter| {
+                            const matches = switch (kind) {
+                                .makefile => std.mem.eql(u8, filter, "make"),
+                                .justfile => std.mem.eql(u8, filter, "just"),
+                            };
+                            if (!matches) continue;
+                        }
+                    } else {
+                        // Jake recipe - skip if external_only
+                        if (external_only) continue;
+                    }
+                } else {
+                    // No origin (Jake recipe) - skip if external_only
+                    if (external_only) continue;
+                }
+
                 stdout.writeAll(recipe.name) catch {};
                 stdout.writeAll("\n") catch {};
             }
             return;
         }
 
-        // v4 format: {j} jake N recipes • M groups
-        // Count visible recipes and groups
-        var recipe_count: usize = 0;
-        var unique_groups = std.StringHashMap(void).init(self.allocator);
-        defer unique_groups.deinit();
+        // v4 format: {j} jake N recipes • M groups (skip if --external)
+        if (!external_only) {
+            // Count visible Jake recipes and groups
+            var recipe_count: usize = 0;
+            var unique_groups = std.StringHashMap(void).init(self.allocator);
+            defer unique_groups.deinit();
 
-        for (self.jakefile.recipes) |*recipe| {
-            if (!show_all and isPrivateRecipe(recipe)) continue;
-            recipe_count += 1;
-            if (recipe.group) |g| {
-                unique_groups.put(g, {}) catch continue;
+            for (self.jakefile.recipes) |*recipe| {
+                if (!show_all and recipe.isPrivate()) continue;
+                // Don't count external recipes
+                if (recipe.origin) |origin| {
+                    if (origin.external_kind != null) continue;
+                }
+                recipe_count += 1;
+                if (recipe.group) |g| {
+                    unique_groups.put(g, {}) catch continue;
+                }
             }
-        }
-        const group_count = unique_groups.count();
+            const group_count = unique_groups.count();
 
-        // Print header
-        stdout.writeAll(self.color.jakeRose()) catch {};
-        stdout.writeAll(color_mod.symbols.logo) catch {};
-        stdout.writeAll(self.color.reset()) catch {};
-        stdout.writeAll(" ") catch {};
-        stdout.writeAll(self.color.bold()) catch {};
-        stdout.writeAll("jake") catch {};
-        stdout.writeAll(self.color.reset()) catch {};
-        stdout.writeAll(" ") catch {};
-        stdout.writeAll(self.color.muted()) catch {};
-        var header_buf: [64]u8 = undefined;
-        const header_msg = std.fmt.bufPrint(&header_buf, "{d} recipes", .{recipe_count}) catch "recipes";
-        stdout.writeAll(header_msg) catch {};
-        if (group_count > 0) {
-            var group_buf: [32]u8 = undefined;
-            const group_msg = std.fmt.bufPrint(&group_buf, " • {d} groups", .{group_count}) catch "";
-            stdout.writeAll(group_msg) catch {};
+            // Print header
+            stdout.writeAll(self.color.jakeRose()) catch {};
+            stdout.writeAll(color_mod.symbols.logo) catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll(" ") catch {};
+            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll("jake") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll(" ") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            var header_buf: [64]u8 = undefined;
+            const header_msg = std.fmt.bufPrint(&header_buf, "{d} recipes", .{recipe_count}) catch "recipes";
+            stdout.writeAll(header_msg) catch {};
+            if (group_count > 0) {
+                var group_buf: [32]u8 = undefined;
+                const group_msg = std.fmt.bufPrint(&group_buf, " • {d} groups", .{group_count}) catch "";
+                stdout.writeAll(group_msg) catch {};
+            }
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll("\n") catch {};
         }
-        stdout.writeAll(self.color.reset()) catch {};
-        stdout.writeAll("\n") catch {};
 
-        // Group recipes by their group field
+        // Separate Jake recipes from external recipes (Makefile/Justfile)
+        var make_recipes: std.ArrayListUnmanaged(*const Recipe) = .{};
+        defer make_recipes.deinit(self.allocator);
+        var just_recipes: std.ArrayListUnmanaged(*const Recipe) = .{};
+        defer just_recipes.deinit(self.allocator);
+        var make_source_file: ?[]const u8 = null;
+        var just_source_file: ?[]const u8 = null;
+
+        // Group Jake recipes by their group field
         var groups = std.StringHashMap(std.ArrayListUnmanaged(*const Recipe)).init(self.allocator);
         defer {
             var it = groups.valueIterator();
@@ -1957,9 +2099,44 @@ pub const Executor = struct {
         var hidden: std.ArrayListUnmanaged(*const Recipe) = .{};
         defer hidden.deinit(self.allocator);
 
-        // Collect recipes into groups
+        // Collect recipes into groups, separating external ones
         for (self.jakefile.recipes) |*recipe| {
-            const is_private = isPrivateRecipe(recipe);
+            // Check if this is an external recipe
+            if (recipe.origin) |origin| {
+                if (origin.external_kind) |kind| {
+                    // Skip external if --no-externals
+                    if (hide_externals) continue;
+
+                    const is_private = recipe.isPrivate();
+                    if (!show_all and is_private) continue;
+
+                    // Filter by type if specified
+                    if (external_filter) |filter| {
+                        const matches = switch (kind) {
+                            .makefile => std.mem.eql(u8, filter, "make"),
+                            .justfile => std.mem.eql(u8, filter, "just"),
+                        };
+                        if (!matches) continue;
+                    }
+
+                    switch (kind) {
+                        .makefile => {
+                            make_recipes.append(self.allocator, recipe) catch continue;
+                            if (make_source_file == null) make_source_file = origin.source_file;
+                        },
+                        .justfile => {
+                            just_recipes.append(self.allocator, recipe) catch continue;
+                            if (just_source_file == null) just_source_file = origin.source_file;
+                        },
+                    }
+                    continue;
+                }
+            }
+
+            // Regular Jake recipe - skip if --external
+            if (external_only) continue;
+
+            const is_private = recipe.isPrivate();
 
             if (is_private) {
                 if (show_all) {
@@ -2032,6 +2209,40 @@ pub const Executor = struct {
                 self.printRecipe(stdout, recipe);
             }
         }
+
+        // Print external Makefile recipes
+        if (make_recipes.items.len > 0) {
+            stdout.writeAll("\n") catch {};
+            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll("make:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll("  ") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Makefile targets from ./") catch {};
+            stdout.writeAll(make_source_file orelse "Makefile") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll("\n") catch {};
+            for (make_recipes.items) |recipe| {
+                self.printExternalRecipe(stdout, recipe, .makefile);
+            }
+        }
+
+        // Print external Justfile recipes
+        if (just_recipes.items.len > 0) {
+            stdout.writeAll("\n") catch {};
+            stdout.writeAll(self.color.bold()) catch {};
+            stdout.writeAll("just:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll("  ") catch {};
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Justfile recipes from ./") catch {};
+            stdout.writeAll(just_source_file orelse "justfile") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll("\n") catch {};
+            for (just_recipes.items) |recipe| {
+                self.printExternalRecipe(stdout, recipe, .justfile);
+            }
+        }
     }
 
     /// Print space-separated recipe names (for shell completion/scripting)
@@ -2040,7 +2251,7 @@ pub const Executor = struct {
         var first = true;
 
         for (self.jakefile.recipes) |*recipe| {
-            if (isPrivateRecipe(recipe)) continue;
+            if (recipe.isPrivate()) continue;
 
             if (!first) {
                 stdout.writeAll(" ") catch {};
@@ -2082,6 +2293,36 @@ pub const Executor = struct {
         stdout.writeAll("\n") catch {};
     }
 
+    /// Print an external recipe (Makefile/Justfile) - same style as regular recipes
+    fn printExternalRecipe(self: *Executor, stdout: std.fs.File, recipe: *const Recipe, kind: parser.RecipeOrigin.ExternalKind) void {
+        _ = kind; // No longer used for coloring
+
+        // Calculate padding for aligned descriptions
+        const name_len = recipe.name.len;
+        const pad_target: usize = 16;
+        const padding = if (name_len < pad_target) pad_target - name_len else 2;
+
+        // Print recipe name with brand color (Jake Rose) - matches regular recipes
+        stdout.writeAll("  ") catch {};
+        stdout.writeAll(self.color.jakeRose()) catch {};
+        stdout.writeAll(recipe.name) catch {};
+        stdout.writeAll(self.color.reset()) catch {};
+
+        // Add padding
+        var pad_buf: [32]u8 = undefined;
+        const pad_slice = pad_buf[0..padding];
+        @memset(pad_slice, ' ');
+        stdout.writeAll(pad_slice) catch {};
+
+        // Show description if available
+        if (recipe.description) |desc| {
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll(desc) catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+        }
+        stdout.writeAll("\n") catch {};
+    }
+
     /// Show detailed information about a specific recipe
     pub fn showRecipe(self: *Executor, name: []const u8) bool {
         const stdout = compat.getStdOut();
@@ -2098,7 +2339,7 @@ pub const Executor = struct {
         stdout.writeAll(self.color.jakeRose()) catch {};
         stdout.writeAll(recipe.name) catch {};
         stdout.writeAll(self.color.reset()) catch {};
-        if (isPrivateRecipe(recipe)) {
+        if (recipe.isPrivate()) {
             stdout.writeAll(" ") catch {};
             stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("(hidden)") catch {};
@@ -2948,10 +3189,10 @@ test "no hidden recipes when none start with underscore" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    // Count hidden recipes using isPrivateRecipe
+    // Count hidden recipes using Recipe.isPrivate()
     var hidden_count: usize = 0;
-    for (jakefile.recipes) |*recipe| {
-        if (Executor.isPrivateRecipe(recipe)) {
+    for (jakefile.recipes) |recipe| {
+        if (recipe.isPrivate()) {
             hidden_count += 1;
         }
     }
@@ -3073,10 +3314,10 @@ test "countHiddenRecipes includes imported private recipes via origin" {
         },
     };
 
-    // Count using isPrivateRecipe (same logic as listRecipes)
+    // Count using Recipe.isPrivate() (same logic as listRecipes)
     var hidden_count: usize = 0;
-    for (&recipes) |*recipe| {
-        if (Executor.isPrivateRecipe(recipe)) {
+    for (&recipes) |recipe| {
+        if (recipe.isPrivate()) {
             hidden_count += 1;
         }
     }
@@ -3085,8 +3326,8 @@ test "countHiddenRecipes includes imported private recipes via origin" {
     try std.testing.expectEqual(@as(usize, 2), hidden_count);
 }
 
-test "isPrivateRecipe detects private via origin.original_name" {
-    // Test that isPrivateRecipe correctly uses origin.original_name for imported recipes
+test "Recipe.isPrivate detects private via origin.original_name" {
+    // Test that Recipe.isPrivate() correctly uses origin.original_name for imported recipes
     var recipe = Recipe{
         .name = "lib._helper", // Prefixed name doesn't start with _
         .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
@@ -3118,7 +3359,7 @@ test "isPrivateRecipe detects private via origin.original_name" {
     };
 
     // Should be private because origin.original_name starts with _
-    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(recipe.isPrivate());
 
     // Now test a non-private imported recipe
     recipe.name = "lib.build";
@@ -3127,20 +3368,20 @@ test "isPrivateRecipe detects private via origin.original_name" {
         .import_prefix = "lib",
         .source_file = "imported.jake",
     };
-    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(!recipe.isPrivate());
 
     // Test direct private recipe (no origin)
     recipe.name = "_local_helper";
     recipe.origin = null;
-    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(recipe.isPrivate());
 
     // Test direct public recipe (no origin)
     recipe.name = "build";
     recipe.origin = null;
-    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(!recipe.isPrivate());
 }
 
-test "isPrivateRecipe edge cases" {
+test "Recipe.isPrivate edge cases" {
     var recipe = Recipe{
         .name = "",
         .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
@@ -3169,19 +3410,19 @@ test "isPrivateRecipe edge cases" {
 
     // Empty name should return false (not private)
     recipe.name = "";
-    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(!recipe.isPrivate());
 
     // Single underscore is private
     recipe.name = "_";
-    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(recipe.isPrivate());
 
     // Double underscore is private
     recipe.name = "__init";
-    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(recipe.isPrivate());
 
     // Name starting with dot is NOT private (different convention)
     recipe.name = ".hidden";
-    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(!recipe.isPrivate());
 
     // Origin with empty original_name should use that (return false)
     recipe.name = "lib._helper";
@@ -3190,7 +3431,7 @@ test "isPrivateRecipe edge cases" {
         .import_prefix = "lib",
         .source_file = "test.jake",
     };
-    try std.testing.expect(!Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(!recipe.isPrivate());
 
     // Origin with single underscore original_name
     recipe.origin = .{
@@ -3198,7 +3439,7 @@ test "isPrivateRecipe edge cases" {
         .import_prefix = "lib",
         .source_file = "test.jake",
     };
-    try std.testing.expect(Executor.isPrivateRecipe(&recipe));
+    try std.testing.expect(recipe.isPrivate());
 }
 
 // --- @ignore Directive Tests ---
