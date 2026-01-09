@@ -292,9 +292,9 @@ pub fn main() !void {
     };
 
     // List recipes or run default if no recipe specified
-    // --short and --all imply listing (they're listing format/filter options)
-    if (args.list or args.short or args.all or (args.recipe == null and raw_args.len == 1)) {
-        executor.listRecipes(args.short, args.all);
+    // --short, --all, --external, --no-external imply listing (they're listing format/filter options)
+    if (args.list or args.short or args.all or args.external_enabled or args.hide_externals or (args.recipe == null and raw_args.len == 1)) {
+        executor.listRecipes(args.short, args.all, args.external, args.external_enabled, args.hide_externals);
         return;
     }
 
@@ -405,12 +405,17 @@ const JakefileWithSource = struct {
     source: []const u8,
     allocator: std.mem.Allocator,
     import_allocations: ?jake.ImportAllocations,
+    external_allocations: ?jake.ExternalRecipes,
 
     pub fn deinit(self: *JakefileWithSource) void {
         self.runtime.deinit();
         self.index.deinit();
         self.jakefile.deinit(self.allocator);
         self.allocator.free(self.source);
+        if (self.external_allocations) |*allocs| {
+            var mutable_allocs = allocs.*;
+            mutable_allocs.deinit();
+        }
         if (self.import_allocations) |*allocs| {
             var mutable_allocs = allocs.*;
             mutable_allocs.deinit();
@@ -518,6 +523,18 @@ fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !JakefileWithSou
         };
     }
 
+    // Load external Makefile/Justfile recipes if present
+    const base_dir = std.fs.path.dirname(path) orelse ".";
+    var external_allocations: ?jake.ExternalRecipes = null;
+    external_allocations = jake.loadAndMergeExternalRecipes(allocator, &jakefile, base_dir) catch |err| blk: {
+        // Non-fatal: log warning but continue
+        const stderr = getStderr();
+        var buf: [512]u8 = undefined;
+        const err_msg = std.fmt.bufPrint(&buf, args_mod.ansi.warn_prefix ++ "Failed to load external build files: {s}\n", .{@errorName(err)}) catch "warning\n";
+        stderr.writeAll(err_msg) catch {};
+        break :blk null;
+    };
+
     var index = try jake.JakefileIndex.build(allocator, &jakefile);
     errdefer index.deinit();
 
@@ -532,6 +549,7 @@ fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !JakefileWithSou
         .source = source,
         .allocator = allocator,
         .import_allocations = import_allocations,
+        .external_allocations = external_allocations,
     };
 }
 

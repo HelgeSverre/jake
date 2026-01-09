@@ -69,6 +69,7 @@ pub const flags = [_]Flag{
     .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)", .category = "Output" },
     .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE", .category = "Output", .mutually_exclusive = "list" },
     .{ .short = null, .long = "summary", .desc = "Print recipe names (space-separated, for scripts)", .category = "Output" },
+    .{ .short = null, .long = "external", .desc = "Show only external recipes (optionally: make, just)", .takes_value = .optional, .value_name = "TYPE", .choices = &.{ "make", "just" }, .category = "Output", .negatable = true },
     // Execution
     .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing", .category = "Execution", .env = "JAKE_DRY_RUN", .aliases = &.{"dryrun"} },
     .{ .short = 'v', .long = "verbose", .desc = "Show verbose output (use -vv or -vvv for more)", .category = "Execution", .countable = true, .negatable = true, .env = "JAKE_VERBOSE" },
@@ -192,6 +193,9 @@ pub const Args = struct {
     recipe: ?[]const u8 = null,
     positional: []const []const u8 = &.{},
     summary: bool = false, // Print recipe names space-separated
+    external: ?[]const u8 = null, // "make", "just", or null (show all external)
+    external_enabled: bool = false, // True if --external was passed
+    hide_externals: bool = false, // True if --no-external was passed
     completions: ?[]const u8 = null, // Shell name for completions (bash/zsh/fish)
     completions_enabled: bool = false, // True if --completions was passed
     install_completions: bool = false, // Install completions to user directory
@@ -597,6 +601,19 @@ fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: 
                     }
                     // Otherwise, completions stays null (auto-detect)
                 }
+            } else if (std.mem.eql(u8, name, "external")) {
+                result.external_enabled = true;
+                if (inline_value) |v| {
+                    result.external = v;
+                } else if (i.* + 1 < raw_args.len) {
+                    const next = raw_args[i.* + 1];
+                    // Check if next arg is a valid external type
+                    if (isValidExternalType(next)) {
+                        i.* += 1;
+                        result.external = next;
+                    }
+                    // Otherwise, external stays null (show all external)
+                }
             }
         },
     }
@@ -616,6 +633,10 @@ fn isValidShell(s: []const u8) bool {
     return std.mem.eql(u8, s, "bash") or
         std.mem.eql(u8, s, "zsh") or
         std.mem.eql(u8, s, "fish");
+}
+
+fn isValidExternalType(s: []const u8) bool {
+    return std.mem.eql(u8, s, "make") or std.mem.eql(u8, s, "just");
 }
 
 /// Check if a value is valid for a flag with choices
@@ -684,16 +705,16 @@ fn setFlagNegated(result: *Args, flag_idx: usize) void {
     const flag = flags[flag_idx];
     const name = flag.long;
 
-    // Only negatable boolean flags can be negated
-    if (!flag.negatable or flag.takes_value != .none) return;
+    if (!flag.negatable) return;
 
     if (std.mem.eql(u8, name, "verbose")) {
         result.verbose = false;
         result.verbose_level = 0;
     } else if (std.mem.eql(u8, name, "yes")) {
         result.yes = false;
+    } else if (std.mem.eql(u8, name, "external")) {
+        result.hide_externals = true;
     }
-    // Add other negatable flags as needed
 }
 
 /// Print deprecation warning to stderr
