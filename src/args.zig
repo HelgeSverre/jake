@@ -731,7 +731,7 @@ fn printDeprecationWarning(flag: Flag) void {
 fn applyEnvFallbacks(result: *Args) void {
     for (flags) |flag| {
         if (flag.env) |env_name| {
-            if (std.posix.getenv(env_name)) |env_value| {
+            if (compat.getenv(env_name)) |env_value| {
                 applyEnvValue(result, flag, env_value);
             }
         }

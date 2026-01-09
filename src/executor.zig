@@ -1512,8 +1512,11 @@ pub const Executor = struct {
         };
 
         // Register child PID for external cancellation (web UI)
+        // Note: On Windows, child.id is a HANDLE (*anyopaque), not a pid_t
         if (self.ctx.current_child_pid) |pid_atomic| {
-            pid_atomic.store(@intCast(child.id), .release);
+            if (builtin.os.tag != .windows) {
+                pid_atomic.store(@intCast(child.id), .release);
+            }
         }
 
         // Register child with timeout context so watchdog can kill it

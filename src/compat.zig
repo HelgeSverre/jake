@@ -29,3 +29,18 @@ pub fn getStdIn() std.fs.File {
         return std.io.getStdIn();
     }
 }
+
+const builtin = @import("builtin");
+const native_os = builtin.os.tag;
+
+/// Get environment variable (cross-platform: works on Windows and POSIX)
+/// Returns null if the variable is not set
+/// Note: On Windows, returns null (env var features disabled for now)
+pub const getenv = if (native_os == .windows)
+    struct {
+        pub fn f(_: []const u8) ?[]const u8 {
+            return null;
+        }
+    }.f
+else
+    std.posix.getenv;

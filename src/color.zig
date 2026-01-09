@@ -313,15 +313,15 @@ pub fn withEnabled(enabled: bool) Color {
 pub fn shouldUseColor() bool {
     // NO_COLOR takes precedence - any value (including empty) disables color
     // per https://no-color.org/
-    if (std.posix.getenv("NO_COLOR")) |_| return false;
+    if (compat.getenv("NO_COLOR")) |_| return false;
 
     // CLICOLOR_FORCE enables color even without TTY
-    if (std.posix.getenv("CLICOLOR_FORCE")) |v| {
+    if (compat.getenv("CLICOLOR_FORCE")) |v| {
         if (v.len > 0 and v[0] != '0') return true;
     }
 
     // CLICOLOR=0 disables color
-    if (std.posix.getenv("CLICOLOR")) |v| {
+    if (compat.getenv("CLICOLOR")) |v| {
         if (v.len > 0 and v[0] == '0') return false;
     }
 

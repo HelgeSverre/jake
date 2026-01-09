@@ -2,6 +2,7 @@
 // Serves embedded HTML and streams execution events via WebSocket
 
 const std = @import("std");
+const builtin = @import("builtin");
 const event_emitter = @import("event_emitter.zig");
 const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
@@ -482,13 +483,15 @@ pub const WebUIServer = struct {
                 // First, mark as cancelled
                 self.execution_running.store(false, .release);
 
-                // Kill any running child process
-                const pid = self.current_child_pid.load(.acquire);
-                if (pid > 0) {
-                    // Kill the process group to ensure all children are terminated
-                    std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
-                    // Also try killing just the process
-                    std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+                // Kill any running child process (POSIX only - Windows uses different mechanism)
+                if (builtin.os.tag != .windows) {
+                    const pid = self.current_child_pid.load(.acquire);
+                    if (pid > 0) {
+                        // Kill the process group to ensure all children are terminated
+                        std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
+                        // Also try killing just the process
+                        std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+                    }
                 }
             }
         }
