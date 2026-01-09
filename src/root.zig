@@ -25,6 +25,7 @@ pub const formatter = @import("formatter.zig");
 pub const upgrade = @import("upgrade.zig");
 pub const init = @import("init.zig");
 pub const progress = @import("progress.zig");
+pub const external = @import("external.zig");
 pub const event_emitter = @import("event_emitter.zig");
 pub const webui = @import("webui.zig");
 
@@ -43,6 +44,8 @@ pub const resolveImports = import_mod.resolveImports;
 pub const Color = color.Color;
 pub const Context = context.Context;
 pub const RuntimeContext = context.RuntimeContext;
+pub const ExternalRecipes = external.ExternalRecipes;
+pub const loadAndMergeExternalRecipes = external.loadAndMergeExternalRecipes;
 
 /// Parse a Jakefile from source
 pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Jakefile {

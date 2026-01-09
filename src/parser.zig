@@ -80,11 +80,14 @@ pub const NeedsRequirement = struct {
 
 };
 
-/// Tracks where a recipe originated from (for imported recipes)
+/// Tracks where a recipe originated from (for imported recipes or external build systems)
 pub const RecipeOrigin = struct {
     original_name: []const u8, // Name before prefixing (e.g., "_install")
     import_prefix: ?[]const u8, // Module prefix (e.g., "web"), null if main file
     source_file: ?[]const u8, // Path to source file, null if main file
+    external_kind: ?ExternalKind = null, // null for Jake imports, set for Makefile/Justfile
+
+    pub const ExternalKind = enum { makefile, justfile };
 };
 
 pub const Variable = struct {
