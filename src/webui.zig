@@ -8,6 +8,7 @@ const executor_mod = @import("executor.zig");
 const context_mod = @import("context.zig");
 const jakefile_index = @import("jakefile_index.zig");
 const color_mod = @import("color.zig");
+const compat = @import("compat.zig");
 
 // WebSocket magic GUID for handshake (RFC 6455)
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -180,8 +181,13 @@ pub const WebUIServer = struct {
 
         try json.appendSlice(self.allocator, "{\"type\":\"init\",\"recipes\":[");
 
-        for (self.recipes, 0..) |recipe, i| {
-            if (i > 0) try json.append(self.allocator, ',');
+        var first = true;
+        for (self.recipes) |recipe| {
+            // Skip private recipes (same as --list behavior)
+            if (recipe.isPrivate()) continue;
+
+            if (!first) try json.append(self.allocator, ',');
+            first = false;
 
             try json.appendSlice(self.allocator, "{\"name\":\"");
             try appendJsonEscaped(self.allocator, &json, recipe.name);
@@ -238,6 +244,30 @@ pub const WebUIServer = struct {
                     try json.appendSlice(self.allocator, "}");
                 }
                 try json.appendSlice(self.allocator, "]");
+            }
+
+            // Commands
+            if (recipe.commands.len > 0) {
+                try json.appendSlice(self.allocator, ",\"cmd\":[");
+                for (recipe.commands, 0..) |cmd, j| {
+                    if (j > 0) try json.append(self.allocator, ',');
+                    try json.appendSlice(self.allocator, "\"");
+                    try appendJsonEscaped(self.allocator, &json, cmd.line);
+                    try json.appendSlice(self.allocator, "\"");
+                }
+                try json.appendSlice(self.allocator, "]");
+            }
+
+            // External kind (for Makefile/Justfile recipes)
+            if (recipe.origin) |origin| {
+                if (origin.external_kind) |kind| {
+                    try json.appendSlice(self.allocator, ",\"external\":\"");
+                    try json.appendSlice(self.allocator, switch (kind) {
+                        .makefile => "Makefile",
+                        .justfile => "Justfile",
+                    });
+                    try json.appendSlice(self.allocator, "\"");
+                }
             }
 
             try json.appendSlice(self.allocator, "}");
@@ -348,8 +378,7 @@ pub const WebUIServer = struct {
 
         // Send upgrade response
         var response_buf: [256]u8 = undefined;
-        const response = std.fmt.bufPrint(&response_buf,
-            "HTTP/1.1 101 Switching Protocols\r\n" ++
+        const response = std.fmt.bufPrint(&response_buf, "HTTP/1.1 101 Switching Protocols\r\n" ++
             "Upgrade: websocket\r\n" ++
             "Connection: Upgrade\r\n" ++
             "Sec-WebSocket-Accept: {s}\r\n" ++
@@ -465,11 +494,18 @@ pub const WebUIServer = struct {
         }
     }
 
-    /// Output callback for streaming command output to WebSocket clients
+    /// Output callback for streaming command output to WebSocket clients and console
     fn outputCallback(ctx: *anyopaque, line: []const u8, is_stderr: bool) void {
         const server: *WebUIServer = @ptrCast(@alignCast(ctx));
         const task_name = server.current_task orelse "unknown";
+
+        // Send to WebSocket clients
         server.emitCommandOutput(task_name, line, is_stderr);
+
+        // Also write to console (tee behavior)
+        const output = if (is_stderr) compat.getStdErr() else compat.getStdOut();
+        output.writeAll(line) catch {};
+        output.writeAll("\n") catch {};
     }
 
     /// Thread function that executes a recipe
