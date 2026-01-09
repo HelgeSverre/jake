@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-01-09
+
+### Added
+
+- **Web UI** - Interactive browser-based task runner (`jake --webui`)
+  - WebSocket streaming for real-time command output
+  - Recipe listing with commands, dependencies, and metadata
+  - Console tee for simultaneous terminal and browser output
+  - Semantic CSS design tokens for consistent theming
+
+- **External Build System Integration** - Parse and run Makefile/Justfile targets
+  - Automatic detection of Makefile and Justfile in project directory
+  - `--external` flag to show only external recipes (optionally filter by `make` or `just`)
+  - `--no-external` to hide external recipes from listings
+  - Recipes prefixed as `make.*` and `just.*` for clear distinction
+  - Execute external recipes via delegation to `make` or `just` commands
+
+- **Editor Plugin Improvements**
+  - Tree-sitter grammar expanded to 93 tests with improved coverage
+  - NeoVim-flavored query outputs for better integration
+  - Sync automation for all editor plugins (Zed, VS Code, Vim, IntelliJ)
+  - Added missing directives and functions to all syntax highlighters
+
+- **Claude Code Integration**
+  - `/release` command for automated release workflow
+  - Structured command format with YAML frontmatter
+
+### Changed
+
+- `Recipe.isPrivate()` helper consolidates hidden/private recipe detection logic
+- Improved completions test harness with better reporting, cleanup, and statistics
+- WebUI skips private recipes (matches `--list` behavior)
+
+### Fixed
+
+- `ColoredText.format` compatibility with both Zig 0.14 and 0.15
+- Colorize make/just recipes consistently with Jake recipes in listings
+- Site styling fixes (divider colors, mobile-responsive navbar)
+
 ## [0.6.0] - 2026-01-05
 
 ### Added
@@ -255,6 +294,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Multi-platform build support (Linux, macOS, Windows)
   - Cross-compilation for x86_64 and aarch64
 
+[0.7.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.7.0
+[0.6.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.6.0
 [0.5.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.5.0
 [0.4.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.4.0
 [0.3.0]: https://github.com/HelgeSverre/jake/releases/tag/v0.3.0
