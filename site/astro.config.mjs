@@ -62,6 +62,8 @@ export default defineConfig({
                       { label: 'Conditionals', slug: 'docs/conditionals' },
                       { label: 'Hooks', slug: 'docs/hooks' },
                       { label: 'Watch Mode', slug: 'docs/watch-mode' },
+                      { label: 'Web UI', slug: 'docs/web-ui' },
+                      { label: 'External Build Systems', slug: 'docs/external-build-systems' },
                       { label: 'Best Practices', slug: 'docs/best-practices' },
                       { label: 'Troubleshooting', slug: 'docs/troubleshooting' },
                   ],

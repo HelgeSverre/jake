@@ -30,6 +30,11 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 | `--jakefile PATH`   | `-f`  | Use specified Jakefile              |
 | `--watch [PATTERN]` | `-w`  | Watch and re-run on changes         |
 | `--jobs [N]`        | `-j`  | Parallel jobs (default: CPU count)  |
+| `--show RECIPE`     | `-s`  | Show recipe details                 |
+| `--web`             |       | Start web UI server                 |
+| `--port PORT`       |       | Web UI port (default: 8420)         |
+| `--external [TYPE]` |       | Show external recipes (make/just)   |
+| `--no-external`     |       | Hide external recipes from listing  |
 
 ## Examples
 
@@ -63,6 +68,19 @@ jake -f build.jake test
 
 # Auto-confirm prompts
 jake -y deploy
+
+# Start web UI
+jake --web
+jake --web --port 9000
+
+# List external build system recipes
+jake --external
+jake --external make
+jake --external just
+
+# Run external recipes
+jake make.build
+jake just.test
 ```
 
 ## Exit Codes
