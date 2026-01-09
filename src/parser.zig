@@ -61,6 +61,15 @@ pub const Recipe = struct {
         ignore,
         launch,
     };
+
+    /// Check if recipe is private (hidden from listings)
+    /// Hidden if: @hidden directive is set, OR name starts with underscore
+    /// Uses origin.original_name for imported recipes to check the original name
+    pub fn isPrivate(self: *const Recipe) bool {
+        if (self.hidden) return true;
+        const name = if (self.origin) |o| o.original_name else self.name;
+        return name.len > 0 and name[0] == '_';
+    }
 };
 
 /// Represents a recipe-level @needs requirement
