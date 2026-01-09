@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import sitemap from '@astrojs/sitemap';
 import starlightLlmsTxt from 'starlight-llms-txt';
 
 import tailwindcss from '@tailwindcss/vite';
@@ -29,6 +30,13 @@ export default defineConfig({
                   attrs: {
                       property: 'og:image',
                       content: 'https://jakefile.dev/og-image.png',
+                  },
+              },
+              {
+                  tag: 'link',
+                  attrs: {
+                      rel: 'sitemap',
+                      href: '/sitemap-index.xml',
                   },
               },
           ],
@@ -92,6 +100,7 @@ export default defineConfig({
               },
           ],
       }),
+      sitemap(),
 	],
 
   vite: {
