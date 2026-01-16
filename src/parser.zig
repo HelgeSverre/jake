@@ -524,6 +524,21 @@ pub const Parser = struct {
         return seconds;
     }
 
+    /// Check if current token can be used as a name (identifier or keyword in name position).
+    /// Keywords like "default", "import", "as" etc. are valid as recipe/variable names.
+    fn isNameToken(self: *Parser) bool {
+        return switch (self.current.tag) {
+            .ident => true,
+            // Allow keywords as names in identifier position
+            .kw_default, .kw_import, .kw_as, .kw_if, .kw_elif, .kw_else, .kw_end => true,
+            .kw_task, .kw_file, .kw_dotenv, .kw_require, .kw_watch, .kw_cache => true,
+            .kw_needs, .kw_confirm, .kw_group, .kw_desc, .kw_only_os, .kw_quiet => true,
+            .kw_hidden, .kw_export, .kw_alias, .kw_shell, .kw_cd, .kw_pre, .kw_post => true,
+            .kw_on_error, .kw_timeout, .kw_ignore, .kw_each => true,
+            else => false,
+        };
+    }
+
     pub fn parseJakefile(self: *Parser) ParseError!Jakefile {
         errdefer self.deinit();
 
@@ -826,8 +841,8 @@ pub const Parser = struct {
             const hook_kind: Hook.Kind = if (self.current.tag == .kw_before) .pre else .post;
             self.advance();
 
-            // Get the target recipe name
-            if (self.current.tag != .ident) {
+            // Get the target recipe name (can be keyword like "default")
+            if (!self.isNameToken()) {
                 // No recipe name, skip
                 while (self.current.tag != .newline and self.current.tag != .eof) {
                     self.advance();
@@ -1145,7 +1160,7 @@ pub const Parser = struct {
     fn parseTaskRecipe(self: *Parser) ParseError!void {
         _ = try self.expect(.kw_task);
 
-        if (self.current.tag != .ident) {
+        if (!self.isNameToken()) {
             self.setError("expected task name after 'task'", .ident);
             return ParseError.UnexpectedToken;
         }
@@ -1330,7 +1345,7 @@ pub const Parser = struct {
     fn parseFileRecipe(self: *Parser) ParseError!void {
         _ = try self.expect(.kw_file);
 
-        if (self.current.tag != .ident and self.current.tag != .glob_pattern) {
+        if (!self.isNameToken() and self.current.tag != .glob_pattern) {
             self.setError("expected output filename after 'file'", .ident);
             return ParseError.UnexpectedToken;
         }
@@ -3621,6 +3636,34 @@ test "parse @timeout only applies to next recipe" {
     try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
     try std.testing.expectEqual(@as(?u64, 30), jakefile.recipes[0].timeout_seconds);
     try std.testing.expectEqual(@as(?u64, null), jakefile.recipes[1].timeout_seconds);
+}
+
+test "parse task named 'default' (keyword as identifier)" {
+    const source =
+        \\task default:
+        \\    echo "hello"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("default", jakefile.recipes[0].name);
+}
+
+test "parse task with keyword names as dependencies" {
+    const source =
+        \\task build: default
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].name);
 }
 
 // --- Fuzz Testing ---
