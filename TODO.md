@@ -155,52 +155,40 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
   - [x] `--force` to overwrite existing Jakefile
   - [x] `--path=<PATH>` for custom filename
 
-### `jake init` Enhancements (Phase 2)
+### `jake init` Enhancements (Phase 2) ✓ DONE
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Project detection | TODO | Detect via marker files (see below) |
-| Language templates | TODO | node, go, rust, python, zig |
-| Interactive mode | TODO | Prompt when TTY and no --template |
-| `--yes` flag | TODO | Accept defaults, skip prompts |
+| Project detection | ✓ DONE | Detects via marker files |
+| Language templates | ✓ DONE | node, go, rust, python, zig |
+| Interactive mode | LATER | Prompt when TTY and no --template |
+| `--yes` flag | ✓ DONE | Infrastructure ready |
 
-#### Project Detection (marker files)
+#### Project Detection (marker files) ✓
 
-Detect project type by checking for these files in cwd:
+Checks for these files in cwd (first match wins):
 
-| Type | Primary Marker | Confidence Boosters |
-|------|---------------|---------------------|
-| Node | `package.json` | `tsconfig.json`, lockfiles |
-| Rust | `Cargo.toml` | `Cargo.lock` |
-| Go | `go.mod` | - |
-| Python | `pyproject.toml` | `requirements.txt`, `Pipfile` |
-| Zig | `build.zig` | `build.zig.zon` |
+| Type | Marker File |
+|------|-------------|
+| Node | `package.json` |
+| Rust | `Cargo.toml` |
+| Go | `go.mod` |
+| Python | `pyproject.toml`, `requirements.txt` |
+| Zig | `build.zig` |
 
 **Behavior:**
-- Single match + confident → auto-select template, print "Detected X, using template Y"
-- Multiple matches (monorepo) → suggest options, use `starter` if non-interactive
-- No match → use `starter`
+- Match found → auto-select template, print "Detected X project, using Y template"
+- No match → use `starter` template
 
-#### Language Templates to Add
+#### Language Templates ✓
 
-Each template should have idiomatic tasks: build, test, fmt, run, setup
-
-| Template | Tasks |
-|----------|-------|
-| `node` | `setup` (npm i), `build`, `test`, `lint`, `dev` |
-| `go` | `build`, `test`, `fmt`, `run` |
-| `rust` | `build`, `test`, `fmt`, `clippy`, `run` |
-| `python` | `setup` (venv), `test` (pytest), `fmt` |
-| `zig` | `build`, `test`, `fmt`, `run` |
-
-#### Interactive Mode
-
-Trigger when: no `--template` AND stdin is TTY
-
-1. Show detection result
-2. Prompt for template (detected first, then others)
-3. Prompt for path (default: Jakefile)
-4. If file exists: prompt overwrite (unless --force)
+| Template | Key Tasks |
+|----------|-----------|
+| `node` | setup, build, test, lint, dev, fmt |
+| `go` | build, test, fmt, vet, run |
+| `rust` | build, test, fmt, clippy, run, doc |
+| `python` | setup (venv), test, fmt, lint, typecheck |
+| `zig` | build, test, fmt, run |
 
 ---
 

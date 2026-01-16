@@ -11,24 +11,81 @@ pub const InitError = error{
     FileExists,
 };
 
+pub const ProjectType = enum {
+    node,
+    rust,
+    go,
+    python,
+    zig_lang,
+    unknown,
+
+    pub fn name(self: ProjectType) []const u8 {
+        return switch (self) {
+            .node => "Node.js",
+            .rust => "Rust",
+            .go => "Go",
+            .python => "Python",
+            .zig_lang => "Zig",
+            .unknown => "unknown",
+        };
+    }
+};
+
 pub const Template = enum {
     starter,
     blank,
+    node,
+    go,
+    rust,
+    python,
+    zig_lang,
 };
 
 pub const Options = struct {
-    template: Template = .starter,
+    template: ?Template = null,
     force: bool = false,
     path: ?[]const u8 = null,
+    yes: bool = false,
 };
 
 const starter_template = @embedFile("templates/starter.jake");
 const blank_template = @embedFile("templates/blank.jake");
+const node_template = @embedFile("templates/node.jake");
+const go_template = @embedFile("templates/go.jake");
+const rust_template = @embedFile("templates/rust.jake");
+const python_template = @embedFile("templates/python.jake");
+const zig_template = @embedFile("templates/zig.jake");
+
+pub fn detectProjectType(dir: std.fs.Dir) ProjectType {
+    if (dir.access("package.json", .{})) |_| return .node else |_| {}
+    if (dir.access("Cargo.toml", .{})) |_| return .rust else |_| {}
+    if (dir.access("go.mod", .{})) |_| return .go else |_| {}
+    if (dir.access("pyproject.toml", .{})) |_| return .python else |_| {}
+    if (dir.access("requirements.txt", .{})) |_| return .python else |_| {}
+    if (dir.access("build.zig", .{})) |_| return .zig_lang else |_| {}
+    return .unknown;
+}
+
+fn templateForProjectType(pt: ProjectType) Template {
+    return switch (pt) {
+        .node => .node,
+        .rust => .rust,
+        .go => .go,
+        .python => .python,
+        .zig_lang => .zig_lang,
+        .unknown => .starter,
+    };
+}
 
 fn getTemplateContent(template: Template) []const u8 {
     return switch (template) {
         .starter => starter_template,
         .blank => blank_template,
+        .node => node_template,
+        .go => go_template,
+        .rust => rust_template,
+        .python => python_template,
+        .zig_lang => zig_template,
     };
 }
 
@@ -36,6 +93,11 @@ fn getTemplateName(template: Template) []const u8 {
     return switch (template) {
         .starter => "starter",
         .blank => "blank",
+        .node => "node",
+        .go => "go",
+        .rust => "rust",
+        .python => "python",
+        .zig_lang => "zig",
     };
 }
 
@@ -54,8 +116,18 @@ fn runInDir(
     dir: std.fs.Dir,
 ) !void {
     _ = allocator;
-    const content = getTemplateContent(options.template);
-    const template_name = getTemplateName(options.template);
+
+    const template = if (options.template) |t| t else blk: {
+        const project_type = detectProjectType(dir);
+        const detected_template = templateForProjectType(project_type);
+        if (project_type != .unknown) {
+            try writer.print("Detected {s} project, using '{s}' template.\n", .{ project_type.name(), getTemplateName(detected_template) });
+        }
+        break :blk detected_template;
+    };
+
+    const content = getTemplateContent(template);
+    const template_name = getTemplateName(template);
 
     const file_path = if (options.path) |p|
         p
@@ -93,21 +165,37 @@ pub fn printHelp(writer: anytype) !void {
         \\    jake init [OPTIONS]
         \\
         \\DESCRIPTION:
-        \\    Create a new Jakefile from a template.
+        \\    Create a new Jakefile from a template. Auto-detects project type
+        \\    if no template is specified.
         \\
         \\OPTIONS:
-        \\    -t, --template <NAME>    Template to use (starter, blank)
+        \\    -t, --template <NAME>    Template to use (see TEMPLATES below)
         \\    -f, --force              Overwrite existing Jakefile
         \\    -p, --path <PATH>        Path for the Jakefile (default: ./Jakefile)
+        \\    -y, --yes                Accept defaults, skip prompts
         \\    -h, --help               Show this help message
         \\
         \\TEMPLATES:
         \\    starter    A comprehensive starting template with common tasks
         \\    blank      A minimal template with just a default task
+        \\    node       Node.js/npm project template
+        \\    go         Go project template
+        \\    rust       Rust/Cargo project template
+        \\    python     Python project template
+        \\    zig        Zig project template
+        \\
+        \\AUTO-DETECTION:
+        \\    If no template is specified, Jake detects the project type:
+        \\    - package.json     → node template
+        \\    - Cargo.toml       → rust template
+        \\    - go.mod           → go template
+        \\    - pyproject.toml   → python template
+        \\    - build.zig        → zig template
         \\
         \\EXAMPLES:
-        \\    jake init                      Create Jakefile with starter template
+        \\    jake init                      Auto-detect project and create Jakefile
         \\    jake init --template=blank     Create minimal Jakefile
+        \\    jake init --template=node      Create Node.js Jakefile
         \\    jake init --force              Overwrite existing Jakefile
         \\    jake init --path=build.jake    Create Jakefile with custom name
     );
@@ -116,6 +204,29 @@ pub fn printHelp(writer: anytype) !void {
 test "Template enum values" {
     try std.testing.expectEqual(@as(usize, 0), @intFromEnum(Template.starter));
     try std.testing.expectEqual(@as(usize, 1), @intFromEnum(Template.blank));
+    try std.testing.expectEqual(@as(usize, 2), @intFromEnum(Template.node));
+    try std.testing.expectEqual(@as(usize, 3), @intFromEnum(Template.go));
+    try std.testing.expectEqual(@as(usize, 4), @intFromEnum(Template.rust));
+    try std.testing.expectEqual(@as(usize, 5), @intFromEnum(Template.python));
+    try std.testing.expectEqual(@as(usize, 6), @intFromEnum(Template.zig_lang));
+}
+
+test "ProjectType enum values" {
+    try std.testing.expectEqual(@as(usize, 0), @intFromEnum(ProjectType.node));
+    try std.testing.expectEqual(@as(usize, 1), @intFromEnum(ProjectType.rust));
+    try std.testing.expectEqual(@as(usize, 2), @intFromEnum(ProjectType.go));
+    try std.testing.expectEqual(@as(usize, 3), @intFromEnum(ProjectType.python));
+    try std.testing.expectEqual(@as(usize, 4), @intFromEnum(ProjectType.zig_lang));
+    try std.testing.expectEqual(@as(usize, 5), @intFromEnum(ProjectType.unknown));
+}
+
+test "ProjectType.name returns correct names" {
+    try std.testing.expectEqualStrings("Node.js", ProjectType.node.name());
+    try std.testing.expectEqualStrings("Rust", ProjectType.rust.name());
+    try std.testing.expectEqualStrings("Go", ProjectType.go.name());
+    try std.testing.expectEqualStrings("Python", ProjectType.python.name());
+    try std.testing.expectEqualStrings("Zig", ProjectType.zig_lang.name());
+    try std.testing.expectEqualStrings("unknown", ProjectType.unknown.name());
 }
 
 test "getTemplateContent returns non-empty for starter" {
@@ -131,16 +242,61 @@ test "getTemplateContent returns non-empty for blank" {
     try std.testing.expect(std.mem.indexOf(u8, content, "task default:") != null);
 }
 
+test "getTemplateContent returns non-empty for node" {
+    const content = getTemplateContent(.node);
+    try std.testing.expect(content.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, content, "npm") != null);
+}
+
+test "getTemplateContent returns non-empty for go" {
+    const content = getTemplateContent(.go);
+    try std.testing.expect(content.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, content, "go build") != null);
+}
+
+test "getTemplateContent returns non-empty for rust" {
+    const content = getTemplateContent(.rust);
+    try std.testing.expect(content.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, content, "cargo") != null);
+}
+
+test "getTemplateContent returns non-empty for python" {
+    const content = getTemplateContent(.python);
+    try std.testing.expect(content.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, content, "pytest") != null);
+}
+
+test "getTemplateContent returns non-empty for zig_lang" {
+    const content = getTemplateContent(.zig_lang);
+    try std.testing.expect(content.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, content, "zig build") != null);
+}
+
 test "getTemplateName returns correct names" {
     try std.testing.expectEqualStrings("starter", getTemplateName(.starter));
     try std.testing.expectEqualStrings("blank", getTemplateName(.blank));
+    try std.testing.expectEqualStrings("node", getTemplateName(.node));
+    try std.testing.expectEqualStrings("go", getTemplateName(.go));
+    try std.testing.expectEqualStrings("rust", getTemplateName(.rust));
+    try std.testing.expectEqualStrings("python", getTemplateName(.python));
+    try std.testing.expectEqualStrings("zig", getTemplateName(.zig_lang));
+}
+
+test "templateForProjectType returns correct mappings" {
+    try std.testing.expectEqual(Template.node, templateForProjectType(.node));
+    try std.testing.expectEqual(Template.rust, templateForProjectType(.rust));
+    try std.testing.expectEqual(Template.go, templateForProjectType(.go));
+    try std.testing.expectEqual(Template.python, templateForProjectType(.python));
+    try std.testing.expectEqual(Template.zig_lang, templateForProjectType(.zig_lang));
+    try std.testing.expectEqual(Template.starter, templateForProjectType(.unknown));
 }
 
 test "Options has correct defaults" {
     const opts = Options{};
-    try std.testing.expectEqual(Template.starter, opts.template);
+    try std.testing.expectEqual(@as(?Template, null), opts.template);
     try std.testing.expectEqual(false, opts.force);
     try std.testing.expectEqual(@as(?[]const u8, null), opts.path);
+    try std.testing.expectEqual(false, opts.yes);
 }
 
 test "run creates Jakefile with starter template" {
@@ -238,7 +394,7 @@ test "run overwrites file when force is true" {
 }
 
 test "printHelp outputs usage information" {
-    var buf: [4096]u8 = undefined;
+    var buf: [8192]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
 
     try printHelp(stream.writer());
@@ -251,8 +407,107 @@ test "printHelp outputs usage information" {
     try std.testing.expect(std.mem.indexOf(u8, output, "--template") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "--force") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "--path") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "--yes") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "TEMPLATES:") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "starter") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "blank") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "node") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "rust") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "python") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "AUTO-DETECTION:") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "EXAMPLES:") != null);
+}
+
+test "detectProjectType detects Node.js project" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "package.json", .data = "{}" });
+    try std.testing.expectEqual(ProjectType.node, detectProjectType(tmp_dir.dir));
+}
+
+test "detectProjectType detects Rust project" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "Cargo.toml", .data = "" });
+    try std.testing.expectEqual(ProjectType.rust, detectProjectType(tmp_dir.dir));
+}
+
+test "detectProjectType detects Go project" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "go.mod", .data = "" });
+    try std.testing.expectEqual(ProjectType.go, detectProjectType(tmp_dir.dir));
+}
+
+test "detectProjectType detects Python project with pyproject.toml" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "pyproject.toml", .data = "" });
+    try std.testing.expectEqual(ProjectType.python, detectProjectType(tmp_dir.dir));
+}
+
+test "detectProjectType detects Python project with requirements.txt" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "requirements.txt", .data = "" });
+    try std.testing.expectEqual(ProjectType.python, detectProjectType(tmp_dir.dir));
+}
+
+test "detectProjectType detects Zig project" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "build.zig", .data = "" });
+    try std.testing.expectEqual(ProjectType.zig_lang, detectProjectType(tmp_dir.dir));
+}
+
+test "detectProjectType returns unknown for empty directory" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try std.testing.expectEqual(ProjectType.unknown, detectProjectType(tmp_dir.dir));
+}
+
+test "run auto-detects Node.js project" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "package.json", .data = "{}" });
+
+    var buf: [4096]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+
+    try runInDir(std.testing.allocator, .{}, stream.writer(), tmp_dir.dir);
+
+    const content = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "Jakefile", 1024 * 1024);
+    defer std.testing.allocator.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "npm") != null);
+
+    const output = stream.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "Detected Node.js project") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "'node' template") != null);
+}
+
+test "run uses starter template for unknown project type" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var buf: [4096]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+
+    try runInDir(std.testing.allocator, .{}, stream.writer(), tmp_dir.dir);
+
+    const content = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "Jakefile", 1024 * 1024);
+    defer std.testing.allocator.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "task build:") != null);
+
+    const output = stream.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "Detected") == null);
 }
