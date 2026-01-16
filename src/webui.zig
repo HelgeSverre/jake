@@ -57,6 +57,9 @@ pub const WebUIServer = struct {
     current_task: ?[]const u8,
     current_child_pid: std.atomic.Value(i32),
 
+    /// Buffer for storing the URL
+    url_buf: [64]u8 = undefined,
+
     pub fn init(allocator: std.mem.Allocator, port: u16) WebUIServer {
         var self = WebUIServer{
             .allocator = allocator,
@@ -158,6 +161,14 @@ pub const WebUIServer = struct {
     /// Stop the server
     pub fn stop(self: *WebUIServer) void {
         self.running.store(false, .release);
+
+        // Close all client connections to unblock readFrame() calls
+        self.mutex.lock();
+        for (self.clients.items) |client| {
+            client.stream.close();
+        }
+        self.mutex.unlock();
+
         if (self.server) |*server| {
             server.deinit();
             self.server = null;
@@ -303,8 +314,7 @@ pub const WebUIServer = struct {
 
     /// Get the server URL
     pub fn getURL(self: *WebUIServer) []const u8 {
-        _ = self;
-        return "http://127.0.0.1:8420/";
+        return std.fmt.bufPrint(&self.url_buf, "http://127.0.0.1:{d}/", .{self.port}) catch "http://127.0.0.1:8420/";
     }
 
     fn handleConnection(self: *WebUIServer, conn: std.net.Server.Connection) !void {
@@ -621,18 +631,25 @@ pub const WebUIServer = struct {
 
     /// Broadcast a raw JSON string to all connected clients
     fn broadcastJson(self: *WebUIServer, json: []const u8) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        var failed_clients: std.ArrayListUnmanaged(*WebSocketClient) = .empty;
+        defer failed_clients.deinit(self.allocator);
 
+        self.mutex.lock();
         var i: usize = 0;
         while (i < self.clients.items.len) {
             const client = self.clients.items[i];
             client.sendText(json) catch {
-                // Remove disconnected client
+                failed_clients.append(self.allocator, client) catch {};
                 _ = self.clients.swapRemove(i);
                 continue;
             };
             i += 1;
+        }
+        self.mutex.unlock();
+
+        for (failed_clients.items) |client| {
+            client.deinit();
+            self.allocator.destroy(client);
         }
     }
 
@@ -656,18 +673,25 @@ pub const WebUIServer = struct {
         const json = serializeEvent(self.allocator, event) catch return;
         defer self.allocator.free(json);
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        var failed_clients: std.ArrayListUnmanaged(*WebSocketClient) = .empty;
+        defer failed_clients.deinit(self.allocator);
 
+        self.mutex.lock();
         var i: usize = 0;
         while (i < self.clients.items.len) {
             const client = self.clients.items[i];
             client.sendText(json) catch {
-                // Remove disconnected client
+                failed_clients.append(self.allocator, client) catch {};
                 _ = self.clients.swapRemove(i);
                 continue;
             };
             i += 1;
+        }
+        self.mutex.unlock();
+
+        for (failed_clients.items) |client| {
+            client.deinit();
+            self.allocator.destroy(client);
         }
     }
 };
@@ -946,9 +970,12 @@ pub const WebSocketClient = struct {
         }
 
         // Read payload
+        const MAX_PAYLOAD_SIZE: u64 = 16 * 1024 * 1024; // 16 MB
         var payload: []u8 = &.{};
         if (payload_len > 0) {
+            if (payload_len > MAX_PAYLOAD_SIZE) return error.PayloadTooLarge;
             payload = try self.allocator.alloc(u8, @intCast(payload_len));
+            errdefer self.allocator.free(payload);
             var total_read: usize = 0;
             while (total_read < payload.len) {
                 const n = self.stream.read(payload[total_read..]) catch return error.EndOfStream;
