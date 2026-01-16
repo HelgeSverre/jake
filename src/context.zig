@@ -232,3 +232,92 @@ test "Context.initWithColor sets color enabled state" {
     const ctx_disabled = Context.initWithColor(false);
     try std.testing.expect(!ctx_disabled.color.enabled);
 }
+
+test "Context.emitOutput calls callback with correct args" {
+    const TestCallback = struct {
+        var last_line: ?[]const u8 = null;
+        var last_is_stderr: ?bool = null;
+        var call_count: usize = 0;
+
+        fn callback(_: *anyopaque, line: []const u8, is_stderr: bool) void {
+            last_line = line;
+            last_is_stderr = is_stderr;
+            call_count += 1;
+        }
+
+        fn reset() void {
+            last_line = null;
+            last_is_stderr = null;
+            call_count = 0;
+        }
+    };
+
+    TestCallback.reset();
+
+    var dummy_ctx: u8 = 0;
+    var ctx = Context.init();
+    ctx.output_callback = TestCallback.callback;
+    ctx.output_callback_ctx = &dummy_ctx;
+
+    ctx.emitOutput("hello", false);
+    try std.testing.expectEqualStrings("hello", TestCallback.last_line.?);
+    try std.testing.expect(!TestCallback.last_is_stderr.?);
+    try std.testing.expectEqual(@as(usize, 1), TestCallback.call_count);
+
+    ctx.emitOutput("error", true);
+    try std.testing.expectEqualStrings("error", TestCallback.last_line.?);
+    try std.testing.expect(TestCallback.last_is_stderr.?);
+    try std.testing.expectEqual(@as(usize, 2), TestCallback.call_count);
+}
+
+test "Context.emitOutput does nothing without callback" {
+    var ctx = Context.init();
+    // Should not crash
+    ctx.emitOutput("test", false);
+}
+
+test "Context.emitOutput does nothing with callback but no ctx" {
+    const TestCallback = struct {
+        var called: bool = false;
+        fn callback(_: *anyopaque, _: []const u8, _: bool) void {
+            called = true;
+        }
+    };
+
+    TestCallback.called = false;
+    var ctx = Context.init();
+    ctx.output_callback = TestCallback.callback;
+    ctx.output_callback_ctx = null; // No context
+
+    ctx.emitOutput("test", false);
+    try std.testing.expect(!TestCallback.called); // Should not be called
+}
+
+test "Context.hasOutputCallback returns correct value" {
+    var ctx = Context.init();
+    try std.testing.expect(!ctx.hasOutputCallback());
+
+    const TestCallback = struct {
+        fn callback(_: *anyopaque, _: []const u8, _: bool) void {}
+    };
+    ctx.output_callback = TestCallback.callback;
+    try std.testing.expect(ctx.hasOutputCallback());
+}
+
+test "Context.isCancelled returns false by default" {
+    const ctx = Context.init();
+    try std.testing.expect(!ctx.isCancelled());
+}
+
+test "Context.isCancelled reads from cancellation flag" {
+    var flag = std.atomic.Value(bool).init(true);
+    var ctx = Context.init();
+    ctx.cancellation_flag = &flag;
+
+    // flag=true means running, so not cancelled
+    try std.testing.expect(!ctx.isCancelled());
+
+    // flag=false means stopped/cancelled
+    flag.store(false, .release);
+    try std.testing.expect(ctx.isCancelled());
+}

@@ -735,6 +735,58 @@ pub const ParallelExecutor = struct {
         return items.toOwnedSlice(self.allocator) catch &.{};
     }
 
+    /// Drain child stdout and stderr using threads to avoid deadlock and truncation
+    fn drainChildOutput(self: *ParallelExecutor, child: *std.process.Child) void {
+        const DrainContext = struct {
+            executor: *ParallelExecutor,
+            is_stderr: bool,
+            reader: std.fs.File,
+        };
+
+        const drainFn = struct {
+            fn drain(ctx: DrainContext) void {
+                var buf: [4096]u8 = undefined;
+                var collected: std.ArrayListUnmanaged(u8) = .empty;
+                defer collected.deinit(ctx.executor.allocator);
+
+                while (true) {
+                    const bytes_read = ctx.reader.read(&buf) catch break;
+                    if (bytes_read == 0) break;
+                    collected.appendSlice(ctx.executor.allocator, buf[0..bytes_read]) catch break;
+                }
+
+                if (collected.items.len > 0) {
+                    ctx.executor.output_mutex.lock();
+                    defer ctx.executor.output_mutex.unlock();
+                    const output = if (ctx.is_stderr) compat.getStdErr() else compat.getStdOut();
+                    output.writeAll(collected.items) catch {};
+                }
+            }
+        }.drain;
+
+        var stdout_thread: ?std.Thread = null;
+        var stderr_thread: ?std.Thread = null;
+
+        if (child.stdout) |stdout| {
+            stdout_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
+                .executor = self,
+                .is_stderr = false,
+                .reader = stdout,
+            }}) catch null;
+        }
+
+        if (child.stderr) |stderr| {
+            stderr_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
+                .executor = self,
+                .is_stderr = true,
+                .reader = stderr,
+            }}) catch null;
+        }
+
+        if (stdout_thread) |t| t.join();
+        if (stderr_thread) |t| t.join();
+    }
+
     /// Run a shell command (the actual execution, separated from directive handling)
     fn runShellCommand(self: *ParallelExecutor, line: []const u8) bool {
         const expanded = self.expandVariables(line) catch line;
@@ -762,27 +814,13 @@ pub const ParallelExecutor = struct {
             return false;
         };
 
-        var stdout_buf: [4096]u8 = undefined;
-        var stderr_buf: [4096]u8 = undefined;
-
-        const stdout_len = if (child.stdout) |stdout| stdout.read(&stdout_buf) catch 0 else 0;
-        const stderr_len = if (child.stderr) |stderr| stderr.read(&stderr_buf) catch 0 else 0;
+        // Drain output using threads to avoid deadlock and truncation
+        self.drainChildOutput(&child);
 
         const result = child.wait() catch |err| {
             self.printSynchronized("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return false;
         };
-
-        if (stdout_len > 0) {
-            self.output_mutex.lock();
-            defer self.output_mutex.unlock();
-            compat.getStdOut().writeAll(stdout_buf[0..stdout_len]) catch {};
-        }
-        if (stderr_len > 0) {
-            self.output_mutex.lock();
-            defer self.output_mutex.unlock();
-            compat.getStdErr().writeAll(stderr_buf[0..stderr_len]) catch {};
-        }
 
         switch (result) {
             .Exited => |code| {
@@ -836,29 +874,13 @@ pub const ParallelExecutor = struct {
             return false;
         };
 
-        // Read stdout and stderr
-        var stdout_buf: [4096]u8 = undefined;
-        var stderr_buf: [4096]u8 = undefined;
-
-        const stdout_len = if (child.stdout) |stdout| stdout.read(&stdout_buf) catch 0 else 0;
-        const stderr_len = if (child.stderr) |stderr| stderr.read(&stderr_buf) catch 0 else 0;
+        // Drain output using threads to avoid deadlock and truncation
+        self.drainChildOutput(&child);
 
         const result = child.wait() catch |err| {
             self.printSynchronized("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return false;
         };
-
-        // Print captured output synchronously
-        if (stdout_len > 0) {
-            self.output_mutex.lock();
-            defer self.output_mutex.unlock();
-            compat.getStdOut().writeAll(stdout_buf[0..stdout_len]) catch {};
-        }
-        if (stderr_len > 0) {
-            self.output_mutex.lock();
-            defer self.output_mutex.unlock();
-            compat.getStdErr().writeAll(stderr_buf[0..stderr_len]) catch {};
-        }
 
         switch (result) {
             .Exited => |code| {

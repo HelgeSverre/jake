@@ -1604,49 +1604,88 @@ pub const Executor = struct {
 
     /// Stream output from child process stdout/stderr to callback
     fn streamChildOutput(self: *Executor, child: *std.process.Child) void {
-        var line_buf: [4096]u8 = undefined;
+        // Use threads to drain both streams concurrently to avoid deadlock
+        const DrainContext = struct {
+            executor: *Executor,
+            is_stderr: bool,
+            reader: std.fs.File,
+        };
 
-        // Read stdout
+        const drainFn = struct {
+            fn drain(ctx: DrainContext) void {
+                var line_buf: [4096]u8 = undefined;
+                var partial: std.ArrayListUnmanaged(u8) = .empty;
+                defer partial.deinit(ctx.executor.allocator);
+
+                while (true) {
+                    const bytes_read = ctx.reader.read(&line_buf) catch break;
+                    if (bytes_read == 0) break;
+
+                    // Process bytes, splitting on newlines
+                    var start: usize = 0;
+                    for (line_buf[0..bytes_read], 0..) |c, i| {
+                        if (c == '\n') {
+                            // Complete line found
+                            if (partial.items.len > 0) {
+                                // Prepend partial from previous read
+                                partial.appendSlice(ctx.executor.allocator, line_buf[start..i]) catch {};
+                                var line = partial.items;
+                                // Trim trailing \r if present (CRLF handling)
+                                if (line.len > 0 and line[line.len - 1] == '\r') {
+                                    line = line[0 .. line.len - 1];
+                                }
+                                ctx.executor.ctx.emitOutput(line, ctx.is_stderr);
+                                partial.clearRetainingCapacity();
+                            } else {
+                                var line = line_buf[start..i];
+                                // Trim trailing \r if present
+                                if (line.len > 0 and line[line.len - 1] == '\r') {
+                                    line = line[0 .. line.len - 1];
+                                }
+                                ctx.executor.ctx.emitOutput(line, ctx.is_stderr);
+                            }
+                            start = i + 1;
+                        }
+                    }
+                    // Store remaining partial line for next iteration
+                    if (start < bytes_read) {
+                        partial.appendSlice(ctx.executor.allocator, line_buf[start..bytes_read]) catch {};
+                    }
+                }
+
+                // Emit any remaining partial line (no trailing newline)
+                if (partial.items.len > 0) {
+                    var line = partial.items;
+                    if (line.len > 0 and line[line.len - 1] == '\r') {
+                        line = line[0 .. line.len - 1];
+                    }
+                    ctx.executor.ctx.emitOutput(line, ctx.is_stderr);
+                }
+            }
+        }.drain;
+
+        var stdout_thread: ?std.Thread = null;
+        var stderr_thread: ?std.Thread = null;
+
         if (child.stdout) |stdout| {
-            while (true) {
-                const bytes_read = stdout.read(&line_buf) catch break;
-                if (bytes_read == 0) break;
-
-                // Emit each line
-                var start: usize = 0;
-                for (line_buf[0..bytes_read], 0..) |c, i| {
-                    if (c == '\n') {
-                        self.ctx.emitOutput(line_buf[start..i], false);
-                        start = i + 1;
-                    }
-                }
-                // Emit remaining partial line
-                if (start < bytes_read) {
-                    self.ctx.emitOutput(line_buf[start..bytes_read], false);
-                }
-            }
+            stdout_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
+                .executor = self,
+                .is_stderr = false,
+                .reader = stdout,
+            }}) catch null;
         }
 
-        // Read stderr
         if (child.stderr) |stderr| {
-            while (true) {
-                const bytes_read = stderr.read(&line_buf) catch break;
-                if (bytes_read == 0) break;
-
-                // Emit each line
-                var start: usize = 0;
-                for (line_buf[0..bytes_read], 0..) |c, i| {
-                    if (c == '\n') {
-                        self.ctx.emitOutput(line_buf[start..i], true);
-                        start = i + 1;
-                    }
-                }
-                // Emit remaining partial line
-                if (start < bytes_read) {
-                    self.ctx.emitOutput(line_buf[start..bytes_read], true);
-                }
-            }
+            stderr_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
+                .executor = self,
+                .is_stderr = true,
+                .reader = stderr,
+            }}) catch null;
         }
+
+        // Wait for both threads
+        if (stdout_thread) |t| t.join();
+        if (stderr_thread) |t| t.join();
     }
 
     /// Execute an external recipe by delegating to make or just
@@ -1714,26 +1753,7 @@ pub const Executor = struct {
 
         // Handle output streaming if we have a callback
         if (self.ctx.hasOutputCallback()) {
-            // Stream stdout and stderr to the callback
-            var stdout_reader = child.stdout.?;
-            var stderr_reader = child.stderr.?;
-
-            var stdout_buf: [4096]u8 = undefined;
-            var stderr_buf: [4096]u8 = undefined;
-
-            while (true) {
-                const stdout_read = stdout_reader.read(&stdout_buf) catch 0;
-                const stderr_read = stderr_reader.read(&stderr_buf) catch 0;
-
-                if (stdout_read > 0) {
-                    self.ctx.emitOutput(stdout_buf[0..stdout_read], false);
-                }
-                if (stderr_read > 0) {
-                    self.ctx.emitOutput(stderr_buf[0..stderr_read], true);
-                }
-
-                if (stdout_read == 0 and stderr_read == 0) break;
-            }
+            self.streamChildOutput(&child);
         }
 
         const result = child.wait() catch |err| {
