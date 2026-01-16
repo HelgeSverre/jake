@@ -151,18 +151,66 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 ---
 
 - [x] `jake init` - Scaffold Jakefile from templates
-  - `--template=starter|blank` for explicit selection
-  - `--force` to overwrite existing Jakefile
-  - [ ] Auto-detect project type (Node, Go, Rust, Python) - deferred
+  - [x] `--template=starter|blank` for explicit selection
+  - [x] `--force` to overwrite existing Jakefile
+  - [x] `--path=<PATH>` for custom filename
+
+### `jake init` Enhancements (Phase 2)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Project detection | TODO | Detect via marker files (see below) |
+| Language templates | TODO | node, go, rust, python, zig |
+| Interactive mode | TODO | Prompt when TTY and no --template |
+| `--yes` flag | TODO | Accept defaults, skip prompts |
+
+#### Project Detection (marker files)
+
+Detect project type by checking for these files in cwd:
+
+| Type | Primary Marker | Confidence Boosters |
+|------|---------------|---------------------|
+| Node | `package.json` | `tsconfig.json`, lockfiles |
+| Rust | `Cargo.toml` | `Cargo.lock` |
+| Go | `go.mod` | - |
+| Python | `pyproject.toml` | `requirements.txt`, `Pipfile` |
+| Zig | `build.zig` | `build.zig.zon` |
+
+**Behavior:**
+- Single match + confident → auto-select template, print "Detected X, using template Y"
+- Multiple matches (monorepo) → suggest options, use `starter` if non-interactive
+- No match → use `starter`
+
+#### Language Templates to Add
+
+Each template should have idiomatic tasks: build, test, fmt, run, setup
+
+| Template | Tasks |
+|----------|-------|
+| `node` | `setup` (npm i), `build`, `test`, `lint`, `dev` |
+| `go` | `build`, `test`, `fmt`, `run` |
+| `rust` | `build`, `test`, `fmt`, `clippy`, `run` |
+| `python` | `setup` (venv), `test` (pytest), `fmt` |
+| `zig` | `build`, `test`, `fmt`, `run` |
+
+#### Interactive Mode
+
+Trigger when: no `--template` AND stdin is TTY
+
+1. Show detection result
+2. Prompt for template (detected first, then others)
+3. Prompt for path (default: Jakefile)
+4. If file exists: prompt overwrite (unless --force)
 
 ---
 
 - [x] `jake fmt` - Auto-format Jakefile
   - [x] Consistent 4-space indentation
   - [x] Align `=` in variable definitions
-  - [ ] Sort imports alphabetically (deferred to v2)
   - [x] `--check` flag for CI
   - [x] `--dump` flag for stdout output
+  - Note: Import sorting intentionally NOT included - reordering imports can change
+    behavior (later imports override earlier ones) making it unsafe for a formatter
 
 ---
 
