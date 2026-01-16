@@ -34,7 +34,6 @@ pub const WebUIServer = struct {
     running: std.atomic.Value(bool),
     clients: std.ArrayListUnmanaged(*WebSocketClient),
     mutex: std.Thread.Mutex,
-    client_threads: std.ArrayListUnmanaged(std.Thread),
 
     // Jakefile data for sending to clients
     recipes: []const parser.Recipe,
@@ -54,7 +53,6 @@ pub const WebUIServer = struct {
     // Task execution state
     execution_thread: ?std.Thread,
     execution_running: std.atomic.Value(bool),
-    current_task: ?[]const u8,
     current_child_pid: std.atomic.Value(i32),
 
     /// Buffer for storing the URL
@@ -68,7 +66,6 @@ pub const WebUIServer = struct {
             .running = std.atomic.Value(bool).init(false),
             .clients = .{},
             .mutex = .{},
-            .client_threads = .{},
             .recipes = &.{},
             .variables = &.{},
             .init_message = null,
@@ -78,7 +75,6 @@ pub const WebUIServer = struct {
             .runtime = null,
             .execution_thread = null,
             .execution_running = std.atomic.Value(bool).init(false),
-            .current_task = null,
             .current_child_pid = std.atomic.Value(i32).init(0),
         };
         // Set up the event emitter interface pointing to this server
@@ -114,12 +110,6 @@ pub const WebUIServer = struct {
             self.execution_thread = null;
         }
 
-        // Wait for all client threads to finish
-        for (self.client_threads.items) |thread| {
-            thread.join();
-        }
-        self.client_threads.deinit(self.allocator);
-
         // Clean up any remaining clients
         self.mutex.lock();
         for (self.clients.items) |client| {
@@ -132,12 +122,6 @@ pub const WebUIServer = struct {
         // Free cached init message
         if (self.init_message) |msg| {
             self.allocator.free(msg);
-        }
-
-        // Free current task name if allocated
-        if (self.current_task) |task| {
-            self.allocator.free(task);
-            self.current_task = null;
         }
     }
 
@@ -416,16 +400,13 @@ pub const WebUIServer = struct {
         const init_msg = self.getInitMessage() catch "{\"type\":\"init\",\"recipes\":[],\"variables\":{}}";
         client.sendText(init_msg) catch {};
 
-        // Spawn a thread to handle WebSocket frames (non-blocking for main accept loop)
-        const thread = std.Thread.spawn(.{}, handleWebSocketFramesThread, .{ self, client }) catch {
+        // Spawn a detached thread to handle WebSocket frames (non-blocking for main accept loop)
+        // Thread cleans up its own client via defer self.removeClient(client) and exits when
+        // isRunning() returns false or readFrame() fails (stream closed by stop())
+        _ = std.Thread.spawn(.{}, handleWebSocketFramesThread, .{ self, client }) catch {
             self.removeClient(client);
             return;
         };
-
-        // Track thread for cleanup
-        self.mutex.lock();
-        self.client_threads.append(self.allocator, thread) catch {};
-        self.mutex.unlock();
     }
 
     /// Thread function for handling WebSocket frames
@@ -459,11 +440,14 @@ pub const WebUIServer = struct {
         if (std.mem.eql(u8, action, "run")) {
             const recipe_name = extractJsonString(payload, "recipe") orelse return;
 
-            // Check if already running
-            if (self.execution_running.load(.acquire)) {
+            // Atomically try to set execution_running from false to true
+            if (self.execution_running.cmpxchgStrong(false, true, .acq_rel, .acquire)) |_| {
+                // cmpxchg returned the old value (which wasn't false), meaning already running
                 self.broadcastJson("{\"type\":\"error\",\"message\":\"A task is already running\"}");
                 return;
             }
+            // Now we own execution - if anything fails, we must reset it
+            errdefer self.execution_running.store(false, .release);
 
             // Check we have execution context
             if (self.jakefile == null or self.index == null or self.runtime == null) {
@@ -471,18 +455,16 @@ pub const WebUIServer = struct {
                 return;
             }
 
-            // Store the recipe name for the execution thread
-            if (self.current_task) |old| {
-                self.allocator.free(old);
-            }
-            self.current_task = self.allocator.dupe(u8, recipe_name) catch return;
-
             // Check if dry run
             const dry_run = extractJsonBool(payload, "dryRun") orelse false;
 
+            // Duplicate the task name for the execution thread (it will own and free this)
+            const task_name_for_thread = self.allocator.dupe(u8, recipe_name) catch return;
+
             // Start execution in a separate thread
             self.execution_running.store(true, .release);
-            self.execution_thread = std.Thread.spawn(.{}, executeRecipeThread, .{ self, dry_run }) catch {
+            self.execution_thread = std.Thread.spawn(.{}, executeRecipeThread, .{ self, task_name_for_thread, dry_run }) catch {
+                self.allocator.free(task_name_for_thread);
                 self.execution_running.store(false, .release);
                 self.broadcastJson("{\"type\":\"error\",\"message\":\"Failed to start execution thread\"}");
                 return;
@@ -507,13 +489,18 @@ pub const WebUIServer = struct {
         }
     }
 
+    /// Context passed to outputCallback to avoid data races on current_task
+    const ExecutionCallbackContext = struct {
+        server: *WebUIServer,
+        task_name: []const u8,
+    };
+
     /// Output callback for streaming command output to WebSocket clients and console
     fn outputCallback(ctx: *anyopaque, line: []const u8, is_stderr: bool) void {
-        const server: *WebUIServer = @ptrCast(@alignCast(ctx));
-        const task_name = server.current_task orelse "unknown";
+        const exec_ctx: *ExecutionCallbackContext = @ptrCast(@alignCast(ctx));
 
         // Send to WebSocket clients
-        server.emitCommandOutput(task_name, line, is_stderr);
+        exec_ctx.server.emitCommandOutput(exec_ctx.task_name, line, is_stderr);
 
         // Also write to console (tee behavior)
         const output = if (is_stderr) compat.getStdErr() else compat.getStdOut();
@@ -522,22 +509,29 @@ pub const WebUIServer = struct {
     }
 
     /// Thread function that executes a recipe
-    fn executeRecipeThread(self: *WebUIServer, dry_run: bool) void {
+    /// Takes ownership of task_name and frees it when done
+    fn executeRecipeThread(self: *WebUIServer, task_name: []const u8, dry_run: bool) void {
         defer {
+            self.allocator.free(task_name);
             self.execution_running.store(false, .release);
             if (self.execution_thread != null) {
                 self.execution_thread = null;
             }
         }
 
-        const recipe_name = self.current_task orelse return;
         const jakefile = self.jakefile orelse return;
         const index = self.index orelse return;
         const runtime = self.runtime orelse return;
 
         // Emit task_start event
         const start_time = std.time.milliTimestamp();
-        self.emitTaskStart(recipe_name);
+        self.emitTaskStart(task_name);
+
+        // Create callback context on the stack (lives for duration of execution)
+        var callback_ctx = ExecutionCallbackContext{
+            .server = self,
+            .task_name = task_name,
+        };
 
         // Create a context for this execution with cancellation flag and child PID tracking
         var ctx = context_mod.Context{
@@ -551,7 +545,7 @@ pub const WebUIServer = struct {
             .cancellation_flag = &self.execution_running, // Use execution_running as cancellation flag
             .current_child_pid = &self.current_child_pid, // Track child PID for killing
             .output_callback = outputCallback, // Stream output to WebSocket
-            .output_callback_ctx = self,
+            .output_callback_ctx = &callback_ctx,
         };
 
         // Create executor
@@ -560,17 +554,17 @@ pub const WebUIServer = struct {
 
         // Execute the recipe
         const success = blk: {
-            executor.execute(recipe_name) catch |err| {
+            executor.execute(task_name) catch |err| {
                 // Check if this was a cancellation
                 if (ctx.isCancelled()) {
-                    self.emitCommandOutput(recipe_name, "Execution cancelled by user", true);
+                    self.emitCommandOutput(task_name, "Execution cancelled by user", true);
                     break :blk false;
                 }
                 // Emit error
                 var buf: [256]u8 = undefined;
                 const err_name = @errorName(err);
                 const msg = std.fmt.bufPrint(&buf, "Execution failed: {s}", .{err_name}) catch "Execution failed";
-                self.emitCommandOutput(recipe_name, msg, true);
+                self.emitCommandOutput(task_name, msg, true);
                 break :blk false;
             };
             break :blk true;
@@ -578,7 +572,7 @@ pub const WebUIServer = struct {
 
         // Emit task_complete event
         const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
-        self.emitTaskComplete(recipe_name, success, duration_ms);
+        self.emitTaskComplete(task_name, success, duration_ms);
 
         // Emit summary
         self.emitSummary(if (success) 1 else 0, if (success) 0 else 1, duration_ms);
