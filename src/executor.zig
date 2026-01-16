@@ -80,13 +80,11 @@ pub const Executor = struct {
     tasks_run: usize, // Number of tasks successfully executed
     tasks_failed: usize, // Number of tasks that failed
 
-    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Executor {
-        const owned_index = allocator.create(JakefileIndex) catch {
-            @panic("failed to allocate Jakefile index");
-        };
-        owned_index.* = JakefileIndex.build(allocator, jakefile) catch {
+    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) !Executor {
+        const owned_index = try allocator.create(JakefileIndex);
+        owned_index.* = JakefileIndex.build(allocator, jakefile) catch |err| {
             allocator.destroy(owned_index);
-            @panic("failed to build Jakefile index");
+            return err;
         };
         var executor = initInternal(allocator, jakefile, owned_index);
         executor.owned_index = owned_index;
@@ -2650,7 +2648,7 @@ test "executor basic" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     executor.ctx.dry_run = true;
@@ -2677,7 +2675,7 @@ test "executor executes dependencies first" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2706,7 +2704,7 @@ test "executor executes each dependency once" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2733,7 +2731,7 @@ test "executor detects direct cycle" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2751,7 +2749,7 @@ test "executor detects self cycle" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2773,7 +2771,7 @@ test "executor detects indirect cycle" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2794,7 +2792,7 @@ test "executor expands jake variables" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Test the variable expansion function directly
@@ -2814,7 +2812,7 @@ test "executor preserves undefined variables" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("{{undefined}} World");
@@ -2835,7 +2833,7 @@ test "executor expands multiple variables" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("{{first}} {{second}}!");
@@ -2856,7 +2854,7 @@ test "executor dry run does not execute commands" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2876,7 +2874,7 @@ test "executor returns error for non-existent recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2894,7 +2892,7 @@ test "executor returns error for missing dependency" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2914,7 +2912,7 @@ test "executor handles simple recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2932,7 +2930,7 @@ test "executor handles task recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2954,7 +2952,7 @@ test "executor runs multiple commands in recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2975,7 +2973,7 @@ test "executor tracks executed recipes" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -2998,7 +2996,7 @@ test "executor skips already executed recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -3021,7 +3019,7 @@ test "executor loads jakefile variables" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     try std.testing.expectEqualStrings("test", executor.variables.get("name").?);
@@ -3039,7 +3037,7 @@ test "executor handles empty recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -3083,7 +3081,7 @@ test "executor @ prefix suppresses echo but still executes" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
     executor.ctx.verbose = true;
@@ -3103,7 +3101,7 @@ test "executor @ prefix strips @ before execution" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Get the recipe command
@@ -3132,7 +3130,7 @@ test "private recipes are hidden from list but still executable" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -3503,7 +3501,7 @@ test "executor @ignore in dry run mode" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -3544,7 +3542,7 @@ test "executor expands single positional arg $1" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Set positional args
@@ -3567,7 +3565,7 @@ test "executor expands multiple positional args $1 and $2" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Set positional args
@@ -3590,7 +3588,7 @@ test "executor expands $@ to all positional args" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Set positional args
@@ -3613,7 +3611,7 @@ test "executor expands out of range positional arg to empty string" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Set only 2 positional args
@@ -3637,7 +3635,7 @@ test "executor expands $0 to empty string" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const args = [_][]const u8{"arg1"};
@@ -3660,7 +3658,7 @@ test "executor expands empty $@ to empty string" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // No positional args set (default)
@@ -3681,7 +3679,7 @@ test "executor mixes positional args and named variables" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const args = [_][]const u8{"server1"};
@@ -3703,7 +3701,7 @@ test "executor preserves invalid positional arg syntax" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("{{$abc}}");
@@ -3727,7 +3725,7 @@ test "variable expansion does not trim whitespace - leading space" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Set a variable without leading space
@@ -3751,7 +3749,7 @@ test "variable expansion does not trim whitespace - trailing space" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     try executor.variables.put("myvar", "hello");
@@ -3773,7 +3771,7 @@ test "variable expansion does not trim whitespace - both sides" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     try executor.variables.put("myvar", "hello");
@@ -3795,7 +3793,7 @@ test "positional arg expansion does not trim whitespace" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Set positional args
@@ -3820,7 +3818,7 @@ test "function calls tolerate whitespace in arguments" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Function arguments ARE trimmed by the functions module
@@ -3855,7 +3853,7 @@ test "@require validates single env var exists" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Should not return an error since PATH exists
@@ -3873,7 +3871,7 @@ test "@require fails with clear error when env var missing" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Should return MissingRequiredEnv error
@@ -3897,7 +3895,7 @@ test "@require checks multiple variables in single directive" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     try executor.validateRequiredEnv();
@@ -3921,7 +3919,7 @@ test "@require checks multiple @require directives" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     try executor.validateRequiredEnv();
@@ -3938,7 +3936,7 @@ test "@require skips validation in dry-run mode" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -3959,7 +3957,7 @@ test "@require with empty value still passes" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // PATH exists (even if hypothetically empty), should pass
@@ -3977,7 +3975,7 @@ test "@require fails on second missing var in list" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Should fail because JAKE_TEST_NONEXISTENT_VAR_12345 doesn't exist
@@ -4017,7 +4015,7 @@ test "@require works with env vars from dotenv" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Should pass because JAKE_TEST_FROM_DOTENV was loaded from .env
@@ -4039,7 +4037,7 @@ test "@needs verifies command exists in PATH" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4058,7 +4056,7 @@ test "@needs fails with helpful error when command missing" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4078,7 +4076,7 @@ test "@needs checks multiple space-separated commands" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4097,7 +4095,7 @@ test "@needs works with full path to binary" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4115,7 +4113,7 @@ test "@needs with non-existent command in middle of list fails" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4135,7 +4133,7 @@ test "@needs with comma-separated commands" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4156,7 +4154,7 @@ test "@needs only checks once per command" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4175,7 +4173,7 @@ test "@needs with custom hint shows hint on failure" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4195,7 +4193,7 @@ test "@needs with task reference shows run suggestion" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4215,7 +4213,7 @@ test "@needs with hint and task reference" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4235,7 +4233,7 @@ test "@needs with hint still works when command exists" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4254,7 +4252,7 @@ test "@needs with task reference still works when command exists" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4275,7 +4273,7 @@ test "recipe-level @needs verifies command exists before execution" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4294,7 +4292,7 @@ test "recipe-level @needs fails with helpful error when command missing" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4314,7 +4312,7 @@ test "recipe-level @needs with hint and task reference" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4337,7 +4335,7 @@ test "recipe-level @needs fails before any command executes" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     // NOT dry_run - we want to verify commands don't execute
     // The @needs check should fail before any commands run
@@ -4358,7 +4356,7 @@ test "recipe-level @needs checks multiple commands on same line" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4380,7 +4378,7 @@ test "@confirm with --yes flag auto-confirms" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
     executor.ctx.auto_yes = true; // Enable auto-yes flag
@@ -4400,7 +4398,7 @@ test "@confirm in dry-run mode shows message but doesn't prompt" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4419,7 +4417,7 @@ test "@confirm with default message" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4441,7 +4439,7 @@ test "@each iterates over space-separated items" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4461,7 +4459,7 @@ test "@each expands {{item}} variable in command" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4482,7 +4480,7 @@ test "@each expands variable to multiple items" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4506,7 +4504,7 @@ test "@each with empty list executes zero times" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4529,7 +4527,7 @@ test "@each nested in conditional block respects condition" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4549,7 +4547,7 @@ test "@each with comma-separated items" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4568,7 +4566,7 @@ test "@each with single item" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4588,7 +4586,7 @@ test "@each with multiple commands" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4609,7 +4607,7 @@ test "@each with glob pattern expands matching files" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4651,7 +4649,7 @@ test "@each with non-matching glob returns empty" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4671,7 +4669,7 @@ test "@each with mixed literal and glob items" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4694,7 +4692,7 @@ test "@cache first run always executes" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true; // Use dry-run to see command output
 
@@ -4733,7 +4731,7 @@ test "@cache with existing file updates cache" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4772,7 +4770,7 @@ test "@cache skips command when inputs unchanged" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Pre-populate cache to simulate previous run
@@ -4797,7 +4795,7 @@ test "@cache with multiple files" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4815,7 +4813,7 @@ test "@cache with comma-separated files" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4833,7 +4831,7 @@ test "@cache with empty deps always runs" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4853,7 +4851,7 @@ test "parseCachePatterns parses space-separated patterns" {
         .source = "",
     };
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const patterns = executor.parseCachePatterns("cache src/*.zig lib/*.zig");
@@ -4879,7 +4877,7 @@ test "@watch in dry-run mode shows what would be watched" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4897,7 +4895,7 @@ test "@watch is informational in normal mode" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true; // Still dry-run for safety in tests
 
@@ -4915,7 +4913,7 @@ test "@watch with multiple patterns" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4934,7 +4932,7 @@ test "@watch continues to next command" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -4954,7 +4952,7 @@ test "parseCachePatterns works for watch patterns" {
         .source = "",
     };
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const patterns = executor.parseCachePatterns("watch **/*.zig");
@@ -4975,7 +4973,7 @@ test "@watch with empty pattern is no-op" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5006,7 +5004,7 @@ test "deeply nested @if blocks (5 levels)" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5035,7 +5033,7 @@ test "nested @if with @else does not execute outer else" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5062,7 +5060,7 @@ test "nested @if with false outer does not execute inner" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5081,7 +5079,7 @@ test "@ignore with command that doesn't exist still continues" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5099,7 +5097,7 @@ test "empty recipe with only directives executes without error" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5120,7 +5118,7 @@ test "@each inside @if only runs when condition true" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5142,7 +5140,7 @@ test "@each inside @if false is skipped" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5169,7 +5167,7 @@ test "recipe with all directives combined" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5192,7 +5190,7 @@ test "multiple @if/@else chains" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5209,7 +5207,7 @@ test "executor returns RecipeNotFound for missing recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const result = executor.execute("nonexistent");
@@ -5226,7 +5224,7 @@ test "executor returns CyclicDependency for self-referencing recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const result = executor.execute("loop");
@@ -5249,7 +5247,7 @@ test "executor returns CyclicDependency for indirect cycle" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const result = executor.execute("a");
@@ -5267,7 +5265,7 @@ test "@needs continues checking after first found command" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5286,7 +5284,7 @@ test "variable expansion in commands works with special chars" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5303,7 +5301,7 @@ test "environment variable expansion with default fallback" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5322,7 +5320,7 @@ test "recipe with only comments parses correctly" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5339,7 +5337,7 @@ test "executor handles recipe with spaces in command" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5361,7 +5359,7 @@ test "@quiet suppresses verbose output for recipe" {
     const recipe = jakefile.getRecipe("test").?;
     try std.testing.expect(recipe.quiet);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
     executor.ctx.verbose = true; // Even with verbose, quiet should suppress
@@ -5402,7 +5400,7 @@ test "recipe parameter with default value binds to variable" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5422,7 +5420,7 @@ test "recipe parameter CLI arg overrides default" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5446,7 +5444,7 @@ test "recipe parameter without default stays unset if no CLI arg" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5466,7 +5464,7 @@ test "recipe multiple parameters bind correctly" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5490,7 +5488,7 @@ test "recipe parameter with quoted value in CLI" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5513,7 +5511,7 @@ test "recipe parameter value with equals sign" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5537,7 +5535,7 @@ test "function call uppercase in variable expansion" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("{{uppercase(hello)}}");
@@ -5555,7 +5553,7 @@ test "function call lowercase in variable expansion" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("{{lowercase(HELLO)}}");
@@ -5573,7 +5571,7 @@ test "function call dirname in variable expansion" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("{{dirname(/path/to/file.txt)}}");
@@ -5591,7 +5589,7 @@ test "function call basename in variable expansion" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("{{basename(/path/to/file.txt)}}");
@@ -5610,7 +5608,7 @@ test "function call with variable argument" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("Hello {{uppercase(name)}}!");
@@ -5628,7 +5626,7 @@ test "function call extension" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("{{extension(file.txt)}}");
@@ -5646,7 +5644,7 @@ test "unknown function keeps original" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     const expanded = try executor.expandJakeVariables("{{unknownfunc(arg)}}");
@@ -5690,7 +5688,7 @@ test "stress: deeply nested conditionals with mixed branches" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5721,7 +5719,7 @@ test "stress: complex dependency chain" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5744,7 +5742,7 @@ test "stress: @each inside conditional" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5767,7 +5765,7 @@ test "stress: conditional inside @each" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5792,7 +5790,7 @@ test "stress: multiple directives in single recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5824,7 +5822,7 @@ test "stress: hooks with dependencies" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5847,7 +5845,7 @@ test "stress: recipe with parameters and conditionals" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5875,7 +5873,7 @@ test "stress: targeted hooks with multiple recipes" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5895,7 +5893,7 @@ test "stress: file target with multiple deps" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5915,7 +5913,7 @@ test "stress: empty @each list produces no iterations" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -5935,7 +5933,7 @@ test "@export KEY=value sets environment variable" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Verify the environment has the exported variable
@@ -5954,7 +5952,7 @@ test "@export KEY exports Jake variable to environment" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Verify the Jake variable was exported to the environment
@@ -5972,7 +5970,7 @@ test "@export KEY value sets environment variable" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Verify the environment has the exported variable
@@ -5991,7 +5989,7 @@ test "@export builds correct env map for child process" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Build the env map that would be passed to child processes
@@ -6014,7 +6012,7 @@ test "@export KEY=\"value with spaces\" handles quoted values" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Verify the environment has the exported variable without quotes
@@ -6032,7 +6030,7 @@ test "@export nonexistent variable is silently ignored" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Nonexistent variable should not be in environment
@@ -6050,7 +6048,7 @@ test "@export with quoted value using separate arg" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
     // Verify the value has quotes stripped
@@ -6075,7 +6073,7 @@ test "stress: diamond dependency pattern" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -6135,7 +6133,7 @@ test "stress: 20+ recipes large project" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -6173,7 +6171,7 @@ test "@cd directive works in dry run" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -6212,7 +6210,7 @@ test "@shell directive works in dry run" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -6231,7 +6229,7 @@ test "@cd and @shell combined" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -6300,7 +6298,7 @@ test "@timeout with dry run does not hang" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
@@ -6336,7 +6334,7 @@ test "@timeout kills long-running command" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.verbose = false;
 
@@ -6366,7 +6364,7 @@ test "@timeout allows fast commands to complete" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = Executor.init(std.testing.allocator, &jakefile);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
     executor.ctx.verbose = false;
 

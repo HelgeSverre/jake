@@ -7,16 +7,16 @@ Jake has syntax highlighting support for most popular code editors. Some plugins
 
 ## Status Overview
 
-| Editor             | Status    | Installation |
-|--------------------|-----------|--------------|
-| **VS Code**        | Available | Marketplace  |
-| **JetBrains IDEs** | Planned   | -            |
-| **Vim / Neovim**   | Planned   | -            |
-| **Sublime Text**   | Planned   | -            |
-| **Zed**            | Planned   | -            |
-| **Helix**          | Planned   | -            |
-| **Emacs**          | Planned   | -            |
-| **Nova**           | Planned   | -            |
+| Editor             | Status    | Installation     |
+|--------------------|-----------|------------------|
+| **VS Code**        | Available | Marketplace      |
+| **JetBrains IDEs** | Available | Local install    |
+| **Vim / Neovim**   | Available | Local install    |
+| **Sublime Text**   | Available | Local install    |
+| **Zed**            | Available | Local install    |
+| **Helix**          | Planned   | -                |
+| **Emacs**          | Planned   | -                |
+| **Nova**           | Planned   | -                |
 
 
 
@@ -26,13 +26,13 @@ Jake has syntax highlighting support for most popular code editors. Some plugins
 Full syntax highlighting with TextMate grammar.
 
 **Install from Marketplace:**
-Search for "Jake" in the VS Code extensions panel.
+Search for "Jake" in the VS Code extensions panel, or run:
 
 ```bash
-# TODO: create install command
+code --install-extension helgesverre.jake
 ```
 
-**Status:** Published to VS Code Marketplace
+**Status:** Available (Published to VS Code Marketplace)
 
 ---
 
@@ -40,23 +40,72 @@ Search for "Jake" in the VS Code extensions panel.
 
 Works with IntelliJ IDEA, WebStorm, PhpStorm, PyCharm, GoLand, RustRover, and other JetBrains IDEs.
 
+**Install from JetBrains Marketplace:**
+1. Open your JetBrains IDE
+2. Go to Settings → Plugins → Marketplace
+3. Search for "Jakefile"
+4. Click Install
+
+**Build from source:**
+
 ```bash
-# TODO: create install command
+cd editors/intellij-jake
+./gradlew buildPlugin
+# Plugin will be in build/distributions/
+# Install via Settings → Plugins → ⚙️ → Install Plugin from Disk
 ```
 
-**Status:** Planned
+**Status:** Available
 
 ---
 
 ## Vim / Neovim
 
-Traditional Vim syntax highlighting.
+Traditional Vim syntax highlighting with folding and comment toggling support.
+
+**Using jake (recommended):**
 
 ```bash
-# TODO: create install command
+jake editors.vim-install      # Install to ~/.vim
+jake editors.neovim-install   # Install to ~/.config/nvim
 ```
 
-**Status:** Planned
+**Manual installation for Vim:**
+
+```bash
+mkdir -p ~/.vim/syntax ~/.vim/ftdetect ~/.vim/ftplugin
+cp editors/vim-jake/syntax/jake.vim ~/.vim/syntax/
+cp editors/vim-jake/ftdetect/jake.vim ~/.vim/ftdetect/
+cp editors/vim-jake/ftplugin/jake.vim ~/.vim/ftplugin/
+```
+
+**Manual installation for Neovim:**
+
+```bash
+mkdir -p ~/.config/nvim/syntax ~/.config/nvim/ftdetect ~/.config/nvim/ftplugin
+cp editors/vim-jake/syntax/jake.vim ~/.config/nvim/syntax/
+cp editors/vim-jake/ftdetect/jake.vim ~/.config/nvim/ftdetect/
+cp editors/vim-jake/ftplugin/jake.vim ~/.config/nvim/ftplugin/
+```
+
+**Using vim-plug:**
+
+```vim
+Plug 'HelgeSverre/jake', { 'rtp': 'editors/vim-jake' }
+```
+
+**Using lazy.nvim:**
+
+```lua
+{
+  'HelgeSverre/jake',
+  config = function()
+    vim.opt.rtp:append(vim.fn.stdpath('data') .. '/lazy/jake/editors/vim-jake')
+  end
+}
+```
+
+**Status:** Available
 
 ---
 
@@ -64,11 +113,21 @@ Traditional Vim syntax highlighting.
 
 TextMate-based syntax highlighting for Sublime Text.
 
+**Install:**
+
 ```bash
-# TODO: create install command
+# Copy the package to Sublime Text's Packages directory
+# macOS:
+cp -r editors/sublime-jake ~/Library/Application\ Support/Sublime\ Text/Packages/Jake
+
+# Linux:
+cp -r editors/sublime-jake ~/.config/sublime-text/Packages/Jake
+
+# Windows:
+# Copy editors/sublime-jake to %APPDATA%\Sublime Text\Packages\Jake
 ```
 
-**Status:** Planned
+**Status:** Available
 
 ---
 
@@ -76,11 +135,14 @@ TextMate-based syntax highlighting for Sublime Text.
 
 Native Zed extension with Tree-sitter grammar.
 
+**Install:**
+
 ```bash
-# TODO: create install command
+# Copy the extension to Zed's extensions directory
+cp -r editors/zed-jake ~/.config/zed/extensions/jake
 ```
 
-**Status:** Planned
+**Status:** Available
 
 ---
 
@@ -92,7 +154,7 @@ Tree-sitter based highlighting for Helix editor.
 # TODO: create install command
 ```
 
-**Status:** Planned
+**Status:** Planned (requires tree-sitter query files)
 
 ---
 

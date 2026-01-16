@@ -52,13 +52,11 @@ pub const Watcher = struct {
     const POLL_INTERVAL_MS: u64 = 500;
     const DEBOUNCE_MS: u64 = 100;
 
-    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) Watcher {
-        const owned_index = allocator.create(JakefileIndex) catch {
-            @panic("failed to allocate Jakefile index");
-        };
-        owned_index.* = JakefileIndex.build(allocator, jakefile) catch {
+    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) !Watcher {
+        const owned_index = try allocator.create(JakefileIndex);
+        owned_index.* = JakefileIndex.build(allocator, jakefile) catch |err| {
             allocator.destroy(owned_index);
-            @panic("failed to build Jakefile index");
+            return err;
         };
         var watcher = initInternal(allocator, jakefile, owned_index);
         watcher.owned_index = owned_index;
@@ -405,7 +403,12 @@ pub const Watcher = struct {
 
     /// Execute the recipe (handles errors gracefully for watch mode)
     fn executeRecipe(self: *Watcher, recipe_name: []const u8) void {
-        var exec = Executor.init(self.allocator, self.jakefile);
+        var exec = Executor.init(self.allocator, self.jakefile) catch |err| {
+            const err_name = @errorName(err);
+            self.print("\n   {s}Failed to initialize executor: {s}{s}\n", .{ self.color.errorRed(), err_name, self.color.reset() });
+            self.printWatchFooter();
+            return;
+        };
         defer exec.deinit();
         // Copy CLI flags from watcher's context to executor's context
         exec.ctx.dry_run = self.ctx.dry_run;
@@ -447,7 +450,7 @@ test "watcher init" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addPattern("src/*.zig");
@@ -466,7 +469,7 @@ test "watcher add multiple patterns" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addPattern("src/*.zig");
@@ -487,7 +490,7 @@ test "watcher add recipe deps" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addRecipeDeps("dist/bundle.js");
@@ -508,7 +511,7 @@ test "watcher settings" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     // Default settings (accessed via ctx)
@@ -534,7 +537,7 @@ test "watcher deinit cleans up patterns" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
 
     // Add patterns
     try watcher.addPattern("src/*.zig");
@@ -557,7 +560,7 @@ test "watcher poll interval defaults" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     // Check default poll interval (500ms in nanoseconds)
@@ -579,7 +582,7 @@ test "watcher extracts @watch patterns from recipe" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addRecipeDeps("build");
@@ -602,7 +605,7 @@ test "watcher extracts multiple @watch patterns" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addRecipeDeps("build");
@@ -625,7 +628,7 @@ test "watcher handles non-existent recipe gracefully" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     // Try to add deps for a non-existent recipe - should not crash
@@ -648,7 +651,7 @@ test "watcher handles empty @watch pattern" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addRecipeDeps("build");
@@ -668,7 +671,7 @@ test "watcher handles recipe with no commands" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addRecipeDeps("empty");
@@ -691,7 +694,7 @@ test "pattern feedback - empty patterns list" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     // No patterns added - feedback should show nothing
@@ -710,7 +713,7 @@ test "pattern feedback - single pattern" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addPattern("src/**/*.zig");
@@ -732,7 +735,7 @@ test "pattern feedback - multiple patterns comma-separated format" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addPattern("src/**/*.zig");
@@ -758,7 +761,7 @@ test "pattern feedback - patterns from file recipe deps" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
 
-    var watcher = Watcher.init(allocator, &jakefile);
+    var watcher = try Watcher.init(allocator, &jakefile);
     defer watcher.deinit();
 
     try watcher.addRecipeDeps("dist/bundle.js");

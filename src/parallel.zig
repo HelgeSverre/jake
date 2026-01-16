@@ -70,13 +70,11 @@ pub const ParallelExecutor = struct {
     tasks_failed: usize, // Failed tasks
     exec_start_time: i128, // Start time for summary
 
-    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, thread_count: usize) ParallelExecutor {
-        const owned_index = allocator.create(JakefileIndex) catch {
-            @panic("failed to allocate Jakefile index");
-        };
-        owned_index.* = JakefileIndex.build(allocator, jakefile) catch {
+    pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, thread_count: usize) !ParallelExecutor {
+        const owned_index = try allocator.create(JakefileIndex);
+        owned_index.* = JakefileIndex.build(allocator, jakefile) catch |err| {
             allocator.destroy(owned_index);
-            @panic("failed to build Jakefile index");
+            return err;
         };
         var exec = initInternal(allocator, jakefile, owned_index, thread_count);
         exec.owned_index = owned_index;
@@ -1218,7 +1216,7 @@ test "parallel executor basic" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
 
     try exec.buildGraph("c");
@@ -1240,7 +1238,7 @@ test "cycle detection" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
 
     try exec.buildGraph("a");
@@ -1264,7 +1262,7 @@ test "parallelism stats" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
 
     try exec.buildGraph("d");
@@ -1286,7 +1284,7 @@ test "parallel dry-run does not leak expansions" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
 
     exec.dry_run = true;
@@ -1385,7 +1383,7 @@ test "parallel executor skips directive command when condition is false" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
     exec.dry_run = true;
 
@@ -1407,7 +1405,7 @@ test "parallel executor handles @each loop expansion" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
     exec.dry_run = true;
 
@@ -1430,7 +1428,7 @@ test "parallel executor @ignore allows command failure" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
     // NOT dry_run - actually execute commands
 
@@ -1452,7 +1450,7 @@ test "parallel executor @if true executes body" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
 
     try exec.buildGraph("test");
@@ -1472,7 +1470,7 @@ test "parallel executor @if false skips body" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
 
     try exec.buildGraph("test");
@@ -1492,7 +1490,7 @@ test "parallel executor @each expands items" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
 
     try exec.buildGraph("test");
@@ -1514,7 +1512,7 @@ test "parallel executor nested @if in @each" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
 
     try exec.buildGraph("test");
@@ -1537,7 +1535,7 @@ test "parallel executor @elif branch" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
     exec.dry_run = true;
 
@@ -1560,7 +1558,7 @@ test "parallel executor @else branch" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
     exec.dry_run = true;
 
@@ -1582,7 +1580,7 @@ test "parallel executor recipe-level @needs succeeds when command exists" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
     exec.dry_run = true;
 
@@ -1602,7 +1600,7 @@ test "parallel executor recipe-level @needs fails when command missing" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
 
     try exec.buildGraph("test");
@@ -1622,7 +1620,7 @@ test "parallel executor recipe-level @needs with hint and task reference" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
     defer exec.deinit();
 
     try exec.buildGraph("test");
@@ -1641,7 +1639,7 @@ test "parallel executor handles empty dependency graph" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 4);
     defer exec.deinit();
 
     try exec.buildGraph("standalone");
@@ -1664,7 +1662,7 @@ test "parallel executor handles large thread count gracefully" {
     defer jakefile.deinit(std.testing.allocator);
 
     // Request way more threads than needed
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 100);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 100);
     defer exec.deinit();
 
     try exec.buildGraph("a");
@@ -1685,7 +1683,7 @@ test "parallel executor handles zero thread count" {
     defer jakefile.deinit(std.testing.allocator);
 
     // Zero threads should use 1 as minimum
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 0);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 0);
     defer exec.deinit();
 
     try exec.buildGraph("a");
@@ -1709,7 +1707,7 @@ test "parallel executor detectCycle returns false for acyclic graph" {
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var exec = ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
     defer exec.deinit();
 
     try exec.buildGraph("c");

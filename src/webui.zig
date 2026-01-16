@@ -653,7 +653,8 @@ pub const WebUIServer = struct {
 
     /// Broadcast an event to all connected WebSocket clients
     fn broadcast(self: *WebUIServer, event: event_emitter.Event) void {
-        const json = serializeEvent(event);
+        const json = serializeEvent(self.allocator, event) catch return;
+        defer self.allocator.free(json);
 
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -766,16 +767,106 @@ fn extractJsonBool(json: []const u8, key: []const u8) ?bool {
     return null;
 }
 
-fn serializeEvent(event: event_emitter.Event) []const u8 {
-    // Return static JSON for now - TODO: proper JSON serialization
-    return switch (event) {
-        .jakefile_loaded => "{\"type\":\"init\",\"recipes\":[],\"variables\":{}}",
-        .task_start => "{\"type\":\"task_start\",\"name\":\"task\"}",
-        .command_start => "{\"type\":\"command\",\"cmd\":\"command\"}",
-        .command_output => "{\"type\":\"output\",\"line\":\"output\",\"stderr\":false}",
-        .task_complete => "{\"type\":\"task_complete\",\"name\":\"task\",\"success\":true,\"duration_ms\":0}",
-        .execution_summary => "{\"type\":\"summary\",\"tasks_run\":0,\"tasks_failed\":0,\"total_ms\":0}",
-    };
+fn serializeEvent(allocator: std.mem.Allocator, event: event_emitter.Event) ![]u8 {
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer json.deinit(allocator);
+
+    switch (event) {
+        .jakefile_loaded => |e| {
+            try json.appendSlice(allocator, "{\"type\":\"init\",\"recipes\":[");
+            for (e.recipes, 0..) |recipe, i| {
+                if (i > 0) try json.append(allocator, ',');
+                try json.appendSlice(allocator, "{\"name\":\"");
+                try appendJsonEscaped(allocator, &json, recipe.name);
+                try json.appendSlice(allocator, "\",\"desc\":\"");
+                try appendJsonEscaped(allocator, &json, recipe.desc);
+                try json.appendSlice(allocator, "\",\"group\":\"");
+                try appendJsonEscaped(allocator, &json, recipe.group);
+                try json.appendSlice(allocator, "\",\"deps\":[");
+                for (recipe.deps, 0..) |dep, j| {
+                    if (j > 0) try json.append(allocator, ',');
+                    try json.append(allocator, '"');
+                    try appendJsonEscaped(allocator, &json, dep);
+                    try json.append(allocator, '"');
+                }
+                try json.appendSlice(allocator, "],\"params\":[");
+                for (recipe.params, 0..) |param, j| {
+                    if (j > 0) try json.append(allocator, ',');
+                    try json.append(allocator, '"');
+                    try appendJsonEscaped(allocator, &json, param);
+                    try json.append(allocator, '"');
+                }
+                try json.appendSlice(allocator, "],\"is_default\":");
+                try json.appendSlice(allocator, if (recipe.is_default) "true" else "false");
+                try json.appendSlice(allocator, ",\"is_hidden\":");
+                try json.appendSlice(allocator, if (recipe.is_hidden) "true" else "false");
+                try json.append(allocator, '}');
+            }
+            try json.appendSlice(allocator, "],\"variables\":{");
+            for (e.variables, 0..) |variable, i| {
+                if (i > 0) try json.append(allocator, ',');
+                try json.append(allocator, '"');
+                try appendJsonEscaped(allocator, &json, variable.name);
+                try json.appendSlice(allocator, "\":\"");
+                try appendJsonEscaped(allocator, &json, variable.value);
+                try json.append(allocator, '"');
+            }
+            try json.appendSlice(allocator, "}}");
+        },
+        .task_start => |e| {
+            try json.appendSlice(allocator, "{\"type\":\"task_start\",\"name\":\"");
+            try appendJsonEscaped(allocator, &json, e.name);
+            try json.appendSlice(allocator, "\",\"deps\":[");
+            for (e.deps, 0..) |dep, i| {
+                if (i > 0) try json.append(allocator, ',');
+                try json.append(allocator, '"');
+                try appendJsonEscaped(allocator, &json, dep);
+                try json.append(allocator, '"');
+            }
+            try json.appendSlice(allocator, "]}");
+        },
+        .command_start => |e| {
+            try json.appendSlice(allocator, "{\"type\":\"command\",\"task\":\"");
+            try appendJsonEscaped(allocator, &json, e.task);
+            try json.appendSlice(allocator, "\",\"cmd\":\"");
+            try appendJsonEscaped(allocator, &json, e.command);
+            try json.appendSlice(allocator, "\"}");
+        },
+        .command_output => |e| {
+            try json.appendSlice(allocator, "{\"type\":\"output\",\"task\":\"");
+            try appendJsonEscaped(allocator, &json, e.task);
+            try json.appendSlice(allocator, "\",\"line\":\"");
+            try appendJsonEscaped(allocator, &json, e.line);
+            try json.appendSlice(allocator, "\",\"stderr\":");
+            try json.appendSlice(allocator, if (e.is_stderr) "true}" else "false}");
+        },
+        .task_complete => |e| {
+            try json.appendSlice(allocator, "{\"type\":\"task_complete\",\"name\":\"");
+            try appendJsonEscaped(allocator, &json, e.name);
+            try json.appendSlice(allocator, "\",\"success\":");
+            try json.appendSlice(allocator, if (e.success) "true" else "false");
+            try json.appendSlice(allocator, ",\"duration_ms\":");
+            var buf: [32]u8 = undefined;
+            const duration_str = std.fmt.bufPrint(&buf, "{d}", .{e.duration_ms}) catch "0";
+            try json.appendSlice(allocator, duration_str);
+            try json.append(allocator, '}');
+        },
+        .execution_summary => |e| {
+            try json.appendSlice(allocator, "{\"type\":\"summary\",\"tasks_run\":");
+            var buf: [32]u8 = undefined;
+            const tasks_run_str = std.fmt.bufPrint(&buf, "{d}", .{e.tasks_run}) catch "0";
+            try json.appendSlice(allocator, tasks_run_str);
+            try json.appendSlice(allocator, ",\"tasks_failed\":");
+            const tasks_failed_str = std.fmt.bufPrint(&buf, "{d}", .{e.tasks_failed}) catch "0";
+            try json.appendSlice(allocator, tasks_failed_str);
+            try json.appendSlice(allocator, ",\"total_ms\":");
+            const total_ms_str = std.fmt.bufPrint(&buf, "{d}", .{e.total_ms}) catch "0";
+            try json.appendSlice(allocator, total_ms_str);
+            try json.append(allocator, '}');
+        },
+    }
+
+    return json.toOwnedSlice(allocator);
 }
 
 fn serveHTML(stream: std.net.Stream) !void {
@@ -981,6 +1072,7 @@ test "findHeader handles whitespace after colon" {
 }
 
 test "serializeEvent returns valid JSON for all event types" {
+    const allocator = std.testing.allocator;
     // Test that all event types produce valid JSON strings
     const events = [_]event_emitter.Event{
         .{ .jakefile_loaded = .{ .recipes = &.{}, .variables = &.{} } },
@@ -992,7 +1084,8 @@ test "serializeEvent returns valid JSON for all event types" {
     };
 
     for (events) |event| {
-        const json = serializeEvent(event);
+        const json = try serializeEvent(allocator, event);
+        defer allocator.free(json);
         // Verify it starts with { and ends with }
         try std.testing.expect(json.len > 2);
         try std.testing.expectEqual(@as(u8, '{'), json[0]);
@@ -1202,20 +1295,26 @@ test "isWebSocketUpgrade case insensitive" {
 }
 
 test "serializeEvent task_start contains type field" {
+    const allocator = std.testing.allocator;
     const event = event_emitter.Event{ .task_start = .{ .name = "build", .deps = &.{} } };
-    const json = serializeEvent(event);
+    const json = try serializeEvent(allocator, event);
+    defer allocator.free(json);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"task_start\"") != null);
 }
 
 test "serializeEvent task_complete contains type field" {
+    const allocator = std.testing.allocator;
     const event = event_emitter.Event{ .task_complete = .{ .name = "test", .success = true, .duration_ms = 500 } };
-    const json = serializeEvent(event);
+    const json = try serializeEvent(allocator, event);
+    defer allocator.free(json);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"task_complete\"") != null);
 }
 
 test "serializeEvent execution_summary contains type field" {
+    const allocator = std.testing.allocator;
     const event = event_emitter.Event{ .execution_summary = .{ .tasks_run = 5, .tasks_failed = 1, .total_ms = 2000 } };
-    const json = serializeEvent(event);
+    const json = try serializeEvent(allocator, event);
+    defer allocator.free(json);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"summary\"") != null);
 }
 

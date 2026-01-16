@@ -34,7 +34,7 @@ fn benchBuildGraphWide(allocator: std.mem.Allocator) void {
     var jakefile = p.parseJakefile() catch return;
     defer jakefile.deinit(allocator);
 
-    var parallel = jake.ParallelExecutor.init(allocator, &jakefile, 4);
+    var parallel = jake.ParallelExecutor.init(allocator, &jakefile, 4) catch return;
     defer parallel.deinit();
 
     parallel.buildGraph("all") catch {};
@@ -49,7 +49,7 @@ fn benchGetStats(allocator: std.mem.Allocator) void {
     var jakefile = p.parseJakefile() catch return;
     defer jakefile.deinit(allocator);
 
-    var parallel = jake.ParallelExecutor.init(allocator, &jakefile, 4);
+    var parallel = jake.ParallelExecutor.init(allocator, &jakefile, 4) catch return;
     defer parallel.deinit();
 
     parallel.buildGraph("all") catch {};
