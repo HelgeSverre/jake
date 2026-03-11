@@ -21,6 +21,33 @@ pub const Cache = struct {
         };
     }
 
+    pub fn clone(self: *const Cache, allocator: std.mem.Allocator) !Cache {
+        var copy = Cache.init(allocator);
+        errdefer copy.deinit();
+
+        var iter = self.hashes.iterator();
+        while (iter.next()) |entry| {
+            const key = try allocator.dupe(u8, entry.key_ptr.*);
+            errdefer allocator.free(key);
+            try copy.hashes.put(key, entry.value_ptr.*);
+        }
+
+        return copy;
+    }
+
+    pub fn mergeFrom(self: *Cache, other: *const Cache) !void {
+        var iter = other.hashes.iterator();
+        while (iter.next()) |entry| {
+            if (self.hashes.getPtr(entry.key_ptr.*)) |value_ptr| {
+                value_ptr.* = entry.value_ptr.*;
+            } else {
+                const key = try self.allocator.dupe(u8, entry.key_ptr.*);
+                errdefer self.allocator.free(key);
+                try self.hashes.put(key, entry.value_ptr.*);
+            }
+        }
+    }
+
     pub fn deinit(self: *Cache) void {
         // Free all allocated keys
         var iter = self.hashes.keyIterator();
@@ -116,6 +143,25 @@ pub const Cache = struct {
             const key = try self.allocator.dupe(u8, path);
             errdefer self.allocator.free(key);
             try self.hashes.put(key, hash_entry);
+        }
+    }
+
+    /// Update one or more cache entries from a literal path or glob pattern.
+    pub fn updatePattern(self: *Cache, pattern: []const u8) !void {
+        if (!glob_mod.isGlobPattern(pattern)) {
+            return self.update(pattern);
+        }
+
+        const files = try glob_mod.expandGlob(self.allocator, pattern);
+        defer {
+            for (files) |file| {
+                self.allocator.free(file);
+            }
+            self.allocator.free(files);
+        }
+
+        for (files) |file| {
+            try self.update(file);
         }
     }
 
@@ -370,6 +416,89 @@ test "cache update can be called multiple times" {
 
     // Should still have only one entry
     try std.testing.expectEqual(@as(usize, 1), cache.hashes.count());
+}
+
+test "cache updatePattern expands glob matches" {
+    var cache = Cache.init(std.testing.allocator);
+    defer cache.deinit();
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    {
+        const file = try std.fs.cwd().createFile("a.txt", .{});
+        try file.writeAll("a");
+        file.close();
+    }
+    {
+        const file = try std.fs.cwd().createFile("b.txt", .{});
+        try file.writeAll("b");
+        file.close();
+    }
+    {
+        const file = try std.fs.cwd().createFile("c.md", .{});
+        try file.writeAll("c");
+        file.close();
+    }
+
+    try cache.updatePattern("*.txt");
+
+    try std.testing.expectEqual(@as(usize, 2), cache.hashes.count());
+    try std.testing.expect(cache.hashes.contains("a.txt"));
+    try std.testing.expect(cache.hashes.contains("b.txt"));
+    try std.testing.expect(!cache.hashes.contains("*.txt"));
+}
+
+test "cache clone and merge preserve entries" {
+    var cache = Cache.init(std.testing.allocator);
+    defer cache.deinit();
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    {
+        const file = try std.fs.cwd().createFile("test.txt", .{});
+        try file.writeAll("test");
+        file.close();
+    }
+
+    try cache.update("test.txt");
+
+    var copy = try cache.clone(std.testing.allocator);
+    defer copy.deinit();
+
+    try std.testing.expect(copy.hashes.contains("test.txt"));
+
+    {
+        const file = try std.fs.cwd().createFile("other.txt", .{});
+        try file.writeAll("other");
+        file.close();
+    }
+    try copy.update("other.txt");
+    try cache.mergeFrom(&copy);
+
+    try std.testing.expect(cache.hashes.contains("test.txt"));
+    try std.testing.expect(cache.hashes.contains("other.txt"));
 }
 
 // --- Load/Save Persistence ---
