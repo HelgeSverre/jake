@@ -97,6 +97,15 @@ task coverage-clean:
     rm -rf coverage-out
     echo "Coverage data cleaned"
 
+@group docs
+@desc "Generate and serve library documentation"
+task docs:
+    @needs zig, npx
+    zig build docs
+    echo "Docs generated at zig-out/docs/index.html"
+    echo "Starting local server..."
+    npx serve zig-out/docs
+
 @group install
 @desc "Install jake to ~/.local/bin"
 task install: [build-release]

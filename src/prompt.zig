@@ -1,3 +1,5 @@
+//! User confirmation prompts (@confirm handling).
+
 const std = @import("std");
 const compat = @import("compat.zig");
 const color_mod = @import("color.zig");

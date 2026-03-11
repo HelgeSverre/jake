@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target release: `0.8.0`
+
+### Added
+
+- **API Documentation**
+  - Added `zig build docs` step to generate browsable HTML documentation via Zig's autodoc
+  - Added `jake docs` recipe to build and serve docs locally (requires `npx serve`)
+  - Added `//!` module doc comments to all core source files
+  - Added `///` doc comments to key public types (Recipe, Jakefile, Parser, Lexer, Token, Executor, etc.)
+  - Renamed `src/root.zig` → `src/jake.zig` so autodoc displays "jake" instead of "root"
+
+- **Parallel Execution Regression Coverage**
+  - Added focused tests to verify that parallel execution matches sequential behavior for `@confirm`, `@cd`, `@shell`, hooks, `@cache`, timeouts, and external recipe delegation
+  - Added regression coverage for file-target producer resolution in the parallel dependency graph
+
+### Changed
+
+- **Parallel Execution Architecture**
+  - `ParallelExecutor` now schedules work but runs recipes through the shared executor recipe runner instead of maintaining a separate command interpreter
+  - Parallel execution now preserves sequential recipe semantics for hooks, `@cd`, `@shell`, `@confirm`, timeout handling, external recipe delegation, and command-level `@cache`
+  - Removed the duplicate directive/shell execution path from `src/parallel.zig` to reduce future semantic drift
+
+- **Documentation Cleanup**
+  - Archived outdated design and review docs under `docs/archived/`
+  - Expanded `docs/CODE-REVIEW-CODEX.md` with a continuation handoff and current implementation status
+
+### Fixed
+
+- **Parallel Execution**
+  - Fixed command-level `@needs` enforcement in parallel mode
+  - Fixed file-target dependency graph construction so file recipes also depend on recipes that produce their file dependencies
+  - Fixed a parallel cache synchronization bug where worker cache updates could be overwritten by the parent executor when the run finished
+  - Fixed scheduler ready-queue OOM handling so dependency scheduling fails explicitly instead of silently dropping work
+
+- **Caching and Glob Handling**
+  - Fixed `@cache` glob refresh so glob patterns update the cache entries for matched files instead of treating the glob itself as a literal path
+  - Fixed relative glob expansion from the current working directory on macOS/Darwin
+
 ## [0.7.0] - 2026-01-09
 
 ### Added

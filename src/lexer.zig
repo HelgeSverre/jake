@@ -1,7 +1,8 @@
-// Jake Lexer - Tokenizes Jakefile source code
+//! Tokenizer for Jakefile syntax with location tracking.
 
 const std = @import("std");
 
+/// A single lexer token with tag, source slice, and location.
 pub const Token = struct {
     tag: Tag,
     loc: Loc,
@@ -87,6 +88,7 @@ pub const Token = struct {
     }
 };
 
+/// Tokenizes Jakefile source into a stream of tokens.
 pub const Lexer = struct {
     source: []const u8,
     index: usize,

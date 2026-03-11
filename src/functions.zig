@@ -1,5 +1,4 @@
-// Jake Built-in Functions
-// Provides string manipulation and path utilities
+//! Built-in functions for variable expansion (uppercase, basename, etc.).
 
 const std = @import("std");
 const builtin = @import("builtin");

@@ -1,6 +1,6 @@
-// Jake Watch - File watching for automatic recipe re-execution
-//
-// Uses polling-based watching since Zig doesn't have built-in inotify/FSEvents wrappers.
+//! File watcher using FSEvents (macOS) or inotify (Linux).
+//!
+//! Uses polling-based watching since Zig doesn't have built-in inotify/FSEvents wrappers.
 // Polls every 500ms for changes, with 100ms debounce after last change.
 
 const std = @import("std");

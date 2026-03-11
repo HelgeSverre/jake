@@ -88,7 +88,7 @@ pub fn build(b: *std.Build) void {
         // intend to expose to consumers that were defined in other files part
         // of this module, you will have to make sure to re-export them from
         // the root file.
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/jake.zig"),
         // Later on we'll use this module as the root module of a test executable
         // which requires us to specify a target.
         .target = target,
@@ -260,6 +260,25 @@ pub fn build(b: *std.Build) void {
             exe.linkLibrary(ztracy_dep.artifact("tracy"));
         }
     }
+
+    // ---------------------------------------------------------------------
+    // Documentation (zig build docs)
+    // ---------------------------------------------------------------------
+    const docs_lib = b.addLibrary(.{
+        .name = "jake",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/jake.zig"),
+            .target = target,
+        }),
+    });
+    docs_lib.root_module.addOptions("tracy_options", tracy_options);
+    const docs_step = b.step("docs", "Generate library documentation");
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs_lib.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    docs_step.dependOn(&install_docs.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //

@@ -1,6 +1,6 @@
-// Jake Import System - Handles importing recipes from other Jakefiles
-//
-// Features:
+//! @import directive resolution with namespacing.
+//!
+//! Features:
 // - @import "path/to/file.jake" - import all recipes
 // - @import "file.jake" as prefix - import with namespace prefix
 // - Circular import detection

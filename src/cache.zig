@@ -1,4 +1,4 @@
-// Jake Cache - File hash tracking for incremental builds
+//! File modification tracking for file-target recipes.
 
 const std = @import("std");
 const glob_mod = @import("glob.zig");

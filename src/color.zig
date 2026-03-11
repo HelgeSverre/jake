@@ -1,5 +1,5 @@
-// color.zig - ANSI color output with NO_COLOR/CLICOLOR support
-// Implements: https://no-color.org/ and CLICOLOR standard
+//! Terminal color detection and ANSI code management.
+//! Implements: https://no-color.org/ and CLICOLOR standard.
 
 const std = @import("std");
 const compat = @import("compat.zig");

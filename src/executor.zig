@@ -1,4 +1,4 @@
-// Jake Executor - Runs recipes with dependency resolution
+//! Executes recipes: dependency resolution, variable expansion, command running.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -29,6 +29,7 @@ const HookContext = hooks_mod.HookContext;
 const Hook = hooks_mod.Hook;
 const Prompt = prompt_mod.Prompt;
 
+/// Errors that can occur during recipe execution.
 pub const ExecuteError = error{
     RecipeNotFound,
     CommandFailed,
@@ -48,6 +49,7 @@ var default_context: Context = .{
     .color = color_mod.Color{ .enabled = false }, // Will be auto-detected when needed
 };
 
+/// Executes recipes from a parsed Jakefile.
 pub const Executor = struct {
     allocator: std.mem.Allocator,
     jakefile: *const Jakefile,

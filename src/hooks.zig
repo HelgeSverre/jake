@@ -1,6 +1,6 @@
-// Jake Hooks - Pre/Post execution hooks for recipes
-//
-// Hooks provide a way to run commands before and after recipe execution.
+//! Pre/post hook and on_error hook execution.
+//!
+//! Hooks provide a way to run commands before and after recipe execution.
 // There are two types of hooks:
 // 1. Global hooks - run before/after any recipe execution
 // 2. Recipe-specific hooks - run only for a specific recipe

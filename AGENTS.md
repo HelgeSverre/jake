@@ -155,7 +155,7 @@ User Input → CLI Args → Jakefile Location → Lexer → Parser → AST → E
 ### Development Entry Points
 
 **Main module:** `src/main.zig:35` - `pub fn main() !void`  
-**Library API:** `src/root.zig` - Exports public functions:
+**Library API:** `src/jake.zig` - Exports public functions:
 
 - `parse(allocator, source)` - Parse Jakefile source string
 - `load(allocator, path)` - Load and parse Jakefile from disk

@@ -1,4 +1,4 @@
-// Jake Parser - Builds AST from tokens
+//! Builds an AST (Jakefile struct) from a token stream.
 
 const std = @import("std");
 const lexer = @import("lexer.zig");
@@ -7,6 +7,7 @@ const Token = lexer.Token;
 const Lexer = lexer.Lexer;
 const Hook = hooks_mod.Hook;
 
+/// A recipe definition: task, file target, or simple command group.
 pub const Recipe = struct {
     name: []const u8,
     loc: Token.Loc = .{ .start = 0, .end = 0, .line = 0, .column = 0 },
@@ -90,11 +91,13 @@ pub const RecipeOrigin = struct {
     pub const ExternalKind = enum { makefile, justfile };
 };
 
+/// A variable assignment in a Jakefile.
 pub const Variable = struct {
     name: []const u8,
     value: []const u8,
 };
 
+/// A top-level directive (@dotenv, @export, @require, etc.).
 pub const Directive = struct {
     kind: Kind,
     args: []const []const u8,
@@ -129,6 +132,7 @@ pub const CommentNode = struct {
     };
 };
 
+/// The complete parsed AST of a Jakefile.
 pub const Jakefile = struct {
     variables: []const Variable,
     recipes: []const Recipe,
@@ -253,6 +257,7 @@ pub const ErrorInfo = struct {
     }
 };
 
+/// Parses a token stream into a Jakefile AST.
 pub const Parser = struct {
     allocator: std.mem.Allocator,
     lexer: *Lexer,

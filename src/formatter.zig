@@ -1,6 +1,6 @@
-// Jake Formatter - Renders AST back to canonically formatted source
-//
-// Formatting rules:
+//! Jakefile formatter (--fmt).
+//!
+//! Formatting rules:
 // 1. 4-space indentation for recipe bodies (+4 per nesting level)
 // 2. Max 1 blank line between elements
 // 3. No trailing whitespace

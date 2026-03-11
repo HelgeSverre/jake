@@ -1,3 +1,5 @@
+//! Jake library — modern command runner and build system.
+
 const std = @import("std");
 
 pub const lexer = @import("lexer.zig");

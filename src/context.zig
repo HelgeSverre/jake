@@ -1,5 +1,5 @@
-// context.zig - Shared execution context passed through app lifecycle
-// Consolidates CLI flags and runtime configuration into a single struct
+//! Runtime context for recipe execution (working directory, env, etc.).
+//! Consolidates CLI flags and runtime configuration into a single struct.
 
 const std = @import("std");
 const color_mod = @import("color.zig");

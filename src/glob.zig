@@ -1,6 +1,6 @@
-// Jake Glob - Pattern matching for file globs
-//
-// Supports:
+//! Glob pattern matching (*, **, ?, [abc]).
+//!
+//! Supports:
 // - * matches any characters except /
 // - ** matches any characters including / (recursive)
 // - ? matches a single character (except /)

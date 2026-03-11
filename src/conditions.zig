@@ -1,4 +1,4 @@
-// Jake Conditions - Evaluates conditional expressions for @if/@elif directives
+//! @if/@elif/@else conditional evaluation.
 
 const std = @import("std");
 const builtin = @import("builtin");

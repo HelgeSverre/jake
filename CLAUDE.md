@@ -80,7 +80,7 @@ src/
 ├── prompt.zig        # User confirmation prompts (@confirm handling)
 ├── compat.zig        # Zig version compatibility layer (0.14 vs 0.15+)
 ├── tracy.zig         # Tracy profiler integration (zero-cost when disabled)
-├── root.zig          # Library exports
+├── jake.zig          # Library exports (module root)
 ├── fuzz_*.zig        # Fuzz testing entry points
 └── bench/            # Benchmark utilities
 ```

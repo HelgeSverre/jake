@@ -1,6 +1,6 @@
-// completions.zig - Shell completion script generators for jake
-// Generates completion scripts for bash, zsh, and fish shells
-// Includes smart installation with environment detection
+//! Shell completion script generation (bash/zsh/fish).
+//!
+//! Includes smart installation with environment detection.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -545,6 +545,10 @@ pub fn generateBash(writer: anytype) !void {
         \\            COMPREPLY=($(compgen -W "1 2 4 8 16" -- "${cur}"))
         \\            return 0
         \\            ;;
+        \\        --external)
+        \\            COMPREPLY=($(compgen -W "make just" -- "${cur}"))
+        \\            return 0
+        \\            ;;
         \\    esac
         \\
         \\    # Complete flags if word starts with -
@@ -554,10 +558,20 @@ pub fn generateBash(writer: anytype) !void {
 
     // Add all flags from args.zig
     for (args_mod.flags) |flag| {
+        if (flag.hidden) continue;
+        if (flag.deprecated != null) continue;
         if (flag.short) |s| {
             try writer.print("-{c} ", .{s});
         }
         try writer.print("--{s} ", .{flag.long});
+        if (flag.negatable) {
+            try writer.print("--no-{s} ", .{flag.long});
+        }
+        if (flag.aliases) |aliases| {
+            for (aliases) |alias| {
+                try writer.print("--{s} ", .{alias});
+            }
+        }
     }
 
     try writer.writeAll(
@@ -605,6 +619,8 @@ pub fn generateZsh(writer: anytype) !void {
     // Zsh _arguments syntax: '(-x --long)'{-x,--long}'[desc]' where the brace
     // expansion is OUTSIDE quotes so zsh expands it to two option specs
     for (args_mod.flags) |flag| {
+        if (flag.hidden) continue;
+        if (flag.deprecated != null) continue;
         if (flag.short) |s| {
             switch (flag.takes_value) {
                 .none => try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{s}]' \\\n", .{ s, flag.long, s, flag.long, flag.desc }),
@@ -628,6 +644,24 @@ pub fn generateZsh(writer: anytype) !void {
                     const value_name = flag.value_name orelse "VALUE";
                     try writer.print("        '--{s}[{s}]::{s}:->value' \\\n", .{ flag.long, flag.desc, value_name });
                 },
+            }
+        }
+        // Add --no-X variant for negatable flags (mutually exclusive with positive form)
+        if (flag.negatable) {
+            if (flag.short) |s| {
+                try writer.print("        '(--{s} -{c})--no-{s}[Disable {s}]' \\\n", .{ flag.long, s, flag.long, flag.long });
+            } else {
+                try writer.print("        '(--{s})--no-{s}[Disable {s}]' \\\n", .{ flag.long, flag.long, flag.long });
+            }
+        }
+        // Add aliases (mutually exclusive with primary flag)
+        if (flag.aliases) |aliases| {
+            for (aliases) |alias| {
+                if (flag.short) |s| {
+                    try writer.print("        '(--{s} -{c})--{s}[{s}]' \\\n", .{ flag.long, s, alias, flag.desc });
+                } else {
+                    try writer.print("        '(--{s})--{s}[{s}]' \\\n", .{ flag.long, alias, flag.desc });
+                }
             }
         }
     }
@@ -656,6 +690,9 @@ pub fn generateZsh(writer: anytype) !void {
         \\                    ;;
         \\                --completions)
         \\                    _values 'shell' bash zsh fish
+        \\                    ;;
+        \\                --external)
+        \\                    _values 'type' make just
         \\                    ;;
         \\            esac
         \\            ;;
@@ -698,6 +735,8 @@ pub fn generateFish(writer: anytype) !void {
 
     // Add all flags from args.zig
     for (args_mod.flags) |flag| {
+        if (flag.hidden) continue;
+        if (flag.deprecated != null) continue;
         if (flag.short) |s| {
             switch (flag.takes_value) {
                 .none => try writer.print("complete -c jake -s {c} -l {s} -d '{s}'\n", .{ s, flag.long, flag.desc }),
@@ -714,6 +753,8 @@ pub fn generateFish(writer: anytype) !void {
                     try writer.print("complete -c jake -s {c} -l {s} -d '{s}'", .{ s, flag.long, flag.desc });
                     if (std.mem.eql(u8, flag.long, "jobs")) {
                         try writer.writeAll(" -a '1 2 4 8 16'");
+                    } else if (std.mem.eql(u8, flag.long, "external")) {
+                        try writer.writeAll(" -a 'make just'");
                     }
                     try writer.writeAll("\n");
                 },
@@ -725,9 +766,21 @@ pub fn generateFish(writer: anytype) !void {
                     try writer.print("complete -c jake -l {s} -d '{s}'", .{ flag.long, flag.desc });
                     if (std.mem.eql(u8, flag.long, "completions")) {
                         try writer.writeAll(" -a 'bash zsh fish'");
+                    } else if (std.mem.eql(u8, flag.long, "external")) {
+                        try writer.writeAll(" -a 'make just'");
                     }
                     try writer.writeAll("\n");
                 },
+            }
+        }
+        // Add --no-X variant for negatable flags
+        if (flag.negatable) {
+            try writer.print("complete -c jake -l no-{s} -d 'Disable {s}'\n", .{ flag.long, flag.long });
+        }
+        // Add aliases
+        if (flag.aliases) |aliases| {
+            for (aliases) |alias| {
+                try writer.print("complete -c jake -l {s} -d '{s}'\n", .{ alias, flag.desc });
             }
         }
     }
@@ -766,7 +819,7 @@ test "Shell.toString returns correct string" {
 }
 
 test "generateBash produces valid script" {
-    var buf: [8192]u8 = undefined;
+    var buf: [16384]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
     try generateBash(stream.writer());
     const output = stream.getWritten();
@@ -778,7 +831,7 @@ test "generateBash produces valid script" {
 }
 
 test "generateZsh produces valid script" {
-    var buf: [8192]u8 = undefined;
+    var buf: [16384]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
     try generateZsh(stream.writer());
     const output = stream.getWritten();
@@ -789,7 +842,7 @@ test "generateZsh produces valid script" {
 }
 
 test "generateZsh uses correct brace expansion syntax" {
-    var buf: [8192]u8 = undefined;
+    var buf: [16384]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
     try generateZsh(stream.writer());
     const output = stream.getWritten();
@@ -799,7 +852,7 @@ test "generateZsh uses correct brace expansion syntax" {
 }
 
 test "generateFish produces valid script" {
-    var buf: [8192]u8 = undefined;
+    var buf: [16384]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
     try generateFish(stream.writer());
     const output = stream.getWritten();
@@ -832,4 +885,76 @@ test "removeConfigBlock removes block" {
 test "detectZshEnv returns a valid value" {
     const env = detectZshEnv();
     _ = env; // Just verify it doesn't crash
+}
+
+test "generateBash includes negatable flag variants" {
+    var buf: [16384]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    try generateBash(stream.writer());
+    const output = stream.getWritten();
+
+    try testing.expect(std.mem.indexOf(u8, output, "--no-external") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "--no-verbose") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "--no-yes") != null);
+}
+
+test "generateBash includes flag aliases" {
+    var buf: [16384]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    try generateBash(stream.writer());
+    const output = stream.getWritten();
+
+    try testing.expect(std.mem.indexOf(u8, output, "--dryrun") != null);
+}
+
+test "generateBash includes external choices" {
+    var buf: [16384]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    try generateBash(stream.writer());
+    const output = stream.getWritten();
+
+    try testing.expect(std.mem.indexOf(u8, output, "make just") != null);
+}
+
+test "generateZsh includes negatable flag variants" {
+    var buf: [16384]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    try generateZsh(stream.writer());
+    const output = stream.getWritten();
+
+    try testing.expect(std.mem.indexOf(u8, output, "--no-external") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "--no-verbose") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "--no-yes") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "--dryrun") != null);
+}
+
+test "generateZsh includes external choices" {
+    var buf: [16384]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    try generateZsh(stream.writer());
+    const output = stream.getWritten();
+
+    try testing.expect(std.mem.indexOf(u8, output, "make just") != null);
+}
+
+test "generateFish includes negatable flag variants" {
+    var buf: [16384]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    try generateFish(stream.writer());
+    const output = stream.getWritten();
+
+    try testing.expect(std.mem.indexOf(u8, output, "no-external") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "no-verbose") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "no-yes") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "--dryrun") == null); // fish uses -l, no -- prefix
+    try testing.expect(std.mem.indexOf(u8, output, "dryrun") != null);
+}
+
+test "generateFish includes external choices" {
+    var buf: [16384]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    try generateFish(stream.writer());
+    const output = stream.getWritten();
+
+    try testing.expect(std.mem.indexOf(u8, output, "make just") != null);
 }

@@ -1,6 +1,6 @@
-// suggest.zig - Recipe name suggestion using Levenshtein distance
-//
-// When a user mistypes a recipe name, this module finds similar recipes
+//! Typo suggestions using Levenshtein distance.
+//!
+//! When a user mistypes a recipe name, this module finds similar recipes
 // and suggests them in the error message.
 
 const std = @import("std");

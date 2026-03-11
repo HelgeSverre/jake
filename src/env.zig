@@ -1,6 +1,6 @@
-// Jake Environment Module - Handles .env files and environment variable expansion
-//
-// Features:
+//! Environment variable handling and .env file loading.
+//!
+//! Features:
 // - Parse .env files (KEY=value format, handle quotes, comments)
 // - Support $VAR and ${VAR} syntax in commands
 // - Manage environment for child processes

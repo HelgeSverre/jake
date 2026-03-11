@@ -28,7 +28,7 @@ Thank you for your interest in contributing to Jake!
 jake/
 ├── src/
 │   ├── main.zig          # CLI entry point
-│   ├── root.zig          # Library exports
+│   ├── jake.zig          # Library exports (module root)
 │   ├── lexer.zig         # Tokenizer
 │   ├── parser.zig        # AST builder
 │   ├── executor.zig      # Recipe execution

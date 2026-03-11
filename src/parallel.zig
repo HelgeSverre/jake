@@ -1,6 +1,6 @@
-// Jake Parallel Executor - Runs independent recipes concurrently
-//
-// This module provides parallel execution of recipes by:
+//! Thread pool for parallel recipe execution (-j N).
+//!
+//! This module provides parallel execution of recipes by:
 // 1. Building a dependency graph from recipes
 // 2. Identifying recipes that can run in parallel (no dependencies on each other)
 // 3. Using Zig's std.Thread to run them concurrently
