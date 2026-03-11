@@ -511,3 +511,123 @@ test "run uses starter template for unknown project type" {
     const output = stream.getWritten();
     try std.testing.expect(std.mem.indexOf(u8, output, "Detected") == null);
 }
+
+test "run creates all language templates" {
+    const templates = [_]struct { template: Template, marker: []const u8 }{
+        .{ .template = .node, .marker = "npm" },
+        .{ .template = .go, .marker = "go build" },
+        .{ .template = .rust, .marker = "cargo" },
+        .{ .template = .python, .marker = "pytest" },
+        .{ .template = .zig_lang, .marker = "zig build" },
+    };
+
+    for (templates) |t| {
+        var tmp_dir = std.testing.tmpDir(.{});
+        defer tmp_dir.cleanup();
+
+        var buf: [4096]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buf);
+
+        try runInDir(std.testing.allocator, .{ .template = t.template }, stream.writer(), tmp_dir.dir);
+
+        const content = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "Jakefile", 1024 * 1024);
+        defer std.testing.allocator.free(content);
+
+        try std.testing.expect(std.mem.indexOf(u8, content, t.marker) != null);
+    }
+}
+
+test "run with yes flag does not change behavior" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var buf: [4096]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+
+    try runInDir(std.testing.allocator, .{ .template = .blank, .yes = true }, stream.writer(), tmp_dir.dir);
+
+    const content = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "Jakefile", 1024 * 1024);
+    defer std.testing.allocator.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "Hello from jake!") != null);
+}
+
+test "run returns FileSystemError for nonexistent parent directory" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var buf: [4096]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+
+    const result = runInDir(std.testing.allocator, .{
+        .template = .blank,
+        .path = "nonexistent/subdir/Jakefile",
+    }, stream.writer(), tmp_dir.dir);
+
+    try std.testing.expectError(error.FileSystemError, result);
+}
+
+test "force overwrites file with different template" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var buf: [4096]u8 = undefined;
+
+    // Create a starter Jakefile first
+    var stream1 = std.io.fixedBufferStream(&buf);
+    try runInDir(std.testing.allocator, .{ .template = .starter }, stream1.writer(), tmp_dir.dir);
+
+    // Overwrite with node template using force
+    var stream2 = std.io.fixedBufferStream(&buf);
+    try runInDir(std.testing.allocator, .{ .template = .node, .force = true }, stream2.writer(), tmp_dir.dir);
+
+    const content = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "Jakefile", 1024 * 1024);
+    defer std.testing.allocator.free(content);
+
+    // Should now be the node template
+    try std.testing.expect(std.mem.indexOf(u8, content, "npm") != null);
+}
+
+test "run with custom path creates correct file" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var buf: [4096]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+
+    try runInDir(std.testing.allocator, .{
+        .template = .rust,
+        .path = "build.jake",
+    }, stream.writer(), tmp_dir.dir);
+
+    const content = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "build.jake", 1024 * 1024);
+    defer std.testing.allocator.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "cargo") != null);
+
+    // Verify default "Jakefile" was NOT created
+    const default_file = tmp_dir.dir.openFile("Jakefile", .{}) catch null;
+    try std.testing.expect(default_file == null);
+}
+
+test "FileExists error with custom path" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "custom.jake", .data = "existing" });
+
+    var buf: [4096]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+
+    const result = runInDir(std.testing.allocator, .{
+        .template = .blank,
+        .path = "custom.jake",
+    }, stream.writer(), tmp_dir.dir);
+
+    try std.testing.expectError(error.FileExists, result);
+
+    // Original content should be unchanged
+    const content = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "custom.jake", 1024 * 1024);
+    defer std.testing.allocator.free(content);
+    try std.testing.expectEqualStrings("existing", content);
+}

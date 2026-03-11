@@ -614,7 +614,6 @@ pub const ErrorContext = struct {
     required_flag: []const u8 = "",
 };
 
-
 // ============================================================================
 // Module-level Helpers (operate on flags table, not Args state)
 // ============================================================================

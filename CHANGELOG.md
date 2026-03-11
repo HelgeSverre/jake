@@ -73,6 +73,15 @@ Target release: `0.8.0`
   - Fixed delegated external execution to run from the external file's directory and forward CLI positional arguments to `make`/`just`
   - Fixed empty external parse results to remain allocator-owned so cleanup does not free static empty slices
 
+- **Init Command**
+  - Fixed `jake init --template=node|go|rust|python|zig` being rejected despite templates being fully implemented
+  - Fixed `jake init --yes` / `-y` flag not being parsed by the CLI
+
+### CI/CD
+
+- Bumped actions/upload-artifact from 6 to 7
+- Bumped actions/download-artifact from 7 to 8
+
 ## [0.7.0] - 2026-01-09
 
 ### Added
