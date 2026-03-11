@@ -2,6 +2,7 @@
 //! Consolidates CLI flags and runtime configuration into a single struct.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const color_mod = @import("color.zig");
 const cache_mod = @import("cache.zig");
 const env_mod = @import("env.zig");
@@ -10,6 +11,7 @@ const prompt_mod = @import("prompt.zig");
 const parser = @import("parser.zig");
 const jakefile_index = @import("jakefile_index.zig");
 const event_emitter_mod = @import("event_emitter.zig");
+const compat = @import("compat.zig");
 
 /// Output callback function type for streaming command output (web UI)
 pub const OutputCallback = *const fn (ctx: *anyopaque, line: []const u8, is_stderr: bool) void;
@@ -162,25 +164,27 @@ pub const RuntimeContext = struct {
         return ctx;
     }
 
-    pub fn configure(self: *RuntimeContext, jakefile: *const parser.Jakefile, index: *const jakefile_index.JakefileIndex) void {
-        self.loadCacheOnce();
+    pub fn configure(self: *RuntimeContext, jakefile: *const parser.Jakefile, index: *const jakefile_index.JakefileIndex) !void {
+        try self.loadCacheOnce();
         self.resetEnvironment();
         self.resetHookRunner();
-        self.loadDotenvDirectives(index);
-        self.applyExportDirectives(index);
-        self.loadGlobalHooks(jakefile);
+        try self.loadDotenvDirectives(index);
+        try self.applyExportDirectives(index);
+        try self.loadGlobalHooks(jakefile);
     }
 
     pub fn deinit(self: *RuntimeContext) void {
-        self.cache.save() catch {};
+        self.cache.save() catch |err| {
+            printRuntimeWarning("failed to save cache", err);
+        };
         self.cache.deinit();
         self.environment.deinit();
         self.hook_runner.deinit();
     }
 
-    fn loadCacheOnce(self: *RuntimeContext) void {
+    fn loadCacheOnce(self: *RuntimeContext) !void {
         if (self.cache_loaded) return;
-        self.cache.load() catch {};
+        try self.cache.load();
         self.cache_loaded = true;
     }
 
@@ -196,20 +200,20 @@ pub const RuntimeContext = struct {
         self.hook_runner.theme = self.theme;
     }
 
-    fn loadDotenvDirectives(self: *RuntimeContext, index: *const jakefile_index.JakefileIndex) void {
+    fn loadDotenvDirectives(self: *RuntimeContext, index: *const jakefile_index.JakefileIndex) !void {
         for (index.getDirectives(.dotenv)) |directive_ptr| {
             const directive = directive_ptr.*;
             if (directive.args.len > 0) {
                 for (directive.args) |path| {
-                    self.environment.loadDotenv(stripQuotes(path)) catch {};
+                    try self.environment.loadDotenv(stripQuotes(path));
                 }
             } else {
-                self.environment.loadDotenv(".env") catch {};
+                try self.environment.loadDotenv(".env");
             }
         }
     }
 
-    fn applyExportDirectives(self: *RuntimeContext, index: *const jakefile_index.JakefileIndex) void {
+    fn applyExportDirectives(self: *RuntimeContext, index: *const jakefile_index.JakefileIndex) !void {
         for (index.getDirectives(.@"export")) |directive_ptr| {
             const directive = directive_ptr.*;
             if (directive.args.len == 0) continue;
@@ -218,30 +222,37 @@ pub const RuntimeContext = struct {
             if (std.mem.indexOfScalar(u8, first_arg, '=')) |eq_pos| {
                 const key = first_arg[0..eq_pos];
                 const value = stripQuotes(first_arg[eq_pos + 1 ..]);
-                self.environment.set(key, value) catch {};
+                try self.environment.set(key, value);
             } else if (directive.args.len >= 2) {
-                self.environment.set(first_arg, stripQuotes(directive.args[1])) catch {};
+                try self.environment.set(first_arg, stripQuotes(directive.args[1]));
             } else if (index.getVariable(first_arg)) |value| {
-                self.environment.set(first_arg, value) catch {};
+                try self.environment.set(first_arg, value);
             }
         }
     }
 
-    fn loadGlobalHooks(self: *RuntimeContext, jakefile: *const parser.Jakefile) void {
+    fn loadGlobalHooks(self: *RuntimeContext, jakefile: *const parser.Jakefile) !void {
         for (jakefile.global_pre_hooks) |hook| {
-            self.hook_runner.addGlobalHook(hook) catch {};
+            try self.hook_runner.addGlobalHook(hook);
         }
         for (jakefile.global_post_hooks) |hook| {
-            self.hook_runner.addGlobalHook(hook) catch {};
+            try self.hook_runner.addGlobalHook(hook);
         }
         for (jakefile.global_on_error_hooks) |hook| {
-            self.hook_runner.addGlobalHook(hook) catch {};
+            try self.hook_runner.addGlobalHook(hook);
         }
     }
 };
 
 fn stripQuotes(value: []const u8) []const u8 {
     return parser.stripQuotes(value);
+}
+
+fn printRuntimeWarning(prefix: []const u8, err: anyerror) void {
+    const stderr = compat.getStdErr();
+    var buf: [256]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, "warning: {s}: {s}\n", .{ prefix, @errorName(err) }) catch return;
+    stderr.writeAll(msg) catch {};
 }
 
 // ============================================================================
@@ -440,4 +451,46 @@ test "Context.isCancelled reads from cancellation flag" {
     // flag=false means stopped/cancelled
     flag.store(false, .release);
     try std.testing.expect(ctx.isCancelled());
+}
+
+test "RuntimeContext.configure propagates dotenv load errors" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.makeDir("envdir");
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\@dotenv envdir
+        \\task build:
+        \\    echo "build"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var index = try jakefile_index.JakefileIndex.build(std.testing.allocator, &jakefile);
+    defer index.deinit();
+
+    var runtime = RuntimeContext.init(std.testing.allocator);
+    defer runtime.deinit();
+
+    const result = runtime.configure(&jakefile, &index);
+    _ = result catch |err| {
+        try std.testing.expect(err == error.IsDir or err == error.AccessDenied);
+        return;
+    };
+    return error.TestExpectedError;
 }

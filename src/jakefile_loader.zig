@@ -114,9 +114,7 @@ pub fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !LoadedJakef
     const source = try file.readToEndAlloc(allocator, 1024 * 1024);
     errdefer allocator.free(source);
 
-    var lex = Lexer.init(source);
-    var p = Parser.init(allocator, &lex);
-    var jakefile = try p.parseJakefile();
+    var jakefile = try parseJakefileSource(allocator, source, actual_path);
     errdefer jakefile.deinit(allocator);
 
     var import_allocations: ?import_mod.ImportAllocations = null;
@@ -149,7 +147,7 @@ pub fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !LoadedJakef
 
     var runtime = RuntimeContext.init(allocator);
     errdefer runtime.deinit();
-    runtime.configure(&jakefile, &index);
+    try runtime.configure(&jakefile, &index);
 
     const watch_files = try collectWatchFiles(allocator, actual_path, base_dir);
     errdefer {
@@ -223,9 +221,7 @@ fn collectImportWatchFiles(
     const source = try file.readToEndAlloc(allocator, 1024 * 1024);
     defer allocator.free(source);
 
-    var lex = Lexer.init(source);
-    var p = Parser.init(allocator, &lex);
-    var imported = try p.parseJakefile();
+    var imported = try parseJakefileSource(allocator, source, file_abs);
     defer imported.deinit(allocator);
 
     const file_dir = std.fs.path.dirname(file_abs) orelse ".";
@@ -234,6 +230,25 @@ fn collectImportWatchFiles(
         defer allocator.free(import_abs);
         try collectImportWatchFiles(allocator, watch_files, seen_realpaths, project_root_abs, import_abs);
     }
+}
+
+pub fn isParseError(err: anyerror) bool {
+    return err == parser_mod.ParseError.UnexpectedToken or
+        err == parser_mod.ParseError.UnexpectedEof or
+        err == parser_mod.ParseError.InvalidSyntax or
+        err == parser_mod.ParseError.InvalidTimeoutFormat or
+        err == parser_mod.ParseError.InvalidTimeoutValue;
+}
+
+fn parseJakefileSource(allocator: std.mem.Allocator, source: []const u8, path: []const u8) !Jakefile {
+    var lex = Lexer.init(source);
+    var p = Parser.init(allocator, &lex);
+    return p.parseJakefile() catch |err| {
+        if (p.getLastError()) |info| {
+            printParseError(path, source, info);
+        }
+        return err;
+    };
 }
 
 fn collectExternalWatchFiles(
@@ -334,4 +349,21 @@ fn printExternalWarning(err: anyerror) void {
     var buf: [512]u8 = undefined;
     const warning = std.fmt.bufPrint(&buf, args_mod.ansi.warn_prefix ++ "Failed to load external build files: {s}\n", .{@errorName(err)}) catch return;
     stderr.writeAll(warning) catch {};
+}
+
+fn printParseError(path: []const u8, source: []const u8, info: parser_mod.ErrorInfo) void {
+    const stderr = compat.getStdErr();
+    var buf: [2048]u8 = undefined;
+    const msg = info.formatDetailedMessage(source, &buf);
+
+    stderr.writeAll(args_mod.ansi.err_prefix) catch {};
+    stderr.writeAll("Failed to parse Jakefile") catch {};
+    if (path.len > 0) {
+        stderr.writeAll(" '") catch {};
+        stderr.writeAll(path) catch {};
+        stderr.writeAll("'") catch {};
+    }
+    stderr.writeAll("\n") catch {};
+    stderr.writeAll(msg) catch {};
+    stderr.writeAll("\n") catch {};
 }

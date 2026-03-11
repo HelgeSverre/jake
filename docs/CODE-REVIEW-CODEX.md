@@ -440,6 +440,14 @@ Exit criteria:
 
 - Parse errors fail loudly and allocator failures do not degrade into partial behavior.
 
+Status update (2026-03-11):
+
+- Completed. Jakefile parse failures now print source-context diagnostics with the failing line and caret location.
+- Completed. Parser handling for unknown directives, malformed imports, missing targeted-hook names, missing `@default` targets, and invalid top-level declarations now fails explicitly instead of skipping forward.
+- Completed. Parser-local accumulators and owned-slice assembly now use `errdefer` cleanup so allocation failures do not leak partial state.
+- Completed. `RuntimeContext.configure(...)` and executor initialization now propagate dotenv/export/hook/cache setup failures instead of silently continuing with partial configuration.
+- Completed. Formatter round-trips were tightened to emit parseable canonical variable values and directive lines, with regression tests to keep the stricter parser contract stable.
+
 ### Phase 5: Rebuild the test contract
 
 - Add semantic equivalence tests for sequential vs parallel execution.
@@ -632,6 +640,37 @@ Verification now includes:
 Recommended next step:
 
 - Move to the next robustness pass around diagnostics, explicit error handling, and parser/context cleanup.
+
+## Handoff Update (2026-03-11, parser and init error handling)
+
+The main diagnostics and explicit-init-error items from this review are now closed.
+
+Completed:
+
+- Jakefile parse failures now print detailed source-context diagnostics through the shared loader path, including the failing line and caret location.
+- Top-level parser fallthrough was removed for unknown directives, malformed imports, missing targeted-hook names, missing `@default` targets, and bare identifiers that are neither assignments nor recipe declarations.
+- Parser-local array accumulators and final `Jakefile` assembly now use `errdefer` cleanup so allocation failures do not leak partially-owned state.
+- `RuntimeContext.configure(...)` now propagates dotenv, export, and hook setup failures instead of silently downgrading behavior.
+- Executor initialization now propagates variable-map, dotenv, export, hook, and cache setup failures instead of continuing with a partially initialized runtime.
+- Parallel executor setup now treats worker-init failures explicitly, and the earlier ready-queue OOM fix remains in place.
+- Formatter round-trips were updated to keep the stricter parser contract stable by serializing canonical quoted variable values and directive lines without duplicated keywords.
+- Added focused regression coverage in `src/parser.zig`, `src/context.zig`, and `src/formatter.zig` for the new diagnostics and failure propagation paths.
+
+Still open:
+
+- The next remaining review items are no longer parser/runtime correctness. They are Phase 5 test-contract and CI work, especially Windows coverage, completion tests in CI, and aligning the repository on one Zig minimum version.
+
+Verification now includes:
+
+- `zig test src/parser.zig`
+- `zig test src/context.zig`
+- `zig test src/executor.zig`
+- `zig test src/formatter.zig`
+- `zig build test`
+
+Recommended next step:
+
+- Move to Phase 5 and tighten the test/CI contract, starting with completion coverage in CI, Windows-specific behavior coverage, and Zig-version alignment.
 
 ## Final Verdict
 

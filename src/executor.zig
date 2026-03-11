@@ -89,23 +89,24 @@ pub const Executor = struct {
             allocator.destroy(owned_index);
             return err;
         };
-        var executor = initInternal(allocator, jakefile, owned_index);
+        var executor = try initInternal(allocator, jakefile, owned_index);
         executor.owned_index = owned_index;
         executor.index = owned_index;
         return executor;
     }
 
-    pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Executor {
-        return initInternal(allocator, jakefile, index);
+    pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) !Executor {
+        return try initInternal(allocator, jakefile, index);
     }
 
     /// Initialize with a pre-configured RuntimeContext (shares cache, environment, hooks, etc.)
     /// and a Context for CLI flags. This is the preferred initialization method.
-    pub fn initWithIndexAndContext(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, ctx: *Context, runtime: *RuntimeContext) Executor {
+    pub fn initWithIndexAndContext(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, ctx: *Context, runtime: *RuntimeContext) !Executor {
         var variables = std.StringHashMap([]const u8).init(allocator);
+        errdefer variables.deinit();
         var var_iter = index.variablesIterator();
         while (var_iter.next()) |entry| {
-            variables.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
+            try variables.put(entry.key_ptr.*, entry.value_ptr.*);
         }
 
         return .{
@@ -135,30 +136,32 @@ pub const Executor = struct {
         };
     }
 
-    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Executor {
+    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) !Executor {
         // Reset default context to initial state (important for tests that reuse this)
         default_context = .{
             .color = color_mod.Color{ .enabled = false },
         };
 
         var variables = std.StringHashMap([]const u8).init(allocator);
+        errdefer variables.deinit();
         var var_iter = index.variablesIterator();
         while (var_iter.next()) |entry| {
-            variables.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
+            try variables.put(entry.key_ptr.*, entry.value_ptr.*);
         }
 
         // Initialize environment
         var environment = Environment.init(allocator);
+        errdefer environment.deinit();
 
         // Process directives for environment setup
         for (index.getDirectives(.dotenv)) |directive_ptr| {
             const directive = directive_ptr.*;
             if (directive.args.len > 0) {
                 for (directive.args) |path| {
-                    environment.loadDotenv(stripQuotes(path)) catch {};
+                    try environment.loadDotenv(stripQuotes(path));
                 }
             } else {
-                environment.loadDotenv(".env") catch {};
+                try environment.loadDotenv(".env");
             }
         }
 
@@ -169,12 +172,12 @@ pub const Executor = struct {
                 if (std.mem.indexOfScalar(u8, first_arg, '=')) |eq_pos| {
                     const key = first_arg[0..eq_pos];
                     const value = first_arg[eq_pos + 1 ..];
-                    environment.set(key, stripQuotes(value)) catch {};
+                    try environment.set(key, stripQuotes(value));
                 } else if (directive.args.len >= 2) {
-                    environment.set(first_arg, stripQuotes(directive.args[1])) catch {};
+                    try environment.set(first_arg, stripQuotes(directive.args[1]));
                 } else {
                     if (variables.get(first_arg)) |value| {
-                        environment.set(first_arg, value) catch {};
+                        try environment.set(first_arg, value);
                     }
                 }
             }
@@ -182,19 +185,21 @@ pub const Executor = struct {
 
         // Initialize hook runner with global hooks (OOM here is unrecoverable)
         var hook_runner = HookRunner.init(allocator);
+        errdefer hook_runner.deinit();
         for (jakefile.global_pre_hooks) |hook| {
-            hook_runner.addGlobalHook(hook) catch {};
+            try hook_runner.addGlobalHook(hook);
         }
         for (jakefile.global_post_hooks) |hook| {
-            hook_runner.addGlobalHook(hook) catch {};
+            try hook_runner.addGlobalHook(hook);
         }
         for (jakefile.global_on_error_hooks) |hook| {
-            hook_runner.addGlobalHook(hook) catch {};
+            try hook_runner.addGlobalHook(hook);
         }
 
         // Initialize cache and load from disk
         var cache = Cache.init(allocator);
-        cache.load() catch {}; // Ignore errors, start with empty cache if load fails
+        errdefer cache.deinit();
+        try cache.load();
 
         return .{
             .allocator = allocator,

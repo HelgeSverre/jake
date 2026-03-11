@@ -193,6 +193,8 @@ pub fn main() !void {
                 stderr.writeAll(color_mod.symbols.logo) catch {};
                 stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
                 stderr.writeAll(" " ++ args_mod.ansi.err_prefix ++ "no Jakefile found\n") catch {};
+            } else if (jakefile_loader.isParseError(err)) {
+                // Detailed parse diagnostics were already printed by loadJakefile().
             } else {
                 var buf: [256]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to load Jakefile: {s}\n", .{@errorName(err)}) catch "error\n";
@@ -265,6 +267,8 @@ pub fn main() !void {
             stderr.writeAll("jake init") catch {};
             stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
             stderr.writeAll(" to create one\n") catch {};
+        } else if (jakefile_loader.isParseError(err)) {
+            // Detailed parse diagnostics were already printed by loadJakefile().
         } else {
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to load Jakefile: {s}\n", .{@errorName(err)}) catch "error\n";
@@ -286,7 +290,13 @@ pub fn main() !void {
         .color = color_mod.init(),
     };
 
-    var executor = jake.Executor.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &ctx, &jakefile_data.runtime);
+    var executor = jake.Executor.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &ctx, &jakefile_data.runtime) catch |err| {
+        const stderr = getStderr();
+        var buf: [256]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to initialize executor: {s}\n", .{@errorName(err)}) catch "error\n";
+        stderr.writeAll(msg) catch {};
+        std.process.exit(1);
+    };
     defer executor.deinit();
 
     // Validate required environment variables (@require directives)

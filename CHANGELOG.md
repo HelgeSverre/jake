@@ -36,6 +36,9 @@ Target release: `0.8.0`
   - Added focused Web UI regression tests for command parsing and execution-context construction
   - Added browser-level WebSocket E2E coverage for `@confirm`, dependency execution, streamed output, and stop/cancel behavior
 
+- **Parser and Initialization Regression Coverage**
+  - Added focused tests for source-context parse diagnostics, malformed directives/imports, runtime dotenv failure propagation, and formatter round-trip stability with stricter parsing
+
 ### Changed
 
 - **Args Module Refactor**
@@ -53,6 +56,11 @@ Target release: `0.8.0`
   - Web-triggered runs now inherit the CLI process' execution context for verbosity and parallel job settings instead of constructing a separate partial context
   - Web UI command handling now parses browser-supplied recipe parameters and forwards them as normal `name=value` arguments
   - Web UI execution now routes task, command, output, and summary updates through the shared event-emitter path used by the CLI executor
+
+- **Parser and Runtime Error Handling**
+  - Jakefile parse failures now print source-context diagnostics with the failing line and caret location instead of only returning a generic parse error
+  - Parser handling for unknown directives and malformed top-level declarations now fails explicitly instead of silently skipping invalid input
+  - Runtime and executor initialization now propagate dotenv, export, hook, and cache setup failures instead of continuing with partially configured state
 
 - **Documentation Cleanup**
   - Archived outdated design and review docs under `docs/archived/`
@@ -89,6 +97,9 @@ Target release: `0.8.0`
   - Fixed leaked WebSocket frame-handler thread ownership by detaching background connection threads explicitly
   - Fixed stale execution-thread ownership so completed Web UI runs are joined cleanly before the next run
   - Fixed automatic browser launch to skip headless/test contexts when `CI` or `JAKE_NO_BROWSER` is set
+
+- **Formatter**
+  - Fixed formatter round-trips to keep variable values parseable by quoting canonicalized values and to avoid duplicating directive keywords like `@if`
 
 - **Init Command**
   - Fixed `jake init --template=node|go|rust|python|zig` being rejected despite templates being fully implemented

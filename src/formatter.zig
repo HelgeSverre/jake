@@ -193,6 +193,31 @@ fn renderDirective(writer: anytype, directive: *const Directive) !void {
     try writer.writeByte('\n');
 }
 
+fn writeQuotedString(writer: anytype, value: []const u8) !void {
+    try writer.writeByte('"');
+    for (value) |char| {
+        switch (char) {
+            '\\' => try writer.writeAll("\\\\"),
+            '"' => try writer.writeAll("\\\""),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => try writer.writeByte(char),
+        }
+    }
+    try writer.writeByte('"');
+}
+
+fn trimDirectiveKeyword(line: []const u8, keyword: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, line, " \t");
+    if (!std.mem.startsWith(u8, trimmed, keyword)) return trimmed;
+    if (trimmed.len == keyword.len) return "";
+
+    const next = trimmed[keyword.len];
+    if (next != ' ' and next != '\t') return trimmed;
+    return std.mem.trimLeft(u8, trimmed[keyword.len..], " \t");
+}
+
 /// Format timeout duration in human-readable format
 fn formatDuration(writer: anytype, seconds: u64) !void {
     try writer.writeAll("@timeout ");
@@ -220,7 +245,9 @@ fn renderVariables(writer: anytype, variables: []const Variable) !void {
         for (0..padding) |_| {
             try writer.writeByte(' ');
         }
-        try writer.print("= {s}\n", .{v.value});
+        try writer.writeAll("= ");
+        try writeQuotedString(writer, v.value);
+        try writer.writeByte('\n');
     }
 }
 
@@ -344,23 +371,62 @@ fn renderCommand(writer: anytype, cmd: *const Recipe.Command) !void {
     // Handle directives that affect indentation
     if (cmd.directive) |directive| {
         switch (directive) {
-            .@"if" => try writer.print("    @if {s}\n", .{cmd.line}),
-            .elif => try writer.print("    @elif {s}\n", .{cmd.line}),
+            .@"if" => {
+                const body = trimDirectiveKeyword(cmd.line, "if");
+                try writer.writeAll("    @if");
+                if (body.len > 0) try writer.print(" {s}", .{body});
+                try writer.writeByte('\n');
+            },
+            .elif => {
+                const body = trimDirectiveKeyword(cmd.line, "elif");
+                try writer.writeAll("    @elif");
+                if (body.len > 0) try writer.print(" {s}", .{body});
+                try writer.writeByte('\n');
+            },
             .@"else" => try writer.writeAll("    @else\n"),
             .end => try writer.writeAll("    @end\n"),
-            .each => try writer.print("    @each {s}\n", .{cmd.line}),
-            .cache => try writer.print("    @cache {s}\n", .{cmd.line}),
-            .watch => try writer.print("    @watch {s}\n", .{cmd.line}),
-            .confirm => {
-                if (cmd.line.len > 0) {
-                    try writer.print("    @confirm \"{s}\"\n", .{cmd.line});
-                } else {
-                    try writer.writeAll("    @confirm\n");
-                }
+            .each => {
+                const body = trimDirectiveKeyword(cmd.line, "each");
+                try writer.writeAll("    @each");
+                if (body.len > 0) try writer.print(" {s}", .{body});
+                try writer.writeByte('\n');
             },
-            .needs => try writer.print("    @needs {s}\n", .{cmd.line}),
+            .cache => {
+                const body = trimDirectiveKeyword(cmd.line, "cache");
+                try writer.writeAll("    @cache");
+                if (body.len > 0) try writer.print(" {s}", .{body});
+                try writer.writeByte('\n');
+            },
+            .watch => {
+                const body = trimDirectiveKeyword(cmd.line, "watch");
+                try writer.writeAll("    @watch");
+                if (body.len > 0) try writer.print(" {s}", .{body});
+                try writer.writeByte('\n');
+            },
+            .confirm => {
+                const body = trimDirectiveKeyword(cmd.line, "confirm");
+                try writer.writeAll("    @confirm");
+                if (body.len > 0) {
+                    try writer.print(" {s}", .{body});
+                } else {
+                    try writer.writeByte('\n');
+                    return;
+                }
+                try writer.writeByte('\n');
+            },
+            .needs => {
+                const body = trimDirectiveKeyword(cmd.line, "needs");
+                try writer.writeAll("    @needs");
+                if (body.len > 0) try writer.print(" {s}", .{body});
+                try writer.writeByte('\n');
+            },
             .ignore => try writer.writeAll("    @ignore\n"),
-            .launch => try writer.print("    @launch {s}\n", .{cmd.line}),
+            .launch => {
+                const body = trimDirectiveKeyword(cmd.line, "launch");
+                try writer.writeAll("    @launch");
+                if (body.len > 0) try writer.print(" {s}", .{body});
+                try writer.writeByte('\n');
+            },
         }
     } else {
         // Regular command
@@ -1073,9 +1139,8 @@ test "edge: empty variable value" {
     ;
     const result = try format(allocator, source);
     defer allocator.free(result.output);
-    // Formatter outputs unquoted values, empty value becomes just "empty = \n"
-    try std.testing.expect(std.mem.indexOf(u8, result.output, "empty") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.output, "name") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "empty = \"\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "name  = \"test\"") != null);
 }
 
 test "edge: very long variable value" {
@@ -1112,6 +1177,46 @@ test "edge: special characters in strings" {
     const result = try format(allocator, source);
     defer allocator.free(result.output);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "special") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "\\\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "\\\\") != null);
+}
+
+test "format preserves parseable variable quoting for numeric-like values" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\version = "2.0"
+        \\task build:
+        \\    echo {{version}}
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "version = \"2.0\"") != null);
+
+    const result2 = try format(allocator, result.output);
+    defer allocator.free(result2.output);
+    try std.testing.expect(!result2.changed);
+}
+
+test "format does not duplicate directive keywords" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\task deploy:
+        \\    @if env("PROD")
+        \\        echo "production"
+        \\    @else
+        \\        echo "staging"
+        \\    @end
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@if env(\"PROD\")") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@if if") == null);
+
+    const result2 = try format(allocator, result.output);
+    defer allocator.free(result2.output);
+    try std.testing.expect(!result2.changed);
 }
 
 test "edge: recipe with parameters" {

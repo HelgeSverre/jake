@@ -447,7 +447,7 @@ For edge cases requiring containerized builds.
 
 ### Error Message Improvements
 
-- [ ] Parse errors with source context (show line with caret)
+- [x] Parse errors with source context (show line with caret)
 - [ ] Dependency cycle visualization (`build -> test -> lint -> build`)
 - [ ] `home()` failure hint when HOME unset
 

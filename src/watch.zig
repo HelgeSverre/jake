@@ -631,7 +631,7 @@ pub const Watcher = struct {
 
     fn initExecutor(self: *Watcher) !Executor {
         if (self.runtime) |runtime| {
-            return Executor.initWithIndexAndContext(self.allocator, self.jakefile, self.index, self.ctx, runtime);
+            return try Executor.initWithIndexAndContext(self.allocator, self.jakefile, self.index, self.ctx, runtime);
         }
 
         var exec = try Executor.init(self.allocator, self.jakefile);

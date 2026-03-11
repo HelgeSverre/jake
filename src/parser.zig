@@ -255,7 +255,50 @@ pub const ErrorInfo = struct {
         self.format("", .{}, fbs.writer()) catch return "error: formatting failed";
         return fbs.getWritten();
     }
+
+    /// Format the error message with source context and a caret marker.
+    pub fn formatDetailedMessage(self: ErrorInfo, source: []const u8, buf: []u8) []const u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        self.format("", .{}, fbs.writer()) catch return "error: formatting failed";
+
+        const line_text = getSourceLine(source, self.line) orelse return fbs.getWritten();
+        const trimmed_line = std.mem.trimRight(u8, line_text, "\r");
+
+        fbs.writer().writeByte('\n') catch return fbs.getWritten();
+        fbs.writer().print("{d} | {s}\n", .{ self.line, trimmed_line }) catch return fbs.getWritten();
+        fbs.writer().writeAll("  | ") catch return fbs.getWritten();
+
+        var spaces_remaining = if (self.column > 0) self.column - 1 else 0;
+        while (spaces_remaining > 0) : (spaces_remaining -= 1) {
+            fbs.writer().writeByte(' ') catch return fbs.getWritten();
+        }
+        fbs.writer().writeByte('^') catch return fbs.getWritten();
+        return fbs.getWritten();
+    }
 };
+
+fn getSourceLine(source: []const u8, line_number: usize) ?[]const u8 {
+    if (line_number == 0) return null;
+
+    var current_line: usize = 1;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i < source.len) : (i += 1) {
+        if (source[i] == '\n') {
+            if (current_line == line_number) {
+                return source[start..i];
+            }
+            current_line += 1;
+            start = i + 1;
+        }
+    }
+
+    if (current_line == line_number and start <= source.len) {
+        return source[start..];
+    }
+
+    return null;
+}
 
 /// Parses a token stream into a Jakefile AST.
 pub const Parser = struct {
@@ -356,19 +399,19 @@ pub const Parser = struct {
     }
 
     /// Capture a comment token into the comments list
-    fn captureComment(self: *Parser, kind: CommentNode.Kind) void {
+    fn captureComment(self: *Parser, kind: CommentNode.Kind) ParseError!void {
         if (self.current.tag != .comment) return;
 
         const comment_text = self.slice(self.current);
-        self.comments.append(self.allocator, .{
+        try self.comments.append(self.allocator, .{
             .text = comment_text,
             .line = self.current.loc.line,
             .column = self.current.loc.column,
             .kind = kind,
-        }) catch {};
+        });
     }
 
-    fn skipNewlines(self: *Parser) void {
+    fn skipNewlines(self: *Parser) ParseError!void {
         var saw_blank_line = false;
 
         while (self.current.tag == .newline or self.current.tag == .comment) {
@@ -380,7 +423,7 @@ pub const Parser = struct {
                 saw_blank_line = true;
             } else if (self.current.tag == .comment) {
                 // Capture all comments for formatting preservation
-                self.captureComment(.standalone);
+                try self.captureComment(.standalone);
 
                 // Also track as potential doc comment for next recipe
                 // Only comments immediately before a recipe (no blank lines) are kept
@@ -548,7 +591,7 @@ pub const Parser = struct {
         errdefer self.deinit();
 
         while (self.current.tag != .eof) {
-            self.skipNewlines();
+            try self.skipNewlines();
 
             if (self.current.tag == .eof) break;
 
@@ -559,7 +602,7 @@ pub const Parser = struct {
                 .kw_file => try self.parseFileRecipe(),
                 .comment => {
                     // Capture all comments for formatting preservation
-                    self.captureComment(.standalone);
+                    try self.captureComment(.standalone);
 
                     // Store comment as potential doc comment for next recipe
                     // Only kept if immediately before recipe (no blank lines)
@@ -571,22 +614,35 @@ pub const Parser = struct {
                 },
                 .newline => self.advance(),
                 else => {
-                    self.advance(); // Skip invalid token
+                    self.setError("unexpected token at top level", null);
+                    return ParseError.UnexpectedToken;
                 },
             }
         }
 
-        return Jakefile{
-            .variables = self.variables.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .recipes = self.recipes.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .directives = self.directives.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .imports = self.imports.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .global_pre_hooks = self.global_pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .global_post_hooks = self.global_post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .global_on_error_hooks = self.global_on_error_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .comments = self.comments.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+        var result = Jakefile{
+            .variables = &.{},
+            .recipes = &.{},
+            .directives = &.{},
+            .imports = &.{},
+            .global_pre_hooks = &.{},
+            .global_post_hooks = &.{},
+            .global_on_error_hooks = &.{},
+            .comments = &.{},
             .source = self.source,
         };
+        errdefer result.deinit(self.allocator);
+
+        result.variables = self.variables.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        result.recipes = self.recipes.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        result.directives = self.directives.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        result.imports = self.imports.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        result.global_pre_hooks = self.global_pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        result.global_post_hooks = self.global_post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        result.global_on_error_hooks = self.global_on_error_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        result.comments = self.comments.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+
+        return result;
     }
 
     fn parseDirective(self: *Parser) ParseError!void {
@@ -595,7 +651,9 @@ pub const Parser = struct {
         if (self.current.tag == .kw_default) {
             // @default marker for next recipe
             self.advance();
-            self.skipNewlines();
+            try self.skipNewlines();
+
+            const recipe_count_before = self.recipes.items.len;
 
             // Parse the recipe that follows and mark it as default
             if (self.current.tag == .kw_task) {
@@ -604,11 +662,17 @@ pub const Parser = struct {
                 try self.parseFileRecipe();
             } else if (self.current.tag == .ident) {
                 try self.parseVariableOrRecipe();
+            } else {
+                self.setError("expected recipe after '@default'", null);
+                return ParseError.UnexpectedToken;
             }
 
             // Mark last recipe as default
-            if (self.recipes.items.len > 0) {
+            if (self.recipes.items.len > recipe_count_before) {
                 self.recipes.items[self.recipes.items.len - 1].is_default = true;
+            } else {
+                self.setError("expected recipe after '@default'", null);
+                return ParseError.UnexpectedToken;
             }
             return;
         }
@@ -848,11 +912,8 @@ pub const Parser = struct {
 
             // Get the target recipe name (can be keyword like "default")
             if (!self.isNameToken()) {
-                // No recipe name, skip
-                while (self.current.tag != .newline and self.current.tag != .eof) {
-                    self.advance();
-                }
-                return;
+                self.setError("expected recipe name after targeted hook directive", .ident);
+                return ParseError.UnexpectedToken;
             }
             const target_recipe = self.slice(self.current);
             self.advance();
@@ -939,13 +1000,21 @@ pub const Parser = struct {
             .kw_dotenv => .dotenv,
             .kw_require => .require,
             .kw_export => .@"export",
-            else => return, // Unknown directive, skip
+            .newline, .eof => {
+                self.setError("expected directive name after '@'", null);
+                return ParseError.UnexpectedToken;
+            },
+            else => {
+                self.setError("unknown directive", null);
+                return ParseError.UnexpectedToken;
+            },
         };
 
         self.advance();
 
         // Collect arguments until newline
         var args: std.ArrayListUnmanaged([]const u8) = .empty;
+        errdefer args.deinit(self.allocator);
         while (self.current.tag != .newline and self.current.tag != .eof) {
             if (self.current.tag == .ident or self.current.tag == .string or self.current.tag == .glob_pattern) {
                 args.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
@@ -953,9 +1022,11 @@ pub const Parser = struct {
             self.advance();
         }
 
+        const owned_args = args.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_args);
         self.directives.append(self.allocator, .{
             .kind = kind,
-            .args = args.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+            .args = owned_args,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -970,11 +1041,8 @@ pub const Parser = struct {
             path = self.slice(self.current);
             self.advance();
         } else {
-            // No valid path, skip to end of line
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            return;
+            self.setError("expected import path after '@import'", null);
+            return ParseError.UnexpectedToken;
         }
 
         // Check for optional "as prefix" suffix
@@ -984,6 +1052,9 @@ pub const Parser = struct {
             if (self.current.tag == .ident) {
                 prefix = self.slice(self.current);
                 self.advance();
+            } else {
+                self.setError("expected import prefix after 'as'", .ident);
+                return ParseError.UnexpectedToken;
             }
         }
 
@@ -1017,6 +1088,9 @@ pub const Parser = struct {
         } else if (self.current.tag == .colon) {
             // Simple recipe: name: [deps]
             try self.parseSimpleRecipe(name, name_tok.loc);
+        } else {
+            self.setError("expected '=' for variable assignment or ':' for recipe definition", null);
+            return ParseError.UnexpectedToken;
         }
     }
 
@@ -1024,26 +1098,38 @@ pub const Parser = struct {
         _ = try self.expectWithMessage(.colon, "expected ':' after recipe name");
 
         var deps: std.ArrayListUnmanaged([]const u8) = .empty;
+        errdefer deps.deinit(self.allocator);
 
         // Parse dependencies (can be identifiers or paths like dist/app.js)
         if (self.current.tag == .l_bracket) {
             self.advance();
             while (self.current.tag != .r_bracket and self.current.tag != .eof) {
-                if (self.current.tag == .ident or self.current.tag == .glob_pattern) {
+                if (self.isNameToken() or self.current.tag == .glob_pattern) {
                     deps.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
                 }
                 self.advance();
                 if (self.current.tag == .comma) self.advance();
             }
             if (self.current.tag == .r_bracket) self.advance();
+        } else {
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                if (self.isNameToken() or self.current.tag == .glob_pattern) {
+                    deps.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
+                }
+                self.advance();
+                if (self.current.tag == .comma) self.advance();
+            }
         }
 
-        self.skipNewlines();
+        try self.skipNewlines();
 
         // Parse commands and hooks (indented lines)
         var commands: std.ArrayListUnmanaged(Recipe.Command) = .empty;
         var pre_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         var post_hooks: std.ArrayListUnmanaged(Hook) = .empty;
+        errdefer commands.deinit(self.allocator);
+        errdefer pre_hooks.deinit(self.allocator);
+        errdefer post_hooks.deinit(self.allocator);
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
@@ -1133,20 +1219,32 @@ pub const Parser = struct {
 
         // Consume any pending metadata
         const aliases = try self.consumePendingAliases();
+        errdefer self.allocator.free(aliases);
         const only_os = try self.consumePendingOnlyOs();
+        errdefer self.allocator.free(only_os);
         const needs = try self.consumePendingNeeds();
+        errdefer self.allocator.free(needs);
+
+        const owned_deps = deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_deps);
+        const owned_commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_commands);
+        const owned_pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_pre_hooks);
+        const owned_post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_post_hooks);
 
         self.recipes.append(self.allocator, .{
             .name = name,
             .loc = name_loc,
             .kind = .simple,
-            .dependencies = deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+            .dependencies = owned_deps,
             .file_deps = &[_][]const u8{},
             .output = null,
             .params = &[_]Recipe.Param{},
-            .commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+            .commands = owned_commands,
+            .pre_hooks = owned_pre_hooks,
+            .post_hooks = owned_post_hooks,
             .doc_comment = self.consumePendingDocComment(),
             .is_default = false,
             .aliases = aliases,
@@ -1176,6 +1274,8 @@ pub const Parser = struct {
 
         var params: std.ArrayListUnmanaged(Recipe.Param) = .empty;
         var deps: std.ArrayListUnmanaged([]const u8) = .empty;
+        errdefer params.deinit(self.allocator);
+        errdefer deps.deinit(self.allocator);
 
         // Parse parameters (name=default)
         while (self.current.tag == .ident and self.current.tag != .colon) {
@@ -1198,21 +1298,32 @@ pub const Parser = struct {
         if (self.current.tag == .l_bracket) {
             self.advance();
             while (self.current.tag != .r_bracket and self.current.tag != .eof) {
-                if (self.current.tag == .ident or self.current.tag == .glob_pattern) {
+                if (self.isNameToken() or self.current.tag == .glob_pattern) {
                     deps.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
                 }
                 self.advance();
                 if (self.current.tag == .comma) self.advance();
             }
             if (self.current.tag == .r_bracket) self.advance();
+        } else {
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                if (self.isNameToken() or self.current.tag == .glob_pattern) {
+                    deps.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
+                }
+                self.advance();
+                if (self.current.tag == .comma) self.advance();
+            }
         }
 
-        self.skipNewlines();
+        try self.skipNewlines();
 
         // Parse commands and hooks
         var commands: std.ArrayListUnmanaged(Recipe.Command) = .empty;
         var pre_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         var post_hooks: std.ArrayListUnmanaged(Hook) = .empty;
+        errdefer commands.deinit(self.allocator);
+        errdefer pre_hooks.deinit(self.allocator);
+        errdefer post_hooks.deinit(self.allocator);
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
@@ -1318,20 +1429,34 @@ pub const Parser = struct {
 
         // Consume any pending metadata
         const aliases = try self.consumePendingAliases();
+        errdefer self.allocator.free(aliases);
         const only_os = try self.consumePendingOnlyOs();
+        errdefer self.allocator.free(only_os);
         const needs = try self.consumePendingNeeds();
+        errdefer self.allocator.free(needs);
+
+        const owned_deps = deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_deps);
+        const owned_params = params.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_params);
+        const owned_commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_commands);
+        const owned_pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_pre_hooks);
+        const owned_post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_post_hooks);
 
         self.recipes.append(self.allocator, .{
             .name = name,
             .loc = name_loc,
             .kind = .task,
-            .dependencies = deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+            .dependencies = owned_deps,
             .file_deps = &[_][]const u8{},
             .output = null,
-            .params = params.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+            .params = owned_params,
+            .commands = owned_commands,
+            .pre_hooks = owned_pre_hooks,
+            .post_hooks = owned_post_hooks,
             .doc_comment = self.consumePendingDocComment(),
             .is_default = false,
             .aliases = aliases,
@@ -1364,6 +1489,7 @@ pub const Parser = struct {
 
         // File dependencies (globs)
         var file_deps: std.ArrayListUnmanaged([]const u8) = .empty;
+        errdefer file_deps.deinit(self.allocator);
         while (self.current.tag != .newline and self.current.tag != .eof) {
             if (self.current.tag == .ident or self.current.tag == .glob_pattern) {
                 file_deps.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
@@ -1372,12 +1498,15 @@ pub const Parser = struct {
             if (self.current.tag == .comma) self.advance();
         }
 
-        self.skipNewlines();
+        try self.skipNewlines();
 
         // Parse commands and hooks
         var commands: std.ArrayListUnmanaged(Recipe.Command) = .empty;
         var pre_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         var post_hooks: std.ArrayListUnmanaged(Hook) = .empty;
+        errdefer commands.deinit(self.allocator);
+        errdefer pre_hooks.deinit(self.allocator);
+        errdefer post_hooks.deinit(self.allocator);
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
@@ -1466,8 +1595,20 @@ pub const Parser = struct {
 
         // Consume any pending metadata
         const aliases = try self.consumePendingAliases();
+        errdefer self.allocator.free(aliases);
         const only_os = try self.consumePendingOnlyOs();
+        errdefer self.allocator.free(only_os);
         const needs = try self.consumePendingNeeds();
+        errdefer self.allocator.free(needs);
+
+        const owned_file_deps = file_deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_file_deps);
+        const owned_commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_commands);
+        const owned_pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_pre_hooks);
+        const owned_post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_post_hooks);
 
         // Use output as recipe name
         self.recipes.append(self.allocator, .{
@@ -1475,12 +1616,12 @@ pub const Parser = struct {
             .loc = output_loc,
             .kind = .file,
             .dependencies = &[_][]const u8{},
-            .file_deps = file_deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+            .file_deps = owned_file_deps,
             .output = output,
             .params = &[_]Recipe.Param{},
-            .commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
-            .post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory,
+            .commands = owned_commands,
+            .pre_hooks = owned_pre_hooks,
+            .post_hooks = owned_post_hooks,
             .doc_comment = self.consumePendingDocComment(),
             .is_default = false,
             .aliases = aliases,
@@ -1581,6 +1722,76 @@ test "parser error format" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "line 5") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "column 12") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected ':' after recipe name") != null);
+}
+
+test "parser error format includes source context" {
+    const source =
+        \\task build
+        \\    echo "oops"
+    ;
+
+    const err_info = ErrorInfo{
+        .line = 1,
+        .column = 11,
+        .message = "expected ':' after recipe name",
+        .found_tag = .newline,
+        .expected_tag = .colon,
+    };
+
+    var buf: [512]u8 = undefined;
+    const msg = err_info.formatDetailedMessage(source, &buf);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "task build") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "^") != null);
+}
+
+test "parser rejects unknown directive" {
+    const source = "@mystery value";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    const err = p.getLastError();
+    try std.testing.expect(err != null);
+    try std.testing.expectEqualStrings("unknown directive", err.?.message);
+}
+
+test "parser rejects import directive without path" {
+    const source = "@import";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    const err = p.getLastError();
+    try std.testing.expect(err != null);
+    try std.testing.expectEqualStrings("expected import path after '@import'", err.?.message);
+}
+
+test "parser rejects bare identifier at top level" {
+    const source = "build";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    const err = p.getLastError();
+    try std.testing.expect(err != null);
+    try std.testing.expectEqualStrings("expected '=' for variable assignment or ':' for recipe definition", err.?.message);
+}
+
+test "parser rejects variable assignment after @default" {
+    const source =
+        \\task build:
+        \\    echo "build"
+        \\
+        \\@default
+        \\version = "1.0"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    const err = p.getLastError();
+    try std.testing.expect(err != null);
+    try std.testing.expectEqualStrings("expected recipe after '@default'", err.?.message);
 }
 
 test "parse global pre hook" {

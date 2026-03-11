@@ -22,6 +22,13 @@ const Executor = executor_mod.Executor;
 const ExecuteError = executor_mod.ExecuteError;
 const Context = context_mod.Context;
 
+fn printParallelWarning(prefix: []const u8, err: anyerror) void {
+    const stderr = compat.getStdErr();
+    var buf: [256]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, "warning: {s}: {s}\n", .{ prefix, @errorName(err) }) catch return;
+    stderr.writeAll(msg) catch {};
+}
+
 /// Dependency graph node
 const GraphNode = struct {
     recipe: *const Recipe,
@@ -107,7 +114,9 @@ pub const ParallelExecutor = struct {
         ctx: ?*const Context,
     ) ParallelExecutor {
         var cache = cache_mod.Cache.init(allocator);
-        cache.load() catch {};
+        cache.load() catch |err| {
+            printParallelWarning("failed to load cache", err);
+        };
 
         return .{
             .allocator = allocator,
@@ -525,7 +534,13 @@ pub const ParallelExecutor = struct {
         var output_ctx = OutputCallbackContext{ .executor = self };
         worker_ctx.output_callback_ctx = &output_ctx;
 
-        var worker = Executor.initWithIndex(self.allocator, self.jakefile, self.index);
+        var worker = Executor.initWithIndex(self.allocator, self.jakefile, self.index) catch |err| {
+            self.rememberError(switch (err) {
+                error.OutOfMemory => ExecuteError.OutOfMemory,
+                else => ExecuteError.CommandFailed,
+            });
+            return false;
+        };
         worker.ctx = &worker_ctx;
         worker.color = self.color;
         worker.theme = self.theme;

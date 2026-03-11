@@ -634,7 +634,16 @@ pub const WebUIServer = struct {
         var ctx = self.buildExecutionContext(&request);
 
         // Create executor
-        var executor = executor_mod.Executor.initWithIndexAndContext(self.allocator, jakefile, index, &ctx, runtime);
+        var executor = executor_mod.Executor.initWithIndexAndContext(self.allocator, jakefile, index, &ctx, runtime) catch |err| {
+            const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
+            self.emitTaskStart(task_name, self.lookupRecipeDeps(task_name));
+            var buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "Execution setup failed: {s}", .{@errorName(err)}) catch "Execution setup failed";
+            self.emitCommandOutput(task_name, msg, true);
+            self.emitTaskComplete(task_name, false, duration_ms);
+            self.emitSummary(0, 1, duration_ms);
+            return;
+        };
         defer executor.deinit();
 
         // Execute the recipe
