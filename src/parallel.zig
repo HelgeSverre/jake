@@ -51,6 +51,7 @@ pub const ParallelExecutor = struct {
     dry_run: bool,
     verbose: bool,
     cache: cache_mod.Cache,
+    owns_cache: bool, // When false, caller is responsible for saving/merging
     color: color_mod.Color,
     theme: color_mod.Theme,
     ctx: Context,
@@ -118,6 +119,7 @@ pub const ParallelExecutor = struct {
             .dry_run = false,
             .verbose = false,
             .cache = cache,
+            .owns_cache = ctx == null, // When created with context, caller manages cache
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
             .ctx = if (ctx) |context| context.* else .{
@@ -147,7 +149,9 @@ pub const ParallelExecutor = struct {
         self.nodes.deinit(self.allocator);
         self.name_to_index.deinit();
         self.ready_queue.deinit(self.allocator);
-        self.cache.save() catch {};
+        if (self.owns_cache) {
+            self.cache.save() catch {};
+        }
         self.cache.deinit();
 
         if (self.owned_index) |owned| {
