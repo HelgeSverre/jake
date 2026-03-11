@@ -9,22 +9,17 @@
 //!
 //!     const args_mod = @import("args.zig");
 //!
-//!     // Quick check for --help/--version (avoids full parse overhead)
-//!     switch (args_mod.Args.quickScan(raw_args)) {
-//!         .help    => { args_mod.printHelp(writer); return; },
-//!         .version => { printVersion(); return; },
-//!         .none    => {},
-//!     }
-//!
-//!     // Full parse with env-var fallbacks and constraint validation
 //!     var args = args_mod.Args.parse(allocator, raw_args) catch |err| {
 //!         args_mod.printError(stderr, err, failing_arg);
 //!         std.process.exit(1);
 //!     };
 //!     defer args.deinit(allocator);
 //!
+//!     if (args.help) { args_mod.printHelp(writer); return; }
+//!     if (args.version) { printVersion(); return; }
+//!
 //! Architecture:
-//!   types & flags table → comptime validation → Args struct (parse, quickScan)
+//!   types & flags table → comptime validation → Args struct (parse)
 //!   → help/error formatting (module-level) → tests
 
 const std = @import("std");
@@ -244,28 +239,6 @@ pub const Args = struct {
     }
 
     // --- Constructors ---
-
-    /// Quickly scan args for --help or --version without full parsing.
-    /// Returns the action to take, enabling early exit for these common cases.
-    pub fn quickScan(raw_args: []const []const u8) QuickAction {
-        // Skip program name (first arg)
-        const scan_args = if (raw_args.len > 0) raw_args[1..] else raw_args;
-
-        for (scan_args) |arg| {
-            // Stop at -- separator
-            if (std.mem.eql(u8, arg, "--")) break;
-
-            if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-                return .help;
-            }
-
-            if (std.mem.eql(u8, arg, "-V") or std.mem.eql(u8, arg, "--version")) {
-                return .version;
-            }
-        }
-
-        return .none;
-    }
 
     /// Parse command-line arguments into Args struct.
     /// raw_args should include the program name as first element.
@@ -641,12 +614,6 @@ pub const ErrorContext = struct {
     required_flag: []const u8 = "",
 };
 
-/// Quick action types for early exit decisions
-pub const QuickAction = enum {
-    none, // Continue with full parsing
-    help, // Show help and exit
-    version, // Show version and exit
-};
 
 // ============================================================================
 // Module-level Helpers (operate on flags table, not Args state)
@@ -2131,54 +2098,6 @@ test "getValidatorDescription returns descriptions" {
     try expectEqualStrings("a positive integer", getValidatorDescription(.positive_integer));
     try expectEqualStrings("a file path", getValidatorDescription(.file_path));
     try expectEqualStrings("bash, zsh, or fish", getValidatorDescription(.shell_name));
-}
-
-// ============================================================================
-// Streaming Parser (quickScan) Tests
-// ============================================================================
-
-test "quickScan detects --help" {
-    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "--help" }));
-    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "build", "--help" }));
-    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "-v", "--help" }));
-}
-
-test "quickScan detects -h" {
-    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "-h" }));
-    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "build", "-h" }));
-}
-
-test "quickScan detects --version" {
-    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "--version" }));
-    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "build", "--version" }));
-}
-
-test "quickScan detects -V" {
-    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "-V" }));
-    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "-V", "build" }));
-}
-
-test "quickScan returns none for normal args" {
-    try expectEqual(QuickAction.none, Args.quickScan(&.{ "jake", "build" }));
-    try expectEqual(QuickAction.none, Args.quickScan(&.{ "jake", "-v", "test" }));
-    try expectEqual(QuickAction.none, Args.quickScan(&.{"jake"}));
-}
-
-test "quickScan stops at -- separator" {
-    // --help after -- should be ignored
-    try expectEqual(QuickAction.none, Args.quickScan(&.{ "jake", "--", "--help" }));
-    try expectEqual(QuickAction.none, Args.quickScan(&.{ "jake", "--", "-h" }));
-}
-
-test "quickScan handles empty args" {
-    try expectEqual(QuickAction.none, Args.quickScan(&.{}));
-}
-
-test "quickScan prioritizes first match" {
-    // -h appears before --version, should return help
-    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "-h", "--version" }));
-    // --version appears before -h, should return version
-    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "--version", "-h" }));
 }
 
 // ============================================================================
