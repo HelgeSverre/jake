@@ -248,7 +248,7 @@ fn runJustList(allocator: std.mem.Allocator, path_param: []const u8) !ExternalRe
     }, allocator);
 
     child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
+    child.stderr_behavior = .Ignore; // Don't need stderr, avoid deadlock if buffer fills
 
     _ = child.spawn() catch {
         // `just` not installed, return empty

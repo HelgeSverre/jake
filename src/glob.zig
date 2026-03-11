@@ -186,19 +186,16 @@ pub fn expandGlob(allocator: std.mem.Allocator, pattern: []const u8) ![][]const 
     // Parse the pattern to find the base directory and the glob part
     const parsed = parsePattern(pattern);
 
-    // Open the base directory
-    var base_dir: std.fs.Dir = undefined;
-    if (parsed.base.len == 0) {
-        base_dir = std.fs.cwd();
-    } else {
-        base_dir = std.fs.cwd().openDir(parsed.base, .{ .iterate = true }) catch |err| {
-            if (err == error.FileNotFound or err == error.NotDir) {
-                return result.toOwnedSlice(allocator);
-            }
-            return err;
-        };
-    }
-    defer if (parsed.base.len > 0) base_dir.close();
+    // Open the base directory with iteration enabled. Using std.fs.cwd() directly
+    // is not sufficient on Darwin because iterate() requires an iteratable handle.
+    const base_path = if (parsed.base.len == 0) "." else parsed.base;
+    var base_dir = std.fs.cwd().openDir(base_path, .{ .iterate = true }) catch |err| {
+        if (err == error.FileNotFound or err == error.NotDir) {
+            return result.toOwnedSlice(allocator);
+        }
+        return err;
+    };
+    defer base_dir.close();
 
     // Walk the directory tree
     try walkAndMatch(allocator, base_dir, parsed.base, parsed.glob_part, &result);
@@ -511,6 +508,47 @@ test "parsePattern" {
     const p3 = parsePattern("a/b/c/*.txt");
     try std.testing.expectEqualStrings("a/b/c", p3.base);
     try std.testing.expectEqualStrings("*.txt", p3.glob_part);
+}
+
+test "expandGlob works relative to current directory" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    {
+        const file = try std.fs.cwd().createFile("a.txt", .{});
+        try file.writeAll("a");
+        file.close();
+    }
+    {
+        const file = try std.fs.cwd().createFile("b.txt", .{});
+        try file.writeAll("b");
+        file.close();
+    }
+    {
+        const file = try std.fs.cwd().createFile("c.md", .{});
+        try file.writeAll("c");
+        file.close();
+    }
+
+    const matches = try expandGlob(std.testing.allocator, "*.txt");
+    defer {
+        for (matches) |match_path| {
+            std.testing.allocator.free(match_path);
+        }
+        std.testing.allocator.free(matches);
+    }
+
+    try std.testing.expectEqual(@as(usize, 2), matches.len);
 }
 
 // ============================================================================

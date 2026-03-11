@@ -307,6 +307,11 @@ pub fn main() !void {
     // Show detailed recipe information
     if (args.show) |recipe_name| {
         if (!executor.showRecipe(recipe_name)) {
+            const stderr = getStderr();
+            stderr.writeAll(args_mod.ansi.err_prefix) catch {};
+            stderr.writeAll("recipe '") catch {};
+            stderr.writeAll(recipe_name) catch {};
+            stderr.writeAll("' not found\n") catch {};
             std.process.exit(1);
         }
         return;

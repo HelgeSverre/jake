@@ -383,12 +383,14 @@ pub const ImportResolver = struct {
         // Merge variables (no prefix on variables)
         const new_vars_len = target.variables.len + imported.variables.len;
         const new_vars = self.allocator.alloc(Variable, new_vars_len) catch return ImportError.OutOfMemory;
+        errdefer self.allocator.free(new_vars);
         @memcpy(new_vars[0..target.variables.len], target.variables);
         @memcpy(new_vars[target.variables.len..], imported.variables);
 
         // Merge recipes (with optional prefix)
         const new_recipes_len = target.recipes.len + imported.recipes.len;
         const new_recipes = self.allocator.alloc(Recipe, new_recipes_len) catch return ImportError.OutOfMemory;
+        errdefer self.allocator.free(new_recipes);
         @memcpy(new_recipes[0..target.recipes.len], target.recipes);
 
         for (imported.recipes, 0..) |recipe, i| {
@@ -434,22 +436,26 @@ pub const ImportResolver = struct {
         // Merge directives (import directives are stored separately in imports array)
         const new_directives_len = target.directives.len + imported.directives.len;
         const new_directives = self.allocator.alloc(Directive, new_directives_len) catch return ImportError.OutOfMemory;
+        errdefer self.allocator.free(new_directives);
         @memcpy(new_directives[0..target.directives.len], target.directives);
         @memcpy(new_directives[target.directives.len..], imported.directives);
 
         // Merge global hooks
         const new_pre_hooks_len = target.global_pre_hooks.len + imported.global_pre_hooks.len;
         const new_pre_hooks = self.allocator.alloc(Hook, new_pre_hooks_len) catch return ImportError.OutOfMemory;
+        errdefer self.allocator.free(new_pre_hooks);
         @memcpy(new_pre_hooks[0..target.global_pre_hooks.len], target.global_pre_hooks);
         @memcpy(new_pre_hooks[target.global_pre_hooks.len..], imported.global_pre_hooks);
 
         const new_post_hooks_len = target.global_post_hooks.len + imported.global_post_hooks.len;
         const new_post_hooks = self.allocator.alloc(Hook, new_post_hooks_len) catch return ImportError.OutOfMemory;
+        errdefer self.allocator.free(new_post_hooks);
         @memcpy(new_post_hooks[0..target.global_post_hooks.len], target.global_post_hooks);
         @memcpy(new_post_hooks[target.global_post_hooks.len..], imported.global_post_hooks);
 
         const new_on_error_hooks_len = target.global_on_error_hooks.len + imported.global_on_error_hooks.len;
         const new_on_error_hooks = self.allocator.alloc(Hook, new_on_error_hooks_len) catch return ImportError.OutOfMemory;
+        // No errdefer needed on last allocation - if we reach here, all allocations succeeded
         @memcpy(new_on_error_hooks[0..target.global_on_error_hooks.len], target.global_on_error_hooks);
         @memcpy(new_on_error_hooks[target.global_on_error_hooks.len..], imported.global_on_error_hooks);
 
