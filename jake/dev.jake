@@ -32,7 +32,7 @@ task info:
 
 @group dev
 @desc "Run all CI checks"
-task ci: [lint, test, build]
+task ci: [lint, test, test-docs, build]
     echo "CI checks passed!"
 
 @group dev

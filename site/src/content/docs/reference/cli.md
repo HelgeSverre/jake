@@ -14,7 +14,7 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 | Argument | Description                                         |
 | -------- | --------------------------------------------------- |
 | `RECIPE` | Recipe to run (default: first recipe or `@default`) |
-| `ARGS`   | Recipe arguments in `name=value` format             |
+| `ARGS`   | Recipe parameters (`name=value`) and positional args |
 
 ## Options
 
@@ -31,10 +31,18 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 | `--watch [PATTERN]` | `-w`  | Watch and re-run on changes         |
 | `--jobs [N]`        | `-j`  | Parallel jobs (default: CPU count)  |
 | `--show RECIPE`     | `-s`  | Show recipe details                 |
+| `--summary`         |       | Print recipe names for scripts      |
+| `--short`           |       | Output one recipe name per line     |
 | `--web`             |       | Start web UI server                 |
 | `--port PORT`       |       | Web UI port (default: 8420)         |
 | `--external [TYPE]` |       | Show external recipes (make/just)   |
 | `--no-external`     |       | Hide external recipes from listing  |
+| `--completions [SHELL]` |   | Print shell completion script       |
+| `--install`         |       | Install shell completions           |
+| `--uninstall`       |       | Remove shell completions            |
+| `--fmt`             |       | Format Jakefile                     |
+| `--check`           |       | Validate formatting (requires `--fmt`) |
+| `--dump`            |       | Print formatted Jakefile (requires `--fmt`) |
 
 ## Examples
 
@@ -46,7 +54,7 @@ jake
 jake build
 
 # List all recipes including hidden
-jake --all
+jake --list --all
 
 # Run with verbose output
 jake test --verbose
@@ -68,6 +76,13 @@ jake -f build.jake test
 
 # Auto-confirm prompts
 jake -y deploy
+
+# Machine-readable output
+jake --summary
+jake --list --short
+
+# Validate formatting
+jake --fmt --check -f build.jake
 
 # Start web UI
 jake --web
@@ -106,5 +121,9 @@ Web UI runs inherit the CLI process' `--verbose` and `--jobs` settings, forward 
 
 | Variable    | Description            |
 | ----------- | ---------------------- |
-| `JAKE_FILE` | Default Jakefile path  |
-| `NO_COLOR`  | Disable colored output |
+| `JAKEFILE`  | Default Jakefile path  |
+| `JAKE_DRY_RUN` | Enable dry-run mode |
+| `JAKE_VERBOSE` | Enable verbose output |
+| `JAKE_YES` | Auto-confirm prompts |
+| `JAKE_JOBS` | Default parallel job count |
+| `NO_COLOR` | Disable colored output |

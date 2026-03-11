@@ -75,6 +75,8 @@ Target release: `0.8.0`
 - **Documentation Cleanup**
   - Archived outdated design and review docs under `docs/archived/`
   - Expanded `docs/CODE-REVIEW-CODEX.md` with a continuation handoff and current implementation status
+  - Reconciled active CLI docs, README snippets, install docs, and guide examples with the current binary and flag set
+  - Added a docs-contract release gate that validates representative documented commands against fixture Jakefiles
 
 ### Fixed
 
@@ -204,8 +206,8 @@ Target release: `0.8.0`
 
 - **Jakefile Formatter**
   - `jake --fmt` to format Jakefiles with consistent style
-  - `jake --check` for CI validation without modifying files
-  - `jake --dump` to output formatted AST
+  - `jake --fmt --check` for CI validation without modifying files
+  - `jake --fmt --dump` to output formatted AST
   - Comment preservation during formatting
 
 - **Self-Update Command**

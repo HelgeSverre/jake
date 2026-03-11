@@ -480,6 +480,12 @@ Exit criteria:
 
 - The docs become a reliable contract again.
 
+Status update (2026-03-11):
+
+- Completed. Active CLI-facing docs were reconciled with the current binary for completions, formatting flags, Web UI flags, external-listing flags, and environment-variable names.
+- Completed. A docs-contract gate now runs representative documented commands against fixture Jakefiles and fails on stale active-doc references such as `--webui`, `JAKE_FILE`, standalone `jake --check`, and standalone `jake --dump`.
+- Completed. The docs-contract gate is wired into CI and local repo tasks so future doc drift is easier to catch before release.
+
 ## Suggested Order of Work
 
 If only a few items are going to be addressed immediately, the order should be:

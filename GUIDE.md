@@ -1378,9 +1378,16 @@ OPTIONS:
     -w, --watch [PATTERN]   Watch and re-run on changes
     -j, --jobs [N]          Parallel jobs (default: CPU count)
         --summary           Print recipe names (for scripting/completions)
-        --completions SHELL Print shell completion script (bash/zsh/fish)
+        --completions [SHELL] Print shell completion script (bash/zsh/fish)
         --install           Install completions to user directory
         --uninstall         Remove completions and config
+        --web               Start web UI server
+        --port PORT         Web UI port (default: 8420)
+        --external [TYPE]   Show external recipes (make/just)
+        --no-external       Hide external recipes from listing
+        --fmt               Format Jakefile
+        --check             Check formatting (requires --fmt)
+        --dump              Output formatted Jakefile (requires --fmt)
 
 EXAMPLES:
     jake                    Run default recipe
@@ -1393,6 +1400,7 @@ EXAMPLES:
     jake -l --short         List recipes for piping/scripting
     jake -s build           Show all details about 'build' recipe
     jake --completions --install   Install shell completions
+    jake --install                 Alias for completion auto-install
 ```
 
 ### Typo Suggestions

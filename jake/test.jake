@@ -16,6 +16,11 @@ task test-completions: [build]
     ./tests/completions_test.sh
 
 @group test
+@desc "Validate active docs against the current CLI contract"
+task test-docs: [build-release]
+    bash ./tests/docs_contract_test.sh
+
+@group test
 @desc "Test completions in Docker (isolated environment)"
 task test-completions-docker:
     @needs docker

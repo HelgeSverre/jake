@@ -81,24 +81,32 @@ Or find prebuilt binaries on the [Releases](https://github.com/HelgeSverre/jake/
 ## CLI Reference
 
 ```
-jake [OPTIONS] [RECIPE]
+jake [OPTIONS] [RECIPE] [ARGS...]
 
 OPTIONS:
   -h, --help              Show help
   -V, --version           Show version
   -l, --list              List recipes
   -a, --all               Include hidden recipes (with -l)
+      --short             One recipe per line
   -s, --show RECIPE       Show detailed recipe info
+      --summary           Space-separated recipe names
+      --external [TYPE]   Show external recipes (make/just)
+      --no-external       Hide external recipes
   -n, --dry-run           Print without executing
   -v, --verbose           Verbose output
   -y, --yes               Auto-confirm prompts
   -f, --jakefile FILE     Use specified Jakefile
   -w, --watch             Watch and re-run on changes
   -j, --jobs N            Parallel jobs (default: CPU count)
-      --completions SHELL Generate shell completions
-      --install/--uninstall  Manage shell completions
-      --fmt               Format Jakefile (--check, --dump)
-      --short/--summary   Machine-readable recipe listing
+      --completions [SHELL] Generate shell completions
+      --install           Install shell completions
+      --uninstall         Remove shell completions
+      --fmt               Format Jakefile
+      --check             Validate formatting (with --fmt)
+      --dump              Print formatted Jakefile (with --fmt)
+      --web               Start web UI server
+      --port PORT         Web UI port
 ```
 
 See [CLI Reference](GUIDE.md#cli-reference) for full details.
@@ -119,6 +127,8 @@ Did you mean '--verbose'?
 
 ```bash
 jake --completions --install  # Auto-detect and install
+# Alias:
+jake --install
 ```
 
 See the [User Guide](GUIDE.md#shell-completions) for manual setup options.

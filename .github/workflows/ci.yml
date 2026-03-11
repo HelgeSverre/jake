@@ -95,6 +95,23 @@ jobs:
       - name: Run completion tests
         run: ./tests/completions_test.sh
 
+  docs-contract:
+    name: Docs Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build Release
+        run: zig build -Doptimize=ReleaseFast
+
+      - name: Run docs contract checks
+        run: bash ./tests/docs_contract_test.sh
+
   editors:
     name: Editor Plugins
     runs-on: ubuntu-latest

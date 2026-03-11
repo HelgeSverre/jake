@@ -59,13 +59,18 @@ jake --completions zsh
 jake --completions fish
 
 # Auto-install to your shell config
+jake --completions --install
+
+# Alias:
 jake --install
 ```
 
 ## Uninstall
 
 ```bash
-jake --uninstall  # Remove completions and config
+jake --completions --uninstall  # Remove completions and config
+# Alias:
+jake --uninstall
 rm ~/.local/bin/jake
 ```
 
