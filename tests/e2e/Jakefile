@@ -32,7 +32,7 @@ task test-basic:
     echo "  Task with custom parameter ............................ PASS"
     # Dry run mode
     {{jake}} -f fixtures/basic/hello.jake -n hello > {{out}} 2>&1
-    grep -q "dry-run" {{out}}
+    grep -q "would run" {{out}}
     echo "  Dry run mode .......................................... PASS"
     # List recipes
     {{jake}} -f fixtures/basic/hello.jake -l > {{out}} 2>&1
@@ -91,7 +91,7 @@ task test-parallel:
     echo "  Parallel execution with -j4 ........................... PASS"
     # Parallel dry-run
     {{jake}} -f fixtures/deps/parallel.jake -n -j4 all > {{out}} 2>&1
-    grep -q "dry-run" {{out}}
+    grep -q "would run" {{out}}
     echo "  Parallel dry-run ...................................... PASS"
 
 # ============================================================================
@@ -191,7 +191,7 @@ task test-directives:
     echo "  @confirm with --yes flag .............................. PASS"
     # @confirm in dry-run mode
     {{jake}} -f fixtures/directives/confirm.jake -n dangerous > {{out}} 2>&1
-    grep -q "dry-run" {{out}}
+    grep -q "would run" {{out}}
     echo "  @confirm in dry-run mode .............................. PASS"
 
 # ============================================================================
@@ -332,22 +332,22 @@ task test-cli:
     # Typo suggestion for 'buidl'
     @ignore
     {{jake}} -f fixtures/cli/typo.jake buidl > {{out}} 2>&1 || true
-    grep -q "not found" {{out}} && grep -q "Did you mean" {{out}} && grep -q "build" {{out}}
+    grep -q "not found" {{out}} && grep -q "did you mean" {{out}} && grep -q "build" {{out}}
     echo "  Typo suggestion for 'buidl' ........................... PASS"
     # Typo suggestion for 'tset'
     @ignore
     {{jake}} -f fixtures/cli/typo.jake tset > {{out}} 2>&1 || true
-    grep -q "not found" {{out}} && grep -q "Did you mean" {{out}} && grep -q "test" {{out}}
+    grep -q "not found" {{out}} && grep -q "did you mean" {{out}} && grep -q "test" {{out}}
     echo "  Typo suggestion for 'tset' ............................ PASS"
     # Typo suggestion for 'delpoy'
     @ignore
     {{jake}} -f fixtures/cli/typo.jake delpoy > {{out}} 2>&1 || true
-    grep -q "not found" {{out}} && grep -q "Did you mean" {{out}} && grep -q "deploy" {{out}}
+    grep -q "not found" {{out}} && grep -q "did you mean" {{out}} && grep -q "deploy" {{out}}
     echo "  Typo suggestion for 'delpoy' .......................... PASS"
     # Watch mode pattern feedback - capture initial output with timeout
     @ignore
     sh -c '{{jake}} -f fixtures/cli/watch-feedback.jake -w build > {{out}} 2>&1 & pid=$!; sleep 1; kill $pid 2>/dev/null; exit 0'
-    grep -q "Patterns:" {{out}} && grep -q "src/\*.zig" {{out}}
+    grep -q "watching" {{out}} && grep -q "src/\*.zig" {{out}}
     echo "  Watch mode shows patterns being watched ............... PASS"
     # --yes flag after recipe works
     {{jake}} -f fixtures/directives/confirm.jake dangerous --yes > {{out}} 2>&1
@@ -367,7 +367,7 @@ task test-cli:
     echo "  --verbose after recipe works .......................... PASS"
     # --dry-run after recipe works
     {{jake}} -f fixtures/cli/verbose.jake hello --dry-run > {{out}} 2>&1
-    grep -q "dry-run" {{out}}
+    grep -q "would run" {{out}}
     echo "  --dry-run after recipe works .......................... PASS"
     # Positional args with flags after recipe
     {{jake}} -f fixtures/basic/hello.jake greet name=Bob --verbose > {{out}} 2>&1
