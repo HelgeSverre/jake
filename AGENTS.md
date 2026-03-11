@@ -327,7 +327,7 @@ perf: performance
 5. **Update documentation:**
    - `README.md` - CLI reference
    - `GUIDE.md` - CLI reference section
-   - `docs/CLI_DESIGN.md` - Design specification
+   - `site/src/content/docs/reference/cli.md` - Current CLI reference
 
 ### Adding E2E Tests
 

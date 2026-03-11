@@ -1,6 +1,6 @@
 // color.zig - ANSI color output with NO_COLOR/CLICOLOR support
 // Implements: https://no-color.org/ and CLICOLOR standard
-// See docs/CLI_DESIGN.md for the full design specification
+// Legacy CLI design notes live under docs/archived/CLI_DESIGN.md.
 
 const std = @import("std");
 const compat = @import("compat.zig");
@@ -35,7 +35,7 @@ pub const codes = struct {
     pub const dim_white = "\x1b[2;37m";
     pub const gray = "\x1b[90m";
 
-    // Brand colors (true color / 24-bit) - see docs/CLI_DESIGN.md
+    // Brand colors (true color / 24-bit); legacy design notes are archived.
     pub const jake_rose = "\x1b[38;2;244;63;94m"; // #f43f5e
     pub const success_green = "\x1b[38;2;34;197;94m"; // #22c55e
     pub const error_red = "\x1b[38;2;239;68;68m"; // #ef4444
@@ -44,7 +44,7 @@ pub const codes = struct {
     pub const muted_gray = "\x1b[38;2;113;113;122m"; // #71717a
 };
 
-/// Unicode symbols for CLI output - see docs/CLI_DESIGN_V4.md
+/// Unicode symbols for CLI output. Legacy v4 design notes are archived.
 pub const symbols = struct {
     // Status symbols
     pub const arrow = "→";
@@ -158,7 +158,7 @@ pub const Color = struct {
         return if (self.enabled) "\x1b[0m" else "";
     }
 
-    // Brand colors (24-bit true color) - see docs/CLI_DESIGN.md
+    // Brand colors (24-bit true color); legacy design notes are archived.
     pub fn jakeRose(self: Color) []const u8 {
         return if (self.enabled) codes.jake_rose else "";
     }
@@ -335,7 +335,7 @@ pub fn shouldUseColor() bool {
 
 /// Theme provides semantic color methods for CLI output.
 /// Maps UI concepts (error, warning, recipe, hidden) to colors.
-/// See docs/CLI_DESIGN.md for the full design specification.
+/// Legacy CLI design notes live under docs/archived/CLI_DESIGN.md.
 pub const Theme = struct {
     color: Color,
 
@@ -457,7 +457,7 @@ pub const Theme = struct {
     }
 
     // =========================================================================
-    // v4 Symbol helpers - see docs/CLI_DESIGN_V4.md
+    // v4 symbol helpers derived from the archived design notes.
     // =========================================================================
 
     /// Skipped symbol with color: "—" (brand: #71717a Muted Gray)
