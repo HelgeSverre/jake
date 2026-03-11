@@ -31,6 +31,11 @@ Target release: `0.8.0`
 
 ### Changed
 
+- **Args Module Refactor**
+  - Moved `quickScan`, `parse`, and help/error formatting from module-level functions into the `Args` struct namespace
+  - Added comptime validation for duplicate flags, alias conflicts, and unknown categories
+  - Added `show_negatable` field to `Flag` for controlling `--[no-]` display in help output
+
 - **Parallel Execution Architecture**
   - `ParallelExecutor` now schedules work but runs recipes through the shared executor recipe runner instead of maintaining a separate command interpreter
   - Parallel execution now preserves sequential recipe semantics for hooks, `@cd`, `@shell`, `@confirm`, timeout handling, external recipe delegation, and command-level `@cache`
