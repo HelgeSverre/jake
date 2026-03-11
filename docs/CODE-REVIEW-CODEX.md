@@ -461,6 +461,15 @@ Exit criteria:
 
 - CI fails when documentation-backed behavior regresses.
 
+Status update (2026-03-11):
+
+- Completed. Sequential vs parallel semantic equivalence now has focused regression coverage in `src/executor.zig` and `src/parallel.zig`.
+- Completed. Watch-mode reload, cycle-handling, and deleted-file behavior now have focused regression coverage in `src/watch.zig`.
+- Completed. External integration now has unit and E2E coverage for nested Jakefile paths and positional-argument forwarding.
+- Completed. CI now runs the shell completion harness on Ubuntu with `bash`, `zsh`, and `fish` available.
+- Completed. The repository now uses Zig `0.15.2` consistently in active CI jobs and documentation.
+- Still open. Windows-specific behavior coverage remains the main missing part of this phase.
+
 ### Phase 6: Clean up documentation and release process
 
 - Reconcile `TODO.md`, `CHANGELOG.md`, README, guide docs, and site docs with the built binary.
@@ -658,7 +667,7 @@ Completed:
 
 Still open:
 
-- The next remaining review items are no longer parser/runtime correctness. They are Phase 5 test-contract and CI work, especially Windows coverage, completion tests in CI, and aligning the repository on one Zig minimum version.
+- The next remaining review items are no longer parser/runtime correctness. They are the remaining Phase 5 test-contract gaps, especially Windows coverage.
 
 Verification now includes:
 
@@ -670,7 +679,42 @@ Verification now includes:
 
 Recommended next step:
 
-- Move to Phase 5 and tighten the test/CI contract, starting with completion coverage in CI, Windows-specific behavior coverage, and Zig-version alignment.
+- Finish Phase 5 by adding Windows-specific behavior coverage for environment lookup, shell selection, and command discovery.
+
+## Handoff Update (2026-03-11, CI and completion contract)
+
+The main CI/completion drift items from this review are now closed.
+
+Completed:
+
+- CI now runs the shell completion harness in `.github/workflows/ci.yml` on Ubuntu with `zsh` and `fish` installed in addition to the default `bash`.
+- Active CI jobs now use Zig `0.15.2` consistently, matching the repository minimum-version story.
+- `Args.parse(...)` now rejects invalid explicit values for `--completions` and `--external` instead of silently accepting a bad token and falling back to auto-detection/default behavior.
+- The completion harness in `tests/completions_test.sh` now matches the real CLI contract by expecting invalid shell names to fail explicitly.
+- Zsh completion installation now treats `PermissionDenied` the same as `AccessDenied`, so fallback from system/Homebrew-owned directories to the user completion directory works reliably in more environments.
+- Jake's own modular `jake/*.jake` task files were normalized to stay parseable under the stricter parser:
+  - `@default` now composes with intervening metadata as intended
+  - repo tasks no longer rely on top-level `@cache` placement that the parser does not support
+  - outdated shorthand/embedded heredoc constructs that no longer parse were rewritten into supported forms
+- Added focused regression tests in `src/args.zig` and `src/parser.zig` to keep the new argument-validation and `@default` behavior stable.
+
+Still open:
+
+- Windows-specific behavior is still under-tested relative to the documented multi-platform story.
+- The CI matrix still does not run a Windows-focused behavior harness for shell/env resolution.
+
+Verification now includes:
+
+- `zig test src/args.zig`
+- `zig test src/completions.zig`
+- `zig test src/parser.zig`
+- `zig build -Doptimize=ReleaseFast`
+- `./tests/completions_test.sh`
+- `zig build test`
+
+Recommended next step:
+
+- Finish Phase 5 with Windows-specific coverage, then move to the remaining documentation/process cleanup in Phase 6.
 
 ## Final Verdict
 

@@ -279,21 +279,7 @@ task helix-install:
         echo "Note: ~/.config/helix/languages.toml already exists"
         echo "Add the following if Jake is not configured:"
     @else
-        cat > ~/.config/helix/languages.toml << 'EOF'
-[[language]]
-name = "jake"
-scope = "source.jake"
-injection-regex = "jake"
-file-types = ["jake", { glob = "Jakefile" }, { glob = "*.jake" }]
-roots = ["Jakefile"]
-comment-token = "#"
-indent = { tab-width = 4, unit = "    " }
-grammar = "jake"
-
-[[grammar]]
-name = "jake"
-source = { path = "{{absolute_path("editors/tree-sitter-jake")}}" }
-EOF
+        printf '%s\n' '[[language]]' 'name = "jake"' 'scope = "source.jake"' 'injection-regex = "jake"' 'file-types = ["jake", { glob = "Jakefile" }, { glob = "*.jake" }]' 'roots = ["Jakefile"]' 'comment-token = "#"' 'indent = { tab-width = 4, unit = "    " }' 'grammar = "jake"' '' '[[grammar]]' 'name = "jake"' 'source = { path = "{{absolute_path("editors/tree-sitter-jake")}}" }' > ~/.config/helix/languages.toml
     @end
     echo "Helix grammar installed. Check with: hx --health jake"
 
@@ -430,4 +416,3 @@ task build-highlighters:
     # Copy shiki grammar (JSON doesn't need minification)
     cp editors/shiki-jake/jake.tmLanguage.json site/public/libs/shiki-jake.tmLanguage.json
     echo "Built JS highlighter libs to site/public/libs/"
-

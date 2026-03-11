@@ -5,9 +5,9 @@ version = "0.6.0"
 
 @desc "Build release binary for current platform"
 @group packaging
-@cache src/*.zig build.zig build.zig.zon
 task binary:
     @needs zig
+    @cache src/*.zig build.zig build.zig.zon
     @pre echo "Building release binary..."
     zig build -Doptimize=ReleaseSafe
     @post echo "Binary: zig-out/bin/jake"

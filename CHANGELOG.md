@@ -39,6 +39,10 @@ Target release: `0.8.0`
 - **Parser and Initialization Regression Coverage**
   - Added focused tests for source-context parse diagnostics, malformed directives/imports, runtime dotenv failure propagation, and formatter round-trip stability with stricter parsing
 
+- **Completion and CI Coverage**
+  - Added CI coverage for the shell completion harness on Ubuntu with bash, zsh, and fish installed
+  - Added focused argument-parser regression tests for invalid `--completions` and `--external` choice values
+
 ### Changed
 
 - **Args Module Refactor**
@@ -61,6 +65,10 @@ Target release: `0.8.0`
   - Jakefile parse failures now print source-context diagnostics with the failing line and caret location instead of only returning a generic parse error
   - Parser handling for unknown directives and malformed top-level declarations now fails explicitly instead of silently skipping invalid input
   - Runtime and executor initialization now propagate dotenv, export, hook, and cache setup failures instead of continuing with partially configured state
+
+- **Repository Build and CI Consistency**
+  - CI now uses Zig `0.15.2` consistently across test, lint, E2E, and completion coverage jobs
+  - Jake's own modular `jake/*.jake` task files were normalized to remain parseable under the stricter parser contract used by the CLI and CI
 
 - **Documentation Cleanup**
   - Archived outdated design and review docs under `docs/archived/`
@@ -104,6 +112,10 @@ Target release: `0.8.0`
 - **Init Command**
   - Fixed `jake init --template=node|go|rust|python|zig` being rejected despite templates being fully implemented
   - Fixed `jake init --yes` / `-y` flag not being parsed by the CLI
+
+- **Completions**
+  - Fixed `--completions` and `--external` optional value parsing to reject invalid explicit values instead of silently falling back to auto-detection/default behavior
+  - Fixed zsh completion installation fallback to treat `PermissionDenied` the same as `AccessDenied`, restoring fallback from system/Homebrew paths to the user completion directory
 
 ### CI/CD
 

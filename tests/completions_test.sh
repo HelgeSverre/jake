@@ -133,18 +133,20 @@ for SHELL_NAME in "${SHELLS[@]}"; do
 	fi
 done
 
-# Test invalid shell name (defaults to zsh)
+# Test invalid shell name is rejected
 echo ""
 echo "--- Testing error handling ---"
-if OUTPUT=$("$JAKE_BIN" --completions invalid_shell 2>/dev/null); then
-	# Jake defaults to zsh for unrecognized shell names
-	if echo "$OUTPUT" | grep -q "#compdef jake"; then
-		pass "--completions defaults to zsh for invalid shell name"
-	else
-		fail "--completions invalid shell handling returned unexpected output"
-	fi
+INVALID_ERR=$(mktemp)
+TEMP_FILES+=("$INVALID_ERR")
+if OUTPUT=$("$JAKE_BIN" --completions invalid_shell 2>"$INVALID_ERR"); then
+	fail "--completions should reject invalid shell names"
 else
-	fail "--completions command failed with invalid shell name"
+	if [[ -s "$INVALID_ERR" ]] && grep -q "Invalid value" "$INVALID_ERR"; then
+		pass "--completions rejects invalid shell name"
+	else
+		ERR_OUTPUT=$(cat "$INVALID_ERR" 2>/dev/null || true)
+		fail "--completions invalid shell handling returned unexpected error: $ERR_OUTPUT"
+	fi
 fi
 
 # Test that completion scripts contain expected content

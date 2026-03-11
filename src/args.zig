@@ -495,23 +495,29 @@ pub const Args = struct {
                 } else if (std.mem.eql(u8, name, "completions")) {
                     self.completions_enabled = true;
                     if (inline_value) |v| {
+                        if (!isValidShell(v)) return error.InvalidValue;
                         self.completions = v;
                     } else if (i.* + 1 < raw_args.len) {
                         const next = raw_args[i.* + 1];
                         if (isValidShell(next)) {
                             i.* += 1;
                             self.completions = next;
+                        } else if (next.len > 0 and next[0] != '-') {
+                            return error.InvalidValue;
                         }
                     }
                 } else if (std.mem.eql(u8, name, "external")) {
                     self.external_enabled = true;
                     if (inline_value) |v| {
+                        if (!isValidExternalType(v)) return error.InvalidValue;
                         self.external = v;
                     } else if (i.* + 1 < raw_args.len) {
                         const next = raw_args[i.* + 1];
                         if (isValidExternalType(next)) {
                             i.* += 1;
                             self.external = next;
+                        } else if (next.len > 0 and next[0] != '-') {
+                            return error.InvalidValue;
                         }
                     }
                 }
@@ -1315,6 +1321,21 @@ test "parse --completions bash --install" {
     try expect(args.completions_enabled);
     try expect(args.install_completions);
     try expectEqualStrings("bash", args.completions.?);
+}
+
+test "parse --completions rejects invalid shell value" {
+    const result = Args.parse(testing.allocator, &.{ "jake", "--completions", "invalid_shell" });
+    try expectError(error.InvalidValue, result);
+}
+
+test "parse --completions=invalid rejects inline invalid shell value" {
+    const result = Args.parse(testing.allocator, &.{ "jake", "--completions=invalid_shell" });
+    try expectError(error.InvalidValue, result);
+}
+
+test "parse --external rejects invalid type value" {
+    const result = Args.parse(testing.allocator, &.{ "jake", "--external", "ninja" });
+    try expectError(error.InvalidValue, result);
 }
 
 test "parse --install alone" {

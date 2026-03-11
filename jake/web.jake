@@ -1,7 +1,7 @@
 # Website related Jake tasks
 
 # Domain for the website
-domain "jakefile.dev"
+domain = "jakefile.dev"
 
 @group web
 @desc "Start website dev server"

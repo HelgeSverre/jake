@@ -329,6 +329,7 @@ pub const Parser = struct {
     pending_only_os: std.ArrayListUnmanaged([]const u8),
     pending_quiet: bool,
     pending_hidden: bool,
+    pending_default: bool,
     pending_doc_comment: ?[]const u8,
     pending_needs: std.ArrayListUnmanaged(NeedsRequirement),
     pending_timeout: ?u64,
@@ -354,6 +355,7 @@ pub const Parser = struct {
             .pending_only_os = .empty,
             .pending_quiet = false,
             .pending_hidden = false,
+            .pending_default = false,
             .pending_doc_comment = null,
             .pending_needs = .empty,
             .pending_timeout = null,
@@ -524,6 +526,12 @@ pub const Parser = struct {
         return doc;
     }
 
+    fn consumePendingDefault(self: *Parser) bool {
+        const is_default = self.pending_default;
+        self.pending_default = false;
+        return is_default;
+    }
+
     /// Consume and return pending only_os, clearing it for the next recipe
     fn consumePendingOnlyOs(self: *Parser) ParseError![]const []const u8 {
         if (self.pending_only_os.items.len == 0) {
@@ -620,6 +628,11 @@ pub const Parser = struct {
             }
         }
 
+        if (self.pending_default) {
+            self.setError("expected recipe after '@default'", null);
+            return ParseError.UnexpectedToken;
+        }
+
         var result = Jakefile{
             .variables = &.{},
             .recipes = &.{},
@@ -649,30 +662,16 @@ pub const Parser = struct {
         _ = try self.expect(.at);
 
         if (self.current.tag == .kw_default) {
-            // @default marker for next recipe
             self.advance();
-            try self.skipNewlines();
+            self.pending_default = true;
 
-            const recipe_count_before = self.recipes.items.len;
-
-            // Parse the recipe that follows and mark it as default
-            if (self.current.tag == .kw_task) {
-                try self.parseTaskRecipe();
-            } else if (self.current.tag == .kw_file) {
-                try self.parseFileRecipe();
-            } else if (self.current.tag == .ident) {
-                try self.parseVariableOrRecipe();
-            } else {
+            if (self.current.tag != .newline and self.current.tag != .eof and self.current.tag != .comment) {
                 self.setError("expected recipe after '@default'", null);
                 return ParseError.UnexpectedToken;
             }
 
-            // Mark last recipe as default
-            if (self.recipes.items.len > recipe_count_before) {
-                self.recipes.items[self.recipes.items.len - 1].is_default = true;
-            } else {
-                self.setError("expected recipe after '@default'", null);
-                return ParseError.UnexpectedToken;
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                self.advance();
             }
             return;
         }
@@ -1075,6 +1074,10 @@ pub const Parser = struct {
         self.advance();
 
         if (self.current.tag == .equals) {
+            if (self.pending_default) {
+                self.setError("expected recipe after '@default'", null);
+                return ParseError.UnexpectedToken;
+            }
             // Variable assignment: name = value
             self.advance();
             const value = if (self.current.tag == .string or self.current.tag == .ident or self.current.tag == .glob_pattern or self.current.tag == .number)
@@ -1246,7 +1249,7 @@ pub const Parser = struct {
             .pre_hooks = owned_pre_hooks,
             .post_hooks = owned_post_hooks,
             .doc_comment = self.consumePendingDocComment(),
-            .is_default = false,
+            .is_default = self.consumePendingDefault(),
             .aliases = aliases,
             .group = self.consumePendingGroup(),
             .description = self.consumePendingDescription(),
@@ -1458,7 +1461,7 @@ pub const Parser = struct {
             .pre_hooks = owned_pre_hooks,
             .post_hooks = owned_post_hooks,
             .doc_comment = self.consumePendingDocComment(),
-            .is_default = false,
+            .is_default = self.consumePendingDefault(),
             .aliases = aliases,
             .group = self.consumePendingGroup(),
             .description = self.consumePendingDescription(),
@@ -1623,7 +1626,7 @@ pub const Parser = struct {
             .pre_hooks = owned_pre_hooks,
             .post_hooks = owned_post_hooks,
             .doc_comment = self.consumePendingDocComment(),
-            .is_default = false,
+            .is_default = self.consumePendingDefault(),
             .aliases = aliases,
             .group = self.consumePendingGroup(),
             .description = self.consumePendingDescription(),
@@ -1784,6 +1787,21 @@ test "parser rejects variable assignment after @default" {
         \\
         \\@default
         \\version = "1.0"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    const err = p.getLastError();
+    try std.testing.expect(err != null);
+    try std.testing.expectEqualStrings("expected recipe after '@default'", err.?.message);
+}
+
+test "parser rejects trailing tokens after @default" {
+    const source =
+        \\@default build
+        \\task build:
+        \\    echo "build"
     ;
     var lex = Lexer.init(source);
     var p = Parser.init(std.testing.allocator, &lex);
@@ -2421,6 +2439,25 @@ test "parse default directive" {
 
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
     try std.testing.expect(jakefile.recipes[0].is_default);
+}
+
+test "parse default directive with intervening metadata" {
+    const source =
+        \\@default
+        \\@group build
+        \\@desc "Build the project"
+        \\task build:
+        \\    echo "building"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expect(jakefile.recipes[0].is_default);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].group.?);
+    try std.testing.expectEqualStrings("Build the project", jakefile.recipes[0].description.?);
 }
 
 test "parse export directive" {

@@ -48,6 +48,10 @@ pub const InstallResult = struct {
 const CONFIG_BLOCK_START = "# >>> jake completion >>>";
 const CONFIG_BLOCK_END = "# <<< jake completion <<<";
 
+fn isPermissionError(err: anyerror) bool {
+    return err == error.AccessDenied or err == error.PermissionDenied;
+}
+
 /// Detect shell from $SHELL environment variable
 pub fn detectShell() ?Shell {
     // Shell completions are not applicable on Windows
@@ -390,7 +394,7 @@ pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !voi
             // Try to create directory and write file
             const write_result: ?anyerror = blk: {
                 std.fs.cwd().makePath(dir_path) catch |err| {
-                    if (err == error.AccessDenied) break :blk error.AccessDenied;
+                    if (isPermissionError(err)) break :blk err;
                 };
 
                 const file = std.fs.cwd().createFile(zsh_info.path, .{}) catch |err| {
@@ -403,7 +407,7 @@ pub fn install(allocator: std.mem.Allocator, shell: Shell, writer: anytype) !voi
 
             if (write_result) |err| {
                 // Failed to write to preferred location
-                if (err == error.AccessDenied and zsh_info.env == .homebrew) {
+                if (isPermissionError(err) and zsh_info.env == .homebrew) {
                     // Homebrew path needs sudo, fall back to user directory
                     try writer.writeAll(color.warningYellow());
                     try writer.writeAll("Note:");

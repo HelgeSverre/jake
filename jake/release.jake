@@ -5,9 +5,9 @@ targets = "x86_64-linux aarch64-linux x86_64-macos aarch64-macos x86_64-windows"
 
 @group release
 @desc "Build optimized release for current platform"
-@cache src/*.zig build.zig build.zig.zon
 task build:
     @needs zig
+    @cache src/*.zig build.zig build.zig.zon
     zig build -Doptimize=ReleaseFast
     echo "Release build complete"
 

@@ -18,9 +18,9 @@ task bench-internal:
 
 @desc "Build benchmark binary without running"
 @group perf
-@cache src/*.zig src/bench/*.zig build.zig
 task bench-build:
     @needs zig
+    @cache src/*.zig src/bench/*.zig build.zig
     zig build bench-build -Doptimize=ReleaseFast
     echo "Benchmark binary: zig-out/bin/jake-bench"
 

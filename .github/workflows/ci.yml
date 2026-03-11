@@ -21,7 +21,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.0
+          version: 0.15.2
 
       - name: Build
         run: zig build
@@ -44,7 +44,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.0
+          version: 0.15.2
 
       - name: Check Formatting
         run: zig fmt --check src/
@@ -67,6 +67,28 @@ jobs:
         run: |
           cd tests/e2e
           ../../zig-out/bin/jake test-all
+
+  completions:
+    name: Completion Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Install shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh fish
+
+      - name: Build Release
+        run: zig build -Doptimize=ReleaseFast
+
+      - name: Run completion tests
+        run: ./tests/completions_test.sh
 
   editors:
     name: Editor Plugins
