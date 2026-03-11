@@ -1102,9 +1102,13 @@ pub const Executor = struct {
                         // Timeout! Signal the child to terminate (don't wait - main thread does that)
                         ctx.timeout_expired.store(true, .release);
                         if (ctx.current_child.load(.acquire)) |child| {
-                            // Send SIGKILL directly without waiting (avoiding race with main thread's wait)
+                            // Kill the entire process group (shell + children) via negative PID
                             if (builtin.os.tag != .windows) {
-                                _ = std.posix.kill(child.id, std.posix.SIG.KILL) catch {};
+                                const pid = child.id;
+                                _ = std.posix.kill(-pid, std.posix.SIG.KILL) catch {
+                                    // Fallback: kill just the shell process
+                                    _ = std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+                                };
                             }
                         }
                         return;
@@ -1483,6 +1487,14 @@ pub const Executor = struct {
         } else {
             child.stderr_behavior = .Inherit;
             child.stdout_behavior = .Inherit;
+        }
+
+        // When running with a timeout, put the child in its own process group
+        // so the watchdog can kill the entire group (shell + children) at once.
+        if (has_timeout) {
+            if (builtin.os.tag != .windows and builtin.os.tag != .wasi) {
+                child.pgid = 0;
+            }
         }
 
         if (self.current_working_dir) |working_dir| {

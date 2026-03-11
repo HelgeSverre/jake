@@ -32,10 +32,6 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
-        .zbench = .{
-            .url = "https://github.com/hendriknielaender/zBench/archive/refs/tags/v0.11.2.tar.gz",
-            .hash = "zbench-0.11.2-YTdc7zolAQDlBF9i0ywXIvDjafL3Kg27S-aFUq6dU5zy",
-        },
         .ztracy = .{
             .url = "https://github.com/zig-gamedev/ztracy/archive/refs/heads/main.tar.gz",
             .hash = "ztracy-0.14.0-dev-zHJSq78GGQC904aYvBPn6OOvRVOq_opAwDfeHZdvQyej",

@@ -10,7 +10,7 @@ fn setupExecutor(allocator: std.mem.Allocator, source: []const u8) ?struct { jak
     var jakefile = p.parseJakefile() catch return null;
 
     var exec = jake.Executor.init(allocator, &jakefile) catch return null;
-    exec.dry_run = true;
+    exec.ctx.dry_run = true;
 
     return .{ exec, jakefile };
 }
