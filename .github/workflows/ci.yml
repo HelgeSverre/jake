@@ -26,6 +26,11 @@ jobs:
       - name: Build
         run: zig build
 
+      - name: Windows CLI smoke
+        if: runner.os == 'Windows'
+        run: ./tests/windows_cli_smoke.ps1
+        shell: pwsh
+
       - name: Run Tests
         run: zig build test
 

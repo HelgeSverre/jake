@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const system = @import("system.zig");
 
 pub const FunctionError = error{
     UnknownFunction,
@@ -153,55 +154,23 @@ fn absolutePath(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
 }
 
 fn home(allocator: std.mem.Allocator) FunctionError![]const u8 {
-    // home() is not available on Windows (no $HOME)
-    if (comptime builtin.os.tag == .windows) {
-        return FunctionError.InvalidArguments;
-    }
-    if (std.posix.getenv("HOME")) |home_dir| {
-        return allocator.dupe(u8, home_dir) catch return FunctionError.OutOfMemory;
-    }
-    return FunctionError.InvalidArguments;
+    const home_dir = try system.currentHomeDirOwned(allocator) orelse return FunctionError.InvalidArguments;
+    return home_dir;
 }
 
 fn localBin(allocator: std.mem.Allocator, name: []const u8) FunctionError![]const u8 {
-    // local_bin() is not available on Windows (no $HOME/.local/bin)
-    if (comptime builtin.os.tag == .windows) {
-        return FunctionError.InvalidArguments;
-    }
-    if (std.posix.getenv("HOME")) |home_dir| {
-        return std.fmt.allocPrint(allocator, "{s}/.local/bin/{s}", .{ home_dir, name }) catch return FunctionError.OutOfMemory;
-    }
-    return FunctionError.InvalidArguments;
+    const home_dir = try system.currentHomeDirOwned(allocator) orelse return FunctionError.InvalidArguments;
+    defer allocator.free(home_dir);
+
+    const relative_path = std.fmt.allocPrint(allocator, ".local/bin/{s}", .{name}) catch return FunctionError.OutOfMemory;
+    defer allocator.free(relative_path);
+
+    return system.joinHomeRelativeOwned(allocator, home_dir, relative_path) catch return FunctionError.OutOfMemory;
 }
 
 fn shellConfig(allocator: std.mem.Allocator) FunctionError![]const u8 {
-    // shell_config() is not available on Windows (no $HOME or $SHELL)
-    if (comptime builtin.os.tag == .windows) {
-        return FunctionError.InvalidArguments;
-    }
-    const home_dir = std.posix.getenv("HOME") orelse return FunctionError.InvalidArguments;
-    const shell = std.posix.getenv("SHELL") orelse return FunctionError.InvalidArguments;
-
-    // Extract shell name from path (e.g., /bin/zsh -> zsh)
-    const shell_name = std.fs.path.basename(shell);
-
-    if (std.mem.eql(u8, shell_name, "bash")) {
-        return std.fmt.allocPrint(allocator, "{s}/.bashrc", .{home_dir}) catch return FunctionError.OutOfMemory;
-    } else if (std.mem.eql(u8, shell_name, "zsh")) {
-        return std.fmt.allocPrint(allocator, "{s}/.zshrc", .{home_dir}) catch return FunctionError.OutOfMemory;
-    } else if (std.mem.eql(u8, shell_name, "fish")) {
-        return std.fmt.allocPrint(allocator, "{s}/.config/fish/config.fish", .{home_dir}) catch return FunctionError.OutOfMemory;
-    } else if (std.mem.eql(u8, shell_name, "sh")) {
-        return std.fmt.allocPrint(allocator, "{s}/.profile", .{home_dir}) catch return FunctionError.OutOfMemory;
-    } else if (std.mem.eql(u8, shell_name, "ksh")) {
-        return std.fmt.allocPrint(allocator, "{s}/.kshrc", .{home_dir}) catch return FunctionError.OutOfMemory;
-    } else if (std.mem.eql(u8, shell_name, "csh")) {
-        return std.fmt.allocPrint(allocator, "{s}/.cshrc", .{home_dir}) catch return FunctionError.OutOfMemory;
-    } else if (std.mem.eql(u8, shell_name, "tcsh")) {
-        return std.fmt.allocPrint(allocator, "{s}/.tcshrc", .{home_dir}) catch return FunctionError.OutOfMemory;
-    }
-    // Fallback to .profile for unknown shells
-    return std.fmt.allocPrint(allocator, "{s}/.profile", .{home_dir}) catch return FunctionError.OutOfMemory;
+    const path = try system.currentShellConfigPathOwned(allocator) orelse return FunctionError.InvalidArguments;
+    return path;
 }
 
 /// launch(target) - Returns the platform-specific command for opening files/URLs
@@ -287,78 +256,69 @@ test "home function returns non-empty path" {
 }
 
 test "home function returns absolute path" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
 
     const result = try evaluate(allocator, "home()", &vars);
     defer allocator.free(result);
-    // Should start with / (absolute path)
-    try std.testing.expect(result[0] == '/');
+    try std.testing.expect(result.len > 0);
+    if (builtin.os.tag == .windows) {
+        try std.testing.expect((result.len >= 3 and std.ascii.isAlphabetic(result[0]) and result[1] == ':' and (result[2] == '\\' or result[2] == '/')) or
+            std.mem.startsWith(u8, result, "\\\\") or
+            std.mem.startsWith(u8, result, "//"));
+    } else {
+        try std.testing.expect(result[0] == '/');
+    }
 }
 
 test "home function matches HOME env" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
 
     const result = try evaluate(allocator, "home()", &vars);
     defer allocator.free(result);
-    // Should match the HOME environment variable
-    const expected = std.posix.getenv("HOME") orelse "";
-    try std.testing.expectEqualStrings(expected, result);
+    const expected = try system.currentHomeDirOwned(allocator);
+    defer if (expected) |value| allocator.free(value);
+    try std.testing.expect(expected != null);
+    try std.testing.expectEqualStrings(expected.?, result);
 }
 
 test "local_bin function with simple name" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
 
     const result = try evaluate(allocator, "local_bin(jake)", &vars);
     defer allocator.free(result);
-    try std.testing.expect(std.mem.endsWith(u8, result, "/.local/bin/jake"));
+    try std.testing.expect(std.mem.endsWith(u8, result, "/.local/bin/jake") or std.mem.endsWith(u8, result, "\\.local\\bin\\jake"));
 }
 
 test "local_bin function with quoted name" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
 
     const result = try evaluate(allocator, "local_bin(\"myapp\")", &vars);
     defer allocator.free(result);
-    try std.testing.expect(std.mem.endsWith(u8, result, "/.local/bin/myapp"));
+    try std.testing.expect(std.mem.endsWith(u8, result, "/.local/bin/myapp") or std.mem.endsWith(u8, result, "\\.local\\bin\\myapp"));
 }
 
 test "local_bin function starts with home" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
 
     const result = try evaluate(allocator, "local_bin(test)", &vars);
     defer allocator.free(result);
-    const home_dir = std.posix.getenv("HOME") orelse "";
-    try std.testing.expect(std.mem.startsWith(u8, result, home_dir));
+    const home_dir = try system.currentHomeDirOwned(allocator);
+    defer if (home_dir) |value| allocator.free(value);
+    try std.testing.expect(home_dir != null);
+    try std.testing.expect(std.mem.startsWith(u8, result, home_dir.?));
 }
 
 test "local_bin function with variable" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -366,13 +326,10 @@ test "local_bin function with variable" {
 
     const result = try evaluate(allocator, "local_bin(binary)", &vars);
     defer allocator.free(result);
-    try std.testing.expect(std.mem.endsWith(u8, result, "/.local/bin/custom-tool"));
+    try std.testing.expect(std.mem.endsWith(u8, result, "/.local/bin/custom-tool") or std.mem.endsWith(u8, result, "\\.local\\bin\\custom-tool"));
 }
 
 test "shell_config function returns non-empty path" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -383,23 +340,19 @@ test "shell_config function returns non-empty path" {
 }
 
 test "shell_config function starts with home" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
 
     const result = try evaluate(allocator, "shell_config()", &vars);
     defer allocator.free(result);
-    const home_dir = std.posix.getenv("HOME") orelse "";
-    try std.testing.expect(std.mem.startsWith(u8, result, home_dir));
+    const home_dir = try system.currentHomeDirOwned(allocator);
+    defer if (home_dir) |value| allocator.free(value);
+    try std.testing.expect(home_dir != null);
+    try std.testing.expect(std.mem.startsWith(u8, result, home_dir.?));
 }
 
 test "shell_config function returns valid config file" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     const allocator = std.testing.allocator;
     var vars = std.StringHashMap([]const u8).init(allocator);
     defer vars.deinit();
@@ -416,6 +369,7 @@ test "shell_config function returns valid config file" {
         ".cshrc",
         ".tcshrc",
         "config.fish",
+        "Microsoft.PowerShell_profile.ps1",
     };
 
     var found_match = false;

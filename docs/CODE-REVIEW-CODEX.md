@@ -468,7 +468,7 @@ Status update (2026-03-11):
 - Completed. External integration now has unit and E2E coverage for nested Jakefile paths and positional-argument forwarding.
 - Completed. CI now runs the shell completion harness on Ubuntu with `bash`, `zsh`, and `fish` available.
 - Completed. The repository now uses Zig `0.15.2` consistently in active CI jobs and documentation.
-- Still open. Windows-specific behavior coverage remains the main missing part of this phase.
+- Completed. Windows-specific behavior now has focused coverage for environment lookup, shell auto-detection, `home()` / `shell_config()` resolution, and `@needs` command discovery, plus a Windows CI smoke harness.
 
 ### Phase 6: Clean up documentation and release process
 
@@ -700,8 +700,7 @@ Completed:
 
 Still open:
 
-- Windows-specific behavior is still under-tested relative to the documented multi-platform story.
-- The CI matrix still does not run a Windows-focused behavior harness for shell/env resolution.
+- Phase 5 is effectively closed. The remaining work has moved to the Phase 6 documentation/process cleanup.
 
 Verification now includes:
 
@@ -714,7 +713,7 @@ Verification now includes:
 
 Recommended next step:
 
-- Finish Phase 5 with Windows-specific coverage, then move to the remaining documentation/process cleanup in Phase 6.
+- Reconcile the remaining docs and release process details in Phase 6 so the published examples and release checklist stay in sync with the built binary.
 
 ## Final Verdict
 

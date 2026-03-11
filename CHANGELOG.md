@@ -42,6 +42,7 @@ Target release: `0.8.0`
 - **Completion and CI Coverage**
   - Added CI coverage for the shell completion harness on Ubuntu with bash, zsh, and fish installed
   - Added focused argument-parser regression tests for invalid `--completions` and `--external` choice values
+  - Added a Windows CLI smoke harness in CI for environment lookup, shell auto-detection, and `@needs` command discovery
 
 ### Changed
 
@@ -68,6 +69,7 @@ Target release: `0.8.0`
 
 - **Repository Build and CI Consistency**
   - CI now uses Zig `0.15.2` consistently across test, lint, E2E, and completion coverage jobs
+  - Core runtime helpers now share one cross-platform abstraction for environment lookup, shell detection, home-directory resolution, and command discovery
   - Jake's own modular `jake/*.jake` task files were normalized to remain parseable under the stricter parser contract used by the CLI and CI
 
 - **Documentation Cleanup**
@@ -116,6 +118,12 @@ Target release: `0.8.0`
 - **Completions**
   - Fixed `--completions` and `--external` optional value parsing to reject invalid explicit values instead of silently falling back to auto-detection/default behavior
   - Fixed zsh completion installation fallback to treat `PermissionDenied` the same as `AccessDenied`, restoring fallback from system/Homebrew paths to the user completion directory
+  - Fixed shell auto-detection to recognize Windows-style `SHELL` paths for bash, zsh, and fish completion generation
+
+- **Windows Runtime Behavior**
+  - Fixed `env(...)` and related system environment lookups to work on Windows instead of always reading as unset
+  - Fixed command discovery and `@needs` on Windows to honor `;`-separated `PATH` entries and `PATHEXT`, including explicit relative command paths
+  - Fixed `home()`, `local_bin()`, and `shell_config()` so they resolve meaningful paths on Windows instead of failing outright
 
 ### CI/CD
 

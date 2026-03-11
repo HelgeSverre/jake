@@ -2191,6 +2191,9 @@ task example:
 {{extension(path)}}              # .txt from file.txt
 {{without_extension(path)}}      # file from file.txt
 {{absolute_path(path)}}          # Full path
+{{home()}}                       # Home directory on Unix or Windows
+{{local_bin(jake)}}              # ~/.local/bin/jake under the current home dir
+{{shell_config()}}               # ~/.zshrc, ~/.bashrc, or PowerShell profile
 ```
 
 ### Condition Functions

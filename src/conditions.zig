@@ -2,6 +2,8 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const compat = @import("compat.zig");
+const system = @import("system.zig");
 
 pub const ConditionError = error{
     InvalidSyntax,
@@ -101,12 +103,7 @@ fn evaluateEnv(args: []const u8) bool {
 
 /// Cross-platform system environment variable lookup
 fn getSystemEnv(key: []const u8) ?[]const u8 {
-    if (comptime builtin.os.tag == .windows) {
-        // Windows: environment strings are in WTF-16, can't use posix.getenv
-        // Return null on Windows (we rely on locally set vars via .env files)
-        return @as(?[]const u8, null);
-    }
-    return std.posix.getenv(key);
+    return compat.getenv(key);
 }
 
 /// exists(path) - returns true if file or directory exists
@@ -129,28 +126,7 @@ fn evaluatePlatform(args: []const u8) bool {
 /// command(name) - returns true if command exists in PATH or as absolute path
 fn evaluateCommand(args: []const u8) bool {
     const cmd_name = stripQuotes(std.mem.trim(u8, args, " \t"));
-    if (cmd_name.len == 0) return false;
-
-    // Handle absolute paths
-    if (cmd_name[0] == '/') {
-        return if (std.fs.accessAbsolute(cmd_name, .{})) true else |_| false;
-    }
-
-    // Search in PATH
-    const path_env = std.process.getEnvVarOwned(std.heap.page_allocator, "PATH") catch return false;
-    defer std.heap.page_allocator.free(path_env);
-
-    var path_iter = std.mem.splitScalar(u8, path_env, ':');
-    while (path_iter.next()) |dir| {
-        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const full_path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ dir, cmd_name }) catch continue;
-        if (std.fs.accessAbsolute(full_path, .{})) |_| {
-            return true;
-        } else |_| {
-            continue;
-        }
-    }
-    return false;
+    return system.commandExists(cmd_name);
 }
 
 /// eq(a, b) / neq(a, b) - string equality/inequality comparison
@@ -231,6 +207,12 @@ fn stripQuotes(s: []const u8) []const u8 {
     return s;
 }
 
+fn testHomeEnvVarName() ?[]const u8 {
+    if (getSystemEnv("HOME")) |_| return "HOME";
+    if (getSystemEnv("USERPROFILE")) |_| return "USERPROFILE";
+    return null;
+}
+
 // Tests
 
 // Default context for tests (no runtime flags set)
@@ -270,14 +252,6 @@ test "bare false with whitespace" {
 }
 
 test "env condition - set variable" {
-    // Set a test environment variable
-    const result = try std.process.Child.run(.{
-        .allocator = std.testing.allocator,
-        .argv = &[_][]const u8{ "/bin/sh", "-c", "echo test" },
-    });
-    std.testing.allocator.free(result.stdout);
-    std.testing.allocator.free(result.stderr);
-
     // PATH should always be set
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
@@ -386,32 +360,31 @@ test "exists with variable" {
 }
 
 test "eq with env variable" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    // HOME should be set on most systems
-    if (getSystemEnv("HOME")) |home_val| {
-        // Create a variable with the same value
+    if (testHomeEnvVarName()) |env_name| {
+        const home_val = getSystemEnv(env_name).?;
         try variables.put("home", home_val);
 
-        const matches = try evaluate("eq($HOME, home)", &variables, test_context);
+        const condition = try std.fmt.allocPrint(std.testing.allocator, "eq(${s}, home)", .{env_name});
+        defer std.testing.allocator.free(condition);
+
+        const matches = try evaluate(condition, &variables, test_context);
         try std.testing.expect(matches);
     }
 }
 
 test "neq with different env variables" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    // PATH and HOME should be different
-    const result = try evaluate("neq($PATH, $HOME)", &variables, test_context);
-    try std.testing.expect(result);
+    if (testHomeEnvVarName()) |env_name| {
+        const condition = try std.fmt.allocPrint(std.testing.allocator, "neq($PATH, ${s})", .{env_name});
+        defer std.testing.allocator.free(condition);
+
+        try std.testing.expect(try evaluate(condition, &variables, test_context));
+    }
 }
 
 test "eq with empty vs non-empty" {
@@ -425,15 +398,14 @@ test "eq with empty vs non-empty" {
 }
 
 test "eq with braced env variable" {
-    // Skip on Windows (no posix.getenv)
-    if (comptime builtin.os.tag == .windows) return;
-
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    // HOME should be set on most systems
-    if (getSystemEnv("HOME")) |_| {
-        const matches = try evaluate("eq(${HOME}, $HOME)", &variables, test_context);
+    if (testHomeEnvVarName()) |env_name| {
+        const condition = try std.fmt.allocPrint(std.testing.allocator, "eq(${{{s}}}, ${s})", .{ env_name, env_name });
+        defer std.testing.allocator.free(condition);
+
+        const matches = try evaluate(condition, &variables, test_context);
         try std.testing.expect(matches);
     }
 }
@@ -734,8 +706,10 @@ test "command condition - existing command (sh)" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    // /bin/sh should always exist on Unix systems
-    const result = try evaluate("command(sh)", &variables, test_context);
+    const command_name = if (builtin.os.tag == .windows) "cmd" else "sh";
+    var condition_buf: [64]u8 = undefined;
+    const condition = try std.fmt.bufPrint(&condition_buf, "command({s})", .{command_name});
+    const result = try evaluate(condition, &variables, test_context);
     try std.testing.expect(result);
 }
 
@@ -743,8 +717,10 @@ test "command condition - existing command (ls)" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    // ls should be in PATH on Unix systems
-    const result = try evaluate("command(ls)", &variables, test_context);
+    const command_name = if (builtin.os.tag == .windows) "where" else "ls";
+    var condition_buf: [64]u8 = undefined;
+    const condition = try std.fmt.bufPrint(&condition_buf, "command({s})", .{command_name});
+    const result = try evaluate(condition, &variables, test_context);
     try std.testing.expect(result);
 }
 
@@ -760,8 +736,13 @@ test "command condition - absolute path exists" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    // /bin/sh should exist as an absolute path
-    const result = try evaluate("command(/bin/sh)", &variables, test_context);
+    const absolute_command = if (builtin.os.tag == .windows)
+        (compat.getenv("COMSPEC") orelse return error.SkipZigTest)
+    else
+        "/bin/sh";
+    var condition_buf: [std.fs.max_path_bytes + 32]u8 = undefined;
+    const condition = try std.fmt.bufPrint(&condition_buf, "command(\"{s}\")", .{absolute_command});
+    const result = try evaluate(condition, &variables, test_context);
     try std.testing.expect(result);
 }
 
@@ -769,7 +750,10 @@ test "command condition - absolute path nonexistent" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    const result = try evaluate("command(/nonexistent/path/cmd)", &variables, test_context);
+    const missing_path = if (builtin.os.tag == .windows) "Z:\\definitely\\missing\\command.exe" else "/nonexistent/path/cmd";
+    var condition_buf: [std.fs.max_path_bytes + 32]u8 = undefined;
+    const condition = try std.fmt.bufPrint(&condition_buf, "command(\"{s}\")", .{missing_path});
+    const result = try evaluate(condition, &variables, test_context);
     try std.testing.expect(!result);
 }
 
@@ -786,8 +770,10 @@ test "command condition - with quotes" {
     var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer variables.deinit();
 
-    // command("sh") should work with quotes
-    const result = try evaluate("command(\"sh\")", &variables, test_context);
+    const command_name = if (builtin.os.tag == .windows) "cmd" else "sh";
+    var condition_buf: [64]u8 = undefined;
+    const condition = try std.fmt.bufPrint(&condition_buf, "command(\"{s}\")", .{command_name});
+    const result = try evaluate(condition, &variables, test_context);
     try std.testing.expect(result);
 }
 
@@ -796,6 +782,9 @@ test "command condition - with whitespace" {
     defer variables.deinit();
 
     // Whitespace should be trimmed
-    const result = try evaluate("command(  sh  )", &variables, test_context);
+    const command_name = if (builtin.os.tag == .windows) "cmd" else "sh";
+    var condition_buf: [64]u8 = undefined;
+    const condition = try std.fmt.bufPrint(&condition_buf, "command(  {s}  )", .{command_name});
+    const result = try evaluate(condition, &variables, test_context);
     try std.testing.expect(result);
 }

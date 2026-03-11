@@ -359,10 +359,13 @@ Used in `{{...}}` interpolations.
 | `without_extension(path)`  | Remove last extension | `{{without_extension(file.tar.gz)}}` → `file.tar`  |
 | `without_extensions(path)` | Remove all extensions | `{{without_extensions(file.tar.gz)}}` → `file`     |
 | `absolute_path(path)`      | Make path absolute    | `{{absolute_path(./src)}}`                         |
-| `home()`                   | Home directory        | `{{home()}}` → `/Users/helge`                      |
+| `home()`                   | Home directory        | `{{home()}}` → `/Users/helge` or `C:\Users\helge` |
 | `local_bin(name)`          | Local bin path        | `{{local_bin(jake)}}` → `~/.local/bin/jake`        |
-| `shell_config()`           | Shell config file     | `{{shell_config()}}` → `~/.zshrc`                  |
+| `shell_config()`           | Shell config file     | `{{shell_config()}}` → `~/.zshrc` or PowerShell profile |
 | `launch(target)`           | Platform open command | `{{launch(file.html)}}` → `open file.html` (macOS) |
+
+`home()` resolves from `HOME` on Unix-like systems and from `HOME`, `USERPROFILE`, or `HOMEDRIVE` + `HOMEPATH` on Windows.
+`shell_config()` follows the detected shell, including Windows-style `SHELL` paths such as `C:\Program Files\Git\bin\bash.exe`. Native PowerShell and `pwsh` sessions resolve to their profile paths; plain `cmd.exe` does not have a matching config file.
 
 **Scope Name:** `support.function.jake`
 

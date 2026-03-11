@@ -15,6 +15,7 @@ const cache_mod = @import("cache.zig");
 const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
 const color_mod = @import("color.zig");
 const context_mod = @import("context.zig");
+const system = @import("system.zig");
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
@@ -611,35 +612,7 @@ pub const ParallelExecutor = struct {
 
     /// Check if a command exists in PATH
     fn commandExists(cmd: []const u8) bool {
-        // Handle absolute paths
-        if (cmd.len > 0 and cmd[0] == '/') {
-            return std.fs.accessAbsolute(cmd, .{}) != error.FileNotFound;
-        }
-
-        // Handle relative paths
-        if (std.mem.indexOf(u8, cmd, "/") != null) {
-            const cwd = std.fs.cwd();
-            if (cwd.access(cmd, .{})) |_| {
-                return true;
-            } else |_| {}
-            return false;
-        }
-
-        // Search in PATH
-        const path_env = std.process.getEnvVarOwned(std.heap.page_allocator, "PATH") catch return false;
-        defer std.heap.page_allocator.free(path_env);
-
-        var path_iter = std.mem.splitScalar(u8, path_env, ':');
-        while (path_iter.next()) |dir| {
-            var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-            const full_path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ dir, cmd }) catch continue;
-            if (std.fs.accessAbsolute(full_path, .{})) |_| {
-                return true;
-            } else |_| {
-                continue;
-            }
-        }
-        return false;
+        return system.commandExists(cmd);
     }
 
     /// Check recipe-level @needs requirements before running any commands
@@ -1421,12 +1394,17 @@ test "parallel executor @else branch" {
 
 // Recipe-level @needs tests for parallel executor
 
+fn testParallelNeedsCommand() []const u8 {
+    return if (builtin.os.tag == .windows) "cmd" else "sh";
+}
+
 test "parallel executor recipe-level @needs succeeds when command exists" {
-    const source =
-        \\@needs sh
+    const source = try std.fmt.allocPrint(std.testing.allocator,
+        \\@needs {s}
         \\task test:
         \\    echo "ok"
-    ;
+    , .{testParallelNeedsCommand()});
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -1437,7 +1415,7 @@ test "parallel executor recipe-level @needs succeeds when command exists" {
     exec.dry_run = true;
 
     try exec.buildGraph("test");
-    // Should succeed - 'sh' exists on all systems
+    // Should succeed - platform command exists
     try exec.execute();
 }
 

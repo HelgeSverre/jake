@@ -16,6 +16,7 @@ const glob_mod = @import("glob.zig");
 const color_mod = @import("color.zig");
 const progress_mod = @import("progress.zig");
 const context_mod = @import("context.zig");
+const system = @import("system.zig");
 const RuntimeContext = context_mod.RuntimeContext;
 const Context = context_mod.Context;
 
@@ -269,33 +270,7 @@ pub const Executor = struct {
     /// Check if a command exists in PATH or as an absolute path
     fn commandExists(self: *Executor, cmd: []const u8) bool {
         _ = self;
-        if (cmd.len > 0 and cmd[0] == '/') {
-            return std.fs.accessAbsolute(cmd, .{}) != error.FileNotFound;
-        }
-
-        if (std.mem.indexOf(u8, cmd, "/") != null) {
-            // Try to access the file relative to cwd
-            const cwd = std.fs.cwd();
-            if (cwd.access(cmd, .{})) |_| {
-                return true;
-            } else |_| {}
-            return false;
-        }
-
-        const path_env = std.process.getEnvVarOwned(std.heap.page_allocator, "PATH") catch return false;
-        defer std.heap.page_allocator.free(path_env);
-
-        var path_iter = std.mem.splitScalar(u8, path_env, ':');
-        while (path_iter.next()) |dir| {
-            var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-            const full_path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ dir, cmd }) catch continue;
-            if (std.fs.accessAbsolute(full_path, .{})) |_| {
-                return true;
-            } else |_| {
-                continue;
-            }
-        }
-        return false;
+        return system.commandExists(cmd);
     }
 
     /// Check recipe-level @needs requirements before running any commands
@@ -343,17 +318,32 @@ pub const Executor = struct {
             }
             if (i >= trimmed.len) break;
 
-            // Find end of command name (stop at space, comma, quote, or arrow)
-            const cmd_start = i;
-            while (i < trimmed.len and trimmed[i] != ' ' and trimmed[i] != ',' and
-                trimmed[i] != '\t' and trimmed[i] != '"' and
-                !(i + 1 < trimmed.len and trimmed[i] == '-' and trimmed[i + 1] == '>'))
-            {
+            var cmd: []const u8 = "";
+            if (trimmed[i] == '"' or trimmed[i] == '\'') {
+                const quote = trimmed[i];
                 i += 1;
+                const cmd_start = i;
+                while (i < trimmed.len and trimmed[i] != quote) {
+                    i += 1;
+                }
+                cmd = trimmed[cmd_start..i];
+                if (i < trimmed.len) i += 1;
+            } else {
+                // Find end of command name (stop at space, comma, quote, or arrow)
+                const cmd_start = i;
+                while (i < trimmed.len and trimmed[i] != ' ' and trimmed[i] != ',' and
+                    trimmed[i] != '\t' and trimmed[i] != '"' and trimmed[i] != '\'' and
+                    !(i + 1 < trimmed.len and trimmed[i] == '-' and trimmed[i + 1] == '>'))
+                {
+                    i += 1;
+                }
+                cmd = trimmed[cmd_start..i];
             }
-            const cmd = trimmed[cmd_start..i];
 
-            if (cmd.len == 0) continue;
+            if (cmd.len == 0) {
+                if (i < trimmed.len) i += 1;
+                continue;
+            }
 
             // Parse optional hint (quoted string)
             var hint: ?[]const u8 = null;
@@ -4251,12 +4241,29 @@ test "@require works with env vars from dotenv" {
 // @needs directive tests
 // =============================================================================
 
+fn testNeedsPrimaryCommand() []const u8 {
+    return if (builtin.os.tag == .windows) "cmd" else "sh";
+}
+
+fn testNeedsSecondaryCommand() []const u8 {
+    return if (builtin.os.tag == .windows) "where" else "cat";
+}
+
+fn testNeedsTertiaryCommand() []const u8 {
+    return if (builtin.os.tag == .windows) "cmd" else "ls";
+}
+
+fn testNeedsAbsoluteCommand() ?[]const u8 {
+    return if (builtin.os.tag == .windows) compat.getenv("COMSPEC") else "/bin/sh";
+}
+
 test "@needs verifies command exists in PATH" {
-    const source =
+    const source = try std.fmt.allocPrint(std.testing.allocator,
         \\task test:
-        \\    @needs sh
+        \\    @needs {s}
         \\    echo "ok"
-    ;
+    , .{testNeedsPrimaryCommand()});
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -4266,7 +4273,7 @@ test "@needs verifies command exists in PATH" {
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
-    // 'sh' should exist on all systems
+    // Platform command should exist on all supported systems
     try executor.execute("test");
 }
 
@@ -4291,11 +4298,12 @@ test "@needs fails with helpful error when command missing" {
 }
 
 test "@needs checks multiple space-separated commands" {
-    const source =
+    const source = try std.fmt.allocPrint(std.testing.allocator,
         \\task test:
-        \\    @needs sh cat ls
+        \\    @needs {s} {s} {s}
         \\    echo "ok"
-    ;
+    , .{ testNeedsPrimaryCommand(), testNeedsSecondaryCommand(), testNeedsTertiaryCommand() });
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -4310,11 +4318,13 @@ test "@needs checks multiple space-separated commands" {
 }
 
 test "@needs works with full path to binary" {
-    const source =
+    const absolute_command = testNeedsAbsoluteCommand() orelse return error.SkipZigTest;
+    const source = try std.fmt.allocPrint(std.testing.allocator,
         \\task test:
-        \\    @needs /bin/sh
+        \\    @needs "{s}"
         \\    echo "ok"
-    ;
+    , .{absolute_command});
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -4327,12 +4337,36 @@ test "@needs works with full path to binary" {
     try executor.execute("test");
 }
 
-test "@needs with non-existent command in middle of list fails" {
-    const source =
+test "command-level @needs accepts quoted command paths" {
+    const absolute_command = testNeedsAbsoluteCommand() orelse return error.SkipZigTest;
+    const source = try std.fmt.allocPrint(std.testing.allocator,
         \\task test:
-        \\    @needs sh jake_nonexistent_xyz cat
+        \\    @needs "{s}"
         \\    echo "ok"
-    ;
+    , .{absolute_command});
+    defer std.testing.allocator.free(source);
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.dry_run = true;
+
+    const directive = try std.fmt.allocPrint(std.testing.allocator, "needs \"{s}\"", .{absolute_command});
+    defer std.testing.allocator.free(directive);
+
+    try executor.checkNeedsDirective(directive);
+}
+
+test "@needs with non-existent command in middle of list fails" {
+    const source = try std.fmt.allocPrint(std.testing.allocator,
+        \\task test:
+        \\    @needs {s} jake_nonexistent_xyz {s}
+        \\    echo "ok"
+    , .{ testNeedsPrimaryCommand(), testNeedsSecondaryCommand() });
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -4348,11 +4382,12 @@ test "@needs with non-existent command in middle of list fails" {
 }
 
 test "@needs with comma-separated commands" {
-    const source =
+    const source = try std.fmt.allocPrint(std.testing.allocator,
         \\task test:
-        \\    @needs sh, cat, ls
+        \\    @needs {s}, {s}, {s}
         \\    echo "ok"
-    ;
+    , .{ testNeedsPrimaryCommand(), testNeedsSecondaryCommand(), testNeedsTertiaryCommand() });
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -4367,13 +4402,14 @@ test "@needs with comma-separated commands" {
 }
 
 test "@needs only checks once per command" {
-    const source =
+    const source = try std.fmt.allocPrint(std.testing.allocator,
         \\task test:
-        \\    @needs sh
+        \\    @needs {s}
         \\    echo "first"
-        \\    @needs sh
+        \\    @needs {s}
         \\    echo "second"
-    ;
+    , .{ testNeedsPrimaryCommand(), testNeedsPrimaryCommand() });
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -4448,11 +4484,12 @@ test "@needs with hint and task reference" {
 }
 
 test "@needs with hint still works when command exists" {
-    const source =
+    const source = try std.fmt.allocPrint(std.testing.allocator,
         \\task test:
-        \\    @needs sh "Shell interpreter"
+        \\    @needs {s} "Shell interpreter"
         \\    echo "ok"
-    ;
+    , .{testNeedsPrimaryCommand()});
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -4467,11 +4504,12 @@ test "@needs with hint still works when command exists" {
 }
 
 test "@needs with task reference still works when command exists" {
-    const source =
+    const source = try std.fmt.allocPrint(std.testing.allocator,
         \\task test:
-        \\    @needs sh -> install-shell
+        \\    @needs {s} -> install-shell
         \\    echo "ok"
-    ;
+    , .{testNeedsPrimaryCommand()});
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -4488,11 +4526,12 @@ test "@needs with task reference still works when command exists" {
 // Recipe-level @needs tests
 
 test "recipe-level @needs verifies command exists before execution" {
-    const source =
-        \\@needs sh
+    const source = try std.fmt.allocPrint(std.testing.allocator,
+        \\@needs {s}
         \\task test:
         \\    echo "ok"
-    ;
+    , .{testNeedsPrimaryCommand()});
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -4502,7 +4541,7 @@ test "recipe-level @needs verifies command exists before execution" {
     defer executor.deinit();
     executor.ctx.dry_run = true;
 
-    // 'sh' should exist - recipe-level @needs checked before commands run
+    // Platform command should exist - recipe-level @needs checked before commands run
     try executor.execute("test");
 }
 
@@ -4571,11 +4610,12 @@ test "recipe-level @needs fails before any command executes" {
 }
 
 test "recipe-level @needs checks multiple commands on same line" {
-    const source =
-        \\@needs sh cat jake_nonexistent_xyz123
+    const source = try std.fmt.allocPrint(std.testing.allocator,
+        \\@needs {s} {s} jake_nonexistent_xyz123
         \\task test:
         \\    echo "ok"
-    ;
+    , .{ testNeedsPrimaryCommand(), testNeedsSecondaryCommand() });
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
@@ -5524,11 +5564,12 @@ test "executor returns CyclicDependency for indirect cycle" {
 }
 
 test "@needs continues checking after first found command" {
-    const source =
+    const source = try std.fmt.allocPrint(std.testing.allocator,
         \\task test:
-        \\    @needs sh ls cat
+        \\    @needs {s} {s} {s}
         \\    echo "all commands found"
-    ;
+    , .{ testNeedsPrimaryCommand(), testNeedsTertiaryCommand(), testNeedsSecondaryCommand() });
+    defer std.testing.allocator.free(source);
     var lex = @import("lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();

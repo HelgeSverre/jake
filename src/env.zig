@@ -6,7 +6,7 @@
 // - Manage environment for child processes
 
 const std = @import("std");
-const builtin = @import("builtin");
+const compat = @import("compat.zig");
 
 /// Environment variable storage and expansion
 pub const Environment = struct {
@@ -60,12 +60,7 @@ pub const Environment = struct {
 
     /// Cross-platform system environment variable lookup
     fn getSystemEnv(key: []const u8) ?[]const u8 {
-        if (comptime builtin.os.tag == .windows) {
-            // Windows: environment strings are in WTF-16, can't use posix.getenv
-            // Return null on Windows (we rely on locally set vars via .env files)
-            return @as(?[]const u8, null);
-        }
-        return std.posix.getenv(key);
+        return compat.getenv(key);
     }
 
     /// Load environment variables from a .env file

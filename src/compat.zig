@@ -2,6 +2,12 @@
 // Provides consistent API across different Zig standard library versions
 
 const std = @import("std");
+var env_init_once = std.once(initEnvMap);
+var cached_env_map: ?std.process.EnvMap = null;
+
+fn initEnvMap() void {
+    cached_env_map = std.process.getEnvMap(std.heap.page_allocator) catch std.process.EnvMap.init(std.heap.page_allocator);
+}
 
 /// Get standard output file handle (compatible with both Zig 0.14 and 0.15+)
 pub fn getStdOut() std.fs.File {
@@ -30,17 +36,9 @@ pub fn getStdIn() std.fs.File {
     }
 }
 
-const builtin = @import("builtin");
-const native_os = builtin.os.tag;
-
 /// Get environment variable (cross-platform: works on Windows and POSIX)
 /// Returns null if the variable is not set
-/// Note: On Windows, returns null (env var features disabled for now)
-pub const getenv = if (native_os == .windows)
-    struct {
-        pub fn f(_: []const u8) ?[]const u8 {
-            return null;
-        }
-    }.f
-else
-    std.posix.getenv;
+pub fn getenv(key: []const u8) ?[]const u8 {
+    env_init_once.call();
+    return if (cached_env_map) |env_map| env_map.get(key) else null;
+}

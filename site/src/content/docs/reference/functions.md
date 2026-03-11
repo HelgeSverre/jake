@@ -28,13 +28,13 @@ Use functions in variable expansion with `{{function(arg)}}` syntax.
 
 | Function          | Description                 | Example                                                  |
 | ----------------- | --------------------------- | -------------------------------------------------------- |
-| `home()`          | User home directory         | `{{home()}}` → `/Users/alice`                            |
+| `home()`          | User home directory         | `{{home()}}` → `/Users/alice` or `C:\Users\alice`        |
 | `local_bin(name)` | Path to ~/.local/bin binary | `{{local_bin("jake")}}` → `/Users/alice/.local/bin/jake` |
-| `shell_config()`  | Current shell's config file | `{{shell_config()}}` → `/Users/alice/.zshrc`             |
+| `shell_config()`  | Current shell's config file | `{{shell_config()}}` → `/Users/alice/.zshrc` or a PowerShell profile |
 
 ### Shell Config Detection
 
-The `shell_config()` function detects your shell from `$SHELL`:
+The `shell_config()` function detects your shell from `$SHELL`. On Windows, it also understands Windows-style shell paths and falls back to PowerShell or `COMSPEC` when needed.
 
 | Shell | Config File                  |
 | ----- | ---------------------------- |
@@ -45,6 +45,11 @@ The `shell_config()` function detects your shell from `$SHELL`:
 | ksh   | `~/.kshrc`                   |
 | csh   | `~/.cshrc`                   |
 | tcsh  | `~/.tcshrc`                  |
+| powershell | `~/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1` |
+| pwsh  | `~/Documents/PowerShell/Microsoft.PowerShell_profile.ps1` |
+
+`home()` resolves from `HOME` on Unix-like systems and from `HOME`, `USERPROFILE`, or `HOMEDRIVE` + `HOMEPATH` on Windows.
+`shell_config()` does not return a config path for plain `cmd.exe`.
 
 ## Using with Variables
 

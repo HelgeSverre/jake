@@ -15,6 +15,8 @@ jake --completions --install
 
 This automatically detects your shell and installs completions to the appropriate location.
 
+Auto-detection reads `$SHELL` and also recognizes Windows-style shell paths such as `C:\Program Files\Git\bin\bash.exe` when you invoke Jake from PowerShell or other Windows terminals.
+
 ## Manual Installation
 
 Generate the completion script and save it:

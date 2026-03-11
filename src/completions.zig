@@ -6,6 +6,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const args_mod = @import("args.zig");
 const color_mod = @import("color.zig");
+const compat = @import("compat.zig");
+const system = @import("system.zig");
 
 /// Shell types supported for completion generation
 pub const Shell = enum {
@@ -54,29 +56,22 @@ fn isPermissionError(err: anyerror) bool {
 
 /// Detect shell from $SHELL environment variable
 pub fn detectShell() ?Shell {
-    // Shell completions are not applicable on Windows
-    if (comptime builtin.os.tag == .windows) {
-        return null;
-    }
-    const shell_path = std.posix.getenv("SHELL") orelse return null;
-    const basename = std.fs.path.basename(shell_path);
+    const shell_path = compat.getenv("SHELL") orelse return null;
+    return detectShellFromPath(shell_path);
+}
 
-    if (std.mem.eql(u8, basename, "bash")) return .bash;
-    if (std.mem.eql(u8, basename, "zsh")) return .zsh;
-    if (std.mem.eql(u8, basename, "fish")) return .fish;
-    if (std.mem.startsWith(u8, basename, "bash")) return .bash;
-    if (std.mem.startsWith(u8, basename, "zsh")) return .zsh;
-    if (std.mem.startsWith(u8, basename, "fish")) return .fish;
-
-    return null;
+fn detectShellFromPath(shell_path: []const u8) ?Shell {
+    return switch (system.detectShellKind(shell_path) orelse return null) {
+        .bash => .bash,
+        .zsh => .zsh,
+        .fish => .fish,
+        else => null,
+    };
 }
 
 /// Get the user's home directory
 fn getHomeDir() ?[]const u8 {
-    if (comptime builtin.os.tag == .windows) {
-        return null;
-    }
-    return std.posix.getenv("HOME");
+    return compat.getenv("HOME") orelse compat.getenv("USERPROFILE");
 }
 
 /// Detect zsh environment type
@@ -89,7 +84,7 @@ pub fn detectZshEnv() ZshEnv {
 
     // Check for Oh-My-Zsh (most specific first)
     // Look for $ZSH env var or ~/.oh-my-zsh directory
-    if (std.posix.getenv("ZSH")) |zsh_dir| {
+    if (compat.getenv("ZSH")) |zsh_dir| {
         // Verify it's actually Oh-My-Zsh by checking for oh-my-zsh.sh
         var path_buf: [512]u8 = undefined;
         const check_path = std.fmt.bufPrint(&path_buf, "{s}/oh-my-zsh.sh", .{zsh_dir}) catch return .vanilla;
@@ -130,8 +125,8 @@ fn getZshInstallPath(allocator: std.mem.Allocator) !struct { path: []const u8, e
     const path = switch (env) {
         .oh_my_zsh => blk: {
             // Use $ZSH_CUSTOM if set, otherwise default
-            const zsh_custom = std.posix.getenv("ZSH_CUSTOM") orelse {
-                const zsh = std.posix.getenv("ZSH") orelse {
+            const zsh_custom = compat.getenv("ZSH_CUSTOM") orelse {
+                const zsh = compat.getenv("ZSH") orelse {
                     break :blk try std.fmt.allocPrint(allocator, "{s}/.oh-my-zsh/custom/completions/_jake", .{home});
                 };
                 break :blk try std.fmt.allocPrint(allocator, "{s}/custom/completions/_jake", .{zsh});
@@ -807,6 +802,14 @@ const testing = std.testing;
 
 test "detectShell returns null for unknown shell" {
     _ = detectShell();
+}
+
+test "detectShellFromPath handles unix and windows shell paths" {
+    try std.testing.expectEqual(Shell.bash, detectShellFromPath("/bin/bash").?);
+    try std.testing.expectEqual(Shell.zsh, detectShellFromPath("/opt/homebrew/bin/zsh").?);
+    try std.testing.expectEqual(Shell.bash, detectShellFromPath("C:\\Program Files\\Git\\bin\\bash.exe").?);
+    try std.testing.expectEqual(Shell.fish, detectShellFromPath("C:\\tools\\fish.exe").?);
+    try std.testing.expectEqual(@as(?Shell, null), detectShellFromPath("C:\\Windows\\System32\\cmd.exe"));
 }
 
 test "Shell.fromString parses valid shells" {

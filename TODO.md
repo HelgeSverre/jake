@@ -276,7 +276,7 @@ task backup:
 
 ### CI/CD & Distribution
 
-- [ ] GitHub Actions matrix testing (Linux, macOS, Windows)
+- [x] GitHub Actions matrix testing (Linux, macOS, Windows)
 - [ ] Automated release workflow (build binaries on tag)
 
 ---

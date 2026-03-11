@@ -843,8 +843,11 @@ pub const Parser = struct {
             self.advance();
 
             while (self.current.tag != .newline and self.current.tag != .eof) {
-                if (self.current.tag == .ident) {
-                    const cmd = self.slice(self.current);
+                if (self.current.tag == .ident or self.current.tag == .string) {
+                    const cmd = if (self.current.tag == .string)
+                        stripQuotes(self.slice(self.current))
+                    else
+                        self.slice(self.current);
                     self.advance();
 
                     var hint: ?[]const u8 = null;
@@ -3286,6 +3289,22 @@ test "parse recipe-level @needs with install task" {
     try std.testing.expectEqualStrings("docker", jakefile.recipes[0].needs[0].command);
     try std.testing.expectEqual(@as(?[]const u8, null), jakefile.recipes[0].needs[0].hint);
     try std.testing.expectEqualStrings("install-docker", jakefile.recipes[0].needs[0].install_task.?);
+}
+
+test "parse recipe-level @needs with quoted command path" {
+    const source =
+        \\@needs "/bin/sh"
+        \\task test:
+        \\    echo "hi"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].needs.len);
+    try std.testing.expectEqualStrings("/bin/sh", jakefile.recipes[0].needs[0].command);
 }
 
 test "parse recipe-level @needs with hint and install task" {
