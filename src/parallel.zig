@@ -12,14 +12,15 @@ const compat = @import("compat.zig");
 const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
 const cache_mod = @import("cache.zig");
-const conditions = @import("conditions.zig");
 const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
 const color_mod = @import("color.zig");
+const context_mod = @import("context.zig");
 
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
 const Executor = executor_mod.Executor;
 const ExecuteError = executor_mod.ExecuteError;
+const Context = context_mod.Context;
 
 /// Dependency graph node
 const GraphNode = struct {
@@ -49,16 +50,17 @@ pub const ParallelExecutor = struct {
     thread_count: usize,
     dry_run: bool,
     verbose: bool,
-    variables: std.StringHashMap([]const u8),
     cache: cache_mod.Cache,
     color: color_mod.Color,
     theme: color_mod.Theme,
+    ctx: Context,
 
     // Synchronization primitives
     mutex: std.Thread.Mutex,
     condition: std.Thread.Condition,
     output_mutex: std.Thread.Mutex,
     cache_mutex: std.Thread.Mutex,
+    prompt_mutex: std.Thread.Mutex,
 
     // Execution state
     ready_queue: std.ArrayListUnmanaged(usize),
@@ -76,23 +78,33 @@ pub const ParallelExecutor = struct {
             allocator.destroy(owned_index);
             return err;
         };
-        var exec = initInternal(allocator, jakefile, owned_index, thread_count);
+        var exec = initInternal(allocator, jakefile, owned_index, thread_count, null);
         exec.owned_index = owned_index;
         exec.index = owned_index;
         return exec;
     }
 
     pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, thread_count: usize) ParallelExecutor {
-        return initInternal(allocator, jakefile, index, thread_count);
+        return initInternal(allocator, jakefile, index, thread_count, null);
     }
 
-    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, thread_count: usize) ParallelExecutor {
-        var variables = std.StringHashMap([]const u8).init(allocator);
-        var var_iter = index.variablesIterator();
-        while (var_iter.next()) |entry| {
-            variables.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
-        }
+    pub fn initWithIndexAndContext(
+        allocator: std.mem.Allocator,
+        jakefile: *const Jakefile,
+        index: *const JakefileIndex,
+        ctx: *const Context,
+        thread_count: usize,
+    ) ParallelExecutor {
+        return initInternal(allocator, jakefile, index, thread_count, ctx);
+    }
 
+    fn initInternal(
+        allocator: std.mem.Allocator,
+        jakefile: *const Jakefile,
+        index: *const JakefileIndex,
+        thread_count: usize,
+        ctx: ?*const Context,
+    ) ParallelExecutor {
         var cache = cache_mod.Cache.init(allocator);
         cache.load() catch {};
 
@@ -105,14 +117,17 @@ pub const ParallelExecutor = struct {
             .thread_count = if (thread_count == 0) getDefaultThreadCount() else thread_count,
             .dry_run = false,
             .verbose = false,
-            .variables = variables,
             .cache = cache,
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
+            .ctx = if (ctx) |context| context.* else .{
+                .color = color_mod.Color{ .enabled = false },
+            },
             .mutex = .{},
             .condition = .{},
             .output_mutex = .{},
             .cache_mutex = .{},
+            .prompt_mutex = .{},
             .ready_queue = .empty,
             .completed_count = 0,
             .failed = false,
@@ -132,7 +147,6 @@ pub const ParallelExecutor = struct {
         self.nodes.deinit(self.allocator);
         self.name_to_index.deinit();
         self.ready_queue.deinit(self.allocator);
-        self.variables.deinit();
         self.cache.save() catch {};
         self.cache.deinit();
 
@@ -155,13 +169,35 @@ pub const ParallelExecutor = struct {
         try self.initializeReadyQueue();
     }
 
+    fn appendUniqueIndex(
+        self: *ParallelExecutor,
+        list: *std.ArrayListUnmanaged(usize),
+        idx: usize,
+    ) ExecuteError!void {
+        for (list.items) |existing| {
+            if (existing == idx) return;
+        }
+        list.append(self.allocator, idx) catch return ExecuteError.OutOfMemory;
+    }
+
+    fn findRecipeByOutput(self: *ParallelExecutor, output: []const u8) ?*const Recipe {
+        for (self.jakefile.recipes) |*recipe| {
+            if (recipe.output) |recipe_output| {
+                if (std.mem.eql(u8, recipe_output, output)) {
+                    return recipe;
+                }
+            }
+        }
+        return null;
+    }
+
     /// Recursively add a recipe and its dependencies to the graph
     fn addRecipeToGraph(self: *ParallelExecutor, name: []const u8, dependent_idx: ?usize) ExecuteError!void {
         // Check if already in graph
         if (self.name_to_index.get(name)) |existing_idx| {
             // Add edge from existing to dependent
             if (dependent_idx) |dep_idx| {
-                self.nodes.items[existing_idx].dependents.append(self.allocator, dep_idx) catch return ExecuteError.OutOfMemory;
+                try self.appendUniqueIndex(&self.nodes.items[existing_idx].dependents, dep_idx);
             }
             return;
         }
@@ -185,7 +221,7 @@ pub const ParallelExecutor = struct {
 
         // Add edge to dependent
         if (dependent_idx) |dep_idx| {
-            self.nodes.items[node_idx].dependents.append(self.allocator, dep_idx) catch return ExecuteError.OutOfMemory;
+            try self.appendUniqueIndex(&self.nodes.items[node_idx].dependents, dep_idx);
         }
 
         // Recursively add dependencies
@@ -193,7 +229,19 @@ pub const ParallelExecutor = struct {
             try self.addRecipeToGraph(dep_name, node_idx);
             // Add the dependency index to our dependencies list
             if (self.name_to_index.get(dep_name)) |dep_node_idx| {
-                self.nodes.items[node_idx].dependencies.append(self.allocator, dep_node_idx) catch return ExecuteError.OutOfMemory;
+                try self.appendUniqueIndex(&self.nodes.items[node_idx].dependencies, dep_node_idx);
+            }
+        }
+
+        // File targets also depend on any recipes that produce their file dependencies.
+        if (recipe.kind == .file) {
+            for (recipe.file_deps) |file_dep| {
+                if (self.findRecipeByOutput(file_dep)) |producing_recipe| {
+                    try self.addRecipeToGraph(producing_recipe.name, node_idx);
+                    if (self.name_to_index.get(producing_recipe.name)) |dep_node_idx| {
+                        try self.appendUniqueIndex(&self.nodes.items[node_idx].dependencies, dep_node_idx);
+                    }
+                }
             }
         }
     }
@@ -390,8 +438,7 @@ pub const ParallelExecutor = struct {
             self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
         }
 
-        // Execute commands with directive handling
-        if (!self.executeRecipeCommands(recipe.commands)) {
+        if (!self.executeRecipeWithWorker(recipe)) {
             if (!self.dry_run) {
                 self.printCompletionStatus(recipe.name, false, start_time);
             }
@@ -415,6 +462,72 @@ pub const ParallelExecutor = struct {
         return true;
     }
 
+    const OutputCallbackContext = struct {
+        executor: *ParallelExecutor,
+    };
+
+    fn outputCallback(ctx: *anyopaque, line: []const u8, is_stderr: bool) void {
+        const cb: *OutputCallbackContext = @ptrCast(@alignCast(ctx));
+        cb.executor.output_mutex.lock();
+        defer cb.executor.output_mutex.unlock();
+
+        const output = if (is_stderr) compat.getStdErr() else compat.getStdOut();
+        output.writeAll(line) catch {};
+        output.writeAll("\n") catch {};
+    }
+
+    fn executeRecipeWithWorker(self: *ParallelExecutor, recipe: *const Recipe) bool {
+        var worker_ctx = self.ctx;
+        worker_ctx.jobs = 0;
+        worker_ctx.watch_mode = false;
+        worker_ctx.output_callback = outputCallback;
+
+        var output_ctx = OutputCallbackContext{ .executor = self };
+        worker_ctx.output_callback_ctx = &output_ctx;
+
+        var worker = Executor.initWithIndex(self.allocator, self.jakefile, self.index);
+        worker.ctx = &worker_ctx;
+        worker.color = self.color;
+        worker.theme = self.theme;
+        worker.hook_runner.color = self.color;
+        worker.hook_runner.theme = self.theme;
+
+        const cache_snapshot = blk: {
+            self.cache_mutex.lock();
+            defer self.cache_mutex.unlock();
+            break :blk self.cache.clone(self.allocator);
+        };
+        const snapshot = cache_snapshot catch {
+            self.rememberError(ExecuteError.OutOfMemory);
+            worker.deinitWithoutSavingCache();
+            return false;
+        };
+
+        worker.cache.deinit();
+        worker.cache = snapshot;
+        defer worker.deinitWithoutSavingCache();
+
+        const needs_prompt = !worker_ctx.dry_run and !worker_ctx.auto_yes and recipeUsesDirective(recipe, .confirm);
+        if (needs_prompt) {
+            self.prompt_mutex.lock();
+            defer self.prompt_mutex.unlock();
+        }
+
+        worker.executeRecipeBody(recipe.name, recipe) catch |err| {
+            self.rememberError(err);
+            return false;
+        };
+
+        self.cache_mutex.lock();
+        defer self.cache_mutex.unlock();
+        self.cache.mergeFrom(&worker.cache) catch {
+            self.rememberError(ExecuteError.OutOfMemory);
+            return false;
+        };
+
+        return true;
+    }
+
     /// Thread-safe increment of tasks_run counter
     fn incrementTasksRun(self: *ParallelExecutor) void {
         self.output_mutex.lock();
@@ -429,11 +542,29 @@ pub const ParallelExecutor = struct {
         self.tasks_failed += 1;
     }
 
+    fn rememberError(self: *ParallelExecutor, err: ExecuteError) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.first_error == null) {
+            self.first_error = err;
+        }
+    }
+
     /// Check if a command exists in PATH
     fn commandExists(cmd: []const u8) bool {
         // Handle absolute paths
         if (cmd.len > 0 and cmd[0] == '/') {
             return std.fs.accessAbsolute(cmd, .{}) != error.FileNotFound;
+        }
+
+        // Handle relative paths
+        if (std.mem.indexOf(u8, cmd, "/") != null) {
+            const cwd = std.fs.cwd();
+            if (cwd.access(cmd, .{})) |_| {
+                return true;
+            } else |_| {}
+            return false;
         }
 
         // Search in PATH
@@ -495,452 +626,6 @@ pub const ParallelExecutor = struct {
         return false;
     }
 
-    /// Execute commands with full directive support (@if, @each, @ignore, etc.)
-    fn executeRecipeCommands(self: *ParallelExecutor, cmds: []const Recipe.Command) bool {
-        // Conditional state tracking using a stack for proper nesting
-        const ConditionalState = struct {
-            executing: bool,
-            branch_taken: bool,
-        };
-        var cond_stack: [32]ConditionalState = undefined;
-        var cond_depth: usize = 0;
-
-        // Current state
-        var executing: bool = true;
-        var branch_taken: bool = false;
-        var ignore_next: bool = false;
-
-        var i: usize = 0;
-        while (i < cmds.len) : (i += 1) {
-            const cmd = cmds[i];
-
-            // Handle directives
-            if (cmd.directive) |directive| {
-                switch (directive) {
-                    .@"if" => {
-                        // Push current state
-                        if (cond_depth < cond_stack.len) {
-                            cond_stack[cond_depth] = .{
-                                .executing = executing,
-                                .branch_taken = branch_taken,
-                            };
-                            cond_depth += 1;
-                        }
-
-                        if (!executing) {
-                            branch_taken = false;
-                            continue;
-                        }
-
-                        // Evaluate condition
-                        const ctx = conditions.ConditionContext{
-                            .watch_mode = false,
-                            .dry_run = self.dry_run,
-                            .verbose = self.verbose,
-                        };
-                        const condition_result = conditions.evaluate(cmd.line, &self.variables, ctx) catch false;
-
-                        if (condition_result) {
-                            executing = true;
-                            branch_taken = true;
-                        } else {
-                            executing = false;
-                            branch_taken = false;
-                        }
-                        continue;
-                    },
-                    .elif => {
-                        const parent_executing = if (cond_depth > 0) cond_stack[cond_depth - 1].executing else true;
-                        if (!parent_executing) continue;
-
-                        if (branch_taken) {
-                            executing = false;
-                            continue;
-                        }
-
-                        const ctx = conditions.ConditionContext{
-                            .watch_mode = false,
-                            .dry_run = self.dry_run,
-                            .verbose = self.verbose,
-                        };
-                        const condition_result = conditions.evaluate(cmd.line, &self.variables, ctx) catch false;
-
-                        if (condition_result) {
-                            executing = true;
-                            branch_taken = true;
-                        } else {
-                            executing = false;
-                        }
-                        continue;
-                    },
-                    .@"else" => {
-                        const parent_executing = if (cond_depth > 0) cond_stack[cond_depth - 1].executing else true;
-                        if (!parent_executing) continue;
-
-                        if (branch_taken) {
-                            executing = false;
-                        } else {
-                            executing = true;
-                            branch_taken = true;
-                        }
-                        continue;
-                    },
-                    .end => {
-                        // Pop state from stack
-                        if (cond_depth > 0) {
-                            cond_depth -= 1;
-                            executing = cond_stack[cond_depth].executing;
-                            branch_taken = cond_stack[cond_depth].branch_taken;
-                        } else {
-                            executing = true;
-                            branch_taken = false;
-                        }
-                        continue;
-                    },
-                    .ignore => {
-                        if (executing) {
-                            ignore_next = true;
-                        }
-                        continue;
-                    },
-                    .needs => {
-                        // @needs - check if command exists (simplified version)
-                        if (!executing) continue;
-                        // For now, just skip validation in parallel mode
-                        // Full implementation would check if commands exist
-                        continue;
-                    },
-                    .confirm => {
-                        // @confirm - skip in parallel mode (non-interactive)
-                        if (!executing) continue;
-                        // In parallel mode, we can't prompt interactively
-                        // For safety, treat as confirmed
-                        continue;
-                    },
-                    .each => {
-                        if (!executing) {
-                            // Skip to matching @end
-                            var depth: usize = 1;
-                            var j = i + 1;
-                            while (j < cmds.len) : (j += 1) {
-                                if (cmds[j].directive) |d| {
-                                    if (d == .each) depth += 1;
-                                    if (d == .end) {
-                                        depth -= 1;
-                                        if (depth == 0) break;
-                                    }
-                                }
-                            }
-                            i = j;
-                            continue;
-                        }
-
-                        // Expand variables in the @each line first
-                        const expanded_line = self.expandVariables(cmd.line) catch cmd.line;
-                        defer if (expanded_line.ptr != cmd.line.ptr) self.allocator.free(expanded_line);
-
-                        // Parse items from expanded line
-                        const items = self.parseEachItems(expanded_line);
-                        if (items.len == 0) continue;
-                        defer self.allocator.free(items);
-
-                        // Find matching @end
-                        var depth: usize = 1;
-                        var end_idx = i + 1;
-                        while (end_idx < cmds.len) : (end_idx += 1) {
-                            if (cmds[end_idx].directive) |d| {
-                                if (d == .each) depth += 1;
-                                if (d == .end) {
-                                    depth -= 1;
-                                    if (depth == 0) break;
-                                }
-                            }
-                        }
-
-                        // Execute loop body for each item
-                        const loop_body = cmds[i + 1 .. end_idx];
-                        for (items) |item| {
-                            self.variables.put("item", item) catch {};
-                            if (!self.executeRecipeCommands(loop_body)) {
-                                return false;
-                            }
-                        }
-                        _ = self.variables.remove("item");
-
-                        i = end_idx;
-                        continue;
-                    },
-                    .cache, .watch => {
-                        // These are handled elsewhere or not applicable in parallel mode
-                        continue;
-                    },
-                    .launch => {
-                        // @launch - open file/URL with platform default app
-                        if (!executing) continue;
-
-                        // Strip "launch" keyword from line to get the target
-                        var target = std.mem.trim(u8, cmd.line, " \t");
-                        if (std.mem.startsWith(u8, target, "launch")) {
-                            target = std.mem.trimLeft(u8, target[6..], " \t");
-                        }
-
-                        const argv: []const []const u8 = switch (builtin.os.tag) {
-                            .macos => &[_][]const u8{ "open", target },
-                            .linux => &[_][]const u8{ "xdg-open", target },
-                            .windows => &[_][]const u8{ "cmd", "/c", "start", "", target },
-                            else => {
-                                continue; // Unsupported platform, skip
-                            },
-                        };
-
-                        var child = std.process.Child.init(argv, self.allocator);
-                        _ = child.spawn() catch {};
-                        // Don't wait - let the app run in background
-                        continue;
-                    },
-                }
-            }
-
-            // Regular command - check if we should execute
-            if (!executing) continue;
-
-            // Execute the command
-            const current_ignore = ignore_next;
-            ignore_next = false;
-
-            if (!self.runShellCommand(cmd.line)) {
-                if (current_ignore) {
-                    // @ignore was set, continue despite failure
-                    continue;
-                }
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// Parse @each items from the line
-    fn parseEachItems(self: *ParallelExecutor, line: []const u8) [][]const u8 {
-        var items: std.ArrayListUnmanaged([]const u8) = .empty;
-
-        var iter = std.mem.splitScalar(u8, line, ' ');
-        while (iter.next()) |part| {
-            const trimmed = std.mem.trim(u8, part, " \t");
-            if (trimmed.len > 0) {
-                items.append(self.allocator, trimmed) catch continue;
-            }
-        }
-
-        return items.toOwnedSlice(self.allocator) catch &.{};
-    }
-
-    /// Drain child stdout and stderr using threads to avoid deadlock and truncation
-    fn drainChildOutput(self: *ParallelExecutor, child: *std.process.Child) void {
-        const DrainContext = struct {
-            executor: *ParallelExecutor,
-            is_stderr: bool,
-            reader: std.fs.File,
-        };
-
-        const drainFn = struct {
-            fn drain(ctx: DrainContext) void {
-                var buf: [4096]u8 = undefined;
-                var collected: std.ArrayListUnmanaged(u8) = .empty;
-                defer collected.deinit(ctx.executor.allocator);
-
-                while (true) {
-                    const bytes_read = ctx.reader.read(&buf) catch break;
-                    if (bytes_read == 0) break;
-                    collected.appendSlice(ctx.executor.allocator, buf[0..bytes_read]) catch break;
-                }
-
-                if (collected.items.len > 0) {
-                    ctx.executor.output_mutex.lock();
-                    defer ctx.executor.output_mutex.unlock();
-                    const output = if (ctx.is_stderr) compat.getStdErr() else compat.getStdOut();
-                    output.writeAll(collected.items) catch {};
-                }
-            }
-        }.drain;
-
-        var stdout_thread: ?std.Thread = null;
-        var stderr_thread: ?std.Thread = null;
-
-        if (child.stdout) |stdout| {
-            stdout_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
-                .executor = self,
-                .is_stderr = false,
-                .reader = stdout,
-            }}) catch null;
-        }
-
-        if (child.stderr) |stderr| {
-            stderr_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
-                .executor = self,
-                .is_stderr = true,
-                .reader = stderr,
-            }}) catch null;
-        }
-
-        if (stdout_thread) |t| t.join();
-        if (stderr_thread) |t| t.join();
-    }
-
-    /// Run a shell command (the actual execution, separated from directive handling)
-    fn runShellCommand(self: *ParallelExecutor, line: []const u8) bool {
-        const expanded = self.expandVariables(line) catch line;
-        defer if (expanded.ptr != line.ptr) self.allocator.free(expanded);
-
-        if (self.dry_run) {
-            self.printSynchronized("  [dry-run] {s}\n", .{expanded});
-            return true;
-        }
-
-        if (self.verbose) {
-            self.printSynchronized("  $ {s}\n", .{expanded});
-        }
-
-        // Execute via shell
-        var child = std.process.Child.init(
-            &[_][]const u8{ "/bin/sh", "-c", expanded },
-            self.allocator,
-        );
-        child.stderr_behavior = .Pipe;
-        child.stdout_behavior = .Pipe;
-
-        _ = child.spawn() catch |err| {
-            self.printSynchronized("{s}failed to spawn: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            return false;
-        };
-
-        // Drain output using threads to avoid deadlock and truncation
-        self.drainChildOutput(&child);
-
-        const result = child.wait() catch |err| {
-            self.printSynchronized("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            return false;
-        };
-
-        switch (result) {
-            .Exited => |code| {
-                if (code != 0) {
-                    self.printSynchronized("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
-                    return false;
-                }
-            },
-            .Signal => |sig| {
-                self.printSynchronized("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
-                return false;
-            },
-            .Stopped => |sig| {
-                self.printSynchronized("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
-                return false;
-            },
-            .Unknown => |code| {
-                self.printSynchronized("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
-                return false;
-            },
-        }
-
-        return true;
-    }
-
-    fn runCommand(self: *ParallelExecutor, cmd: Recipe.Command, recipe: *const Recipe) bool {
-        _ = recipe;
-
-        const line = self.expandVariables(cmd.line) catch cmd.line;
-        defer if (line.ptr != cmd.line.ptr) self.allocator.free(line);
-
-        if (self.dry_run) {
-            self.printSynchronized("  [dry-run] {s}\n", .{line});
-            return true;
-        }
-
-        if (self.verbose) {
-            self.printSynchronized("  $ {s}\n", .{line});
-        }
-
-        // Execute via shell, capturing output
-        var child = std.process.Child.init(
-            &[_][]const u8{ "/bin/sh", "-c", line },
-            self.allocator,
-        );
-        child.stderr_behavior = .Pipe;
-        child.stdout_behavior = .Pipe;
-
-        _ = child.spawn() catch |err| {
-            self.printSynchronized("{s}failed to spawn: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            return false;
-        };
-
-        // Drain output using threads to avoid deadlock and truncation
-        self.drainChildOutput(&child);
-
-        const result = child.wait() catch |err| {
-            self.printSynchronized("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            return false;
-        };
-
-        switch (result) {
-            .Exited => |code| {
-                if (code != 0) {
-                    self.printSynchronized("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
-                    return false;
-                }
-            },
-            .Signal => |sig| {
-                self.printSynchronized("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
-                return false;
-            },
-            .Stopped => |sig| {
-                self.printSynchronized("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
-                return false;
-            },
-            .Unknown => |code| {
-                self.printSynchronized("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
-                return false;
-            },
-        }
-
-        return true;
-    }
-
-    fn expandVariables(self: *ParallelExecutor, line: []const u8) ![]const u8 {
-        // Fast-path: avoid allocating when there are no substitutions.
-        if (std.mem.indexOf(u8, line, "{{") == null) {
-            return line;
-        }
-
-        var result: std.ArrayListUnmanaged(u8) = .empty;
-        errdefer result.deinit(self.allocator);
-
-        var i: usize = 0;
-        while (i < line.len) {
-            if (i + 1 < line.len and line[i] == '{' and line[i + 1] == '{') {
-                const start = i + 2;
-                var end = start;
-                while (end + 1 < line.len and !(line[end] == '}' and line[end + 1] == '}')) {
-                    end += 1;
-                }
-                if (end + 1 < line.len) {
-                    const var_name = line[start..end];
-                    if (self.variables.get(var_name)) |value| {
-                        try result.appendSlice(self.allocator, value);
-                    } else {
-                        try result.appendSlice(self.allocator, line[i .. end + 2]);
-                    }
-                    i = end + 2;
-                    continue;
-                }
-            }
-            try result.append(self.allocator, line[i]);
-            i += 1;
-        }
-
-        return result.toOwnedSlice(self.allocator);
-    }
-
     /// Mark a task as complete and update dependents (thread-safe)
     fn completeTask(self: *ParallelExecutor, node_idx: usize, success: bool) void {
         self.mutex.lock();
@@ -965,8 +650,15 @@ pub const ParallelExecutor = struct {
                 dependent.in_degree -= 1;
                 if (dependent.in_degree == 0 and dependent.state == .pending) {
                     dependent.state = .ready;
-                    // OOM here could cause dependent tasks to not be scheduled
-                    self.ready_queue.append(self.allocator, dependent_idx) catch {};
+                    self.ready_queue.append(self.allocator, dependent_idx) catch {
+                        dependent.state = .failed;
+                        self.failed = true;
+                        if (self.first_error == null) {
+                            self.first_error = ExecuteError.OutOfMemory;
+                        }
+                        self.condition.broadcast();
+                        return;
+                    };
                 }
             }
         }
@@ -1223,6 +915,15 @@ fn shouldSkipForOs(recipe: *const Recipe) bool {
     return true;
 }
 
+fn recipeUsesDirective(recipe: *const Recipe, directive: Recipe.CommandDirective) bool {
+    for (recipe.commands) |cmd| {
+        if (cmd.directive == directive) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Tests
 test "parallel executor basic" {
     const source =
@@ -1415,6 +1116,26 @@ test "parallel executor skips directive command when condition is false" {
     try exec.execute();
 }
 
+test "parallel executor @if true executes the true branch" {
+    const source =
+        \\task test:
+        \\    @if true
+        \\        exit 1
+        \\    @end
+        \\    echo "after if"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    defer exec.deinit();
+
+    try exec.buildGraph("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, exec.execute());
+}
+
 test "parallel executor handles @each loop expansion" {
     const source =
         \\task test:
@@ -1435,6 +1156,46 @@ test "parallel executor handles @each loop expansion" {
 
     // Should iterate over items and expand {{item}}
     try exec.execute();
+}
+
+test "parallel executor command-level @needs fails for missing command" {
+    const source =
+        \\task test:
+        \\    @needs definitely_missing_parallel_needs_test_command
+        \\    echo "should not run"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 1);
+    defer exec.deinit();
+
+    try exec.buildGraph("test");
+    try std.testing.expectError(ExecuteError.CommandFailed, exec.execute());
+}
+
+test "parallel executor graph includes producing file dependencies" {
+    const source =
+        \\file mid.txt: src.txt
+        \\    echo mid > mid.txt
+        \\
+        \\file final.txt: mid.txt
+        \\    echo final > final.txt
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+
+    try exec.buildGraph("final.txt");
+    try std.testing.expectEqual(@as(usize, 2), exec.nodes.items.len);
+    try std.testing.expect(exec.name_to_index.get("mid.txt") != null);
+    try std.testing.expect(exec.name_to_index.get("final.txt") != null);
 }
 
 test "parallel executor @ignore allows command failure" {

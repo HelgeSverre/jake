@@ -719,10 +719,12 @@ pub const Executor = struct {
         };
     }
 
-    pub fn deinit(self: *Executor) void {
+    fn deinitInternal(self: *Executor, save_cache: bool) void {
         // Only cleanup resources if we own them (not when using RuntimeContext)
         if (self.owns_resources) {
-            self.cache.save() catch {};
+            if (save_cache) {
+                self.cache.save() catch {};
+            }
             self.cache.deinit();
             self.environment.deinit();
             self.hook_runner.deinit();
@@ -742,6 +744,14 @@ pub const Executor = struct {
             self.allocator.destroy(owned);
             self.owned_index = null;
         }
+    }
+
+    pub fn deinit(self: *Executor) void {
+        self.deinitInternal(true);
+    }
+
+    pub fn deinitWithoutSavingCache(self: *Executor) void {
+        self.deinitInternal(false);
     }
 
     /// Execute a recipe by name
@@ -771,7 +781,13 @@ pub const Executor = struct {
 
     /// Execute using parallel executor for concurrent dependency execution
     fn executeParallel(self: *Executor, name: []const u8) ExecuteError!void {
-        var parallel_exec = ParallelExecutor.initWithIndex(self.allocator, self.jakefile, self.index, self.ctx.jobs);
+        var parallel_exec = ParallelExecutor.initWithIndexAndContext(
+            self.allocator,
+            self.jakefile,
+            self.index,
+            self.ctx,
+            self.ctx.jobs,
+        );
         defer parallel_exec.deinit();
 
         parallel_exec.dry_run = self.ctx.dry_run;
@@ -788,7 +804,12 @@ pub const Executor = struct {
         }
 
         // Execute
-        try parallel_exec.execute();
+        parallel_exec.execute() catch |err| {
+            self.cache.mergeFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
+            return err;
+        };
+
+        self.cache.mergeFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
     }
 
     /// Execute sequentially (original behavior)
@@ -871,6 +892,20 @@ pub const Executor = struct {
             self.print("   {s}→{s} {s}\n", .{ self.color.jakeRose(), self.color.reset(), name });
         }
 
+        self.executeRecipeBody(name, recipe) catch |err| {
+            self.stopSpinnerOrPrintStatus(&spinner, name, false, start_time);
+            self.tasks_failed += 1;
+            return err;
+        };
+
+        // Success - stop spinner and print completion
+        self.stopSpinnerOrPrintStatus(&spinner, name, true, start_time);
+        self.tasks_run += 1;
+
+        self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
+    }
+
+    pub fn executeRecipeBody(self: *Executor, name: []const u8, recipe: *const Recipe) ExecuteError!void {
         // Update hook runner settings
         self.hook_runner.dry_run = self.ctx.dry_run;
         self.hook_runner.verbose = self.ctx.verbose;
@@ -886,7 +921,6 @@ pub const Executor = struct {
         // Run pre-hooks (global and recipe-specific)
         self.hook_runner.runPreHooks(recipe.pre_hooks, &hook_context) catch |err| {
             self.print("{s}pre-hook failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            self.stopSpinnerOrPrintStatus(&spinner, name, false, start_time);
             return ExecuteError.CommandFailed;
         };
 
@@ -898,7 +932,6 @@ pub const Executor = struct {
         // Bind recipe parameters to variables
         self.bindRecipeParams(recipe) catch |err| {
             self.print("{s}failed to bind parameters: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            self.stopSpinnerOrPrintStatus(&spinner, name, false, start_time);
             return ExecuteError.CommandFailed;
         };
 
@@ -937,13 +970,7 @@ pub const Executor = struct {
         }
 
         // Return the original error if recipe execution failed
-        if (exec_result) |_| {
-            // Success - stop spinner and print completion
-            self.stopSpinnerOrPrintStatus(&spinner, name, true, start_time);
-            self.tasks_run += 1;
-        } else |err| {
-            self.stopSpinnerOrPrintStatus(&spinner, name, false, start_time);
-            self.tasks_failed += 1;
+        if (exec_result) |_| {} else |err| {
             return err;
         }
 
@@ -954,8 +981,6 @@ pub const Executor = struct {
                 self.cache.update(output) catch {};
             }
         }
-
-        self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
     }
 
     /// Bind recipe parameters to variables based on CLI args and defaults
@@ -1353,7 +1378,7 @@ pub const Executor = struct {
                         if (i < cmds.len and cmds[i].directive == null) {
                             try self.runCommandWithTimeout(cmds[i], timeout_ctx);
                             for (patterns) |pattern| {
-                                self.cache.update(pattern) catch {};
+                                self.cache.updatePattern(pattern) catch {};
                             }
                         }
                         continue;
@@ -4840,6 +4865,50 @@ test "@cache with comma-separated files" {
     try executor.execute("test");
 }
 
+test "@cache with glob pattern updates matched files" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    {
+        const file = try tmp_dir.dir.createFile("a.txt", .{});
+        try file.writeAll("a");
+        file.close();
+    }
+    {
+        const file = try tmp_dir.dir.createFile("b.txt", .{});
+        try file.writeAll("b");
+        file.close();
+    }
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task test:
+        \\    @cache *.txt
+        \\    echo "building"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    try executor.execute("test");
+    try std.testing.expect(executor.cache.hashes.contains("a.txt"));
+    try std.testing.expect(executor.cache.hashes.contains("b.txt"));
+    try std.testing.expect(!executor.cache.hashes.contains("*.txt"));
+}
+
 test "@cache with empty deps always runs" {
     const source =
         \\task test:
@@ -6390,4 +6459,335 @@ test "@timeout allows fast commands to complete" {
 
     // Should complete successfully
     try executor.execute("quick");
+}
+
+// =============================================================================
+// Parallel execution parity tests
+// =============================================================================
+
+test "parallel execution honors @confirm with --yes" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task deploy:
+        \\    @confirm Deploy?
+        \\    echo ok > confirmed.txt
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.jobs = 2;
+    executor.ctx.auto_yes = true;
+
+    try executor.execute("deploy");
+
+    const contents = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "confirmed.txt", 1024);
+    defer std.testing.allocator.free(contents);
+    try std.testing.expectEqualStrings("ok\n", contents);
+}
+
+test "parallel execution honors @cd" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    try tmp_dir.dir.makeDir("subdir");
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    const subdir_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, "subdir");
+    defer std.testing.allocator.free(subdir_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task test:
+        \\    @cd subdir
+        \\    pwd > ../cwd.txt
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.jobs = 2;
+
+    try executor.execute("test");
+
+    const contents = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "cwd.txt", 4096);
+    defer std.testing.allocator.free(contents);
+    const trimmed = std.mem.trimRight(u8, contents, "\r\n");
+    try std.testing.expectEqualStrings(subdir_path, trimmed);
+}
+
+test "parallel execution honors @shell" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    const marker_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/shell-used.txt", .{tmp_path});
+    defer std.testing.allocator.free(marker_path);
+    const shell_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/fake-shell.sh", .{tmp_path});
+    defer std.testing.allocator.free(shell_path);
+
+    const shell_contents = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "#!/bin/sh\nprintf custom-shell > \"{s}\"\nexec /bin/sh \"$@\"\n",
+        .{marker_path},
+    );
+    defer std.testing.allocator.free(shell_contents);
+
+    const shell_file = try tmp_dir.dir.createFile("fake-shell.sh", .{});
+    try shell_file.writeAll(shell_contents);
+    try shell_file.chmod(0o755);
+    shell_file.close();
+
+    const source = try std.fmt.allocPrint(
+        std.testing.allocator,
+        \\task test:
+        \\    @shell {s}
+        \\    echo ran > shell-result.txt
+    ,
+        .{shell_path},
+    );
+    defer std.testing.allocator.free(source);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.jobs = 2;
+
+    try executor.execute("test");
+
+    const marker = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "shell-used.txt", 1024);
+    defer std.testing.allocator.free(marker);
+    try std.testing.expectEqualStrings("custom-shell", marker);
+
+    const result = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "shell-result.txt", 1024);
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("ran\n", result);
+}
+
+test "parallel execution runs recipe and global hooks" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\@pre echo global-pre > global-pre.txt
+        \\@post echo global-post > global-post.txt
+        \\task test:
+        \\    @pre echo recipe-pre > recipe-pre.txt
+        \\    echo body > body.txt
+        \\    @post echo recipe-post > recipe-post.txt
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.jobs = 2;
+
+    try executor.execute("test");
+
+    const global_pre = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "global-pre.txt", 1024);
+    defer std.testing.allocator.free(global_pre);
+    try std.testing.expectEqualStrings("global-pre\n", global_pre);
+
+    const global_post = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "global-post.txt", 1024);
+    defer std.testing.allocator.free(global_post);
+    try std.testing.expectEqualStrings("global-post\n", global_post);
+
+    const recipe_pre = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "recipe-pre.txt", 1024);
+    defer std.testing.allocator.free(recipe_pre);
+    try std.testing.expectEqualStrings("recipe-pre\n", recipe_pre);
+
+    const body = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "body.txt", 1024);
+    defer std.testing.allocator.free(body);
+    try std.testing.expectEqualStrings("body\n", body);
+
+    const recipe_post = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "recipe-post.txt", 1024);
+    defer std.testing.allocator.free(recipe_post);
+    try std.testing.expectEqualStrings("recipe-post\n", recipe_post);
+}
+
+test "parallel execution honors @cache" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    {
+        const input = try tmp_dir.dir.createFile("input.txt", .{});
+        try input.writeAll("input");
+        input.close();
+    }
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task test:
+        \\    @cache input.txt
+        \\    echo run >> runs.txt
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    {
+        var executor = try Executor.init(std.testing.allocator, &jakefile);
+        defer executor.deinit();
+        executor.ctx.jobs = 2;
+        try executor.execute("test");
+    }
+
+    {
+        var executor = try Executor.init(std.testing.allocator, &jakefile);
+        defer executor.deinit();
+        executor.ctx.jobs = 2;
+        try executor.execute("test");
+    }
+
+    const runs = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "runs.txt", 1024);
+    defer std.testing.allocator.free(runs);
+    try std.testing.expectEqualStrings("run\n", runs);
+}
+
+test "parallel execution honors @timeout" {
+    if (builtin.os.tag == .windows) return;
+
+    const source =
+        \\@timeout 1s
+        \\task slow:
+        \\    sleep 10
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.jobs = 2;
+    executor.ctx.verbose = false;
+
+    const start = std.time.milliTimestamp();
+    const result = executor.execute("slow");
+    try std.testing.expectError(ExecuteError.CommandFailed, result);
+
+    const elapsed = std.time.milliTimestamp() - start;
+    try std.testing.expect(elapsed < 3000);
+}
+
+test "parallel execution delegates external recipes" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    const output_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/external-out.txt", .{tmp_path});
+    defer std.testing.allocator.free(output_path);
+
+    const makefile_contents = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "external:\n\tprintf external > \"{s}\"\n",
+        .{output_path},
+    );
+    defer std.testing.allocator.free(makefile_contents);
+
+    const makefile = try tmp_dir.dir.createFile("Makefile", .{});
+    try makefile.writeAll(makefile_contents);
+    makefile.close();
+
+    const makefile_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, "Makefile");
+    defer std.testing.allocator.free(makefile_path);
+
+    const source =
+        \\task external:
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var recipes = @constCast(jakefile.recipes);
+    recipes[0].origin = .{
+        .original_name = "external",
+        .import_prefix = null,
+        .source_file = makefile_path,
+        .external_kind = .makefile,
+    };
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.jobs = 2;
+
+    try executor.execute("external");
+
+    const output = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "external-out.txt", 1024);
+    defer std.testing.allocator.free(output);
+    try std.testing.expectEqualStrings("external", output);
 }
