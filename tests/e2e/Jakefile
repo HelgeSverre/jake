@@ -6,7 +6,7 @@ out = "/tmp/jake-e2e-output.txt"
 
 @default
 @desc "Run all e2e tests"
-task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-cli, test-integration, test-traverse]
+task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-external, test-cli, test-integration, test-traverse]
     echo ""
     echo "All e2e tests passed!"
 
@@ -292,6 +292,23 @@ task test-imports:
     {{jake}} -f fixtures/imports/main.jake all > {{out}} 2>&1
     grep -q "Compiling project" {{out}} && grep -q "Deploying to production" {{out}} && grep -q "Build and deploy complete" {{out}}
     echo "  Import system works ................................... PASS"
+
+# ============================================================================
+# External Integration Tests
+# ============================================================================
+
+@quiet
+task test-external:
+    echo ""
+    echo "External Integration Tests"
+    # External Makefile targets are discovered relative to the selected Jakefile
+    {{jake}} -f fixtures/external/nested/Jakefile --external make > {{out}} 2>&1
+    grep -q "make.nested-list" {{out}}
+    echo "  Nested external Makefile is discovered via -f ........ PASS"
+    # External execution forwards positional args and runs in the external file directory
+    {{jake}} -f fixtures/external/nested/Jakefile make.args alpha beta > {{out}} 2>&1
+    grep -q "ARGS=alpha beta" {{out}} && grep -q "CWD_OK" {{out}}
+    echo "  External execution preserves args and cwd ............. PASS"
 
 # ============================================================================
 # CLI Tests

@@ -29,6 +29,9 @@ Target release: `0.8.0`
   - Added focused tests to verify that parallel execution matches sequential behavior for `@confirm`, `@cd`, `@shell`, hooks, `@cache`, timeouts, and external recipe delegation
   - Added regression coverage for file-target producer resolution in the parallel dependency graph
 
+- **External Integration Coverage**
+  - Added unit and E2E coverage for external recipe discovery via `-f <Jakefile>` and delegated positional-argument forwarding
+
 ### Changed
 
 - **Args Module Refactor**
@@ -40,6 +43,7 @@ Target release: `0.8.0`
   - `ParallelExecutor` now schedules work but runs recipes through the shared executor recipe runner instead of maintaining a separate command interpreter
   - Parallel execution now preserves sequential recipe semantics for hooks, `@cd`, `@shell`, `@confirm`, timeout handling, external recipe delegation, and command-level `@cache`
   - Removed the duplicate directive/shell execution path from `src/parallel.zig` to reduce future semantic drift
+  - Watch mode now reloads through the shared Jakefile loading pipeline so imports, external recipes, runtime configuration, and execution flags stay aligned with normal CLI execution
 
 - **Documentation Cleanup**
   - Archived outdated design and review docs under `docs/archived/`
@@ -56,6 +60,18 @@ Target release: `0.8.0`
 - **Caching and Glob Handling**
   - Fixed `@cache` glob refresh so glob patterns update the cache entries for matched files instead of treating the glob itself as a literal path
   - Fixed relative glob expansion from the current working directory on macOS/Darwin
+
+- **Watch Mode**
+  - Fixed `--watch` to reparse Jakefile/import/external-build changes instead of rerunning a stale AST
+  - Fixed watch-mode execution to preserve the full CLI/runtime context, including parallel job settings and required-environment validation
+  - Fixed recursive dependency collection in watch mode so cycles no longer recurse indefinitely during pattern discovery
+  - Fixed deleted watched files to trigger exactly one change event and retrigger again when the file reappears
+  - Added watch-mode regression coverage for automatic config watching, reload-on-edit, dependency cycles, and deleted-file handling
+
+- **External Build System Integration**
+  - Fixed external Makefile/Justfile loading to resolve relative to the selected Jakefile directory instead of the process cwd
+  - Fixed delegated external execution to run from the external file's directory and forward CLI positional arguments to `make`/`just`
+  - Fixed empty external parse results to remain allocator-owned so cleanup does not free static empty slices
 
 ## [0.7.0] - 2026-01-09
 

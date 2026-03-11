@@ -2155,7 +2155,7 @@ task example:
     @confirm "Proceed?"          # Ask for confirmation
     @ignore                      # Continue on failure
     @cache file1 file2           # Skip if unchanged
-    @watch pattern               # Watch files in -w mode
+    @watch pattern               # Add watch patterns; jake -w also reloads on Jakefile/import changes
     @cd directory                # Change directory
     @shell zsh                   # Use different shell
     @pre command                 # Run before task

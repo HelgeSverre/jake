@@ -41,6 +41,21 @@ pub const ExternalRecipes = struct {
     }
 };
 
+fn ownedEmptyExternalRecipes(allocator: std.mem.Allocator) ExternalRecipes {
+    return .{
+        .recipes = allocator.alloc(Recipe, 0) catch unreachable,
+        .allocator = allocator,
+    };
+}
+
+fn joinBasePath(allocator: std.mem.Allocator, base_dir: []const u8, file_name: []const u8) ![]u8 {
+    if (base_dir.len == 0 or std.mem.eql(u8, base_dir, ".")) {
+        return try allocator.dupe(u8, file_name);
+    }
+
+    return try std.fs.path.join(allocator, &[_][]const u8{ base_dir, file_name });
+}
+
 /// Detect Makefile and Justfile in the given directory
 pub fn detectExternalFiles(allocator: std.mem.Allocator, dir_path: []const u8) !ExternalFiles {
     var dir = std.fs.cwd().openDir(dir_path, .{}) catch |err| switch (err) {
@@ -80,12 +95,12 @@ pub fn detectExternalFilesInDir(allocator: std.mem.Allocator, dir: std.fs.Dir) !
 /// Parse Makefile targets into Recipe structs
 pub fn parseMakefile(allocator: std.mem.Allocator, path: []const u8) !ExternalRecipes {
     const file = std.fs.cwd().openFile(path, .{}) catch {
-        return ExternalRecipes{ .recipes = &.{}, .allocator = allocator };
+        return ownedEmptyExternalRecipes(allocator);
     };
     defer file.close();
 
     const content = file.readToEndAlloc(allocator, 1024 * 1024) catch {
-        return ExternalRecipes{ .recipes = &.{}, .allocator = allocator };
+        return ownedEmptyExternalRecipes(allocator);
     };
     defer allocator.free(content);
 
@@ -235,10 +250,13 @@ fn runJustList(allocator: std.mem.Allocator, path_param: []const u8) !ExternalRe
     }
 
     // Run: just --justfile <path> --list --unsorted --list-heading '' --list-prefix ''
+    const justfile_arg = std.fs.path.basename(path_param);
+    const justfile_dir = std.fs.path.dirname(path_param) orelse ".";
+
     var child = std.process.Child.init(&[_][]const u8{
         "just",
         "--justfile",
-        path_param,
+        justfile_arg,
         "--list",
         "--unsorted",
         "--list-heading",
@@ -246,25 +264,26 @@ fn runJustList(allocator: std.mem.Allocator, path_param: []const u8) !ExternalRe
         "--list-prefix",
         "",
     }, allocator);
+    child.cwd = justfile_dir;
 
     child.stdout_behavior = .Pipe;
     child.stderr_behavior = .Ignore; // Don't need stderr, avoid deadlock if buffer fills
 
     _ = child.spawn() catch {
         // `just` not installed, return empty
-        return ExternalRecipes{ .recipes = &.{}, .allocator = allocator };
+        return ownedEmptyExternalRecipes(allocator);
     };
 
     const stdout_file = child.stdout orelse {
-        return ExternalRecipes{ .recipes = &.{}, .allocator = allocator };
+        return ownedEmptyExternalRecipes(allocator);
     };
     const stdout = stdout_file.readToEndAlloc(allocator, 64 * 1024) catch {
-        return ExternalRecipes{ .recipes = &.{}, .allocator = allocator };
+        return ownedEmptyExternalRecipes(allocator);
     };
     defer allocator.free(stdout);
 
     _ = child.wait() catch {
-        return ExternalRecipes{ .recipes = &.{}, .allocator = allocator };
+        return ownedEmptyExternalRecipes(allocator);
     };
 
     // Parse output: each line is "recipe_name  # description" or just "recipe_name"
@@ -343,12 +362,12 @@ fn runJustList(allocator: std.mem.Allocator, path_param: []const u8) !ExternalRe
 /// Parse Justfile directly (fallback when `just` is not installed)
 fn parseJustfileDirect(allocator: std.mem.Allocator, path_param: []const u8) !ExternalRecipes {
     const file = std.fs.cwd().openFile(path_param, .{}) catch {
-        return ExternalRecipes{ .recipes = &.{}, .allocator = allocator };
+        return ownedEmptyExternalRecipes(allocator);
     };
     defer file.close();
 
     const content = file.readToEndAlloc(allocator, 1024 * 1024) catch {
-        return ExternalRecipes{ .recipes = &.{}, .allocator = allocator };
+        return ownedEmptyExternalRecipes(allocator);
     };
     defer allocator.free(content);
 
@@ -494,13 +513,22 @@ pub fn loadAndMergeExternalRecipes(
         for (all_external.items) |recipe| {
             allocator.free(recipe.name);
             if (recipe.description) |desc| allocator.free(desc);
+            if (recipe.origin) |origin| {
+                allocator.free(origin.original_name);
+                if (origin.source_file) |source_file| {
+                    allocator.free(source_file);
+                }
+            }
         }
         all_external.deinit(allocator);
     }
 
     // Parse Makefile if present
-    if (external_files.makefile) |mf| {
-        const make_recipes = try parseMakefile(allocator, mf);
+    if (external_files.makefile) |makefile_name| {
+        const makefile_path = try joinBasePath(allocator, base_dir, makefile_name);
+        defer allocator.free(makefile_path);
+
+        const make_recipes = try parseMakefile(allocator, makefile_path);
         defer allocator.free(make_recipes.recipes);
         // Don't call make_recipes.deinit() - we're taking ownership of the recipes
         for (make_recipes.recipes) |recipe| {
@@ -509,8 +537,11 @@ pub fn loadAndMergeExternalRecipes(
     }
 
     // Parse Justfile if present
-    if (external_files.justfile) |jf| {
-        const just_recipes = try parseJustfile(allocator, jf);
+    if (external_files.justfile) |justfile_name| {
+        const justfile_path = try joinBasePath(allocator, base_dir, justfile_name);
+        defer allocator.free(justfile_path);
+
+        const just_recipes = try parseJustfile(allocator, justfile_path);
         defer allocator.free(just_recipes.recipes);
         // Don't call just_recipes.deinit() - we're taking ownership of the recipes
         for (just_recipes.recipes) |recipe| {
@@ -621,4 +652,56 @@ test "parseMakefileContent - skip variable assignments" {
 
     try std.testing.expectEqual(@as(usize, 1), result.recipes.len);
     try std.testing.expectEqualStrings("make.build", result.recipes[0].name);
+}
+
+test "parseMakefile missing file returns deinit-safe empty allocation" {
+    var result = try parseMakefile(std.testing.allocator, "definitely-missing-makefile");
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(usize, 0), result.recipes.len);
+}
+
+test "loadAndMergeExternalRecipes resolves external files relative to base_dir" {
+    if (@import("builtin").os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.makePath("nested");
+
+    const makefile =
+        "nested-target:\n" ++
+        "\tprintf nested-target\n";
+    {
+        const file = try tmp_dir.dir.createFile("nested/Makefile", .{});
+        defer file.close();
+        try file.writeAll(makefile);
+    }
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task local:
+        \\    echo local
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var external_allocations = (try loadAndMergeExternalRecipes(std.testing.allocator, &jakefile, "nested")).?;
+    defer external_allocations.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), external_allocations.recipes.len);
+    try std.testing.expectEqualStrings("make.nested-target", external_allocations.recipes[0].name);
+    try std.testing.expectEqualStrings("nested/Makefile", external_allocations.recipes[0].origin.?.source_file.?);
 }

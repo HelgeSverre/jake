@@ -314,6 +314,8 @@ Appear inside recipe body (indented).
 - Loop keyword (`@each`): `keyword.control.loop.jake`
 - Other directives: `keyword.control.directive.jake`
 
+`jake -w recipe` also watches the active Jakefile and imported build files automatically when no explicit watch pattern is provided.
+
 ---
 
 ### 7. Condition Functions

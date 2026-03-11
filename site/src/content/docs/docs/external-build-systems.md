@@ -3,7 +3,9 @@ title: External Build Systems
 description: Use Jake alongside Makefile and Justfile targets.
 ---
 
-Jake can detect and run targets from Makefile and Justfile in the same directory. This lets you gradually migrate to Jake or use them together.
+Jake can detect and run targets from Makefile and Justfile in the same directory as the active Jakefile. This lets you gradually migrate to Jake or use them together.
+
+If you select a Jakefile with `-f`, external detection and delegation follow that Jakefile's directory instead of your shell's starting directory.
 
 ## Automatic Detection
 
@@ -58,8 +60,12 @@ jake make.build
 # Run a Justfile recipe
 jake just.test
 
-# With arguments (passed through)
+# With arguments passed through to the delegated tool
 jake make.install PREFIX=/usr/local
+jake just.deploy production us-east-1
+
+# External discovery also follows the selected Jakefile
+jake -f tools/Jakefile make.build
 ```
 
 ## How It Works
@@ -69,7 +75,9 @@ When you run an external recipe, Jake delegates to the underlying tool:
 - **Makefile**: Runs `make -f <file> <target>`
 - **Justfile**: Runs `just --justfile <file> <recipe>`
 
-The original tool handles all the execution logic.
+Any extra positional arguments after the external recipe are forwarded to the delegated tool.
+
+The delegated process runs from the external file's directory, so relative paths behave the same way they do when you invoke that Makefile or Justfile directly from its own directory.
 
 ## Private Targets
 

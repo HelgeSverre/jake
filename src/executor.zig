@@ -1725,34 +1725,45 @@ pub const Executor = struct {
             .makefile => "Makefile",
             .justfile => "justfile",
         };
+        const source_file_arg = std.fs.path.basename(source_file);
+        const external_cwd = std.fs.path.dirname(source_file) orelse ".";
+
+        var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer argv.deinit(self.allocator);
+        try argv.appendSlice(self.allocator, &[_][]const u8{
+            tool,
+            flag,
+            source_file_arg,
+            origin.original_name,
+        });
+        try argv.appendSlice(self.allocator, self.ctx.positional_args);
 
         // Dry-run: just print what would be executed
         if (self.ctx.dry_run) {
-            self.print("   {s} {s} {s} {s}\n", .{ tool, flag, source_file, origin.original_name });
+            self.print("   ", .{});
+            for (argv.items, 0..) |arg, i| {
+                if (i != 0) self.print(" ", .{});
+                self.print("{s}", .{arg});
+            }
+            self.print("\n", .{});
             return;
         }
 
         // Print command being executed (like regular commands)
         if (!self.current_quiet) {
-            self.print("   {s}{s} {s} {s} {s}{s}\n", .{
-                self.color.muted(),
-                tool,
-                flag,
-                source_file,
-                origin.original_name,
-                self.color.reset(),
-            });
+            self.print("   {s}", .{self.color.muted()});
+            for (argv.items, 0..) |arg, i| {
+                if (i != 0) self.print(" ", .{});
+                self.print("{s}", .{arg});
+            }
+            self.print("{s}\n", .{self.color.reset()});
         }
 
         _ = recipe_name; // Used for context, but tool uses original_name
 
         // Spawn the external process
-        var child = std.process.Child.init(&[_][]const u8{
-            tool,
-            flag,
-            source_file,
-            origin.original_name,
-        }, self.allocator);
+        var child = std.process.Child.init(argv.items, self.allocator);
+        child.cwd = external_cwd;
 
         // Set up stdio
         if (self.ctx.hasOutputCallback()) {
@@ -1768,15 +1779,28 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
+        if (self.ctx.current_child_pid) |pid_atomic| {
+            if (builtin.os.tag != .windows) {
+                pid_atomic.store(@intCast(child.id), .release);
+            }
+        }
+
         // Handle output streaming if we have a callback
         if (self.ctx.hasOutputCallback()) {
             self.streamChildOutput(&child);
         }
 
         const result = child.wait() catch |err| {
+            if (self.ctx.current_child_pid) |pid_atomic| {
+                pid_atomic.store(0, .release);
+            }
             self.print("{s}failed to wait for {s}: {s}\n", .{ self.color.errPrefix(), tool, @errorName(err) });
             return ExecuteError.CommandFailed;
         };
+
+        if (self.ctx.current_child_pid) |pid_atomic| {
+            pid_atomic.store(0, .release);
+        }
 
         switch (result) {
             .Exited => |code| {
@@ -6782,4 +6806,65 @@ test "parallel execution delegates external recipes" {
     const output = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "external-out.txt", 1024);
     defer std.testing.allocator.free(output);
     try std.testing.expectEqualStrings("external", output);
+}
+
+test "external recipe delegation preserves positional args and runs in source directory" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.makePath("nested");
+
+    {
+        const makefile =
+            "args:\n" ++
+            "\tprintf '%s\\n' \"$(filter-out $@,$(MAKECMDGOALS))\" > args.txt\n" ++
+            "\tpwd > pwd.txt\n" ++
+            "%:\n" ++
+            "\t@:\n";
+        const file = try tmp_dir.dir.createFile("nested/Makefile", .{});
+        defer file.close();
+        try file.writeAll(makefile);
+    }
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task args:
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var recipes = @constCast(jakefile.recipes);
+    recipes[0].origin = .{
+        .original_name = "args",
+        .import_prefix = null,
+        .source_file = "nested/Makefile",
+        .external_kind = .makefile,
+    };
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.positional_args = &.{ "alpha", "beta" };
+
+    try executor.execute("args");
+
+    const args = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "nested/args.txt", 1024);
+    defer std.testing.allocator.free(args);
+    try std.testing.expectEqualStrings("alpha beta\n", args);
+
+    const pwd_output = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "nested/pwd.txt", 1024);
+    defer std.testing.allocator.free(pwd_output);
+    try std.testing.expect(std.mem.endsWith(u8, std.mem.trimRight(u8, pwd_output, "\n"), "nested"));
 }

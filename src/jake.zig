@@ -23,6 +23,7 @@ pub const prompt = @import("prompt.zig");
 pub const completions = @import("completions.zig");
 pub const color = @import("color.zig");
 pub const context = @import("context.zig");
+pub const jakefile_loader = @import("jakefile_loader.zig");
 pub const formatter = @import("formatter.zig");
 pub const upgrade = @import("upgrade.zig");
 pub const init = @import("init.zig");
@@ -46,6 +47,8 @@ pub const resolveImports = import_mod.resolveImports;
 pub const Color = color.Color;
 pub const Context = context.Context;
 pub const RuntimeContext = context.RuntimeContext;
+pub const LoadedJakefile = jakefile_loader.LoadedJakefile;
+pub const loadJakefile = jakefile_loader.loadJakefile;
 pub const ExternalRecipes = external.ExternalRecipes;
 pub const loadAndMergeExternalRecipes = external.loadAndMergeExternalRecipes;
 
@@ -88,6 +91,7 @@ comptime {
     _ = completions;
     _ = color;
     _ = context;
+    _ = jakefile_loader;
     _ = formatter;
     _ = upgrade;
     _ = init;

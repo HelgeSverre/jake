@@ -50,7 +50,7 @@ Used inside recipe bodies.
 | `@shell name`          | Use different shell      |
 | `@ignore`              | Continue on failure      |
 | `@cache pattern...`    | Skip if files unchanged  |
-| `@watch pattern...`    | Watch patterns for `-w`  |
+| `@watch pattern...`    | Watch patterns for `-w`; auto mode also tracks Jakefiles/imports |
 
 ## Control Flow
 

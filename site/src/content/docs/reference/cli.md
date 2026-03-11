@@ -81,7 +81,12 @@ jake --external just
 # Run external recipes
 jake make.build
 jake just.test
+
+# External discovery follows the selected Jakefile
+jake -f tools/Jakefile make.build
 ```
+
+When `-f` points at a Jakefile in another directory, external Makefile/Justfile discovery and delegated execution use that Jakefile's directory as the base path.
 
 ## Exit Codes
 

@@ -13,6 +13,7 @@ jake -w build
 
 Jake watches files based on:
 
+- The active Jakefile plus imported/external build files when you run `jake -w recipe` without an explicit pattern
 - File dependencies in file recipes
 - `@watch` directives in tasks
 
@@ -29,6 +30,8 @@ When watch mode starts, Jake shows what's being monitored:
 ```bash
 jake -w "src/**/*.ts" build
 ```
+
+With an explicit pattern, Jake watches the pattern you provided. If that pattern includes the Jakefile or imported build files, watch mode reloads them before rerunning the recipe.
 
 ## Watch Directive
 
@@ -55,6 +58,8 @@ jake -w -v build
 ```
 
 Shows which files triggered the rebuild.
+
+Deleted watched files also count as changes, and recreating them triggers the recipe again.
 
 ## Conditional Watch Behavior
 

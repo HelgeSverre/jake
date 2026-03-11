@@ -8,6 +8,7 @@ const upgrade = jake.upgrade;
 const init = jake.init;
 const color_mod = jake.color;
 const webui = jake.webui;
+const jakefile_loader = jake.jakefile_loader;
 
 const version = build_options.version;
 
@@ -184,7 +185,7 @@ pub fn main() !void {
 
     // Handle web UI mode
     if (args.web) {
-        var jakefile_data = loadJakefile(allocator, args.jakefile) catch |err| {
+        var jakefile_data = jakefile_loader.loadJakefile(allocator, args.jakefile) catch |err| {
             const stderr = getStderr();
             const color = color_mod.init();
             if (err == error.FileNotFound) {
@@ -233,7 +234,7 @@ pub fn main() !void {
     }
 
     // Load Jakefile
-    var jakefile_data = loadJakefile(allocator, args.jakefile) catch |err| {
+    var jakefile_data = jakefile_loader.loadJakefile(allocator, args.jakefile) catch |err| {
         const stderr = getStderr();
         const color = color_mod.init();
         if (err == error.FileNotFound) {
@@ -262,7 +263,8 @@ pub fn main() !void {
         }
         std.process.exit(1);
     };
-    defer jakefile_data.deinit();
+    var should_deinit_jakefile = true;
+    defer if (should_deinit_jakefile) jakefile_data.deinit();
 
     // Create CLI context from parsed args
     var ctx = jake.Context{
@@ -322,16 +324,21 @@ pub fn main() !void {
 
     // Watch mode
     if (args.watch_enabled) {
-        var watcher = jake.Watcher.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &ctx, &jakefile_data.runtime);
+        var watcher = jake.Watcher.initWithLoadedJakefile(allocator, args.jakefile, jakefile_data, &ctx) catch |err| {
+            const stderr = getStderr();
+            var buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Watch failed: {s}\n", .{@errorName(err)}) catch "error\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        };
         defer watcher.deinit();
+        should_deinit_jakefile = false;
 
         // Add explicit watch pattern from CLI if provided
         if (args.watch) |pattern| {
             watcher.addPattern(pattern) catch {};
         } else {
-            // If no explicit pattern, watch the Jakefile and recipe dependencies
-            watcher.addPattern(args.jakefile) catch {};
-            watcher.addRecipeDeps(target) catch {};
+            watcher.configureAutomaticPatterns(target) catch {};
         }
 
         watcher.watch(target) catch |err| {
@@ -394,160 +401,6 @@ pub fn main() !void {
             },
         }
         std.process.exit(1);
-    };
-}
-
-const JakefileWithSource = struct {
-    jakefile: jake.Jakefile,
-    index: jake.JakefileIndex,
-    runtime: jake.RuntimeContext,
-    source: []const u8,
-    allocator: std.mem.Allocator,
-    import_allocations: ?jake.ImportAllocations,
-    external_allocations: ?jake.ExternalRecipes,
-
-    pub fn deinit(self: *JakefileWithSource) void {
-        self.runtime.deinit();
-        self.index.deinit();
-        self.jakefile.deinit(self.allocator);
-        self.allocator.free(self.source);
-        if (self.external_allocations) |*allocs| {
-            var mutable_allocs = allocs.*;
-            mutable_allocs.deinit();
-        }
-        if (self.import_allocations) |*allocs| {
-            var mutable_allocs = allocs.*;
-            mutable_allocs.deinit();
-        }
-    }
-};
-
-/// Searches for a Jakefile starting from the current directory and traversing up
-/// to parent directories. Returns the path to the found Jakefile.
-/// Only traverses if the path is the default "Jakefile" - explicit paths are used as-is.
-fn findJakefile(allocator: std.mem.Allocator, requested_path: []const u8) !struct { path: []const u8, dir: ?[]const u8 } {
-    // If user specified an explicit path (not just "Jakefile"), use it directly
-    if (!std.mem.eql(u8, requested_path, "Jakefile")) {
-        return .{ .path = requested_path, .dir = null };
-    }
-
-    // Try current directory first
-    if (std.fs.cwd().openFile("Jakefile", .{})) |file| {
-        file.close();
-        return .{ .path = "Jakefile", .dir = null };
-    } else |_| {}
-
-    // Get absolute path to current directory
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const cwd = std.fs.cwd().realpath(".", &path_buf) catch return error.FileNotFound;
-
-    // Use a separate buffer for the current directory we're checking
-    var current_buf: [std.fs.max_path_bytes]u8 = undefined;
-    @memcpy(current_buf[0..cwd.len], cwd);
-    var current_dir: []const u8 = current_buf[0..cwd.len];
-
-    // Traverse up the directory tree
-    while (true) {
-        const parent = std.fs.path.dirname(current_dir) orelse break;
-        if (parent.len == 0 or std.mem.eql(u8, parent, current_dir)) break;
-
-        // Try to open Jakefile in parent
-        var parent_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const jakefile_path = std.fmt.bufPrint(&parent_buf, "{s}/Jakefile", .{parent}) catch break;
-
-        if (std.fs.cwd().openFile(jakefile_path, .{})) |file| {
-            file.close();
-            // Found it - return the path and the directory to change to
-            const path_copy = allocator.dupe(u8, jakefile_path) catch return error.OutOfMemory;
-            const dir_copy = allocator.dupe(u8, parent) catch {
-                allocator.free(path_copy);
-                return error.OutOfMemory;
-            };
-            return .{ .path = path_copy, .dir = dir_copy };
-        } else |_| {}
-
-        // parent is already a prefix slice of current_buf, just update the length
-        current_dir = current_buf[0..parent.len];
-    }
-
-    return error.FileNotFound;
-}
-
-fn loadJakefile(allocator: std.mem.Allocator, path: []const u8) !JakefileWithSource {
-    // Find the Jakefile, potentially traversing up directories
-    const found = try findJakefile(allocator, path);
-    defer if (found.dir) |dir| allocator.free(dir);
-    const jakefile_path = found.path;
-    defer if (found.dir != null) allocator.free(jakefile_path);
-
-    // Change to the Jakefile's directory if we found it in a parent
-    if (found.dir) |dir| {
-        std.posix.chdir(dir) catch |err| {
-            const stderr = getStderr();
-            var buf: [512]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to change to directory '{s}': {s}\n", .{ dir, @errorName(err) }) catch "error\n";
-            stderr.writeAll(msg) catch {};
-            return error.FileNotFound;
-        };
-    }
-
-    // Now open using just the filename since we've changed directory
-    const actual_path = if (found.dir != null) "Jakefile" else jakefile_path;
-    const file = try std.fs.cwd().openFile(actual_path, .{});
-    defer file.close();
-
-    const source = try file.readToEndAlloc(allocator, 1024 * 1024);
-    errdefer allocator.free(source);
-
-    var lex = jake.Lexer.init(source);
-    var p = jake.Parser.init(allocator, &lex);
-    var jakefile = try p.parseJakefile();
-
-    // Process imports if any
-    var import_allocations: ?jake.ImportAllocations = null;
-    if (jakefile.imports.len > 0) {
-        import_allocations = jake.resolveImports(allocator, &jakefile, path) catch |err| {
-            const stderr = getStderr();
-            var buf: [512]u8 = undefined;
-            const msg = switch (err) {
-                error.CircularImport => "Circular import detected",
-                error.FileNotFound => "Imported file not found",
-                error.ParseError => "Failed to parse imported file",
-                else => @errorName(err),
-            };
-            const err_msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Import failed: {s}\n", .{msg}) catch "error\n";
-            stderr.writeAll(err_msg) catch {};
-            return error.ImportFailed;
-        };
-    }
-
-    // Load external Makefile/Justfile recipes if present
-    const base_dir = std.fs.path.dirname(path) orelse ".";
-    var external_allocations: ?jake.ExternalRecipes = null;
-    external_allocations = jake.loadAndMergeExternalRecipes(allocator, &jakefile, base_dir) catch |err| blk: {
-        // Non-fatal: log warning but continue
-        const stderr = getStderr();
-        var buf: [512]u8 = undefined;
-        const err_msg = std.fmt.bufPrint(&buf, args_mod.ansi.warn_prefix ++ "Failed to load external build files: {s}\n", .{@errorName(err)}) catch "warning\n";
-        stderr.writeAll(err_msg) catch {};
-        break :blk null;
-    };
-
-    var index = try jake.JakefileIndex.build(allocator, &jakefile);
-    errdefer index.deinit();
-
-    var runtime = jake.RuntimeContext.init(allocator);
-    errdefer runtime.deinit();
-    runtime.configure(&jakefile, &index);
-
-    return JakefileWithSource{
-        .jakefile = jakefile,
-        .index = index,
-        .runtime = runtime,
-        .source = source,
-        .allocator = allocator,
-        .import_allocations = import_allocations,
-        .external_allocations = external_allocations,
     };
 }
 
@@ -647,11 +500,21 @@ fn handleInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 options.template = .blank;
             } else if (std.mem.eql(u8, value, "starter")) {
                 options.template = .starter;
+            } else if (std.mem.eql(u8, value, "node")) {
+                options.template = .node;
+            } else if (std.mem.eql(u8, value, "go")) {
+                options.template = .go;
+            } else if (std.mem.eql(u8, value, "rust")) {
+                options.template = .rust;
+            } else if (std.mem.eql(u8, value, "python")) {
+                options.template = .python;
+            } else if (std.mem.eql(u8, value, "zig")) {
+                options.template = .zig_lang;
             } else {
                 const stderr = getStderr();
                 stderr.writeAll(args_mod.ansi.err_prefix ++ "Unknown template: ") catch {};
                 stderr.writeAll(value) catch {};
-                stderr.writeAll("\nAvailable templates: starter, blank\n") catch {};
+                stderr.writeAll("\nAvailable templates: starter, blank, node, go, rust, python, zig\n") catch {};
                 printInitHelp();
                 std.process.exit(1);
             }
@@ -664,6 +527,8 @@ fn handleInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 std.process.exit(1);
             }
             options.path = value;
+        } else if (std.mem.eql(u8, arg, "-y") or std.mem.eql(u8, arg, "--yes")) {
+            options.yes = true;
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             printInitHelp();
             return;

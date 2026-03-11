@@ -8,6 +8,7 @@ const compat = @import("compat.zig");
 const parser = @import("parser.zig");
 const executor_mod = @import("executor.zig");
 const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
+const jakefile_loader = @import("jakefile_loader.zig");
 const glob_mod = @import("glob.zig");
 const color_mod = @import("color.zig");
 const context_mod = @import("context.zig");
@@ -16,6 +17,7 @@ const Context = context_mod.Context;
 
 const Jakefile = parser.Jakefile;
 const Executor = executor_mod.Executor;
+const LoadedJakefile = jakefile_loader.LoadedJakefile;
 
 pub const WatchError = error{
     InvalidPattern,
@@ -48,9 +50,14 @@ pub const Watcher = struct {
 
     // CLI context (flags from user)
     ctx: *Context,
+    runtime: ?*RuntimeContext,
+    loaded_jakefile: ?*LoadedJakefile,
+    requested_jakefile_path: ?[]const u8,
+    auto_watch_patterns: bool,
 
     const POLL_INTERVAL_MS: u64 = 500;
     const DEBOUNCE_MS: u64 = 100;
+    const MISSING_MTIME = std.math.minInt(i128);
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) !Watcher {
         const owned_index = try allocator.create(JakefileIndex);
@@ -84,6 +91,10 @@ pub const Watcher = struct {
             .color = runtime.color,
             .theme = runtime.theme,
             .ctx = ctx,
+            .runtime = runtime,
+            .loaded_jakefile = null,
+            .requested_jakefile_path = null,
+            .auto_watch_patterns = false,
         };
     }
 
@@ -106,7 +117,42 @@ pub const Watcher = struct {
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
             .ctx = &default_context,
+            .runtime = null,
+            .loaded_jakefile = null,
+            .requested_jakefile_path = null,
+            .auto_watch_patterns = false,
         };
+    }
+
+    pub fn initWithLoadedJakefile(allocator: std.mem.Allocator, requested_jakefile_path: []const u8, loaded_jakefile: LoadedJakefile, ctx: *Context) !Watcher {
+        const requested_path = try allocator.dupe(u8, requested_jakefile_path);
+        errdefer allocator.free(requested_path);
+
+        const owned_loaded = try allocator.create(LoadedJakefile);
+        errdefer allocator.destroy(owned_loaded);
+        owned_loaded.* = loaded_jakefile;
+
+        var watcher = Watcher{
+            .allocator = allocator,
+            .jakefile = undefined,
+            .index = undefined,
+            .owned_index = null,
+            .watch_patterns = .empty,
+            .file_mtimes = .empty,
+            .resolved_files = .empty,
+            .poll_interval_ns = POLL_INTERVAL_MS * std.time.ns_per_ms,
+            .debounce_ns = DEBOUNCE_MS * std.time.ns_per_ms,
+            .last_change_time = 0,
+            .color = loaded_jakefile.runtime.color,
+            .theme = loaded_jakefile.runtime.theme,
+            .ctx = ctx,
+            .runtime = null,
+            .loaded_jakefile = owned_loaded,
+            .requested_jakefile_path = requested_path,
+            .auto_watch_patterns = false,
+        };
+        watcher.refreshLoadedState();
+        return watcher;
     }
 
     pub fn deinit(self: *Watcher) void {
@@ -131,16 +177,50 @@ pub const Watcher = struct {
             self.allocator.destroy(owned);
             self.owned_index = null;
         }
+
+        if (self.requested_jakefile_path) |path| {
+            self.allocator.free(path);
+            self.requested_jakefile_path = null;
+        }
+
+        if (self.loaded_jakefile) |loaded| {
+            loaded.deinit();
+            self.allocator.destroy(loaded);
+            self.loaded_jakefile = null;
+        }
     }
 
     /// Add a glob pattern or file path to watch
     pub fn addPattern(self: *Watcher, pattern: []const u8) !void {
+        for (self.watch_patterns.items) |existing| {
+            if (std.mem.eql(u8, existing, pattern)) {
+                return;
+            }
+        }
         const duped = try self.allocator.dupe(u8, pattern);
         try self.watch_patterns.append(self.allocator, duped);
     }
 
+    pub fn configureAutomaticPatterns(self: *Watcher, recipe_name: []const u8) !void {
+        self.refreshLoadedState();
+        self.auto_watch_patterns = true;
+        try self.rebuildAutomaticPatterns(recipe_name);
+    }
+
     /// Add patterns from a recipe's file dependencies
     pub fn addRecipeDeps(self: *Watcher, recipe_name: []const u8) !void {
+        self.refreshLoadedState();
+        var visited: std.StringHashMapUnmanaged(void) = .empty;
+        defer visited.deinit(self.allocator);
+        try self.addRecipeDepsVisited(recipe_name, &visited);
+    }
+
+    fn addRecipeDepsVisited(self: *Watcher, recipe_name: []const u8, visited: *std.StringHashMapUnmanaged(void)) !void {
+        if (visited.contains(recipe_name)) {
+            return;
+        }
+        try visited.put(self.allocator, recipe_name, {});
+
         const recipe = self.index.getRecipe(recipe_name) orelse return;
 
         // Add file dependencies from the recipe
@@ -153,7 +233,7 @@ pub const Watcher = struct {
 
         // Also recursively add deps from dependency recipes
         for (recipe.dependencies) |dep_name| {
-            try self.addRecipeDeps(dep_name);
+            try self.addRecipeDepsVisited(dep_name, visited);
         }
     }
 
@@ -242,13 +322,22 @@ pub const Watcher = struct {
             }
         } else {
             // Direct file path - check if it exists
-            std.fs.cwd().access(pattern, .{}) catch {
-                // File doesn't exist, skip
-                if (self.ctx.verbose) {
-                    self.print("warning: file not found: {s}\n", .{pattern});
-                }
-                return;
-            };
+            if (std.fs.path.isAbsolute(pattern)) {
+                std.fs.accessAbsolute(pattern, .{}) catch {
+                    if (self.ctx.verbose) {
+                        self.print("warning: file not found: {s}\n", .{pattern});
+                    }
+                    return;
+                };
+            } else {
+                std.fs.cwd().access(pattern, .{}) catch {
+                    // File doesn't exist, skip
+                    if (self.ctx.verbose) {
+                        self.print("warning: file not found: {s}\n", .{pattern});
+                    }
+                    return;
+                };
+            }
             const duped = try self.allocator.dupe(u8, pattern);
             try self.resolved_files.append(self.allocator, duped);
         }
@@ -257,7 +346,10 @@ pub const Watcher = struct {
     /// Get file modification time
     fn getFileMtime(self: *Watcher, path: []const u8) !i128 {
         _ = self;
-        const file = try std.fs.cwd().openFile(path, .{});
+        const file = if (std.fs.path.isAbsolute(path))
+            try std.fs.openFileAbsolute(path, .{})
+        else
+            try std.fs.cwd().openFile(path, .{});
         defer file.close();
         const stat = try file.stat();
         return stat.mtime;
@@ -266,14 +358,21 @@ pub const Watcher = struct {
     /// Check if any watched file has changed
     pub fn checkForChanges(self: *Watcher) !?[]const u8 {
         for (self.resolved_files.items) |file_path| {
-            const current_mtime = self.getFileMtime(file_path) catch continue;
-
-            if (self.file_mtimes.get(file_path)) |cached_mtime| {
-                if (current_mtime != cached_mtime) {
-                    // File changed, update cached mtime
+            const current_mtime = self.getFileMtime(file_path) catch |err| {
+                if (err == error.FileNotFound) {
                     if (self.file_mtimes.getEntry(file_path)) |entry| {
-                        entry.value_ptr.* = current_mtime;
+                        if (entry.value_ptr.* != MISSING_MTIME) {
+                            entry.value_ptr.* = MISSING_MTIME;
+                            return file_path;
+                        }
                     }
+                }
+                continue;
+            };
+
+            if (self.file_mtimes.getEntry(file_path)) |entry| {
+                if (entry.value_ptr.* == MISSING_MTIME or current_mtime != entry.value_ptr.*) {
+                    entry.value_ptr.* = current_mtime;
                     return file_path;
                 }
             } else {
@@ -332,6 +431,8 @@ pub const Watcher = struct {
 
     /// Main watch loop - watch for changes and re-execute recipe
     pub fn watch(self: *Watcher, recipe_name: []const u8) !void {
+        self.refreshLoadedState();
+
         // Resolve initial patterns
         try self.resolvePatterns();
 
@@ -363,6 +464,7 @@ pub const Watcher = struct {
 
         // Watch loop
         var pending_change: bool = false;
+        var pending_reload: bool = false;
         var change_detected_time: i128 = 0;
 
         while (true) {
@@ -386,6 +488,10 @@ pub const Watcher = struct {
                     // Update debounce timer
                     change_detected_time = std.time.nanoTimestamp();
                 }
+
+                if (self.shouldReloadForChange(changed_file)) {
+                    pending_reload = true;
+                }
             }
 
             // Check if debounce period has passed
@@ -395,6 +501,18 @@ pub const Watcher = struct {
                 if (elapsed >= self.debounce_ns) {
                     pending_change = false;
                     self.print("\n", .{});
+
+                    if (pending_reload) {
+                        self.reloadConfiguration(recipe_name) catch |err| {
+                            const err_name = @errorName(err);
+                            self.print("\n   {s}Failed to reload Jakefile: {s}{s}\n", .{ self.color.errorRed(), err_name, self.color.reset() });
+                            self.printWatchFooter();
+                            pending_reload = false;
+                            continue;
+                        };
+                        pending_reload = false;
+                    }
+
                     self.executeRecipe(recipe_name);
                 }
             }
@@ -403,17 +521,24 @@ pub const Watcher = struct {
 
     /// Execute the recipe (handles errors gracefully for watch mode)
     fn executeRecipe(self: *Watcher, recipe_name: []const u8) void {
-        var exec = Executor.init(self.allocator, self.jakefile) catch |err| {
+        self.refreshLoadedState();
+
+        var exec = self.initExecutor() catch |err| {
             const err_name = @errorName(err);
             self.print("\n   {s}Failed to initialize executor: {s}{s}\n", .{ self.color.errorRed(), err_name, self.color.reset() });
             self.printWatchFooter();
             return;
         };
         defer exec.deinit();
-        // Copy CLI flags from watcher's context to executor's context
-        exec.ctx.dry_run = self.ctx.dry_run;
-        exec.ctx.verbose = self.ctx.verbose;
-        exec.ctx.watch_mode = true;
+
+        exec.validateRequiredEnv() catch |err| {
+            if (err != error.MissingRequiredEnv) {
+                const err_name = @errorName(err);
+                self.print("\n   {s}Failed to validate environment: {s}{s}\n", .{ self.color.errorRed(), err_name, self.color.reset() });
+            }
+            self.printWatchFooter();
+            return;
+        };
 
         exec.execute(recipe_name) catch |err| {
             const err_name = @errorName(err);
@@ -435,6 +560,93 @@ pub const Watcher = struct {
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
         compat.getStdErr().writeAll(msg) catch {};
+    }
+
+    fn refreshLoadedState(self: *Watcher) void {
+        if (self.loaded_jakefile) |loaded| {
+            self.jakefile = &loaded.jakefile;
+            self.index = &loaded.index;
+            self.runtime = &loaded.runtime;
+            self.color = loaded.runtime.color;
+            self.theme = loaded.runtime.theme;
+        }
+    }
+
+    fn rebuildAutomaticPatterns(self: *Watcher, recipe_name: []const u8) !void {
+        self.clearWatchPatterns();
+        try self.addConfigurationWatchPatterns();
+        try self.addRecipeDeps(recipe_name);
+    }
+
+    fn clearWatchPatterns(self: *Watcher) void {
+        for (self.watch_patterns.items) |pattern| {
+            self.allocator.free(pattern);
+        }
+        self.watch_patterns.clearRetainingCapacity();
+    }
+
+    fn addConfigurationWatchPatterns(self: *Watcher) !void {
+        if (self.loaded_jakefile) |loaded| {
+            for (loaded.watch_files) |watch_file| {
+                try self.addPattern(watch_file);
+            }
+        }
+    }
+
+    fn shouldReloadForChange(self: *Watcher, changed_file: []const u8) bool {
+        if (self.loaded_jakefile) |loaded| {
+            for (loaded.watch_files) |watch_file| {
+                if (std.mem.eql(u8, watch_file, changed_file)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    fn reloadConfiguration(self: *Watcher, recipe_name: []const u8) !void {
+        const requested_jakefile_path = self.requested_jakefile_path orelse return;
+
+        var reloaded = try jakefile_loader.loadJakefile(self.allocator, requested_jakefile_path);
+        var reloaded_owned = false;
+        errdefer if (!reloaded_owned) reloaded.deinit();
+
+        if (self.loaded_jakefile) |loaded| {
+            loaded.deinit();
+            loaded.* = reloaded;
+        } else {
+            const owned_loaded = try self.allocator.create(LoadedJakefile);
+            errdefer self.allocator.destroy(owned_loaded);
+            owned_loaded.* = reloaded;
+            self.loaded_jakefile = owned_loaded;
+        }
+        reloaded_owned = true;
+        self.refreshLoadedState();
+
+        if (self.auto_watch_patterns) {
+            try self.rebuildAutomaticPatterns(recipe_name);
+        }
+        try self.resolvePatterns();
+    }
+
+    fn initExecutor(self: *Watcher) !Executor {
+        if (self.runtime) |runtime| {
+            return Executor.initWithIndexAndContext(self.allocator, self.jakefile, self.index, self.ctx, runtime);
+        }
+
+        var exec = try Executor.init(self.allocator, self.jakefile);
+        exec.ctx.dry_run = self.ctx.dry_run;
+        exec.ctx.verbose = self.ctx.verbose;
+        exec.ctx.auto_yes = self.ctx.auto_yes;
+        exec.ctx.watch_mode = true;
+        exec.ctx.jobs = self.ctx.jobs;
+        exec.ctx.color = self.ctx.color;
+        exec.ctx.positional_args = self.ctx.positional_args;
+        exec.ctx.cancellation_flag = self.ctx.cancellation_flag;
+        exec.ctx.current_child_pid = self.ctx.current_child_pid;
+        exec.ctx.output_callback = self.ctx.output_callback;
+        exec.ctx.output_callback_ctx = self.ctx.output_callback_ctx;
+        return exec;
     }
 };
 
@@ -497,6 +709,30 @@ test "watcher add recipe deps" {
     // Should have added the file dep pattern
     try std.testing.expectEqual(@as(usize, 1), watcher.watch_patterns.items.len);
     try std.testing.expectEqualStrings("src/*.js", watcher.watch_patterns.items[0]);
+}
+
+test "watcher add recipe deps handles cycles" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\task a: b
+        \\    echo "a"
+        \\
+        \\task b: a dep
+        \\    echo "b"
+        \\
+        \\file dep: src/*.txt
+        \\    echo "dep"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var watcher = try Watcher.init(allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addRecipeDeps("a");
 }
 
 test "watcher settings" {
@@ -678,6 +914,181 @@ test "watcher handles recipe with no commands" {
 
     // No patterns from empty recipe
     try std.testing.expectEqual(@as(usize, 0), watcher.watch_patterns.items.len);
+}
+
+test "watcher automatic patterns include imports and external build files" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.makePath("lib/nested");
+    try tmp_dir.dir.makePath("src");
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "Jakefile",
+        .data =
+        \\@import "lib/tasks.jake" as lib
+        ,
+    });
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "lib/tasks.jake",
+        .data =
+        \\@import "nested/util.jake" as nested
+        ,
+    });
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "lib/nested/util.jake",
+        .data =
+        \\file nested: src/*.zig
+        \\    echo "nested"
+        ,
+    });
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "Makefile",
+        .data =
+        \\build:
+        \\    echo "external"
+        ,
+    });
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const loaded = try jakefile_loader.loadJakefile(std.testing.allocator, "Jakefile");
+    var ctx = Context.initWithColor(false);
+    ctx.watch_mode = true;
+
+    var watcher = try Watcher.initWithLoadedJakefile(std.testing.allocator, "Jakefile", loaded, &ctx);
+    defer watcher.deinit();
+
+    try std.testing.expect(watcher.index.getRecipe("lib.nested.nested") != null);
+
+    try watcher.configureAutomaticPatterns("lib.nested.nested");
+
+    try expectWatchPattern(&watcher, "Jakefile");
+    try expectWatchPattern(&watcher, "lib/tasks.jake");
+    try expectWatchPattern(&watcher, "lib/nested/util.jake");
+    try expectWatchPattern(&watcher, "Makefile");
+    try expectWatchPattern(&watcher, "src/*.zig");
+}
+
+test "watcher reloads automatic patterns after jakefile change" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.makePath("src");
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "Jakefile",
+        .data =
+        \\file build: src/*.zig
+        \\    echo "build"
+        ,
+    });
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const loaded = try jakefile_loader.loadJakefile(std.testing.allocator, "Jakefile");
+    var ctx = Context.initWithColor(false);
+    ctx.watch_mode = true;
+
+    var watcher = try Watcher.initWithLoadedJakefile(std.testing.allocator, "Jakefile", loaded, &ctx);
+    defer watcher.deinit();
+
+    try watcher.configureAutomaticPatterns("build");
+    try std.testing.expectEqualStrings("src/*.zig", watcher.watch_patterns.items[1]);
+
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "Jakefile",
+        .data =
+        \\file build: lib/*.zig
+        \\    echo "build"
+        ,
+    });
+
+    try watcher.reloadConfiguration("build");
+
+    try std.testing.expectEqual(@as(usize, 2), watcher.watch_patterns.items.len);
+    try std.testing.expectEqualStrings("Jakefile", watcher.watch_patterns.items[0]);
+    try std.testing.expectEqualStrings("lib/*.zig", watcher.watch_patterns.items[1]);
+}
+
+test "watcher detects deleted files and reappearance once" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "Jakefile",
+        .data =
+        \\task build:
+        \\    echo "build"
+        ,
+    });
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "watched.txt",
+        .data = "hello",
+    });
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task build:
+        \\    echo "build"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var watcher = try Watcher.init(std.testing.allocator, &jakefile);
+    defer watcher.deinit();
+
+    try watcher.addPattern("watched.txt");
+    try watcher.resolvePatterns();
+
+    try tmp_dir.dir.deleteFile("watched.txt");
+
+    const deleted = (try watcher.checkForChanges()) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("watched.txt", deleted);
+    try std.testing.expect((try watcher.checkForChanges()) == null);
+
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "watched.txt",
+        .data = "hello again",
+    });
+
+    const recreated = (try watcher.checkForChanges()) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("watched.txt", recreated);
+}
+
+fn expectWatchPattern(watcher: *Watcher, pattern: []const u8) !void {
+    for (watcher.watch_patterns.items) |existing| {
+        if (std.mem.eql(u8, existing, pattern)) {
+            return;
+        }
+    }
+
+    return error.TestExpectedEqual;
 }
 
 // --- Pattern feedback tests ---

@@ -544,9 +544,6 @@ Concrete watch-mode goals:
 
 ### Remaining open items after parallel work
 
-- Watch mode still reruns stale configuration and rebuilds only a partial execution context.
-- External delegation still needs follow-up for positional args and path resolution relative to the selected Jakefile.
-- The external parser/freeing issue called out in the original review still needs a focused pass.
 - `jake init` / `TODO.md` / `CHANGELOG.md` / docs are still out of sync.
 - Parser diagnostics and silent fallthrough behavior are still too permissive.
 - Windows-specific behavior remains under-tested.
@@ -559,6 +556,50 @@ There were unrelated in-progress edits already present in the worktree while thi
 - `src/import.zig`
 - `src/main.zig`
 - `tests/e2e/Jakefile`
+
+## Handoff Update (2026-03-11, watch mode)
+
+Watch mode has now been repaired enough to move it out of the top open slot from this review.
+
+Completed:
+
+- Jakefile loading was extracted into `src/jakefile_loader.zig` so normal CLI execution and watch-mode reloads use the same parse/import/external/runtime setup path.
+- `Watcher` now owns the loaded Jakefile state for watch runs and reuses `Executor.initWithIndexAndContext(...)` instead of rebuilding a partial executor context.
+- Automatic watch mode now tracks the main Jakefile, imported Jakefiles, and detected external build files in addition to recipe file dependencies and `@watch` patterns.
+- Editing watched configuration files now reloads the Jakefile before rerunning the recipe, so watch mode no longer executes against a stale AST.
+- Deleted watched files now register as a single change event and retrigger again if the file is recreated.
+- Recipe dependency discovery in watch mode now uses a visited set, so cyclic recipe graphs no longer recurse indefinitely during watch-pattern collection.
+
+Verification now includes:
+
+- `zig test src/watch.zig`
+- `zig build test`
+
+Recommended next step:
+
+- Move to the remaining external-integration issues from the original review, especially positional-argument propagation and path-resolution correctness relative to the selected Jakefile.
+
+## Handoff Update (2026-03-11, external integration)
+
+The main external-integration issues from the original review have now been addressed.
+
+Completed:
+
+- External Makefile/Justfile parsing now resolves files relative to the selected Jakefile directory instead of assuming the process cwd.
+- Delegated external execution now forwards CLI positional arguments to the underlying `make` or `just` process.
+- Delegated external execution now runs from the external file's directory, which restores relative-path behavior for nested `-f` Jakefiles.
+- Empty external parse results are now allocator-owned, so cleanup no longer depends on freeing static empty slices.
+- Added focused unit coverage in `src/external.zig` and `src/executor.zig` for nested external loading, delegated args, and delegated cwd behavior.
+- Added E2E coverage in `tests/e2e/Jakefile` for nested external discovery via `-f` and delegated argument forwarding.
+
+Verification now includes:
+
+- `zig test src/external.zig`
+- `zig test src/executor.zig`
+
+Recommended next step:
+
+- Move to the remaining frontend/runtime parity items, starting with `src/webui.zig`, output/cancellation behavior, and Web UI execution-context drift.
 
 ## Final Verdict
 
