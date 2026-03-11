@@ -473,6 +473,93 @@ If only a few items are going to be addressed immediately, the order should be:
 4. Expand CI to lock the behavior down.
 5. Reconcile docs and changelog after the behavior is real.
 
+## Handoff Update (2026-03-11)
+
+This section captures work completed after the initial review so the next agent can continue from the current state instead of re-auditing the same areas.
+
+### Completed since the initial review
+
+- The parallel execution path now uses the shared per-recipe runner instead of its own directive interpreter.
+- `Executor.executeParallel()` now passes the real `Context` into `ParallelExecutor`.
+- `ParallelExecutor` now runs each recipe through `Executor.executeRecipeBody()`, so parallel mode inherits sequential behavior for:
+  - hooks
+  - `@cd`
+  - `@shell`
+  - `@confirm`
+  - timeout handling
+  - external Make/Just delegation
+  - command-level `@cache`
+- The old duplicate interpreter code in `src/parallel.zig` has been removed to reduce future semantic drift.
+- Parallel graph construction now includes recipes that produce file dependencies of file targets.
+- Parallel command-level `@needs` validation is fixed.
+- Parallel `@if/@elif` handling was fixed before the duplicate interpreter was removed.
+- The shared mutable `item` variable race in parallel `@each` execution was eliminated as part of the shared-runner refactor.
+- Ready-queue enqueue OOM in the parallel scheduler now fails the run instead of silently dropping work.
+- `@cache` glob refresh is fixed via a glob-aware cache update path.
+- `glob.expandGlob()` was fixed to iterate correctly from the current directory on Darwin.
+- Old docs were archived rather than deleted:
+  - `docs/archived/CLI_DESIGN.md`
+  - `docs/archived/CLI_DESIGN_V4.md`
+  - `docs/archived/SYSTEM_REVIEW.md`
+
+### Important bug found and fixed during implementation
+
+- Parallel cache state was being updated inside `ParallelExecutor`, then overwritten on teardown by the parent `Executor` saving its stale cache.
+- This is now fixed by merging the parallel cache back into the parent executor before returning from `executeParallel()`.
+
+### Current verification status
+
+The following passed after the parallel cleanup:
+
+- `zig test src/executor.zig`
+- `zig test src/parallel.zig`
+
+Additional regression coverage was added for parallel execution of:
+
+- `@confirm`
+- `@cd`
+- `@shell`
+- hooks
+- `@cache`
+- timeout handling
+- external recipe delegation
+
+### Recommended next step
+
+Start with watch mode. That is still the highest-value open area after the parallel work.
+
+Files to inspect first:
+
+- `src/watch.zig`
+- `src/main.zig`
+
+Concrete watch-mode goals:
+
+- Reparse the Jakefile and imports when the Jakefile changes.
+- Stop reusing a stale AST after edits.
+- Preserve the original execution context instead of reconstructing a partial one.
+- Keep `jobs` / runtime behavior aligned with normal execution.
+- Add a visited set to dependency collection to avoid recursive cycle blowups.
+- Treat deleted watched files as changes.
+
+### Remaining open items after parallel work
+
+- Watch mode still reruns stale configuration and rebuilds only a partial execution context.
+- External delegation still needs follow-up for positional args and path resolution relative to the selected Jakefile.
+- The external parser/freeing issue called out in the original review still needs a focused pass.
+- `jake init` / `TODO.md` / `CHANGELOG.md` / docs are still out of sync.
+- Parser diagnostics and silent fallthrough behavior are still too permissive.
+- Windows-specific behavior remains under-tested.
+
+### Worktree notes for handoff
+
+There were unrelated in-progress edits already present in the worktree while this work was being done. They were left untouched:
+
+- `src/external.zig`
+- `src/import.zig`
+- `src/main.zig`
+- `tests/e2e/Jakefile`
+
 ## Final Verdict
 
 Request changes.
