@@ -1014,6 +1014,9 @@ pub const Executor = struct {
         // Check if any file deps are stale
         for (recipe.file_deps) |dep| {
             if (try self.cache.isGlobStale(dep)) {
+                if (self.ctx.verbose) {
+                    self.print("   {s}jake: dependency '{s}' changed, rebuilding '{s}'{s}\n", .{ self.color.muted(), dep, recipe.name, self.color.reset() });
+                }
                 return true;
             }
         }
@@ -1877,9 +1880,15 @@ pub const Executor = struct {
                         }
                     } else if (self.variables.get(var_name)) |value| {
                         try result.appendSlice(self.allocator, value);
+                        if (self.ctx.verbose) {
+                            self.print("   {s}jake: {{{{{s}}}}} -> '{s}'{s}\n", .{ self.color.muted(), var_name, value, self.color.reset() });
+                        }
                     } else {
                         // Keep original if not found
                         try result.appendSlice(self.allocator, line[i .. end + 2]);
+                        if (self.ctx.verbose) {
+                            self.print("   {s}jake: {{{{{s}}}}} not found, keeping literal{s}\n", .{ self.color.muted(), var_name, self.color.reset() });
+                        }
                     }
                     i = end + 2;
                     continue;
