@@ -6,7 +6,7 @@ out = "/tmp/jake-e2e-output.txt"
 
 @default
 @desc "Run all e2e tests"
-task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-external, test-cli, test-integration, test-traverse]
+task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-external, test-cli, test-web, test-integration, test-traverse]
     echo ""
     echo "All e2e tests passed!"
 
@@ -390,6 +390,18 @@ task test-cli:
     {{jake}} -f fixtures/basic/hello.jake greet name=Bob --verbose > {{out}} 2>&1
     grep -q "Hello, Bob" {{out}}
     echo "  Positional args with flags after recipe work .......... PASS"
+
+# ============================================================================
+# Web UI Tests
+# ============================================================================
+
+@quiet
+task test-web:
+    echo ""
+    echo "Web UI Tests"
+    sh -c 'rm -f /tmp/jake-e2e-web.html /tmp/jake-e2e-web-api.json /tmp/jake-e2e-web.log; CI=1 {{jake}} --web --port 18450 -f fixtures/basic/hello.jake >/tmp/jake-e2e-web.log 2>&1 & pid=$!; status=1; for i in 1 2 3 4 5 6 7 8 9 10; do curl -fsS http://127.0.0.1:18450/ > /tmp/jake-e2e-web.html && curl -fsS http://127.0.0.1:18450/api/status > /tmp/jake-e2e-web-api.json && status=0 && break; sleep 1; done; kill $pid 2>/dev/null || true; wait $pid 2>/dev/null || true; exit $status'
+    grep -q "Jake Web UI" /tmp/jake-e2e-web.html && grep -q "\"status\":\"ok\"" /tmp/jake-e2e-web-api.json
+    echo "  Web UI server serves dashboard and API ................ PASS"
 
 # ============================================================================
 # Integration Tests

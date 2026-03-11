@@ -210,7 +210,16 @@ pub fn main() !void {
         server.setJakefileData(jakefile_data.jakefile.recipes, jakefile_data.jakefile.variables);
 
         // Provide execution context for running recipes from the web UI
-        server.setExecutionContext(&jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime);
+        const web_ctx = jake.Context{
+            .dry_run = args.dry_run,
+            .verbose = args.verbose,
+            .watch_mode = false,
+            .auto_yes = args.yes,
+            .jobs = args.jobs orelse 0,
+            .positional_args = args.positional,
+            .color = color_mod.init(),
+        };
+        server.setExecutionContext(&jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime, web_ctx);
 
         server.start() catch |err| {
             const stderr = getStderr();

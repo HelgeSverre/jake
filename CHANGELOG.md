@@ -32,6 +32,10 @@ Target release: `0.8.0`
 - **External Integration Coverage**
   - Added unit and E2E coverage for external recipe discovery via `-f <Jakefile>` and delegated positional-argument forwarding
 
+- **Web UI Coverage**
+  - Added focused Web UI regression tests for command parsing and execution-context construction
+  - Added an E2E smoke test for `jake --web` server startup and HTTP serving
+
 ### Changed
 
 - **Args Module Refactor**
@@ -44,6 +48,10 @@ Target release: `0.8.0`
   - Parallel execution now preserves sequential recipe semantics for hooks, `@cd`, `@shell`, `@confirm`, timeout handling, external recipe delegation, and command-level `@cache`
   - Removed the duplicate directive/shell execution path from `src/parallel.zig` to reduce future semantic drift
   - Watch mode now reloads through the shared Jakefile loading pipeline so imports, external recipes, runtime configuration, and execution flags stay aligned with normal CLI execution
+
+- **Web UI Execution Parity**
+  - Web-triggered runs now inherit the CLI process' execution context for verbosity and parallel job settings instead of constructing a separate partial context
+  - Web UI command handling now parses browser-supplied recipe parameters and forwards them as normal `name=value` arguments
 
 - **Documentation Cleanup**
   - Archived outdated design and review docs under `docs/archived/`
@@ -73,6 +81,12 @@ Target release: `0.8.0`
   - Fixed delegated external execution to run from the external file's directory and forward CLI positional arguments to `make`/`just`
   - Fixed empty external parse results to remain allocator-owned so cleanup does not free static empty slices
 
+- **Web UI**
+  - Fixed Web UI execution to validate `@require` directives before running recipes, matching the normal CLI path
+  - Fixed leaked WebSocket frame-handler thread ownership by detaching background connection threads explicitly
+  - Fixed stale execution-thread ownership so completed Web UI runs are joined cleanly before the next run
+  - Fixed automatic browser launch to skip headless/test contexts when `CI` or `JAKE_NO_BROWSER` is set
+
 - **Init Command**
   - Fixed `jake init --template=node|go|rust|python|zig` being rejected despite templates being fully implemented
   - Fixed `jake init --yes` / `-y` flag not being parsed by the CLI
@@ -86,7 +100,7 @@ Target release: `0.8.0`
 
 ### Added
 
-- **Web UI** - Interactive browser-based task runner (`jake --webui`)
+- **Web UI** - Interactive browser-based task runner (`jake --web`)
   - WebSocket streaming for real-time command output
   - Recipe listing with commands, dependencies, and metadata
   - Console tee for simultaneous terminal and browser output

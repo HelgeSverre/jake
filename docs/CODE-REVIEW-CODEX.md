@@ -601,6 +601,34 @@ Recommended next step:
 
 - Move to the remaining frontend/runtime parity items, starting with `src/webui.zig`, output/cancellation behavior, and Web UI execution-context drift.
 
+## Handoff Update (2026-03-11, Web UI)
+
+The main Web UI execution-context drift identified in this review has now been reduced substantially.
+
+Completed:
+
+- Web-triggered recipe execution now starts from the real CLI context instead of hardcoding `.verbose = false`, `.jobs = 0`, and an empty positional-argument set.
+- Browser-supplied recipe parameters are now parsed from the WebSocket payload and forwarded as normal `name=value` arguments.
+- Web UI runs now validate `@require` directives before execution, matching the normal CLI path.
+- WebSocket frame-handler threads are now explicitly detached, which removes an obvious background-thread ownership bug.
+- Web UI execution threads are now joined cleanly between runs instead of losing the thread handle from inside the worker thread.
+- Added focused unit coverage in `src/webui.zig` for command parsing and execution-context construction.
+- Added a `tests/e2e/Jakefile` smoke test for `jake --web` startup and HTTP serving.
+
+Still open:
+
+- Web UI output/cancellation semantics are improved but not fully unified with the event-emitter path used elsewhere.
+- `@confirm` still auto-confirms in Web UI mode because there is not yet a browser-side confirmation transport.
+- There is still no browser-level E2E coverage for run/cancel behavior over WebSocket.
+
+Verification now includes:
+
+- `zig test src/webui.zig`
+
+Recommended next step:
+
+- Either finish the remaining Web UI transport work (`@confirm`, richer streamed executor output, browser-level cancel/run E2E) or move to the next robustness pass around diagnostics and explicit error handling.
+
 ## Final Verdict
 
 Request changes.

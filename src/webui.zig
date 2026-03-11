@@ -27,6 +27,25 @@ pub const WebRecipe = struct {
     params: []const []const u8,
 };
 
+const ExecutionRequest = struct {
+    task_name: []u8,
+    positional_args: []const []const u8,
+    dry_run: bool,
+
+    fn deinit(self: *ExecutionRequest, allocator: std.mem.Allocator) void {
+        allocator.free(self.task_name);
+        for (self.positional_args) |arg| {
+            allocator.free(arg);
+        }
+        allocator.free(self.positional_args);
+    }
+};
+
+const ClientCommand = union(enum) {
+    run: ExecutionRequest,
+    stop: void,
+};
+
 pub const WebUIServer = struct {
     allocator: std.mem.Allocator,
     port: u16,
@@ -49,6 +68,7 @@ pub const WebUIServer = struct {
     jakefile: ?*const parser.Jakefile,
     index: ?*const jakefile_index.JakefileIndex,
     runtime: ?*context_mod.RuntimeContext,
+    base_context: context_mod.Context,
 
     // Task execution state
     execution_thread: ?std.Thread,
@@ -73,6 +93,7 @@ pub const WebUIServer = struct {
             .jakefile = null,
             .index = null,
             .runtime = null,
+            .base_context = context_mod.Context.init(),
             .execution_thread = null,
             .execution_running = std.atomic.Value(bool).init(false),
             .current_child_pid = std.atomic.Value(i32).init(0),
@@ -94,10 +115,11 @@ pub const WebUIServer = struct {
     }
 
     /// Set execution context for running recipes
-    pub fn setExecutionContext(self: *WebUIServer, jakefile: *const parser.Jakefile, index: *const jakefile_index.JakefileIndex, runtime: *context_mod.RuntimeContext) void {
+    pub fn setExecutionContext(self: *WebUIServer, jakefile: *const parser.Jakefile, index: *const jakefile_index.JakefileIndex, runtime: *context_mod.RuntimeContext, base_context: context_mod.Context) void {
         self.jakefile = jakefile;
         self.index = index;
         self.runtime = runtime;
+        self.base_context = base_context;
     }
 
     pub fn deinit(self: *WebUIServer) void {
@@ -105,10 +127,7 @@ pub const WebUIServer = struct {
 
         // Stop any running execution
         self.execution_running.store(false, .release);
-        if (self.execution_thread) |thread| {
-            thread.join();
-            self.execution_thread = null;
-        }
+        self.joinExecutionThreadIfPresent();
 
         // Clean up any remaining clients
         self.mutex.lock();
@@ -122,6 +141,13 @@ pub const WebUIServer = struct {
         // Free cached init message
         if (self.init_message) |msg| {
             self.allocator.free(msg);
+        }
+    }
+
+    fn joinExecutionThreadIfPresent(self: *WebUIServer) void {
+        if (self.execution_thread) |thread| {
+            thread.join();
+            self.execution_thread = null;
         }
     }
 
@@ -403,10 +429,11 @@ pub const WebUIServer = struct {
         // Spawn a detached thread to handle WebSocket frames (non-blocking for main accept loop)
         // Thread cleans up its own client via defer self.removeClient(client) and exits when
         // isRunning() returns false or readFrame() fails (stream closed by stop())
-        _ = std.Thread.spawn(.{}, handleWebSocketFramesThread, .{ self, client }) catch {
+        const frame_thread = std.Thread.spawn(.{}, handleWebSocketFramesThread, .{ self, client }) catch {
             self.removeClient(client);
             return;
         };
+        frame_thread.detach();
     }
 
     /// Thread function for handling WebSocket frames
@@ -431,62 +458,69 @@ pub const WebUIServer = struct {
 
     /// Handle a JSON command from a WebSocket client
     fn handleClientCommand(self: *WebUIServer, payload: []const u8) void {
-        // Parse JSON to extract action and recipe
-        // Expected format: {"action":"run","recipe":"build","params":{}}
-        // or {"action":"stop"}
+        const command = parseClientCommand(self.allocator, payload) catch {
+            self.broadcastJson("{\"type\":\"error\",\"message\":\"Invalid command payload\"}");
+            return;
+        };
 
-        const action = extractJsonString(payload, "action") orelse return;
+        switch (command) {
+            .run => |request_value| {
+                var request = request_value;
+                var request_owned = true;
+                defer if (request_owned) request.deinit(self.allocator);
 
-        if (std.mem.eql(u8, action, "run")) {
-            const recipe_name = extractJsonString(payload, "recipe") orelse return;
+                self.joinExecutionThreadIfPresent();
 
-            // Atomically try to set execution_running from false to true
-            if (self.execution_running.cmpxchgStrong(false, true, .acq_rel, .acquire)) |_| {
-                // cmpxchg returned the old value (which wasn't false), meaning already running
-                self.broadcastJson("{\"type\":\"error\",\"message\":\"A task is already running\"}");
-                return;
-            }
-            // Now we own execution - if anything fails, we must reset it
-            errdefer self.execution_running.store(false, .release);
+                if (self.execution_running.cmpxchgStrong(false, true, .acq_rel, .acquire)) |_| {
+                    self.broadcastJson("{\"type\":\"error\",\"message\":\"A task is already running\"}");
+                    return;
+                }
+                errdefer self.execution_running.store(false, .release);
 
-            // Check we have execution context
-            if (self.jakefile == null or self.index == null or self.runtime == null) {
-                self.broadcastJson("{\"type\":\"error\",\"message\":\"No Jakefile loaded\"}");
-                return;
-            }
+                if (self.jakefile == null or self.index == null or self.runtime == null) {
+                    self.broadcastJson("{\"type\":\"error\",\"message\":\"No Jakefile loaded\"}");
+                    return;
+                }
 
-            // Check if dry run
-            const dry_run = extractJsonBool(payload, "dryRun") orelse false;
+                self.execution_thread = std.Thread.spawn(.{}, executeRecipeThread, .{ self, request }) catch {
+                    self.execution_running.store(false, .release);
+                    self.broadcastJson("{\"type\":\"error\",\"message\":\"Failed to start execution thread\"}");
+                    return;
+                };
+                request_owned = false;
+            },
+            .stop => {
+                if (self.execution_running.load(.acquire)) {
+                    self.execution_running.store(false, .release);
 
-            // Duplicate the task name for the execution thread (it will own and free this)
-            const task_name_for_thread = self.allocator.dupe(u8, recipe_name) catch return;
-
-            // Start execution in a separate thread
-            self.execution_running.store(true, .release);
-            self.execution_thread = std.Thread.spawn(.{}, executeRecipeThread, .{ self, task_name_for_thread, dry_run }) catch {
-                self.allocator.free(task_name_for_thread);
-                self.execution_running.store(false, .release);
-                self.broadcastJson("{\"type\":\"error\",\"message\":\"Failed to start execution thread\"}");
-                return;
-            };
-        } else if (std.mem.eql(u8, action, "stop")) {
-            // Signal execution to stop (if running)
-            if (self.execution_running.load(.acquire)) {
-                // First, mark as cancelled
-                self.execution_running.store(false, .release);
-
-                // Kill any running child process (POSIX only - Windows uses different mechanism)
-                if (builtin.os.tag != .windows) {
-                    const pid = self.current_child_pid.load(.acquire);
-                    if (pid > 0) {
-                        // Kill the process group to ensure all children are terminated
-                        std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
-                        // Also try killing just the process
-                        std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+                    if (builtin.os.tag != .windows) {
+                        const pid = self.current_child_pid.load(.acquire);
+                        if (pid > 0) {
+                            std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
+                            std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+                        }
                     }
                 }
-            }
+            },
         }
+    }
+
+    fn buildExecutionContext(
+        self: *WebUIServer,
+        request: *const ExecutionRequest,
+        callback_ctx: *ExecutionCallbackContext,
+    ) context_mod.Context {
+        var ctx = self.base_context;
+        ctx.dry_run = self.base_context.dry_run or request.dry_run;
+        ctx.auto_yes = true; // Web UI has no interactive confirm transport yet.
+        ctx.watch_mode = false;
+        ctx.color = color_mod.Color{ .enabled = false };
+        ctx.positional_args = request.positional_args;
+        ctx.cancellation_flag = &self.execution_running;
+        ctx.current_child_pid = &self.current_child_pid;
+        ctx.output_callback = outputCallback;
+        ctx.output_callback_ctx = callback_ctx;
+        return ctx;
     }
 
     /// Context passed to outputCallback to avoid data races on current_task
@@ -509,16 +543,15 @@ pub const WebUIServer = struct {
     }
 
     /// Thread function that executes a recipe
-    /// Takes ownership of task_name and frees it when done
-    fn executeRecipeThread(self: *WebUIServer, task_name: []const u8, dry_run: bool) void {
+    /// Takes ownership of request and frees it when done
+    fn executeRecipeThread(self: *WebUIServer, request_value: ExecutionRequest) void {
+        var request = request_value;
         defer {
-            self.allocator.free(task_name);
+            request.deinit(self.allocator);
             self.execution_running.store(false, .release);
-            if (self.execution_thread != null) {
-                self.execution_thread = null;
-            }
         }
 
+        const task_name = request.task_name;
         const jakefile = self.jakefile orelse return;
         const index = self.index orelse return;
         const runtime = self.runtime orelse return;
@@ -534,19 +567,7 @@ pub const WebUIServer = struct {
         };
 
         // Create a context for this execution with cancellation flag and child PID tracking
-        var ctx = context_mod.Context{
-            .dry_run = dry_run,
-            .verbose = false,
-            .auto_yes = true, // Auto-confirm in web UI
-            .watch_mode = false,
-            .jobs = 0, // Sequential execution for web UI
-            .color = color_mod.Color{ .enabled = false }, // No ANSI in web output
-            .positional_args = &.{},
-            .cancellation_flag = &self.execution_running, // Use execution_running as cancellation flag
-            .current_child_pid = &self.current_child_pid, // Track child PID for killing
-            .output_callback = outputCallback, // Stream output to WebSocket
-            .output_callback_ctx = &callback_ctx,
-        };
+        var ctx = self.buildExecutionContext(&request, &callback_ctx);
 
         // Create executor
         var executor = executor_mod.Executor.initWithIndexAndContext(self.allocator, jakefile, index, &ctx, runtime);
@@ -554,6 +575,20 @@ pub const WebUIServer = struct {
 
         // Execute the recipe
         const success = blk: {
+            executor.validateRequiredEnv() catch |err| {
+                if (ctx.isCancelled()) {
+                    self.emitCommandOutput(task_name, "Execution cancelled by user", true);
+                    break :blk false;
+                }
+
+                const msg = switch (err) {
+                    error.MissingRequiredEnv => "Required environment variable is not set",
+                    else => "Execution failed",
+                };
+                self.emitCommandOutput(task_name, msg, true);
+                break :blk false;
+            };
+
             executor.execute(task_name) catch |err| {
                 // Check if this was a cancellation
                 if (ctx.isCancelled()) {
@@ -741,48 +776,71 @@ fn findHeader(request: []const u8, name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Extract a string value from JSON by key (simple parsing, no nested objects)
-/// e.g., extractJsonString('{"action":"run","recipe":"build"}', "recipe") => "build"
-fn extractJsonString(json: []const u8, key: []const u8) ?[]const u8 {
-    // Look for "key":"value" pattern
-    var search_buf: [128]u8 = undefined;
-    const search = std.fmt.bufPrint(&search_buf, "\"{s}\":\"", .{key}) catch return null;
+fn parseClientCommand(allocator: std.mem.Allocator, payload: []const u8) !ClientCommand {
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, payload, .{});
+    defer parsed.deinit();
 
-    const start_idx = std.mem.indexOf(u8, json, search) orelse return null;
-    const value_start = start_idx + search.len;
+    if (parsed.value != .object) return error.InvalidCommand;
+    const root = parsed.value.object;
 
-    if (value_start >= json.len) return null;
+    const action_value = root.get("action") orelse return error.InvalidCommand;
+    if (action_value != .string) return error.InvalidCommand;
 
-    // Find the closing quote (handle escaped quotes)
-    var i = value_start;
-    while (i < json.len) {
-        if (json[i] == '"' and (i == value_start or json[i - 1] != '\\')) {
-            return json[value_start..i];
+    if (std.mem.eql(u8, action_value.string, "stop")) {
+        return .{ .stop = {} };
+    }
+    if (!std.mem.eql(u8, action_value.string, "run")) {
+        return error.InvalidCommand;
+    }
+
+    const recipe_value = root.get("recipe") orelse return error.InvalidCommand;
+    if (recipe_value != .string) return error.InvalidCommand;
+
+    const dry_run = if (root.get("dryRun")) |dry_run_value|
+        switch (dry_run_value) {
+            .bool => |value| value,
+            .null => false,
+            else => return error.InvalidCommand,
         }
-        i += 1;
-    }
-    return null;
-}
+    else
+        false;
 
-/// Extract a boolean value from JSON by key
-/// e.g., extractJsonBool('{"dryRun":true}', "dryRun") => true
-fn extractJsonBool(json: []const u8, key: []const u8) ?bool {
-    // Look for "key":true or "key":false pattern
-    var search_buf: [128]u8 = undefined;
-
-    // Try true first
-    const search_true = std.fmt.bufPrint(&search_buf, "\"{s}\":true", .{key}) catch return null;
-    if (std.mem.indexOf(u8, json, search_true) != null) {
-        return true;
+    var positional_args: std.ArrayListUnmanaged([]const u8) = .empty;
+    errdefer {
+        for (positional_args.items) |arg| {
+            allocator.free(arg);
+        }
+        positional_args.deinit(allocator);
     }
 
-    // Try false
-    const search_false = std.fmt.bufPrint(&search_buf, "\"{s}\":false", .{key}) catch return null;
-    if (std.mem.indexOf(u8, json, search_false) != null) {
-        return false;
+    if (root.get("params")) |params_value| {
+        switch (params_value) {
+            .object => |params_object| {
+                var iter = params_object.iterator();
+                while (iter.next()) |entry| {
+                    const value = switch (entry.value_ptr.*) {
+                        .string => |string| string,
+                        .null => continue,
+                        else => return error.InvalidCommand,
+                    };
+                    try positional_args.append(allocator, try std.fmt.allocPrint(allocator, "{s}={s}", .{
+                        entry.key_ptr.*,
+                        value,
+                    }));
+                }
+            },
+            .null => {},
+            else => return error.InvalidCommand,
+        }
     }
 
-    return null;
+    return .{
+        .run = .{
+            .task_name = try allocator.dupe(u8, recipe_value.string),
+            .positional_args = try positional_args.toOwnedSlice(allocator),
+            .dry_run = dry_run,
+        },
+    };
 }
 
 fn serializeEvent(allocator: std.mem.Allocator, event: event_emitter.Event) ![]u8 {
@@ -1042,6 +1100,8 @@ const WebSocketFrame = struct {
 
 /// Open browser to URL (cross-platform)
 pub fn openBrowser(url: []const u8) !void {
+    if (shouldSkipBrowserLaunch()) return;
+
     const argv: []const []const u8 = switch (@import("builtin").os.tag) {
         .macos => &.{ "open", url },
         .linux => &.{ "xdg-open", url },
@@ -1051,6 +1111,24 @@ pub fn openBrowser(url: []const u8) !void {
 
     var child = std.process.Child.init(argv, std.heap.page_allocator);
     child.spawn() catch return;
+}
+
+fn shouldSkipBrowserLaunch() bool {
+    return hasTruthyEnvVar("JAKE_NO_BROWSER") or hasTruthyEnvVar("CI");
+}
+
+fn hasTruthyEnvVar(name: []const u8) bool {
+    const value = std.process.getEnvVarOwned(std.heap.page_allocator, name) catch return false;
+    defer std.heap.page_allocator.free(value);
+
+    return !std.mem.eql(u8, value, "0") and !std.mem.eql(u8, value, "false");
+}
+
+fn containsString(haystack: []const []const u8, needle: []const u8) bool {
+    for (haystack) |item| {
+        if (std.mem.eql(u8, item, needle)) return true;
+    }
+    return false;
 }
 
 // ============================================================================
@@ -1355,32 +1433,85 @@ test "WebSocket FIN bit set correctly" {
     try std.testing.expectEqual(@as(u8, 1), header_byte & 0x0F);
 }
 
-test "extractJsonString extracts string values" {
-    const json = "{\"action\":\"run\",\"recipe\":\"build\"}";
-    try std.testing.expectEqualStrings("run", extractJsonString(json, "action").?);
-    try std.testing.expectEqualStrings("build", extractJsonString(json, "recipe").?);
-    try std.testing.expect(extractJsonString(json, "nonexistent") == null);
+test "parseClientCommand extracts run recipe params and dry-run flag" {
+    const json =
+        \\{"action":"run","recipe":"build","params":{"name":"Alice","target":"prod"},"dryRun":true}
+    ;
+
+    var command = try parseClientCommand(std.testing.allocator, json);
+    defer switch (command) {
+        .run => |*request| request.deinit(std.testing.allocator),
+        .stop => {},
+    };
+
+    switch (command) {
+        .run => |request| {
+            try std.testing.expectEqualStrings("build", request.task_name);
+            try std.testing.expect(request.dry_run);
+            try std.testing.expectEqual(@as(usize, 2), request.positional_args.len);
+            try std.testing.expect(containsString(request.positional_args, "name=Alice"));
+            try std.testing.expect(containsString(request.positional_args, "target=prod"));
+        },
+        .stop => return error.TestUnexpectedResult,
+    }
 }
 
-test "extractJsonString handles empty values" {
-    const json = "{\"name\":\"\"}";
-    try std.testing.expectEqualStrings("", extractJsonString(json, "name").?);
+test "parseClientCommand extracts stop commands" {
+    var command = try parseClientCommand(std.testing.allocator, "{\"action\":\"stop\"}");
+    defer switch (command) {
+        .run => |*request| request.deinit(std.testing.allocator),
+        .stop => {},
+    };
+
+    switch (command) {
+        .stop => {},
+        .run => return error.TestUnexpectedResult,
+    }
 }
 
-test "extractJsonString handles special characters" {
-    const json = "{\"path\":\"foo/bar\"}";
-    try std.testing.expectEqualStrings("foo/bar", extractJsonString(json, "path").?);
+test "parseClientCommand rejects non-string params" {
+    try std.testing.expectError(error.InvalidCommand, parseClientCommand(
+        std.testing.allocator,
+        "{\"action\":\"run\",\"recipe\":\"build\",\"params\":{\"count\":1}}",
+    ));
 }
 
-test "extractJsonBool extracts boolean values" {
-    const json = "{\"dryRun\":true,\"verbose\":false}";
-    try std.testing.expect(extractJsonBool(json, "dryRun").? == true);
-    try std.testing.expect(extractJsonBool(json, "verbose").? == false);
-    try std.testing.expect(extractJsonBool(json, "nonexistent") == null);
-}
+test "buildExecutionContext preserves cli settings and applies web overrides" {
+    var server = WebUIServer.init(std.testing.allocator, 8420);
+    defer server.deinit();
 
-test "extractJsonBool handles mixed JSON" {
-    const json = "{\"action\":\"run\",\"dryRun\":true,\"recipe\":\"build\"}";
-    try std.testing.expect(extractJsonBool(json, "dryRun").? == true);
-    try std.testing.expect(extractJsonBool(json, "action") == null); // action is a string, not bool
+    server.base_context = context_mod.Context{
+        .dry_run = true,
+        .verbose = true,
+        .auto_yes = false,
+        .watch_mode = true,
+        .jobs = 4,
+        .color = color_mod.withEnabled(true),
+        .positional_args = &.{"ignored=value"},
+    };
+
+    var callback_ctx = WebUIServer.ExecutionCallbackContext{
+        .server = &server,
+        .task_name = "build",
+    };
+    var task_name = [_]u8{ 'b', 'u', 'i', 'l', 'd' };
+    const request = ExecutionRequest{
+        .task_name = task_name[0..],
+        .positional_args = &.{"name=Alice"},
+        .dry_run = false,
+    };
+
+    const ctx = server.buildExecutionContext(&request, &callback_ctx);
+    try std.testing.expect(ctx.dry_run);
+    try std.testing.expect(ctx.verbose);
+    try std.testing.expect(ctx.auto_yes);
+    try std.testing.expect(!ctx.watch_mode);
+    try std.testing.expectEqual(@as(usize, 4), ctx.jobs);
+    try std.testing.expect(!ctx.color.enabled);
+    try std.testing.expectEqual(@as(usize, 1), ctx.positional_args.len);
+    try std.testing.expectEqualStrings("name=Alice", ctx.positional_args[0]);
+    try std.testing.expect(ctx.cancellation_flag == &server.execution_running);
+    try std.testing.expect(ctx.current_child_pid == &server.current_child_pid);
+    try std.testing.expect(ctx.output_callback != null);
+    try std.testing.expect(ctx.output_callback_ctx == @as(*anyopaque, @ptrCast(&callback_ctx)));
 }

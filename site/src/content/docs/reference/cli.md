@@ -72,6 +72,8 @@ jake -y deploy
 # Start web UI
 jake --web
 jake --web --port 9000
+jake --web --verbose
+jake --web -j4
 
 # List external build system recipes
 jake --external
@@ -87,6 +89,8 @@ jake -f tools/Jakefile make.build
 ```
 
 When `-f` points at a Jakefile in another directory, external Makefile/Justfile discovery and delegated execution use that Jakefile's directory as the base path.
+
+Web UI runs inherit the CLI process' `--verbose` and `--jobs` settings, forward browser-entered recipe params as `name=value`, and validate `@require` before execution. `@confirm` still auto-confirms in the Web UI until a browser-side prompt flow exists.
 
 ## Exit Codes
 
