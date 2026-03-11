@@ -11,6 +11,13 @@ Target release: `0.8.0`
 
 ### Added
 
+- **Help & Completions**
+  - Show `--[no-]` prefix for negatable flags in `--help` output (git-style), with `show_negatable` opt-out per flag
+  - Shell completions now include `--no-X` variants for negatable flags (`--no-external`, `--no-verbose`, `--no-yes`)
+  - Shell completions now include flag aliases (e.g., `--dryrun` for `--dry-run`)
+  - Shell completions now include `--external` value choices (`make`, `just`)
+  - Shell completions now skip hidden and deprecated flags
+
 - **API Documentation**
   - Added `zig build docs` step to generate browsable HTML documentation via Zig's autodoc
   - Added `jake docs` recipe to build and serve docs locally (requires `npx serve`)

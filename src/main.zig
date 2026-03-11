@@ -52,7 +52,7 @@ pub fn main() !void {
     }
 
     // Parse arguments using args module
-    var args = args_mod.parse(allocator, raw_args) catch |err| {
+    var args = args_mod.Args.parse(allocator, raw_args) catch |err| {
         // Constraint errors (MutuallyExclusive, RequiredTogether) print their own messages
         // with full context in parse(). Only print for other errors.
         if (err != error.MutuallyExclusive and err != error.RequiredTogether) {

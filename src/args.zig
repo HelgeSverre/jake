@@ -1,5 +1,31 @@
-// args.zig - Simple argument parsing library for jake
-// Defines flags once, auto-generates help, catches unknown flags
+//! Declarative CLI argument parser for Jake.
+//!
+//! Flags are defined once in the `flags` table. Help text, shell completions,
+//! error messages, and typo suggestions are all auto-generated from that single
+//! source of truth. The flags table is validated at comptime for duplicates,
+//! alias conflicts, and unknown categories.
+//!
+//! Usage:
+//!
+//!     const args_mod = @import("args.zig");
+//!
+//!     // Quick check for --help/--version (avoids full parse overhead)
+//!     switch (args_mod.Args.quickScan(raw_args)) {
+//!         .help    => { args_mod.printHelp(writer); return; },
+//!         .version => { printVersion(); return; },
+//!         .none    => {},
+//!     }
+//!
+//!     // Full parse with env-var fallbacks and constraint validation
+//!     var args = args_mod.Args.parse(allocator, raw_args) catch |err| {
+//!         args_mod.printError(stderr, err, failing_arg);
+//!         std.process.exit(1);
+//!     };
+//!     defer args.deinit(allocator);
+//!
+//! Architecture:
+//!   types & flags table → comptime validation → Args struct (parse, quickScan)
+//!   → help/error formatting (module-level) → tests
 
 const std = @import("std");
 const suggest = @import("suggest.zig");
@@ -46,6 +72,7 @@ pub const Flag = struct {
     deprecated: ?[]const u8 = null, // Deprecation message (e.g., "Use --new-flag instead")
     countable: bool = false, // If true, flag can be repeated (-vvv counts occurrences)
     negatable: bool = false, // If true, --no-X form is accepted
+    show_negatable: bool = true, // If true AND negatable, show --[no-] in help
     env: ?[]const u8 = null, // Environment variable fallback (e.g., "JAKEFILE")
     aliases: ?[]const []const u8 = null, // Alternative long flag names (e.g., &.{"dryrun", "simulate"})
     choices: ?[]const []const u8 = null, // Valid values (e.g., &.{"json", "yaml", "toml"})
@@ -73,7 +100,7 @@ pub const flags = [_]Flag{
     // Execution
     .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing", .category = "Execution", .env = "JAKE_DRY_RUN", .aliases = &.{"dryrun"} },
     .{ .short = 'v', .long = "verbose", .desc = "Show verbose output (use -vv or -vvv for more)", .category = "Execution", .countable = true, .negatable = true, .env = "JAKE_VERBOSE" },
-    .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts", .category = "Execution", .negatable = true, .env = "JAKE_YES" },
+    .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts", .category = "Execution", .negatable = true, .show_negatable = false, .env = "JAKE_YES" },
     .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN", .category = "Execution" },
     .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel", .takes_value = .optional, .value_name = "N", .default_display = "CPU count", .category = "Execution", .env = "JAKE_JOBS", .validator = .positive_integer },
     // File
@@ -206,12 +233,392 @@ pub const Args = struct {
     web: bool = false, // Start web UI server
     web_port: ?u16 = null, // Port for web UI (default 8420)
 
+    // --- Lifecycle ---
+
     /// Free allocated memory (positional args slice)
     pub fn deinit(self: *Args, allocator: std.mem.Allocator) void {
         if (self.positional.len > 0) {
             allocator.free(self.positional);
         }
         self.positional = &.{};
+    }
+
+    // --- Constructors ---
+
+    /// Quickly scan args for --help or --version without full parsing.
+    /// Returns the action to take, enabling early exit for these common cases.
+    pub fn quickScan(raw_args: []const []const u8) QuickAction {
+        // Skip program name (first arg)
+        const scan_args = if (raw_args.len > 0) raw_args[1..] else raw_args;
+
+        for (scan_args) |arg| {
+            // Stop at -- separator
+            if (std.mem.eql(u8, arg, "--")) break;
+
+            if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+                return .help;
+            }
+
+            if (std.mem.eql(u8, arg, "-V") or std.mem.eql(u8, arg, "--version")) {
+                return .version;
+            }
+        }
+
+        return .none;
+    }
+
+    /// Parse command-line arguments into Args struct.
+    /// raw_args should include the program name as first element.
+    pub fn parse(allocator: std.mem.Allocator, raw_args: []const []const u8) ParseError!Args {
+        var result = Args{};
+        var positional_list: std.ArrayListUnmanaged([]const u8) = .empty;
+
+        // Skip program name (index 0)
+        var i: usize = 1;
+        while (i < raw_args.len) : (i += 1) {
+            const arg = raw_args[i];
+
+            // Double-dash separator: stop flag parsing, treat rest as positional
+            if (std.mem.eql(u8, arg, "--")) {
+                i += 1;
+                while (i < raw_args.len) : (i += 1) {
+                    if (result.recipe == null) {
+                        result.recipe = raw_args[i];
+                    } else {
+                        positional_list.append(allocator, raw_args[i]) catch {};
+                    }
+                }
+                break;
+            }
+
+            // Once we have a recipe, check if this is a global flag before treating as positional
+            if (result.recipe != null) {
+                // Allow global flags (boolean or optional without value) after recipe
+                if (arg.len > 0 and arg[0] == '-') {
+                    if (arg.len > 1 and arg[1] == '-') {
+                        const long_name = arg[2..];
+                        if (matchLongFlag(long_name)) |flag_idx| {
+                            if (flags[flag_idx].takes_value != .required) {
+                                try result.setFlag(flag_idx, null, raw_args, &i);
+                                continue;
+                            }
+                        }
+                    } else {
+                        const short_chars = arg[1..];
+                        var all_non_required = true;
+                        for (short_chars) |c| {
+                            if (matchShortFlag(c)) |flag_idx| {
+                                if (flags[flag_idx].takes_value == .required) {
+                                    all_non_required = false;
+                                    break;
+                                }
+                            } else {
+                                all_non_required = false;
+                                break;
+                            }
+                        }
+                        if (all_non_required and short_chars.len > 0) {
+                            for (short_chars) |c| {
+                                if (matchShortFlag(c)) |flag_idx| {
+                                    try result.setFlag(flag_idx, null, raw_args, &i);
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+                // Not a global flag, treat as positional
+                positional_list.append(allocator, arg) catch {};
+                continue;
+            }
+
+            // Check if it's a flag
+            if (arg.len > 0 and arg[0] == '-') {
+                // Long flag
+                if (arg.len > 1 and arg[1] == '-') {
+                    const long_name = arg[2..];
+
+                    // Handle --no-X negatable flags first
+                    if (std.mem.startsWith(u8, long_name, "no-")) {
+                        const negated_name = long_name[3..];
+                        if (matchLongFlag(negated_name)) |flag_idx| {
+                            const flag = flags[flag_idx];
+                            if (flag.negatable) {
+                                result.setFlagNegated(flag_idx);
+                                printDeprecationWarning(flag);
+                                continue;
+                            }
+                        }
+                        return error.UnknownFlag;
+                    }
+
+                    // Handle --flag=value format
+                    var flag_name = long_name;
+                    var inline_value: ?[]const u8 = null;
+                    if (std.mem.indexOf(u8, long_name, "=")) |eq_pos| {
+                        flag_name = long_name[0..eq_pos];
+                        inline_value = long_name[eq_pos + 1 ..];
+                    }
+
+                    if (matchLongFlag(flag_name)) |flag_idx| {
+                        try result.setFlag(flag_idx, inline_value, raw_args, &i);
+                        printDeprecationWarning(flags[flag_idx]);
+                    } else {
+                        return error.UnknownFlag;
+                    }
+                } else {
+                    // Short flag(s)
+                    const short_chars = arg[1..];
+
+                    // Check if first char is a flag that takes a value with attached value (-fVAL, -j4)
+                    if (short_chars.len > 1) {
+                        if (matchShortFlag(short_chars[0])) |flag_idx| {
+                            const flag = flags[flag_idx];
+                            if (flag.takes_value != .none) {
+                                const attached_value = short_chars[1..];
+                                try result.setFlag(flag_idx, attached_value, raw_args, &i);
+                                printDeprecationWarning(flag);
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Handle short flag(s) - supports combined like -vn
+                    for (short_chars) |c| {
+                        if (matchShortFlag(c)) |flag_idx| {
+                            if (flags[flag_idx].takes_value != .none) {
+                                if (short_chars.len > 1) {
+                                    return error.UnknownFlag;
+                                }
+                            }
+                            try result.setFlag(flag_idx, null, raw_args, &i);
+                            printDeprecationWarning(flags[flag_idx]);
+                        } else {
+                            return error.UnknownFlag;
+                        }
+                    }
+                }
+            } else {
+                // Positional argument - first one is recipe
+                result.recipe = arg;
+            }
+        }
+
+        result.positional = positional_list.toOwnedSlice(allocator) catch &.{};
+
+        // Apply environment variable fallbacks for flags not set via CLI
+        result.applyEnvFallbacks();
+
+        // Validate mutual exclusivity and required-together constraints
+        if (result.validateConstraints()) |violation| {
+            const stderr = compat.getStdErr();
+            var buf: [256]u8 = undefined;
+            const msg = switch (violation.err) {
+                error.MutuallyExclusive => std.fmt.bufPrint(&buf, ansi.err_prefix ++ "Options {s} and {s} cannot be used together\n", .{ violation.flag1, violation.flag2 }) catch "error\n",
+                error.RequiredTogether => std.fmt.bufPrint(&buf, ansi.err_prefix ++ "Option {s} requires {s} to also be specified\n", .{ violation.flag1, violation.flag2 }) catch "error\n",
+                else => "error\n",
+            };
+            stderr.writeAll(msg) catch {};
+            return violation.err;
+        }
+
+        return result;
+    }
+
+    // --- Private methods ---
+
+    fn setFlag(self: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: []const []const u8, i: *usize) ParseError!void {
+        const flag = flags[flag_idx];
+        const name = flag.long;
+
+        switch (flag.takes_value) {
+            .none => {
+                if (std.mem.eql(u8, name, "help")) {
+                    self.help = true;
+                } else if (std.mem.eql(u8, name, "version")) {
+                    self.version = true;
+                } else if (std.mem.eql(u8, name, "list")) {
+                    self.list = true;
+                } else if (std.mem.eql(u8, name, "all")) {
+                    self.all = true;
+                } else if (std.mem.eql(u8, name, "dry-run")) {
+                    self.dry_run = true;
+                } else if (std.mem.eql(u8, name, "verbose")) {
+                    self.verbose = true;
+                    if (flag.countable) {
+                        self.verbose_level +|= 1;
+                    }
+                } else if (std.mem.eql(u8, name, "yes")) {
+                    self.yes = true;
+                } else if (std.mem.eql(u8, name, "short")) {
+                    self.short = true;
+                } else if (std.mem.eql(u8, name, "summary")) {
+                    self.summary = true;
+                } else if (std.mem.eql(u8, name, "install")) {
+                    self.install_completions = true;
+                } else if (std.mem.eql(u8, name, "uninstall")) {
+                    self.uninstall_completions = true;
+                } else if (std.mem.eql(u8, name, "fmt")) {
+                    self.fmt = true;
+                } else if (std.mem.eql(u8, name, "check")) {
+                    self.check = true;
+                } else if (std.mem.eql(u8, name, "dump")) {
+                    self.dump = true;
+                } else if (std.mem.eql(u8, name, "web")) {
+                    self.web = true;
+                }
+            },
+            .required => {
+                const value = inline_value orelse blk: {
+                    if (i.* + 1 >= raw_args.len) {
+                        return error.MissingValue;
+                    }
+                    i.* += 1;
+                    break :blk raw_args[i.*];
+                };
+
+                if (std.mem.eql(u8, name, "jakefile")) {
+                    self.jakefile = value;
+                } else if (std.mem.eql(u8, name, "show")) {
+                    self.show = value;
+                } else if (std.mem.eql(u8, name, "port")) {
+                    self.web_port = std.fmt.parseInt(u16, value, 10) catch {
+                        return error.InvalidValue;
+                    };
+                }
+            },
+            .optional => {
+                if (std.mem.eql(u8, name, "watch")) {
+                    self.watch_enabled = true;
+                    if (inline_value) |v| {
+                        self.watch = v;
+                    } else if (i.* + 1 < raw_args.len) {
+                        const next = raw_args[i.* + 1];
+                        if (next.len > 0 and next[0] != '-' and !isLikelyRecipeName(next)) {
+                            if (std.mem.indexOf(u8, next, "*") != null or
+                                std.mem.indexOf(u8, next, "?") != null)
+                            {
+                                i.* += 1;
+                                self.watch = next;
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, name, "jobs")) {
+                    if (inline_value) |v| {
+                        self.jobs = std.fmt.parseInt(usize, v, 10) catch {
+                            return error.InvalidValue;
+                        };
+                    } else if (i.* + 1 < raw_args.len) {
+                        const next = raw_args[i.* + 1];
+                        if (std.fmt.parseInt(usize, next, 10)) |n| {
+                            i.* += 1;
+                            self.jobs = n;
+                        } else |_| {
+                            self.jobs = std.Thread.getCpuCount() catch 4;
+                        }
+                    } else {
+                        self.jobs = std.Thread.getCpuCount() catch 4;
+                    }
+                } else if (std.mem.eql(u8, name, "completions")) {
+                    self.completions_enabled = true;
+                    if (inline_value) |v| {
+                        self.completions = v;
+                    } else if (i.* + 1 < raw_args.len) {
+                        const next = raw_args[i.* + 1];
+                        if (isValidShell(next)) {
+                            i.* += 1;
+                            self.completions = next;
+                        }
+                    }
+                } else if (std.mem.eql(u8, name, "external")) {
+                    self.external_enabled = true;
+                    if (inline_value) |v| {
+                        self.external = v;
+                    } else if (i.* + 1 < raw_args.len) {
+                        const next = raw_args[i.* + 1];
+                        if (isValidExternalType(next)) {
+                            i.* += 1;
+                            self.external = next;
+                        }
+                    }
+                }
+            },
+        }
+    }
+
+    fn setFlagNegated(self: *Args, flag_idx: usize) void {
+        const flag = flags[flag_idx];
+        const name = flag.long;
+
+        if (!flag.negatable) return;
+
+        if (std.mem.eql(u8, name, "verbose")) {
+            self.verbose = false;
+            self.verbose_level = 0;
+        } else if (std.mem.eql(u8, name, "yes")) {
+            self.yes = false;
+        } else if (std.mem.eql(u8, name, "external")) {
+            self.hide_externals = true;
+        }
+    }
+
+    /// Apply environment variable fallbacks for flags not set via CLI.
+    /// Precedence: CLI arg (already set) → env var → default
+    fn applyEnvFallbacks(self: *Args) void {
+        for (flags) |flag| {
+            if (flag.env) |env_name| {
+                if (compat.getenv(env_name)) |env_value| {
+                    self.applyEnvValue(flag, env_value);
+                }
+            }
+        }
+    }
+
+    fn applyEnvValue(self: *Args, flag: Flag, env_value: []const u8) void {
+        const name = flag.long;
+
+        if (flag.takes_value == .none) {
+            const is_truthy = isTruthyEnvValue(env_value);
+            if (std.mem.eql(u8, name, "dry-run")) {
+                if (!self.dry_run) self.dry_run = is_truthy;
+            } else if (std.mem.eql(u8, name, "verbose")) {
+                if (!self.verbose and is_truthy) {
+                    self.verbose = true;
+                    if (std.fmt.parseInt(u8, env_value, 10)) |level| {
+                        if (self.verbose_level == 0) self.verbose_level = level;
+                    } else |_| {
+                        if (self.verbose_level == 0) self.verbose_level = 1;
+                    }
+                }
+            } else if (std.mem.eql(u8, name, "yes")) {
+                if (!self.yes) self.yes = is_truthy;
+            }
+        } else {
+            if (std.mem.eql(u8, name, "jakefile")) {
+                if (std.mem.eql(u8, self.jakefile, "Jakefile")) {
+                    self.jakefile = env_value;
+                }
+            } else if (std.mem.eql(u8, name, "jobs")) {
+                if (self.jobs == null) {
+                    if (std.fmt.parseInt(usize, env_value, 10)) |n| {
+                        self.jobs = n;
+                    } else |_| {}
+                }
+            }
+        }
+    }
+
+    fn validateConstraints(self: *const Args) ?ConstraintViolation {
+        if (self.list and self.show != null) {
+            return .{ .err = error.MutuallyExclusive, .flag1 = "--list", .flag2 = "--show" };
+        }
+        if (self.check and !self.fmt) {
+            return .{ .err = error.RequiredTogether, .flag1 = "--check", .flag2 = "--fmt" };
+        }
+        if (self.dump and !self.fmt) {
+            return .{ .err = error.RequiredTogether, .flag1 = "--dump", .flag2 = "--fmt" };
+        }
+        return null;
     }
 };
 
@@ -241,196 +648,9 @@ pub const QuickAction = enum {
     version, // Show version and exit
 };
 
-/// Quickly scan args for --help or --version without full parsing.
-/// Returns the action to take, enabling early exit for these common cases.
-/// This is O(n) where n is arg count, but avoids full parse overhead.
-pub fn quickScan(raw_args: []const []const u8) QuickAction {
-    // Skip program name (first arg)
-    const args = if (raw_args.len > 0) raw_args[1..] else raw_args;
-
-    for (args) |arg| {
-        // Stop at -- separator
-        if (std.mem.eql(u8, arg, "--")) break;
-
-        // Check for help flags
-        if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            return .help;
-        }
-
-        // Check for version flags
-        if (std.mem.eql(u8, arg, "-V") or std.mem.eql(u8, arg, "--version")) {
-            return .version;
-        }
-    }
-
-    return .none;
-}
-
-/// Parse command-line arguments into Args struct
-/// raw_args should include the program name as first element
-pub fn parse(allocator: std.mem.Allocator, raw_args: []const []const u8) ParseError!Args {
-    var result = Args{};
-    var positional_list: std.ArrayListUnmanaged([]const u8) = .empty;
-
-    // Skip program name (index 0)
-    var i: usize = 1;
-    while (i < raw_args.len) : (i += 1) {
-        const arg = raw_args[i];
-
-        // Double-dash separator: stop flag parsing, treat rest as positional
-        if (std.mem.eql(u8, arg, "--")) {
-            i += 1;
-            while (i < raw_args.len) : (i += 1) {
-                if (result.recipe == null) {
-                    result.recipe = raw_args[i];
-                } else {
-                    positional_list.append(allocator, raw_args[i]) catch {};
-                }
-            }
-            break;
-        }
-
-        // Once we have a recipe, check if this is a global flag before treating as positional
-        if (result.recipe != null) {
-            // Allow global flags (boolean or optional without value) after recipe
-            if (arg.len > 0 and arg[0] == '-') {
-                if (arg.len > 1 and arg[1] == '-') {
-                    // Long flag: check if it's a known flag that doesn't require a value
-                    const long_name = arg[2..];
-                    if (matchLongFlag(long_name)) |flag_idx| {
-                        if (flags[flag_idx].takes_value != .required) {
-                            try setFlag(&result, flag_idx, null, raw_args, &i);
-                            continue;
-                        }
-                    }
-                } else {
-                    // Short flag: check if all chars are known flags that don't require values
-                    const short_chars = arg[1..];
-                    var all_non_required = true;
-                    for (short_chars) |c| {
-                        if (matchShortFlag(c)) |flag_idx| {
-                            if (flags[flag_idx].takes_value == .required) {
-                                all_non_required = false;
-                                break;
-                            }
-                        } else {
-                            all_non_required = false;
-                            break;
-                        }
-                    }
-                    if (all_non_required and short_chars.len > 0) {
-                        for (short_chars) |c| {
-                            if (matchShortFlag(c)) |flag_idx| {
-                                try setFlag(&result, flag_idx, null, raw_args, &i);
-                            }
-                        }
-                        continue;
-                    }
-                }
-            }
-            // Not a global flag, treat as positional
-            positional_list.append(allocator, arg) catch {};
-            continue;
-        }
-
-        // Check if it's a flag
-        if (arg.len > 0 and arg[0] == '-') {
-            // Long flag
-            if (arg.len > 1 and arg[1] == '-') {
-                const long_name = arg[2..];
-
-                // Handle --no-X negatable flags first
-                if (std.mem.startsWith(u8, long_name, "no-")) {
-                    const negated_name = long_name[3..]; // Remove "no-"
-                    if (matchLongFlag(negated_name)) |flag_idx| {
-                        const flag = flags[flag_idx];
-                        if (flag.negatable) {
-                            setFlagNegated(&result, flag_idx);
-                            printDeprecationWarning(flag);
-                            continue;
-                        }
-                    }
-                    // Not a valid negatable flag, fall through to error
-                    return error.UnknownFlag;
-                }
-
-                // Handle --flag=value format
-                var flag_name = long_name;
-                var inline_value: ?[]const u8 = null;
-                if (std.mem.indexOf(u8, long_name, "=")) |eq_pos| {
-                    flag_name = long_name[0..eq_pos];
-                    inline_value = long_name[eq_pos + 1 ..];
-                }
-
-                if (matchLongFlag(flag_name)) |flag_idx| {
-                    try setFlag(&result, flag_idx, inline_value, raw_args, &i);
-                    printDeprecationWarning(flags[flag_idx]);
-                } else {
-                    return error.UnknownFlag;
-                }
-            } else {
-                // Short flag(s)
-                const short_chars = arg[1..];
-
-                // Check if first char is a flag that takes a value with attached value (-fVAL, -j4)
-                if (short_chars.len > 1) {
-                    if (matchShortFlag(short_chars[0])) |flag_idx| {
-                        const flag = flags[flag_idx];
-                        if (flag.takes_value != .none) {
-                            // This is -xVALUE format (e.g., -j4, -fcustom.jake)
-                            const attached_value = short_chars[1..];
-                            try setFlag(&result, flag_idx, attached_value, raw_args, &i);
-                            printDeprecationWarning(flag);
-                            continue;
-                        }
-                    }
-                }
-
-                // Handle short flag(s) - supports combined like -vn
-                for (short_chars) |c| {
-                    if (matchShortFlag(c)) |flag_idx| {
-                        // Only boolean flags can be combined
-                        if (flags[flag_idx].takes_value != .none) {
-                            // Value flags can only be last in a combined sequence
-                            // For simplicity, reject combining value flags
-                            if (short_chars.len > 1) {
-                                return error.UnknownFlag;
-                            }
-                        }
-                        try setFlag(&result, flag_idx, null, raw_args, &i);
-                        printDeprecationWarning(flags[flag_idx]);
-                    } else {
-                        return error.UnknownFlag;
-                    }
-                }
-            }
-        } else {
-            // Positional argument - first one is recipe
-            result.recipe = arg;
-        }
-    }
-
-    result.positional = positional_list.toOwnedSlice(allocator) catch &.{};
-
-    // Apply environment variable fallbacks for flags not set via CLI
-    applyEnvFallbacks(&result);
-
-    // Validate mutual exclusivity and required-together constraints
-    if (validateConstraints(&result)) |violation| {
-        // Print the constraint error with full context
-        const stderr = compat.getStdErr();
-        var buf: [256]u8 = undefined;
-        const msg = switch (violation.err) {
-            error.MutuallyExclusive => std.fmt.bufPrint(&buf, ansi.err_prefix ++ "Options {s} and {s} cannot be used together\n", .{ violation.flag1, violation.flag2 }) catch "error\n",
-            error.RequiredTogether => std.fmt.bufPrint(&buf, ansi.err_prefix ++ "Option {s} requires {s} to also be specified\n", .{ violation.flag1, violation.flag2 }) catch "error\n",
-            else => "error\n",
-        };
-        stderr.writeAll(msg) catch {};
-        return violation.err;
-    }
-
-    return result;
-}
+// ============================================================================
+// Module-level Helpers (operate on flags table, not Args state)
+// ============================================================================
 
 /// Constraint violation info for rich error messages
 pub const ConstraintViolation = struct {
@@ -438,27 +658,6 @@ pub const ConstraintViolation = struct {
     flag1: []const u8,
     flag2: []const u8,
 };
-
-/// Validate mutual exclusivity and required-together constraints
-/// Returns constraint violation info if validation fails
-fn validateConstraints(result: *const Args) ?ConstraintViolation {
-    // Check --list and --show mutual exclusivity
-    if (result.list and result.show != null) {
-        return .{ .err = error.MutuallyExclusive, .flag1 = "--list", .flag2 = "--show" };
-    }
-
-    // Check required-together constraints
-    // --check requires --fmt
-    if (result.check and !result.fmt) {
-        return .{ .err = error.RequiredTogether, .flag1 = "--check", .flag2 = "--fmt" };
-    }
-    // --dump requires --fmt
-    if (result.dump and !result.fmt) {
-        return .{ .err = error.RequiredTogether, .flag1 = "--dump", .flag2 = "--fmt" };
-    }
-
-    return null;
-}
 
 fn matchLongFlag(name: []const u8) ?usize {
     for (flags, 0..) |flag, idx| {
@@ -485,138 +684,6 @@ fn matchShortFlag(char: u8) ?usize {
         }
     }
     return null;
-}
-
-fn setFlag(result: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: []const []const u8, i: *usize) ParseError!void {
-    const flag = flags[flag_idx];
-    const name = flag.long;
-
-    switch (flag.takes_value) {
-        .none => {
-            // Boolean flags - use name comparison instead of fragile indices
-            if (std.mem.eql(u8, name, "help")) {
-                result.help = true;
-            } else if (std.mem.eql(u8, name, "version")) {
-                result.version = true;
-            } else if (std.mem.eql(u8, name, "list")) {
-                result.list = true;
-            } else if (std.mem.eql(u8, name, "all")) {
-                result.all = true;
-            } else if (std.mem.eql(u8, name, "dry-run")) {
-                result.dry_run = true;
-            } else if (std.mem.eql(u8, name, "verbose")) {
-                result.verbose = true;
-                // Countable flag: increment level
-                if (flag.countable) {
-                    result.verbose_level +|= 1; // Saturating add to prevent overflow
-                }
-            } else if (std.mem.eql(u8, name, "yes")) {
-                result.yes = true;
-            } else if (std.mem.eql(u8, name, "short")) {
-                result.short = true;
-            } else if (std.mem.eql(u8, name, "summary")) {
-                result.summary = true;
-            } else if (std.mem.eql(u8, name, "install")) {
-                result.install_completions = true;
-            } else if (std.mem.eql(u8, name, "uninstall")) {
-                result.uninstall_completions = true;
-            } else if (std.mem.eql(u8, name, "fmt")) {
-                result.fmt = true;
-            } else if (std.mem.eql(u8, name, "check")) {
-                result.check = true;
-            } else if (std.mem.eql(u8, name, "dump")) {
-                result.dump = true;
-            } else if (std.mem.eql(u8, name, "web")) {
-                result.web = true;
-            }
-        },
-        .required => {
-            // Must have a value
-            const value = inline_value orelse blk: {
-                if (i.* + 1 >= raw_args.len) {
-                    return error.MissingValue;
-                }
-                i.* += 1;
-                break :blk raw_args[i.*];
-            };
-
-            if (std.mem.eql(u8, name, "jakefile")) {
-                result.jakefile = value;
-            } else if (std.mem.eql(u8, name, "show")) {
-                result.show = value;
-            } else if (std.mem.eql(u8, name, "port")) {
-                result.web_port = std.fmt.parseInt(u16, value, 10) catch {
-                    return error.InvalidValue;
-                };
-            }
-        },
-        .optional => {
-            // May have a value
-            if (std.mem.eql(u8, name, "watch")) {
-                result.watch_enabled = true;
-                if (inline_value) |v| {
-                    result.watch = v;
-                } else if (i.* + 1 < raw_args.len) {
-                    const next = raw_args[i.* + 1];
-                    // Only consume if it doesn't look like a flag or recipe
-                    if (next.len > 0 and next[0] != '-' and !isLikelyRecipeName(next)) {
-                        // Assume anything with glob chars is a pattern
-                        if (std.mem.indexOf(u8, next, "*") != null or
-                            std.mem.indexOf(u8, next, "?") != null)
-                        {
-                            i.* += 1;
-                            result.watch = next;
-                        }
-                    }
-                }
-            } else if (std.mem.eql(u8, name, "jobs")) {
-                if (inline_value) |v| {
-                    result.jobs = std.fmt.parseInt(usize, v, 10) catch {
-                        return error.InvalidValue;
-                    };
-                } else if (i.* + 1 < raw_args.len) {
-                    const next = raw_args[i.* + 1];
-                    // Try to parse as number
-                    if (std.fmt.parseInt(usize, next, 10)) |n| {
-                        i.* += 1;
-                        result.jobs = n;
-                    } else |_| {
-                        // Not a number, use CPU count default
-                        result.jobs = std.Thread.getCpuCount() catch 4;
-                    }
-                } else {
-                    // No next arg, use CPU count
-                    result.jobs = std.Thread.getCpuCount() catch 4;
-                }
-            } else if (std.mem.eql(u8, name, "completions")) {
-                result.completions_enabled = true;
-                if (inline_value) |v| {
-                    result.completions = v;
-                } else if (i.* + 1 < raw_args.len) {
-                    const next = raw_args[i.* + 1];
-                    // Check if next arg is a valid shell name
-                    if (isValidShell(next)) {
-                        i.* += 1;
-                        result.completions = next;
-                    }
-                    // Otherwise, completions stays null (auto-detect)
-                }
-            } else if (std.mem.eql(u8, name, "external")) {
-                result.external_enabled = true;
-                if (inline_value) |v| {
-                    result.external = v;
-                } else if (i.* + 1 < raw_args.len) {
-                    const next = raw_args[i.* + 1];
-                    // Check if next arg is a valid external type
-                    if (isValidExternalType(next)) {
-                        i.* += 1;
-                        result.external = next;
-                    }
-                    // Otherwise, external stays null (show all external)
-                }
-            }
-        },
-    }
 }
 
 fn isLikelyRecipeName(s: []const u8) bool {
@@ -700,80 +767,12 @@ pub fn getValidatorDescription(validator: Validator) []const u8 {
     };
 }
 
-/// Set a flag to its negated (false) state for --no-X handling
-fn setFlagNegated(result: *Args, flag_idx: usize) void {
-    const flag = flags[flag_idx];
-    const name = flag.long;
-
-    if (!flag.negatable) return;
-
-    if (std.mem.eql(u8, name, "verbose")) {
-        result.verbose = false;
-        result.verbose_level = 0;
-    } else if (std.mem.eql(u8, name, "yes")) {
-        result.yes = false;
-    } else if (std.mem.eql(u8, name, "external")) {
-        result.hide_externals = true;
-    }
-}
-
 /// Print deprecation warning to stderr
 fn printDeprecationWarning(flag: Flag) void {
     if (flag.deprecated) |msg| {
         var buf: [256]u8 = undefined;
         const output = std.fmt.bufPrint(&buf, ansi.warn_prefix ++ "--{s} is deprecated: {s}\n", .{ flag.long, msg }) catch return;
         compat.getStdErr().writeAll(output) catch {};
-    }
-}
-
-/// Apply environment variable fallbacks for flags not set via CLI
-/// Precedence: CLI arg (already set) → env var → default
-fn applyEnvFallbacks(result: *Args) void {
-    for (flags) |flag| {
-        if (flag.env) |env_name| {
-            if (compat.getenv(env_name)) |env_value| {
-                applyEnvValue(result, flag, env_value);
-            }
-        }
-    }
-}
-
-/// Apply a single environment variable value to the result
-fn applyEnvValue(result: *Args, flag: Flag, env_value: []const u8) void {
-    const name = flag.long;
-
-    // For boolean flags, check if env value is truthy
-    if (flag.takes_value == .none) {
-        const is_truthy = isTruthyEnvValue(env_value);
-        if (std.mem.eql(u8, name, "dry-run")) {
-            if (!result.dry_run) result.dry_run = is_truthy;
-        } else if (std.mem.eql(u8, name, "verbose")) {
-            if (!result.verbose and is_truthy) {
-                result.verbose = true;
-                // Try to parse as number for verbose level
-                if (std.fmt.parseInt(u8, env_value, 10)) |level| {
-                    if (result.verbose_level == 0) result.verbose_level = level;
-                } else |_| {
-                    if (result.verbose_level == 0) result.verbose_level = 1;
-                }
-            }
-        } else if (std.mem.eql(u8, name, "yes")) {
-            if (!result.yes) result.yes = is_truthy;
-        }
-    } else {
-        // Value flags
-        if (std.mem.eql(u8, name, "jakefile")) {
-            // Only apply if still at default
-            if (std.mem.eql(u8, result.jakefile, "Jakefile")) {
-                result.jakefile = env_value;
-            }
-        } else if (std.mem.eql(u8, name, "jobs")) {
-            if (result.jobs == null) {
-                if (std.fmt.parseInt(usize, env_value, 10)) |n| {
-                    result.jobs = n;
-                } else |_| {}
-            }
-        }
     }
 }
 
@@ -803,7 +802,11 @@ fn printFlagHelp(writer: anytype, flag: Flag) void {
     }
 
     // Long flag in Jake Rose
-    writer.writeAll(ansi.jake_rose ++ "--") catch {};
+    if (flag.negatable and flag.show_negatable) {
+        writer.writeAll(ansi.jake_rose ++ "--" ++ ansi.reset ++ "[no-]" ++ ansi.jake_rose) catch {};
+    } else {
+        writer.writeAll(ansi.jake_rose ++ "--") catch {};
+    }
     writer.writeAll(flag.long) catch {};
     writer.writeAll(ansi.reset) catch {};
 
@@ -819,7 +822,8 @@ fn printFlagHelp(writer: anytype, flag: Flag) void {
     }
 
     // Padding to align descriptions (target column ~24)
-    const used = 2 + 4 + 2 + flag.long.len + if (flag.value_name) |n| n.len + 3 else 0;
+    const negatable_extra: usize = if (flag.negatable and flag.show_negatable) 5 else 0;
+    const used = 2 + 4 + 2 + negatable_extra + flag.long.len + if (flag.value_name) |n| n.len + 3 else 0;
     const pad = if (used < 26) 26 - used else 2;
     for (0..pad) |_| {
         writer.writeAll(" ") catch {};
@@ -1027,39 +1031,39 @@ const expectEqualStrings = testing.expectEqualStrings;
 const expectError = testing.expectError;
 
 test "parse empty args returns defaults" {
-    const args = try parse(testing.allocator, &.{"jake"});
+    const args = try Args.parse(testing.allocator, &.{"jake"});
     try expect(args.help == false);
     try expect(args.version == false);
     try expect(args.recipe == null);
 }
 
 test "parse --help" {
-    const args = try parse(testing.allocator, &.{ "jake", "--help" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--help" });
     try expect(args.help == true);
 }
 
 test "parse -h" {
-    const args = try parse(testing.allocator, &.{ "jake", "-h" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-h" });
     try expect(args.help == true);
 }
 
 test "parse --version" {
-    const args = try parse(testing.allocator, &.{ "jake", "--version" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--version" });
     try expect(args.version == true);
 }
 
 test "parse -V" {
-    const args = try parse(testing.allocator, &.{ "jake", "-V" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-V" });
     try expect(args.version == true);
 }
 
 test "parse recipe name" {
-    const args = try parse(testing.allocator, &.{ "jake", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "build" });
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "parse recipe with positional args" {
-    var args = try parse(testing.allocator, &.{ "jake", "deploy", "prod", "fast" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "deploy", "prod", "fast" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("deploy", args.recipe.?);
     try expectEqual(@as(usize, 2), args.positional.len);
@@ -1068,86 +1072,86 @@ test "parse recipe with positional args" {
 }
 
 test "parse --jakefile value" {
-    const args = try parse(testing.allocator, &.{ "jake", "--jakefile", "custom.jake" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--jakefile", "custom.jake" });
     try expectEqualStrings("custom.jake", args.jakefile);
 }
 
 test "parse -f value" {
-    const args = try parse(testing.allocator, &.{ "jake", "-f", "custom.jake" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-f", "custom.jake" });
     try expectEqualStrings("custom.jake", args.jakefile);
 }
 
 test "parse -j with numeric value" {
-    const args = try parse(testing.allocator, &.{ "jake", "-j", "4" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-j", "4" });
     try expectEqual(@as(usize, 4), args.jobs.?);
 }
 
 test "parse -j4 combined format" {
-    const args = try parse(testing.allocator, &.{ "jake", "-j4" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-j4" });
     try expectEqual(@as(usize, 4), args.jobs.?);
 }
 
 test "parse --jobs with value" {
-    const args = try parse(testing.allocator, &.{ "jake", "--jobs", "8" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--jobs", "8" });
     try expectEqual(@as(usize, 8), args.jobs.?);
 }
 
 test "parse -j without value uses CPU count" {
-    const args = try parse(testing.allocator, &.{ "jake", "-j", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-j", "build" });
     try expect(args.jobs != null); // Should be CPU count
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "parse -w with pattern" {
-    const args = try parse(testing.allocator, &.{ "jake", "-w", "src/**", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-w", "src/**", "build" });
     try expect(args.watch_enabled);
     try expectEqualStrings("src/**", args.watch.?);
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "parse -w without pattern" {
-    const args = try parse(testing.allocator, &.{ "jake", "-w", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-w", "build" });
     try expect(args.watch_enabled);
     try expect(args.watch == null);
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "parse --watch with pattern" {
-    const args = try parse(testing.allocator, &.{ "jake", "--watch", "*.zig", "test" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--watch", "*.zig", "test" });
     try expect(args.watch_enabled);
     try expectEqualStrings("*.zig", args.watch.?);
     try expectEqualStrings("test", args.recipe.?);
 }
 
 test "unknown long flag errors" {
-    const result = parse(testing.allocator, &.{ "jake", "--unknown" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "--unknown" });
     try expectError(error.UnknownFlag, result);
 }
 
 test "unknown short flag errors" {
-    const result = parse(testing.allocator, &.{ "jake", "-x" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "-x" });
     try expectError(error.UnknownFlag, result);
 }
 
 test "missing required value for --jakefile" {
-    const result = parse(testing.allocator, &.{ "jake", "--jakefile" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "--jakefile" });
     try expectError(error.MissingValue, result);
 }
 
 test "missing required value for -f" {
-    const result = parse(testing.allocator, &.{ "jake", "-f" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "-f" });
     try expectError(error.MissingValue, result);
 }
 
 test "multiple boolean flags" {
-    const args = try parse(testing.allocator, &.{ "jake", "-v", "-n", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-v", "-n", "build" });
     try expect(args.verbose);
     try expect(args.dry_run);
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "boolean flags after recipe still work" {
-    var args = try parse(testing.allocator, &.{ "jake", "build", "-v", "--yes" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "-v", "--yes" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
     try expect(args.verbose); // -v is processed as flag
@@ -1156,7 +1160,7 @@ test "boolean flags after recipe still work" {
 }
 
 test "unknown flags after recipe are positional" {
-    var args = try parse(testing.allocator, &.{ "jake", "build", "--unknown-flag" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "--unknown-flag" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
     try expectEqual(@as(usize, 1), args.positional.len);
@@ -1165,7 +1169,7 @@ test "unknown flags after recipe are positional" {
 
 test "value flags after recipe are positional" {
     // -f takes a value, so it should be treated as positional after recipe
-    var args = try parse(testing.allocator, &.{ "jake", "build", "-f", "file.jake" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "-f", "file.jake" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
     try expectEqual(@as(usize, 2), args.positional.len);
@@ -1174,7 +1178,7 @@ test "value flags after recipe are positional" {
 }
 
 test "all boolean flags" {
-    const args = try parse(testing.allocator, &.{ "jake", "-h", "-V", "-l", "-a", "-n", "-v", "-y" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-h", "-V", "-l", "-a", "-n", "-v", "-y" });
     try expect(args.help);
     try expect(args.version);
     try expect(args.list);
@@ -1186,14 +1190,14 @@ test "all boolean flags" {
 
 test "-j with non-numeric value uses default and treats as recipe" {
     // When -j is followed by non-number, use CPU default and treat next arg as recipe
-    const args = try parse(testing.allocator, &.{ "jake", "-j", "abc" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-j", "abc" });
     try expect(args.jobs != null); // CPU count
     try expectEqualStrings("abc", args.recipe.?);
 }
 
 test "invalid -jN format" {
     // -jabc should fail because it's not -j followed by a number
-    const result = parse(testing.allocator, &.{ "jake", "-jabc" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "-jabc" });
     try expectError(error.InvalidValue, result);
 }
 
@@ -1221,14 +1225,14 @@ test "printHelp generates correct output" {
 }
 
 test "combined short flags -vn" {
-    const args = try parse(testing.allocator, &.{ "jake", "-vn", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-vn", "build" });
     try expect(args.verbose);
     try expect(args.dry_run);
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "combined short flags -lvy" {
-    const args = try parse(testing.allocator, &.{ "jake", "-lvy" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-lvy" });
     try expect(args.list);
     try expect(args.verbose);
     try expect(args.yes);
@@ -1236,119 +1240,119 @@ test "combined short flags -lvy" {
 
 test "combined flags with value flag errors" {
     // -vf should fail because -f takes a value and can't be combined
-    const result = parse(testing.allocator, &.{ "jake", "-vf" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "-vf" });
     try expectError(error.UnknownFlag, result);
 }
 
 test "parse --short flag" {
-    const args = try parse(testing.allocator, &.{ "jake", "--short" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--short" });
     try expect(args.short == true);
 }
 
 test "parse --list --short combination" {
-    const args = try parse(testing.allocator, &.{ "jake", "--list", "--short" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--list", "--short" });
     try expect(args.list == true);
     try expect(args.short == true);
 }
 
 test "parse --all flag" {
-    const args = try parse(testing.allocator, &.{ "jake", "--all" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--all" });
     try expect(args.all == true);
 }
 
 test "parse -a flag" {
-    const args = try parse(testing.allocator, &.{ "jake", "-a" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-a" });
     try expect(args.all == true);
 }
 
 test "parse --list --all combination" {
-    const args = try parse(testing.allocator, &.{ "jake", "--list", "--all" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--list", "--all" });
     try expect(args.list == true);
     try expect(args.all == true);
 }
 
 test "parse -la combined flags" {
-    const args = try parse(testing.allocator, &.{ "jake", "-la" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-la" });
     try expect(args.list == true);
     try expect(args.all == true);
 }
 
 test "parse -s (show) with recipe name" {
-    const args = try parse(testing.allocator, &.{ "jake", "-s", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-s", "build" });
     try expectEqualStrings("build", args.show.?);
 }
 
 test "parse --show with recipe name" {
-    const args = try parse(testing.allocator, &.{ "jake", "--show", "deploy" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--show", "deploy" });
     try expectEqualStrings("deploy", args.show.?);
 }
 
 test "parse --show=value format" {
-    const args = try parse(testing.allocator, &.{ "jake", "--show=test" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--show=test" });
     try expectEqualStrings("test", args.show.?);
 }
 
 test "missing required value for --show" {
-    const result = parse(testing.allocator, &.{ "jake", "--show" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "--show" });
     try expectError(error.MissingValue, result);
 }
 
 test "missing required value for -s" {
-    const result = parse(testing.allocator, &.{ "jake", "-s" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "-s" });
     try expectError(error.MissingValue, result);
 }
 
 test "parse --summary flag" {
-    const args = try parse(testing.allocator, &.{ "jake", "--summary" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--summary" });
     try expect(args.summary == true);
 }
 
 test "parse --completions bash" {
-    const args = try parse(testing.allocator, &.{ "jake", "--completions", "bash" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--completions", "bash" });
     try expect(args.completions_enabled);
     try expectEqualStrings("bash", args.completions.?);
 }
 
 test "parse --completions zsh" {
-    const args = try parse(testing.allocator, &.{ "jake", "--completions", "zsh" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--completions", "zsh" });
     try expect(args.completions_enabled);
     try expectEqualStrings("zsh", args.completions.?);
 }
 
 test "parse --completions fish" {
-    const args = try parse(testing.allocator, &.{ "jake", "--completions", "fish" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--completions", "fish" });
     try expect(args.completions_enabled);
     try expectEqualStrings("fish", args.completions.?);
 }
 
 test "parse --completions=bash inline format" {
-    const args = try parse(testing.allocator, &.{ "jake", "--completions=bash" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--completions=bash" });
     try expect(args.completions_enabled);
     try expectEqualStrings("bash", args.completions.?);
 }
 
 test "parse --completions without shell auto-detects" {
-    const args = try parse(testing.allocator, &.{ "jake", "--completions" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--completions" });
     try expect(args.completions_enabled);
     try expect(args.completions == null); // Will auto-detect from $SHELL
 }
 
 test "parse --completions --install" {
-    const args = try parse(testing.allocator, &.{ "jake", "--completions", "--install" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--completions", "--install" });
     try expect(args.completions_enabled);
     try expect(args.install_completions);
     try expect(args.completions == null); // Auto-detect
 }
 
 test "parse --completions bash --install" {
-    const args = try parse(testing.allocator, &.{ "jake", "--completions", "bash", "--install" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--completions", "bash", "--install" });
     try expect(args.completions_enabled);
     try expect(args.install_completions);
     try expectEqualStrings("bash", args.completions.?);
 }
 
 test "parse --install alone" {
-    const args = try parse(testing.allocator, &.{ "jake", "--install" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--install" });
     try expect(args.install_completions);
     try expect(!args.completions_enabled);
 }
@@ -1358,7 +1362,7 @@ test "parse --install alone" {
 // ============================================================================
 
 test "all global boolean flags work after recipe" {
-    var args = try parse(testing.allocator, &.{
+    var args = try Args.parse(testing.allocator, &.{
         "jake",        "build",
         "-h",          "-V",
         "-l",          "-a",
@@ -1384,7 +1388,7 @@ test "all global boolean flags work after recipe" {
 }
 
 test "mixed boolean flags before and after recipe" {
-    var args = try parse(testing.allocator, &.{ "jake", "-v", "build", "-n", "--yes" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "-v", "build", "-n", "--yes" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
     try expect(args.verbose);
@@ -1394,7 +1398,7 @@ test "mixed boolean flags before and after recipe" {
 }
 
 test "combined short flags after recipe" {
-    var args = try parse(testing.allocator, &.{ "jake", "deploy", "-vny" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "deploy", "-vny" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("deploy", args.recipe.?);
     try expect(args.verbose);
@@ -1404,7 +1408,7 @@ test "combined short flags after recipe" {
 }
 
 test "real positional args with flags after recipe" {
-    var args = try parse(testing.allocator, &.{ "jake", "deploy", "prod", "fast", "--yes" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "deploy", "prod", "fast", "--yes" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("deploy", args.recipe.?);
     try expect(args.yes);
@@ -1414,36 +1418,36 @@ test "real positional args with flags after recipe" {
 }
 
 test "inline value format --jakefile=custom.jake" {
-    const args = try parse(testing.allocator, &.{ "jake", "--jakefile=custom.jake", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--jakefile=custom.jake", "build" });
     try expectEqualStrings("custom.jake", args.jakefile);
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "inline value format --show=recipe" {
-    const args = try parse(testing.allocator, &.{ "jake", "--show=build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--show=build" });
     try expectEqualStrings("build", args.show.?);
 }
 
 test "inline value format --jobs=8" {
-    const args = try parse(testing.allocator, &.{ "jake", "--jobs=8", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--jobs=8", "build" });
     try expectEqual(@as(usize, 8), args.jobs.?);
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "inline value format --watch=pattern" {
-    const args = try parse(testing.allocator, &.{ "jake", "--watch=src/*.zig", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--watch=src/*.zig", "build" });
     try expect(args.watch_enabled);
     try expectEqualStrings("src/*.zig", args.watch.?);
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "--uninstall flag parses correctly" {
-    const args = try parse(testing.allocator, &.{ "jake", "--uninstall" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--uninstall" });
     try expect(args.uninstall_completions);
 }
 
 test "flags after recipe with equals sign in positional" {
-    var args = try parse(testing.allocator, &.{ "jake", "test", "name=value", "--verbose" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "test", "name=value", "--verbose" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("test", args.recipe.?);
     try expect(args.verbose);
@@ -1453,7 +1457,7 @@ test "flags after recipe with equals sign in positional" {
 
 test "long flag with value after recipe is positional" {
     // --jakefile takes a value, so it's treated as positional after recipe
-    var args = try parse(testing.allocator, &.{ "jake", "build", "--jakefile", "other.jake" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "--jakefile", "other.jake" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
     try expectEqual(@as(usize, 2), args.positional.len);
@@ -1463,7 +1467,7 @@ test "long flag with value after recipe is positional" {
 
 test "inline value flag after recipe is positional" {
     // Even --jakefile=value is positional after recipe since it takes a value
-    var args = try parse(testing.allocator, &.{ "jake", "build", "--jakefile=other.jake" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "--jakefile=other.jake" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
     try expectEqual(@as(usize, 1), args.positional.len);
@@ -1471,7 +1475,7 @@ test "inline value flag after recipe is positional" {
 }
 
 test "empty args after program name" {
-    const args = try parse(testing.allocator, &.{"jake"});
+    const args = try Args.parse(testing.allocator, &.{"jake"});
     try expect(args.recipe == null);
     try expect(!args.help);
     try expect(!args.list);
@@ -1480,13 +1484,13 @@ test "empty args after program name" {
 test "recipe that looks like a flag" {
     // A recipe named literally "-v" would be strange but should work
     // Actually no - first check is if it starts with -, so this would be parsed as flag
-    const args = try parse(testing.allocator, &.{ "jake", "some-recipe" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "some-recipe" });
     try expectEqualStrings("some-recipe", args.recipe.?);
 }
 
 test "double-dash separator stops flag parsing" {
     // -- stops flag parsing, everything after becomes positional
-    var args = try parse(testing.allocator, &.{ "jake", "build", "--", "--verbose", "-n" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "--", "--verbose", "-n" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
     // --verbose and -n become positional, not parsed as flags
@@ -1498,7 +1502,7 @@ test "double-dash separator stops flag parsing" {
 }
 
 test "double-dash before recipe sets recipe from rest" {
-    var args = try parse(testing.allocator, &.{ "jake", "--", "--help" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "--", "--help" });
     defer args.deinit(testing.allocator);
     // --help becomes recipe name, not parsed as help flag
     try expectEqualStrings("--help", args.recipe.?);
@@ -1506,7 +1510,7 @@ test "double-dash before recipe sets recipe from rest" {
 }
 
 test "double-dash with recipe and positional" {
-    var args = try parse(testing.allocator, &.{ "jake", "-v", "--", "build", "arg1", "arg2" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "-v", "--", "build", "arg1", "arg2" });
     defer args.deinit(testing.allocator);
     try expect(args.verbose); // -v before -- is parsed
     try expectEqualStrings("build", args.recipe.?);
@@ -1643,43 +1647,43 @@ test "formatFlagSuggestion formats correctly" {
 // ============================================================================
 
 test "single -v sets verbose_level to 1" {
-    const args = try parse(testing.allocator, &.{ "jake", "-v" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-v" });
     try expect(args.verbose);
     try expect(args.verbose_level == 1);
 }
 
 test "-vv sets verbose_level to 2" {
-    const args = try parse(testing.allocator, &.{ "jake", "-vv" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-vv" });
     try expect(args.verbose);
     try expect(args.verbose_level == 2);
 }
 
 test "-vvv sets verbose_level to 3" {
-    const args = try parse(testing.allocator, &.{ "jake", "-vvv" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-vvv" });
     try expect(args.verbose);
     try expect(args.verbose_level == 3);
 }
 
 test "--verbose sets verbose_level to 1" {
-    const args = try parse(testing.allocator, &.{ "jake", "--verbose" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--verbose" });
     try expect(args.verbose);
     try expect(args.verbose_level == 1);
 }
 
 test "--verbose --verbose sets verbose_level to 2" {
-    const args = try parse(testing.allocator, &.{ "jake", "--verbose", "--verbose" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--verbose", "--verbose" });
     try expect(args.verbose);
     try expect(args.verbose_level == 2);
 }
 
 test "mixed -v --verbose accumulates" {
-    const args = try parse(testing.allocator, &.{ "jake", "-v", "--verbose", "-v" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-v", "--verbose", "-v" });
     try expect(args.verbose);
     try expect(args.verbose_level == 3);
 }
 
 test "combined -vnv increments verbose_level for each v" {
-    const args = try parse(testing.allocator, &.{ "jake", "-vnv" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-vnv" });
     try expect(args.verbose);
     try expect(args.dry_run);
     try expect(args.verbose_level == 2);
@@ -1690,40 +1694,40 @@ test "combined -vnv increments verbose_level for each v" {
 // ============================================================================
 
 test "--no-verbose sets verbose to false" {
-    const args = try parse(testing.allocator, &.{ "jake", "--no-verbose" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--no-verbose" });
     try expect(!args.verbose);
     try expect(args.verbose_level == 0);
 }
 
 test "--no-verbose after --verbose overrides to false" {
-    const args = try parse(testing.allocator, &.{ "jake", "--verbose", "--no-verbose" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--verbose", "--no-verbose" });
     try expect(!args.verbose);
     try expect(args.verbose_level == 0);
 }
 
 test "--verbose after --no-verbose overrides to true" {
-    const args = try parse(testing.allocator, &.{ "jake", "--no-verbose", "--verbose" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--no-verbose", "--verbose" });
     try expect(args.verbose);
     try expect(args.verbose_level == 1);
 }
 
 test "--no-yes sets yes to false" {
-    const args = try parse(testing.allocator, &.{ "jake", "--no-yes" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--no-yes" });
     try expect(!args.yes);
 }
 
 test "--no-help errors (not negatable)" {
-    const result = parse(testing.allocator, &.{ "jake", "--no-help" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "--no-help" });
     try expectError(error.UnknownFlag, result);
 }
 
 test "--no-unknown errors" {
-    const result = parse(testing.allocator, &.{ "jake", "--no-unknown" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "--no-unknown" });
     try expectError(error.UnknownFlag, result);
 }
 
 test "negatable flag with other flags" {
-    const args = try parse(testing.allocator, &.{ "jake", "-n", "--no-verbose", "-l" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-n", "--no-verbose", "-l" });
     try expect(args.dry_run);
     try expect(!args.verbose);
     try expect(args.list);
@@ -1813,12 +1817,12 @@ test "Flag struct has aliases field" {
 }
 
 test "--dryrun alias works for --dry-run" {
-    const args = try parse(testing.allocator, &.{ "jake", "--dryrun" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--dryrun" });
     try expect(args.dry_run);
 }
 
 test "alias works with recipe" {
-    const args = try parse(testing.allocator, &.{ "jake", "--dryrun", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--dryrun", "build" });
     try expect(args.dry_run);
     try expectEqualStrings("build", args.recipe.?);
 }
@@ -1842,38 +1846,38 @@ test "matchLongFlag prefers primary name" {
 // ============================================================================
 
 test "-fcustom.jake attaches value to jakefile flag" {
-    const args = try parse(testing.allocator, &.{ "jake", "-fcustom.jake" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-fcustom.jake" });
     try expectEqualStrings("custom.jake", args.jakefile);
 }
 
 test "-fpath/to/file.jake works with path" {
-    const args = try parse(testing.allocator, &.{ "jake", "-fpath/to/file.jake" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-fpath/to/file.jake" });
     try expectEqualStrings("path/to/file.jake", args.jakefile);
 }
 
 test "-j4 still works (regression)" {
-    const args = try parse(testing.allocator, &.{ "jake", "-j4" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-j4" });
     try expectEqual(@as(usize, 4), args.jobs.?);
 }
 
 test "-j16 works for larger numbers" {
-    const args = try parse(testing.allocator, &.{ "jake", "-j16" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-j16" });
     try expectEqual(@as(usize, 16), args.jobs.?);
 }
 
 test "-sbuild attaches value to show flag" {
-    const args = try parse(testing.allocator, &.{ "jake", "-sbuild" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-sbuild" });
     try expectEqualStrings("build", args.show.?);
 }
 
 test "-fcustom.jake with recipe" {
-    const args = try parse(testing.allocator, &.{ "jake", "-fcustom.jake", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-fcustom.jake", "build" });
     try expectEqualStrings("custom.jake", args.jakefile);
     try expectEqualStrings("build", args.recipe.?);
 }
 
 test "-j4 with other flags and recipe" {
-    const args = try parse(testing.allocator, &.{ "jake", "-v", "-j4", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-v", "-j4", "build" });
     try expect(args.verbose);
     try expectEqual(@as(usize, 4), args.jobs.?);
     try expectEqualStrings("build", args.recipe.?);
@@ -2007,23 +2011,23 @@ test "isValidChoice returns true when no choices defined" {
 // ============================================================================
 
 test "--list and --show cannot be used together" {
-    const result = parse(testing.allocator, &.{ "jake", "--list", "--show", "build" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "--list", "--show", "build" });
     try expectError(error.MutuallyExclusive, result);
 }
 
 test "-l and -s cannot be used together" {
-    const result = parse(testing.allocator, &.{ "jake", "-l", "-s", "build" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "-l", "-s", "build" });
     try expectError(error.MutuallyExclusive, result);
 }
 
 test "--list alone works" {
-    const args = try parse(testing.allocator, &.{ "jake", "--list" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--list" });
     try expect(args.list);
     try expect(args.show == null);
 }
 
 test "--show alone works" {
-    const args = try parse(testing.allocator, &.{ "jake", "--show", "build" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--show", "build" });
     try expect(!args.list);
     try expectEqualStrings("build", args.show.?);
 }
@@ -2033,29 +2037,29 @@ test "--show alone works" {
 // ============================================================================
 
 test "--check requires --fmt" {
-    const result = parse(testing.allocator, &.{ "jake", "--check" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "--check" });
     try expectError(error.RequiredTogether, result);
 }
 
 test "--dump requires --fmt" {
-    const result = parse(testing.allocator, &.{ "jake", "--dump" });
+    const result = Args.parse(testing.allocator, &.{ "jake", "--dump" });
     try expectError(error.RequiredTogether, result);
 }
 
 test "--fmt --check works together" {
-    const args = try parse(testing.allocator, &.{ "jake", "--fmt", "--check" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--fmt", "--check" });
     try expect(args.fmt);
     try expect(args.check);
 }
 
 test "--fmt --dump works together" {
-    const args = try parse(testing.allocator, &.{ "jake", "--fmt", "--dump" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--fmt", "--dump" });
     try expect(args.fmt);
     try expect(args.dump);
 }
 
 test "--fmt alone works" {
-    const args = try parse(testing.allocator, &.{ "jake", "--fmt" });
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--fmt" });
     try expect(args.fmt);
     try expect(!args.check);
     try expect(!args.dump);
@@ -2134,47 +2138,47 @@ test "getValidatorDescription returns descriptions" {
 // ============================================================================
 
 test "quickScan detects --help" {
-    try expectEqual(QuickAction.help, quickScan(&.{ "jake", "--help" }));
-    try expectEqual(QuickAction.help, quickScan(&.{ "jake", "build", "--help" }));
-    try expectEqual(QuickAction.help, quickScan(&.{ "jake", "-v", "--help" }));
+    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "--help" }));
+    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "build", "--help" }));
+    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "-v", "--help" }));
 }
 
 test "quickScan detects -h" {
-    try expectEqual(QuickAction.help, quickScan(&.{ "jake", "-h" }));
-    try expectEqual(QuickAction.help, quickScan(&.{ "jake", "build", "-h" }));
+    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "-h" }));
+    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "build", "-h" }));
 }
 
 test "quickScan detects --version" {
-    try expectEqual(QuickAction.version, quickScan(&.{ "jake", "--version" }));
-    try expectEqual(QuickAction.version, quickScan(&.{ "jake", "build", "--version" }));
+    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "--version" }));
+    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "build", "--version" }));
 }
 
 test "quickScan detects -V" {
-    try expectEqual(QuickAction.version, quickScan(&.{ "jake", "-V" }));
-    try expectEqual(QuickAction.version, quickScan(&.{ "jake", "-V", "build" }));
+    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "-V" }));
+    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "-V", "build" }));
 }
 
 test "quickScan returns none for normal args" {
-    try expectEqual(QuickAction.none, quickScan(&.{ "jake", "build" }));
-    try expectEqual(QuickAction.none, quickScan(&.{ "jake", "-v", "test" }));
-    try expectEqual(QuickAction.none, quickScan(&.{"jake"}));
+    try expectEqual(QuickAction.none, Args.quickScan(&.{ "jake", "build" }));
+    try expectEqual(QuickAction.none, Args.quickScan(&.{ "jake", "-v", "test" }));
+    try expectEqual(QuickAction.none, Args.quickScan(&.{"jake"}));
 }
 
 test "quickScan stops at -- separator" {
     // --help after -- should be ignored
-    try expectEqual(QuickAction.none, quickScan(&.{ "jake", "--", "--help" }));
-    try expectEqual(QuickAction.none, quickScan(&.{ "jake", "--", "-h" }));
+    try expectEqual(QuickAction.none, Args.quickScan(&.{ "jake", "--", "--help" }));
+    try expectEqual(QuickAction.none, Args.quickScan(&.{ "jake", "--", "-h" }));
 }
 
 test "quickScan handles empty args" {
-    try expectEqual(QuickAction.none, quickScan(&.{}));
+    try expectEqual(QuickAction.none, Args.quickScan(&.{}));
 }
 
 test "quickScan prioritizes first match" {
     // -h appears before --version, should return help
-    try expectEqual(QuickAction.help, quickScan(&.{ "jake", "-h", "--version" }));
+    try expectEqual(QuickAction.help, Args.quickScan(&.{ "jake", "-h", "--version" }));
     // --version appears before -h, should return version
-    try expectEqual(QuickAction.version, quickScan(&.{ "jake", "--version", "-h" }));
+    try expectEqual(QuickAction.version, Args.quickScan(&.{ "jake", "--version", "-h" }));
 }
 
 // ============================================================================
@@ -2202,7 +2206,7 @@ test "fuzz argument parsing" {
             }
 
             // Try to parse - errors are expected for invalid input
-            var result = parse(allocator, args_list.items) catch {
+            var result = Args.parse(allocator, args_list.items) catch {
                 return;
             };
             defer result.deinit(allocator);
