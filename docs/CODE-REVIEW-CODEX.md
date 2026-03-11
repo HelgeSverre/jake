@@ -603,7 +603,7 @@ Recommended next step:
 
 ## Handoff Update (2026-03-11, Web UI)
 
-The main Web UI execution-context drift identified in this review has now been reduced substantially.
+The main Web UI parity items identified in this review are now closed.
 
 Completed:
 
@@ -613,21 +613,25 @@ Completed:
 - WebSocket frame-handler threads are now explicitly detached, which removes an obvious background-thread ownership bug.
 - Web UI execution threads are now joined cleanly between runs instead of losing the thread handle from inside the worker thread.
 - Added focused unit coverage in `src/webui.zig` for command parsing and execution-context construction.
-- Added a `tests/e2e/Jakefile` smoke test for `jake --web` startup and HTTP serving.
+- Web-triggered execution now emits task, command, output, and summary events through the shared executor/event-emitter path instead of a separate partial reporting path.
+- Browser-side `@confirm` transport is now implemented, so Web UI runs no longer auto-approve confirmation prompts.
+- Stop/cancel now terminates running captured commands cleanly and reports cancellation back through the normal task/output/summary event flow.
+- Added browser-level WebSocket E2E coverage for `@confirm`, dependency execution, streamed output, and cancel/stop behavior.
 
 Still open:
 
-- Web UI output/cancellation semantics are improved but not fully unified with the event-emitter path used elsewhere.
-- `@confirm` still auto-confirms in Web UI mode because there is not yet a browser-side confirmation transport.
-- There is still no browser-level E2E coverage for run/cancel behavior over WebSocket.
+- No additional Web UI-specific correctness gaps from this review remain open.
 
 Verification now includes:
 
 - `zig test src/webui.zig`
+- `zig test src/executor.zig`
+- `../../zig-out/bin/jake test-web` (from `tests/e2e`)
+- `zig build test`
 
 Recommended next step:
 
-- Either finish the remaining Web UI transport work (`@confirm`, richer streamed executor output, browser-level cancel/run E2E) or move to the next robustness pass around diagnostics and explicit error handling.
+- Move to the next robustness pass around diagnostics, explicit error handling, and parser/context cleanup.
 
 ## Final Verdict
 

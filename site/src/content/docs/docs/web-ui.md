@@ -35,6 +35,14 @@ jake --web --port 9000
 
 Command output streams to the browser via WebSocket as it runs. No need to refresh - see results instantly.
 
+### Interactive Prompts
+
+`@confirm` prompts are forwarded to the browser so you can approve or reject them without leaving the Web UI.
+
+### Stop / Cancel
+
+Use the stop control in the browser to cancel the active run. Jake terminates the running command tree and reports the cancellation back through the normal task output and summary stream.
+
 ### Console Tee
 
 Output appears in both the browser and your terminal simultaneously. Useful when you want to keep an eye on both.
@@ -47,8 +55,7 @@ Web-triggered runs inherit the same execution settings as the CLI process that s
 - `-j` / `--jobs` controls parallel execution
 - `@require` validation runs before execution starts
 - Recipe parameter values entered in the UI are forwarded as normal `name=value` arguments
-
-`@confirm` is the current exception: Web UI runs auto-confirm for now because the browser does not yet provide an interactive confirmation prompt.
+- `@confirm` prompts are handled interactively in the browser
 
 ### Recipe Browser
 

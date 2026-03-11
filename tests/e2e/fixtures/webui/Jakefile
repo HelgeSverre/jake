@@ -1,0 +1,12 @@
+task dep:
+    echo "dep-output"
+
+task root: [dep]
+    echo "root-output"
+
+task confirm-task:
+    @confirm "Proceed from Web UI?"
+    echo "confirmed-output"
+
+task slow:
+    sleep 10

@@ -34,7 +34,7 @@ Target release: `0.8.0`
 
 - **Web UI Coverage**
   - Added focused Web UI regression tests for command parsing and execution-context construction
-  - Added an E2E smoke test for `jake --web` server startup and HTTP serving
+  - Added browser-level WebSocket E2E coverage for `@confirm`, dependency execution, streamed output, and stop/cancel behavior
 
 ### Changed
 
@@ -52,6 +52,7 @@ Target release: `0.8.0`
 - **Web UI Execution Parity**
   - Web-triggered runs now inherit the CLI process' execution context for verbosity and parallel job settings instead of constructing a separate partial context
   - Web UI command handling now parses browser-supplied recipe parameters and forwards them as normal `name=value` arguments
+  - Web UI execution now routes task, command, output, and summary updates through the shared event-emitter path used by the CLI executor
 
 - **Documentation Cleanup**
   - Archived outdated design and review docs under `docs/archived/`
@@ -83,6 +84,8 @@ Target release: `0.8.0`
 
 - **Web UI**
   - Fixed Web UI execution to validate `@require` directives before running recipes, matching the normal CLI path
+  - Fixed Web UI `@confirm` handling to prompt in the browser instead of auto-approving runs
+  - Fixed Web UI stop/cancel handling so long-running captured commands terminate cleanly and report cancellation back over WebSocket
   - Fixed leaked WebSocket frame-handler thread ownership by detaching background connection threads explicitly
   - Fixed stale execution-thread ownership so completed Web UI runs are joined cleanly before the next run
   - Fixed automatic browser launch to skip headless/test contexts when `CI` or `JAKE_NO_BROWSER` is set

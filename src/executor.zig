@@ -68,6 +68,7 @@ pub const Executor = struct {
     ctx: *Context,
 
     // Runtime state (not CLI flags)
+    current_recipe_name: ?[]const u8,
     current_shell: ?[]const u8, // Shell to use for current recipe (from @shell directive)
     current_working_dir: ?[]const u8, // Working directory for current recipe (from @cd directive)
     current_quiet: bool, // Suppress command output for current recipe (from @quiet directive)
@@ -119,6 +120,7 @@ pub const Executor = struct {
             .environment = runtime.environment,
             .hook_runner = runtime.hook_runner,
             .ctx = ctx,
+            .current_recipe_name = null,
             .current_shell = null,
             .current_working_dir = null,
             .current_quiet = false,
@@ -206,6 +208,7 @@ pub const Executor = struct {
             .environment = environment,
             .hook_runner = hook_runner,
             .ctx = &default_context,
+            .current_recipe_name = null,
             .current_shell = null,
             .current_working_dir = null,
             .current_quiet = false,
@@ -414,6 +417,14 @@ pub const Executor = struct {
         // Update prompt settings from executor state
         self.prompt.auto_yes = self.ctx.auto_yes;
         self.prompt.dry_run = self.ctx.dry_run;
+
+        if (!self.ctx.dry_run and !self.ctx.auto_yes) {
+            if (self.ctx.confirm_callback) |callback| {
+                if (self.ctx.confirm_callback_ctx) |ctx| {
+                    return callback(ctx, self.current_recipe_name orelse "", message);
+                }
+            }
+        }
 
         return self.prompt.confirm(message);
     }
@@ -827,11 +838,20 @@ pub const Executor = struct {
             return ExecuteError.RecipeNotFound;
         };
 
+        const task_start_time_ms = std.time.milliTimestamp();
+        self.emitTaskStart(recipe);
+        errdefer {
+            const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+            self.emitTaskComplete(name, false, duration_ms);
+        }
+
         // Check OS constraints - skip recipe if not for current OS
         if (shouldSkipForOs(recipe)) {
             const current_os = getCurrentOsString();
             self.print("jake: skipping '{s}' (not for {s})\n", .{ name, current_os });
             self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
+            const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+            self.emitTaskComplete(name, true, duration_ms);
             return;
         }
 
@@ -867,6 +887,8 @@ pub const Executor = struct {
                     self.print("   {s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), name, self.color.reset() });
                 }
                 self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
+                const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+                self.emitTaskComplete(name, true, duration_ms);
                 return;
             }
         }
@@ -893,6 +915,8 @@ pub const Executor = struct {
         // Success - stop spinner and print completion
         self.stopSpinnerOrPrintStatus(&spinner, name, true, start_time);
         self.tasks_run += 1;
+        const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+        self.emitTaskComplete(name, true, duration_ms);
 
         self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
     }
@@ -900,6 +924,10 @@ pub const Executor = struct {
     /// Execute the body of a single recipe: hooks, parameter binding, command
     /// execution, and cache updates. Called by both sequential and parallel paths.
     pub fn executeRecipeBody(self: *Executor, name: []const u8, recipe: *const Recipe) ExecuteError!void {
+        const previous_recipe_name = self.current_recipe_name;
+        self.current_recipe_name = name;
+        defer self.current_recipe_name = previous_recipe_name;
+
         self.hook_runner.dry_run = self.ctx.dry_run;
         self.hook_runner.verbose = self.ctx.verbose;
 
@@ -1304,7 +1332,10 @@ pub const Executor = struct {
                     },
                     .confirm => {
                         if (!executing) continue;
-                        const result = self.handleConfirmDirective(cmd.line) catch {
+                        const result = self.handleConfirmDirective(cmd.line) catch |err| {
+                            if (err == ExecuteError.Cancelled) {
+                                return ExecuteError.Cancelled;
+                            }
                             return ExecuteError.CommandFailed;
                         };
                         if (result == .no) {
@@ -1489,9 +1520,9 @@ pub const Executor = struct {
             child.stdout_behavior = .Inherit;
         }
 
-        // When running with a timeout, put the child in its own process group
-        // so the watchdog can kill the entire group (shell + children) at once.
-        if (has_timeout) {
+        // For timeouts and Web UI cancellation, put the child in its own process
+        // group so we can terminate the whole shell/process tree reliably.
+        if (has_timeout or self.ctx.current_child_pid != null) {
             if (builtin.os.tag != .windows and builtin.os.tag != .wasi) {
                 child.pgid = 0;
             }
@@ -1549,16 +1580,18 @@ pub const Executor = struct {
             }
         }
 
+        if (self.ctx.verbose and !suppress_echo and !self.current_quiet) {
+            self.ctx.emitCommand(self.current_recipe_name orelse "", line);
+            self.emitCommandStart(line);
+        }
+
         // Register child with timeout context so watchdog can kill it
         if (has_timeout) {
             timeout_ctx.current_child.store(&child, .release);
         }
 
-        // If capturing output, read from pipes and stream to callback
-        if (capture_output) {
-            // Read stdout and stderr and emit via callback
-            self.streamChildOutput(&child);
-        }
+        var output_drains = self.startChildOutputDrains(&child);
+        defer output_drains.join();
 
         // Wait for child to complete
         const result = child.wait() catch |err| {
@@ -1590,6 +1623,7 @@ pub const Executor = struct {
                         var buf: [64]u8 = undefined;
                         const msg = std.fmt.bufPrint(&buf, "command exited with code {d}", .{code}) catch "command failed";
                         self.ctx.emitOutput(msg, true);
+                        self.emitCommandOutput(msg, true);
                     } else {
                         self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
                     }
@@ -1601,11 +1635,14 @@ pub const Executor = struct {
                 if (capture_output) {
                     // Check if this was a user cancellation
                     if (self.ctx.isCancelled()) {
+                        self.ctx.emitOutput("Execution cancelled by user", true);
+                        self.emitCommandOutput("Execution cancelled by user", true);
                         return ExecuteError.Cancelled;
                     }
                     var buf: [64]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, "command killed by signal {d}", .{sig}) catch "command killed";
                     self.ctx.emitOutput(msg, true);
+                    self.emitCommandOutput(msg, true);
                 } else {
                     self.print("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
                 }
@@ -1616,6 +1653,7 @@ pub const Executor = struct {
                     var buf: [64]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, "command stopped by signal {d}", .{sig}) catch "command stopped";
                     self.ctx.emitOutput(msg, true);
+                    self.emitCommandOutput(msg, true);
                 } else {
                     self.print("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
                 }
@@ -1626,6 +1664,7 @@ pub const Executor = struct {
                     var buf: [64]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, "command terminated with unknown status {d}", .{code}) catch "command failed";
                     self.ctx.emitOutput(msg, true);
+                    self.emitCommandOutput(msg, true);
                 } else {
                     self.print("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
                 }
@@ -1634,8 +1673,28 @@ pub const Executor = struct {
         }
     }
 
-    /// Stream output from child process stdout/stderr to callback
-    fn streamChildOutput(self: *Executor, child: *std.process.Child) void {
+    const OutputDrains = struct {
+        stdout_thread: ?std.Thread = null,
+        stderr_thread: ?std.Thread = null,
+
+        fn join(self: *OutputDrains) void {
+            if (self.stdout_thread) |thread| {
+                thread.join();
+                self.stdout_thread = null;
+            }
+            if (self.stderr_thread) |thread| {
+                thread.join();
+                self.stderr_thread = null;
+            }
+        }
+    };
+
+    /// Start draining child process stdout/stderr to callbacks while the process runs.
+    fn startChildOutputDrains(self: *Executor, child: *std.process.Child) OutputDrains {
+        if (!self.ctx.hasOutputCallback()) {
+            return .{};
+        }
+
         // Use threads to drain both streams concurrently to avoid deadlock
         const DrainContext = struct {
             executor: *Executor,
@@ -1667,6 +1726,7 @@ pub const Executor = struct {
                                     line = line[0 .. line.len - 1];
                                 }
                                 ctx.executor.ctx.emitOutput(line, ctx.is_stderr);
+                                ctx.executor.emitCommandOutput(line, ctx.is_stderr);
                                 partial.clearRetainingCapacity();
                             } else {
                                 var line = line_buf[start..i];
@@ -1675,6 +1735,7 @@ pub const Executor = struct {
                                     line = line[0 .. line.len - 1];
                                 }
                                 ctx.executor.ctx.emitOutput(line, ctx.is_stderr);
+                                ctx.executor.emitCommandOutput(line, ctx.is_stderr);
                             }
                             start = i + 1;
                         }
@@ -1692,15 +1753,15 @@ pub const Executor = struct {
                         line = line[0 .. line.len - 1];
                     }
                     ctx.executor.ctx.emitOutput(line, ctx.is_stderr);
+                    ctx.executor.emitCommandOutput(line, ctx.is_stderr);
                 }
             }
         }.drain;
 
-        var stdout_thread: ?std.Thread = null;
-        var stderr_thread: ?std.Thread = null;
+        var drains = OutputDrains{};
 
         if (child.stdout) |stdout| {
-            stdout_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
+            drains.stdout_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
                 .executor = self,
                 .is_stderr = false,
                 .reader = stdout,
@@ -1708,16 +1769,14 @@ pub const Executor = struct {
         }
 
         if (child.stderr) |stderr| {
-            stderr_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
+            drains.stderr_thread = std.Thread.spawn(.{}, drainFn, .{DrainContext{
                 .executor = self,
                 .is_stderr = true,
                 .reader = stderr,
             }}) catch null;
         }
 
-        // Wait for both threads
-        if (stdout_thread) |t| t.join();
-        if (stderr_thread) |t| t.join();
+        return drains;
     }
 
     /// Execute an external recipe by delegating to make or just
@@ -1780,6 +1839,12 @@ pub const Executor = struct {
         var child = std.process.Child.init(argv.items, self.allocator);
         child.cwd = external_cwd;
 
+        if (self.ctx.current_child_pid != null) {
+            if (builtin.os.tag != .windows and builtin.os.tag != .wasi) {
+                child.pgid = 0;
+            }
+        }
+
         // Set up stdio
         if (self.ctx.hasOutputCallback()) {
             child.stdout_behavior = .Pipe;
@@ -1800,10 +1865,22 @@ pub const Executor = struct {
             }
         }
 
-        // Handle output streaming if we have a callback
-        if (self.ctx.hasOutputCallback()) {
-            self.streamChildOutput(&child);
+        if (self.ctx.verbose and !self.current_quiet) {
+            var command: std.ArrayListUnmanaged(u8) = .empty;
+            defer command.deinit(self.allocator);
+
+            for (argv.items, 0..) |arg, i| {
+                if (i != 0) command.append(self.allocator, ' ') catch break;
+                command.appendSlice(self.allocator, arg) catch break;
+            }
+            if (command.items.len > 0) {
+                self.ctx.emitCommand(self.current_recipe_name orelse "", command.items);
+                self.emitCommandStart(command.items);
+            }
         }
+
+        var output_drains = self.startChildOutputDrains(&child);
+        defer output_drains.join();
 
         const result = child.wait() catch |err| {
             if (self.ctx.current_child_pid) |pid_atomic| {
@@ -1820,11 +1897,29 @@ pub const Executor = struct {
         switch (result) {
             .Exited => |code| {
                 if (code != 0) {
+                    if (self.ctx.hasOutputCallback()) {
+                        var buf: [64]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "{s} exited with code {d}", .{ tool, code }) catch "external command failed";
+                        self.ctx.emitOutput(msg, true);
+                        self.emitCommandOutput(msg, true);
+                    }
                     self.print("{s}{s} exited with code {d}\n", .{ self.color.errPrefix(), tool, code });
                     return ExecuteError.CommandFailed;
                 }
             },
             .Signal => |sig| {
+                if (self.ctx.hasOutputCallback()) {
+                    if (self.ctx.isCancelled()) {
+                        self.ctx.emitOutput("Execution cancelled by user", true);
+                        self.emitCommandOutput("Execution cancelled by user", true);
+                        return ExecuteError.Cancelled;
+                    }
+
+                    var buf: [64]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "{s} killed by signal {d}", .{ tool, sig }) catch "external command killed";
+                    self.ctx.emitOutput(msg, true);
+                    self.emitCommandOutput(msg, true);
+                }
                 self.print("{s}{s} killed by signal {d}\n", .{ self.color.errPrefix(), tool, sig });
                 return ExecuteError.CommandFailed;
             },
@@ -1938,6 +2033,7 @@ pub const Executor = struct {
                 var buf: [128]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "   {d} task{s} would run\n", .{ total, if (total == 1) "" else "s" }) catch return;
                 stderr.writeAll(msg) catch {};
+                self.emitExecutionSummary(total, 0, @intCast(total_time_ms));
             }
             return;
         }
@@ -1975,6 +2071,48 @@ pub const Executor = struct {
         stderr.writeAll(time_msg) catch {};
         stderr.writeAll(self.color.reset()) catch {};
         stderr.writeAll("\n") catch {};
+
+        self.emitExecutionSummary(total_tasks, self.tasks_failed, @intCast(total_time_ms));
+    }
+
+    fn emitTaskStart(self: *Executor, recipe: *const Recipe) void {
+        self.ctx.emitEvent(.{ .task_start = .{
+            .name = recipe.name,
+            .deps = recipe.dependencies,
+        } });
+    }
+
+    fn emitTaskComplete(self: *Executor, name: []const u8, success: bool, duration_ms: u64) void {
+        self.ctx.emitEvent(.{ .task_complete = .{
+            .name = name,
+            .success = success,
+            .duration_ms = duration_ms,
+        } });
+    }
+
+    fn emitCommandStart(self: *Executor, command: []const u8) void {
+        const task_name = self.current_recipe_name orelse return;
+        self.ctx.emitEvent(.{ .command_start = .{
+            .task = task_name,
+            .command = command,
+        } });
+    }
+
+    fn emitCommandOutput(self: *Executor, line: []const u8, is_stderr: bool) void {
+        const task_name = self.current_recipe_name orelse return;
+        self.ctx.emitEvent(.{ .command_output = .{
+            .task = task_name,
+            .line = line,
+            .is_stderr = is_stderr,
+        } });
+    }
+
+    fn emitExecutionSummary(self: *Executor, tasks_run: usize, tasks_failed: usize, total_ms: u64) void {
+        self.ctx.emitEvent(.{ .execution_summary = .{
+            .tasks_run = tasks_run,
+            .tasks_failed = tasks_failed,
+            .total_ms = total_ms,
+        } });
     }
 
     /// Stop spinner (if running) and print completion status
@@ -6474,6 +6612,96 @@ test "@timeout kills long-running command" {
     // Verify it completed in roughly 1-2 seconds, not 10
     const elapsed = std.time.milliTimestamp() - start;
     try std.testing.expect(elapsed < 3000); // Should complete in under 3s
+}
+
+test "captured command cancellation does not hang" {
+    if (builtin.os.tag == .windows) return;
+
+    const source =
+        \\task slow:
+        \\    sleep 10
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    var running = std.atomic.Value(bool).init(true);
+    var current_child_pid = std.atomic.Value(i32).init(0);
+    var saw_cancelled = std.atomic.Value(bool).init(false);
+
+    const CancelState = struct {
+        running: *std.atomic.Value(bool),
+        current_child_pid: *std.atomic.Value(i32),
+        started: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+        fn onCommand(ctx: *anyopaque, task_name: []const u8, command: []const u8) void {
+            _ = task_name;
+            _ = command;
+
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            if (self.started.cmpxchgStrong(false, true, .acq_rel, .acquire) == null) {
+                const thread = std.Thread.spawn(.{}, cancelThread, .{ self.running, self.current_child_pid }) catch {
+                    self.running.store(false, .release);
+                    killChild(self.current_child_pid);
+                    return;
+                };
+                thread.detach();
+            }
+        }
+
+        fn cancelThread(running_flag: *std.atomic.Value(bool), child_pid: *std.atomic.Value(i32)) void {
+            std.Thread.sleep(100 * std.time.ns_per_ms);
+            running_flag.store(false, .release);
+            killChild(child_pid);
+        }
+
+        fn killChild(child_pid: *std.atomic.Value(i32)) void {
+            const pid = child_pid.load(.acquire);
+            if (pid > 0) {
+                std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
+                std.posix.kill(pid, std.posix.SIG.KILL) catch {};
+            }
+        }
+    };
+
+    const OutputState = struct {
+        saw_cancelled: *std.atomic.Value(bool),
+
+        fn onOutput(ctx: *anyopaque, line: []const u8, is_stderr: bool) void {
+            _ = is_stderr;
+
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            if (std.mem.indexOf(u8, line, "Execution cancelled by user") != null) {
+                self.saw_cancelled.store(true, .release);
+            }
+        }
+    };
+
+    var cancel_state = CancelState{
+        .running = &running,
+        .current_child_pid = &current_child_pid,
+    };
+    var output_state = OutputState{ .saw_cancelled = &saw_cancelled };
+
+    executor.ctx.verbose = true;
+    executor.ctx.cancellation_flag = &running;
+    executor.ctx.current_child_pid = &current_child_pid;
+    executor.ctx.command_callback = CancelState.onCommand;
+    executor.ctx.command_callback_ctx = &cancel_state;
+    executor.ctx.output_callback = OutputState.onOutput;
+    executor.ctx.output_callback_ctx = &output_state;
+
+    const start = std.time.milliTimestamp();
+    const result = executor.execute("slow");
+    try std.testing.expectError(ExecuteError.Cancelled, result);
+
+    const elapsed = std.time.milliTimestamp() - start;
+    try std.testing.expect(elapsed < 3000);
+    try std.testing.expect(saw_cancelled.load(.acquire));
 }
 
 test "@timeout allows fast commands to complete" {

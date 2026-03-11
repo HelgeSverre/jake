@@ -9,9 +9,14 @@ const hooks_mod = @import("hooks.zig");
 const prompt_mod = @import("prompt.zig");
 const parser = @import("parser.zig");
 const jakefile_index = @import("jakefile_index.zig");
+const event_emitter_mod = @import("event_emitter.zig");
 
 /// Output callback function type for streaming command output (web UI)
 pub const OutputCallback = *const fn (ctx: *anyopaque, line: []const u8, is_stderr: bool) void;
+/// Command callback for streaming command-start events (web UI)
+pub const CommandCallback = *const fn (ctx: *anyopaque, task_name: []const u8, command: []const u8) void;
+/// Confirmation callback for non-terminal confirmation transports (web UI)
+pub const ConfirmCallback = *const fn (ctx: *anyopaque, task_name: []const u8, message: []const u8) anyerror!prompt_mod.ConfirmResult;
 
 /// Shared execution context passed through the app lifecycle.
 pub const Context = struct {
@@ -37,6 +42,17 @@ pub const Context = struct {
     // Output streaming callback for web UI (captures stdout/stderr)
     output_callback: ?OutputCallback = null,
     output_callback_ctx: ?*anyopaque = null,
+
+    // Command streaming callback for web UI (captures command starts)
+    command_callback: ?CommandCallback = null,
+    command_callback_ctx: ?*anyopaque = null,
+
+    // Confirmation callback for web UI/browser transports
+    confirm_callback: ?ConfirmCallback = null,
+    confirm_callback_ctx: ?*anyopaque = null,
+
+    // Lifecycle/output event emitter for Web UI streaming
+    event_emitter: ?event_emitter_mod.EventEmitter = null,
 
     /// Initialize with default values and auto-detected color settings
     pub fn init() Context {
@@ -86,6 +102,32 @@ pub const Context = struct {
     /// Check if output should be captured (web UI mode)
     pub fn hasOutputCallback(self: *const Context) bool {
         return self.output_callback != null;
+    }
+
+    /// Emit a command-start event via callback (for web UI streaming)
+    pub fn emitCommand(self: *const Context, task_name: []const u8, command: []const u8) void {
+        if (self.command_callback) |callback| {
+            if (self.command_callback_ctx) |ctx| {
+                callback(ctx, task_name, command);
+            }
+        }
+    }
+
+    /// Check if command start events should be captured (web UI mode)
+    pub fn hasCommandCallback(self: *const Context) bool {
+        return self.command_callback != null;
+    }
+
+    /// Emit a lifecycle/output event via the configured emitter.
+    pub fn emitEvent(self: *const Context, event: event_emitter_mod.Event) void {
+        if (self.event_emitter) |emitter| {
+            emitter.emit(event);
+        }
+    }
+
+    /// Check if lifecycle events should be streamed.
+    pub fn hasEventEmitter(self: *const Context) bool {
+        return self.event_emitter != null;
     }
 };
 
@@ -303,6 +345,83 @@ test "Context.hasOutputCallback returns correct value" {
     };
     ctx.output_callback = TestCallback.callback;
     try std.testing.expect(ctx.hasOutputCallback());
+}
+
+test "Context.emitCommand calls callback with correct args" {
+    const TestCallback = struct {
+        var last_task: ?[]const u8 = null;
+        var last_command: ?[]const u8 = null;
+        var call_count: usize = 0;
+
+        fn callback(_: *anyopaque, task_name: []const u8, command: []const u8) void {
+            last_task = task_name;
+            last_command = command;
+            call_count += 1;
+        }
+
+        fn reset() void {
+            last_task = null;
+            last_command = null;
+            call_count = 0;
+        }
+    };
+
+    TestCallback.reset();
+
+    var dummy_ctx: u8 = 0;
+    var ctx = Context.init();
+    ctx.command_callback = TestCallback.callback;
+    ctx.command_callback_ctx = &dummy_ctx;
+
+    ctx.emitCommand("build", "zig build");
+    try std.testing.expectEqualStrings("build", TestCallback.last_task.?);
+    try std.testing.expectEqualStrings("zig build", TestCallback.last_command.?);
+    try std.testing.expectEqual(@as(usize, 1), TestCallback.call_count);
+}
+
+test "Context.hasCommandCallback returns correct value" {
+    var ctx = Context.init();
+    try std.testing.expect(!ctx.hasCommandCallback());
+
+    const TestCallback = struct {
+        fn callback(_: *anyopaque, _: []const u8, _: []const u8) void {}
+    };
+    ctx.command_callback = TestCallback.callback;
+    try std.testing.expect(ctx.hasCommandCallback());
+}
+
+test "Context.emitEvent forwards events to emitter" {
+    const Receiver = struct {
+        count: usize = 0,
+        last_name: ?[]const u8 = null,
+
+        pub fn onEvent(self: *@This(), event: event_emitter_mod.Event) void {
+            switch (event) {
+                .task_start => |task| {
+                    self.count += 1;
+                    self.last_name = task.name;
+                },
+                else => {},
+            }
+        }
+    };
+
+    var receiver = Receiver{};
+    var ctx = Context.init();
+    ctx.event_emitter = event_emitter_mod.EventEmitter.init(&receiver);
+
+    ctx.emitEvent(.{ .task_start = .{ .name = "build", .deps = &.{} } });
+    try std.testing.expectEqual(@as(usize, 1), receiver.count);
+    try std.testing.expectEqualStrings("build", receiver.last_name.?);
+}
+
+test "Context.hasEventEmitter returns correct value" {
+    var ctx = Context.init();
+    try std.testing.expect(!ctx.hasEventEmitter());
+
+    var receiver = event_emitter_mod.NullEmitter{};
+    ctx.event_emitter = event_emitter_mod.EventEmitter.init(&receiver);
+    try std.testing.expect(ctx.hasEventEmitter());
 }
 
 test "Context.isCancelled returns false by default" {

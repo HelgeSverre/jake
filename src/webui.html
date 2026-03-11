@@ -466,6 +466,53 @@
     }
     .footer-left { display: flex; align-items: center; gap: 16px; }
     .footer-hint { display: flex; align-items: center; gap: 4px; }
+
+    /* Confirm Overlay */
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      padding: 20px;
+    }
+    .confirm-overlay.visible { display: flex; }
+    .confirm-modal {
+      width: min(440px, 100%);
+      padding: 20px;
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(26,26,26,.98), rgba(10,10,10,.98));
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .confirm-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--color-warning);
+    }
+    .confirm-task {
+      font-family: ui-monospace, monospace;
+      font-size: 14px;
+      color: var(--color-accent);
+    }
+    .confirm-message {
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+    .confirm-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
@@ -561,6 +608,18 @@
   </footer>
 </div>
 
+<div id="confirmOverlay" class="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmTask">
+  <div class="confirm-modal">
+    <div class="confirm-label">Confirmation Required</div>
+    <div id="confirmTask" class="confirm-task"></div>
+    <div id="confirmMessage" class="confirm-message"></div>
+    <div class="confirm-actions">
+      <button type="button" class="btn btn-secondary" onclick="respondConfirm(false)">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="respondConfirm(true)">Continue</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // WebSocket connection
 let ws = null;
@@ -578,6 +637,7 @@ let elapsedTimer = null;
 let filter = '';
 let paramValues = {};
 let collapsedGroups = new Set();
+let pendingConfirm = null;
 
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
@@ -596,6 +656,8 @@ function connect() {
   };
 
   ws.onclose = () => {
+    pendingConfirm = null;
+    hideConfirm();
     updateConnectionStatus('disconnected', 'Disconnected');
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
     reconnectAttempts++;
@@ -632,67 +694,74 @@ function handleServerMessage(msg) {
       }));
       initTaskState();
       renderRecipes();
+      if (selected && !taskState[selected]) selected = null;
+      renderDetail();
       updateConnectionStatus('connected', 'Ready');
       break;
     case 'task_start':
       // Handle real task start from server
-      if (taskState[msg.name]) {
-        taskState[msg.name].status = 'running';
-        taskState[msg.name].output.push({ type: 'task', text: `${msg.name}` });
-        updateRecipeStatus(msg.name);
-        renderOutput();
-      }
+      ensureTaskState(msg.name);
+      taskState[msg.name].status = 'running';
+      taskState[msg.name].duration = null;
+      taskState[msg.name].output = [];
+      appendTaskOutput(msg.name, { type: 'task', text: `${msg.name}` });
+      updateRecipeStatus(msg.name);
+      renderDetail();
+      updateStatus();
       break;
     case 'command':
-      if (selected && taskState[selected]) {
-        taskState[selected].output.push({ type: 'cmd', text: msg.cmd });
-        renderOutput();
-      }
+      if (msg.task) appendTaskOutput(msg.task, { type: 'cmd', text: msg.cmd });
       break;
     case 'output':
-      if (selected && taskState[selected]) {
-        taskState[selected].output.push({ type: msg.stderr ? 'error' : '', text: msg.line });
-        renderOutput();
-      }
+      if (msg.task) appendTaskOutput(msg.task, { type: msg.stderr ? 'error' : '', text: msg.line });
       break;
     case 'task_complete':
-      if (taskState[msg.name]) {
-        taskState[msg.name].status = msg.success ? 'success' : 'failed';
-        taskState[msg.name].duration = msg.duration_ms;
-        taskState[msg.name].output.push({
-          type: msg.success ? 'success' : 'error',
-          text: `${msg.success ? 'Completed' : 'Failed'} in ${fmt(msg.duration_ms)}`
-        });
-        if (running === msg.name) {
-          running = null;
-          clearInterval(elapsedTimer);
-        }
-        updateRecipeStatus(msg.name);
-        renderDetail();
-        renderOutput();
-        updateStatus();
-      }
+      ensureTaskState(msg.name);
+      taskState[msg.name].status = msg.success ? 'success' : 'failed';
+      taskState[msg.name].duration = msg.duration_ms;
+      appendTaskOutput(msg.name, {
+        type: msg.success ? 'success' : 'error',
+        text: `${msg.success ? 'Completed' : 'Failed'} in ${fmt(msg.duration_ms)}`
+      });
+      updateRecipeStatus(msg.name);
+      renderDetail();
+      updateStatus();
       break;
     case 'summary':
-      if (selected && taskState[selected]) {
-        taskState[selected].output.push({
+      if (running && taskState[running]) {
+        appendTaskOutput(running, {
           type: 'info',
           text: `Summary: ${msg.tasks_run} tasks, ${msg.tasks_failed} failed, ${fmt(msg.total_ms)} total`
         });
-        renderOutput();
       }
+      pendingConfirm = null;
+      hideConfirm();
+      running = null;
+      clearInterval(elapsedTimer);
+      renderDetail();
+      updateStatus();
       break;
     case 'error':
       if (running && taskState[running]) {
-        taskState[running].output.push({ type: 'error', text: msg.message || 'Unknown error' });
+        appendTaskOutput(running, { type: 'error', text: msg.message || 'Unknown error' });
         taskState[running].status = 'failed';
         updateRecipeStatus(running);
+        pendingConfirm = null;
+        hideConfirm();
         running = null;
         clearInterval(elapsedTimer);
         renderDetail();
-        renderOutput();
         updateStatus();
       }
+      break;
+    case 'confirm':
+      pendingConfirm = {
+        confirmId: msg.confirmId,
+        task: msg.task,
+        message: msg.message
+      };
+      showConfirm();
+      updateStatus();
       break;
   }
 }
@@ -707,19 +776,62 @@ function updateConnectionStatus(state, text) {
 // ============================================================================
 
 function initTaskState() {
-  taskState = {};
-  paramValues = {};
+  const previousTaskState = taskState;
+  const previousParamValues = paramValues;
+  const nextTaskState = {};
+  const nextParamValues = {};
+
   recipes.forEach(r => {
-    taskState[r.id] = { status: 'pending', duration: null, output: [] };
-    paramValues[r.id] = {};
+    nextTaskState[r.id] = previousTaskState[r.id] || { status: 'pending', duration: null, output: [] };
+    nextParamValues[r.id] = {};
     if (r.params) {
-      r.params.forEach(p => paramValues[r.id][p.name] = p.default || '');
+      r.params.forEach(p => {
+        const previous = previousParamValues[r.id]?.[p.name];
+        nextParamValues[r.id][p.name] = previous !== undefined ? previous : (p.default || '');
+      });
     }
   });
+
+  taskState = nextTaskState;
+  paramValues = nextParamValues;
+
+  if (selected && !taskState[selected]) {
+    selected = recipes[0]?.id || null;
+  }
+  if (running && !taskState[running]) {
+    running = null;
+  }
+}
+
+function ensureTaskState(id) {
+  if (!taskState[id]) {
+    taskState[id] = { status: 'pending', duration: null, output: [] };
+  }
+}
+
+function appendTaskOutput(id, entry) {
+  ensureTaskState(id);
+  taskState[id].output.push(entry);
+  if (selected === id) {
+    renderOutput();
+  }
 }
 
 function setupKeyboard() {
   document.addEventListener('keydown', e => {
+    if (pendingConfirm) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        respondConfirm(true);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        stopRunning();
+        return;
+      }
+    }
+
     // Ctrl+K: Focus search
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
@@ -999,11 +1111,11 @@ function renderDetail() {
   }
 
   // Buttons
-  $('#runBtn').disabled = s.status === 'running';
   $('#runBtn').innerHTML = s.status === 'running'
     ? '<span class="spinner"></span> Running...'
     : 'Run <span class="btn-kbd">Enter</span>';
-  $('#stopBtn').style.display = s.status === 'running' ? 'inline-flex' : 'none';
+  $('#runBtn').disabled = !!running;
+  $('#stopBtn').style.display = running ? 'inline-flex' : 'none';
 
   renderOutput();
 }
@@ -1022,7 +1134,12 @@ function renderOutput() {
     return;
   }
 
-  out.innerHTML = s.output.map(l => `<div class="out-line ${l.type}">${escapeHtml(l.text)}</div>`).join('');
+  out.innerHTML = s.output.map(l => {
+    if (l.type === 'task') {
+      return `<div class="out-task">${escapeHtml(l.text)}</div>`;
+    }
+    return `<div class="out-line ${l.type || ''}">${escapeHtml(l.text)}</div>`;
+  }).join('');
   out.scrollTop = out.scrollHeight;
 }
 
@@ -1049,7 +1166,7 @@ function runSelected(dryRun = false) {
 }
 
 function runRecipe(id, dryRun = false) {
-  if (!taskState[id] || taskState[id].status === 'running') return;
+  if (!taskState[id] || taskState[id].status === 'running' || running) return;
 
   // Select the recipe (updates visual selection)
   selectRecipe(id);
@@ -1071,28 +1188,13 @@ function runRecipe(id, dryRun = false) {
     $('#elapsed').textContent = fmt(Date.now() - start);
   }, 100);
 
-  // Add task header
-  const depsText = r.deps && r.deps.length ? ` [${r.deps.join(', ')}]` : '';
-  s.output.push({ type: 'task', text: `${id}${depsText}` });
-
-  if (dryRun) {
-    s.output.push({ type: 'info', text: '[dry-run] Would execute recipe' });
-    renderOutput();
-    timers.push(setTimeout(() => {
-      finishRun(id, true, dryRun);
-    }, 500));
-    return;
-  }
-
   // Send run command to server via WebSocket
   if (ws && ws.readyState === WebSocket.OPEN) {
     const params = paramValues[id] || {};
     ws.send(JSON.stringify({ action: 'run', recipe: id, params, dryRun }));
-    s.output.push({ type: 'muted', text: 'Executing recipe...' });
-    renderOutput();
     // Server will respond with task_start, output, and task_complete messages
   } else {
-    s.output.push({ type: 'error', text: 'Not connected to server' });
+    appendTaskOutput(id, { type: 'error', text: 'Not connected to server' });
     finishRun(id, false, dryRun);
   }
 }
@@ -1122,26 +1224,27 @@ function stopRunning() {
   if (!running) return;
 
   const id = running;
-  const s = taskState[id];
-
-  timers.forEach(clearTimeout);
-  timers = [];
-  clearInterval(elapsedTimer);
-
-  s.status = 'failed';
-  s.duration = Date.now() - start;
-  s.output.push({ type: 'error', text: 'Stopped by user' });
+  pendingConfirm = null;
+  hideConfirm();
 
   // Send stop command to server
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ action: 'stop' }));
+    appendTaskOutput(id, { type: 'warning', text: 'Stopping...' });
+    updateStatus();
+    return;
   }
 
+  const s = taskState[id];
+  timers.forEach(clearTimeout);
+  timers = [];
+  clearInterval(elapsedTimer);
+  s.status = 'failed';
+  s.duration = Date.now() - start;
+  appendTaskOutput(id, { type: 'error', text: 'Stopped by user' });
   running = null;
-
   updateRecipeStatus(id);
   renderDetail();
-  renderOutput();
   updateStatus();
 }
 
@@ -1149,7 +1252,10 @@ function updateStatus() {
   const dot = $('#statusDot');
   const txt = $('#statusText');
 
-  if (running) {
+  if (pendingConfirm && running) {
+    dot.className = 'status-dot running';
+    txt.textContent = `Confirm: ${pendingConfirm.task}`;
+  } else if (running) {
     dot.className = 'status-dot running';
     txt.textContent = `Running: ${running}`;
   } else {
@@ -1167,6 +1273,31 @@ function updateStatus() {
       txt.textContent = 'Ready';
     }
   }
+}
+
+function showConfirm() {
+  if (!pendingConfirm) return;
+  $('#confirmTask').textContent = pendingConfirm.task;
+  $('#confirmMessage').textContent = pendingConfirm.message;
+  $('#confirmOverlay').classList.add('visible');
+}
+
+function hideConfirm() {
+  $('#confirmOverlay').classList.remove('visible');
+}
+
+function respondConfirm(approved) {
+  if (!pendingConfirm) return;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      action: 'confirm',
+      confirmId: pendingConfirm.confirmId,
+      approved
+    }));
+  }
+  pendingConfirm = null;
+  hideConfirm();
+  updateStatus();
 }
 
 // ============================================================================

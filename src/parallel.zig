@@ -407,17 +407,35 @@ pub const ParallelExecutor = struct {
     fn executeNode(self: *ParallelExecutor, node_idx: usize) bool {
         const node = &self.nodes.items[node_idx];
         const recipe = node.recipe;
+        const task_start_time_ms = std.time.milliTimestamp();
+
+        self.ctx.emitEvent(.{ .task_start = .{
+            .name = recipe.name,
+            .deps = recipe.dependencies,
+        } });
 
         // Check OS constraints - skip recipe if not for current OS
         if (shouldSkipForOs(recipe)) {
             const current_os = getCurrentOsString();
             self.printSynchronized("jake: skipping '{s}' (not for {s})\n", .{ recipe.name, current_os });
+            const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+            self.ctx.emitEvent(.{ .task_complete = .{
+                .name = recipe.name,
+                .success = true,
+                .duration_ms = duration_ms,
+            } });
             return true; // Success (skipped)
         }
 
         // Check recipe-level @needs requirements before running any commands
         if (recipe.needs.len > 0) {
             if (!self.checkRecipeLevelNeeds(recipe)) {
+                const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+                self.ctx.emitEvent(.{ .task_complete = .{
+                    .name = recipe.name,
+                    .success = false,
+                    .duration_ms = duration_ms,
+                } });
                 return false;
             }
         }
@@ -429,6 +447,12 @@ pub const ParallelExecutor = struct {
                 if (self.verbose) {
                     self.printSynchronized("{s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), recipe.name, self.color.reset() });
                 }
+                const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+                self.ctx.emitEvent(.{ .task_complete = .{
+                    .name = recipe.name,
+                    .success = true,
+                    .duration_ms = duration_ms,
+                } });
                 return true;
             }
         }
@@ -447,6 +471,12 @@ pub const ParallelExecutor = struct {
                 self.printCompletionStatus(recipe.name, false, start_time);
             }
             self.incrementTasksFailed();
+            const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+            self.ctx.emitEvent(.{ .task_complete = .{
+                .name = recipe.name,
+                .success = false,
+                .duration_ms = duration_ms,
+            } });
             return false;
         }
 
@@ -463,6 +493,12 @@ pub const ParallelExecutor = struct {
             self.printCompletionStatus(recipe.name, true, start_time);
         }
         self.incrementTasksRun();
+        const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+        self.ctx.emitEvent(.{ .task_complete = .{
+            .name = recipe.name,
+            .success = true,
+            .duration_ms = duration_ms,
+        } });
         return true;
     }
 
@@ -741,6 +777,11 @@ pub const ParallelExecutor = struct {
                 var buf: [128]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "   {d} task{s} would run\n", .{ total, if (total == 1) "" else "s" }) catch return;
                 stderr.writeAll(msg) catch {};
+                self.ctx.emitEvent(.{ .execution_summary = .{
+                    .tasks_run = total,
+                    .tasks_failed = 0,
+                    .total_ms = @intCast(total_time_ms),
+                } });
             }
             return;
         }
@@ -778,6 +819,12 @@ pub const ParallelExecutor = struct {
         stderr.writeAll(time_msg) catch {};
         stderr.writeAll(self.color.reset()) catch {};
         stderr.writeAll("\n") catch {};
+
+        self.ctx.emitEvent(.{ .execution_summary = .{
+            .tasks_run = total_tasks,
+            .tasks_failed = self.tasks_failed,
+            .total_ms = @intCast(total_time_ms),
+        } });
     }
 
     /// Execute sequentially (for single-threaded or dry-run mode)

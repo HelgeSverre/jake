@@ -10,6 +10,7 @@ const context_mod = @import("context.zig");
 const jakefile_index = @import("jakefile_index.zig");
 const color_mod = @import("color.zig");
 const compat = @import("compat.zig");
+const prompt_mod = @import("prompt.zig");
 
 // WebSocket magic GUID for handshake (RFC 6455)
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -43,7 +44,21 @@ const ExecutionRequest = struct {
 
 const ClientCommand = union(enum) {
     run: ExecutionRequest,
+    confirm: ConfirmResponse,
     stop: void,
+};
+
+const ConfirmResponse = struct {
+    confirm_id: u64,
+    approved: bool,
+};
+
+const PendingConfirm = struct {
+    id: u64,
+    task_name: []const u8,
+    message: []const u8,
+    response: ?prompt_mod.ConfirmResult = null,
+    cancelled: bool = false,
 };
 
 pub const WebUIServer = struct {
@@ -61,9 +76,6 @@ pub const WebUIServer = struct {
     // Cached init message JSON
     init_message: ?[]u8,
 
-    // EventEmitter interface for receiving events from executor
-    emitter: event_emitter.EventEmitter,
-
     // Execution context - stored references for task execution
     jakefile: ?*const parser.Jakefile,
     index: ?*const jakefile_index.JakefileIndex,
@@ -75,11 +87,16 @@ pub const WebUIServer = struct {
     execution_running: std.atomic.Value(bool),
     current_child_pid: std.atomic.Value(i32),
 
+    confirm_mutex: std.Thread.Mutex,
+    confirm_condition: std.Thread.Condition,
+    pending_confirm: ?PendingConfirm,
+    next_confirm_id: u64,
+
     /// Buffer for storing the URL
     url_buf: [64]u8 = undefined,
 
     pub fn init(allocator: std.mem.Allocator, port: u16) WebUIServer {
-        var self = WebUIServer{
+        const self = WebUIServer{
             .allocator = allocator,
             .port = port,
             .server = null,
@@ -89,7 +106,6 @@ pub const WebUIServer = struct {
             .recipes = &.{},
             .variables = &.{},
             .init_message = null,
-            .emitter = undefined,
             .jakefile = null,
             .index = null,
             .runtime = null,
@@ -97,9 +113,11 @@ pub const WebUIServer = struct {
             .execution_thread = null,
             .execution_running = std.atomic.Value(bool).init(false),
             .current_child_pid = std.atomic.Value(i32).init(0),
+            .confirm_mutex = .{},
+            .confirm_condition = .{},
+            .pending_confirm = null,
+            .next_confirm_id = 1,
         };
-        // Set up the event emitter interface pointing to this server
-        self.emitter = event_emitter.EventEmitter.init(&self);
         return self;
     }
 
@@ -156,6 +174,10 @@ pub const WebUIServer = struct {
         self.broadcast(event);
     }
 
+    fn getEmitter(self: *WebUIServer) event_emitter.EventEmitter {
+        return event_emitter.EventEmitter.init(self);
+    }
+
     /// Start the HTTP server
     pub fn start(self: *WebUIServer) !void {
         const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, self.port);
@@ -171,6 +193,7 @@ pub const WebUIServer = struct {
     /// Stop the server
     pub fn stop(self: *WebUIServer) void {
         self.running.store(false, .release);
+        self.cancelPendingConfirm();
 
         // Close all client connections to unblock readFrame() calls
         self.mutex.lock();
@@ -425,6 +448,7 @@ pub const WebUIServer = struct {
         // Send initial state with actual recipe data
         const init_msg = self.getInitMessage() catch "{\"type\":\"init\",\"recipes\":[],\"variables\":{}}";
         client.sendText(init_msg) catch {};
+        self.sendPendingConfirm(client);
 
         // Spawn a detached thread to handle WebSocket frames (non-blocking for main accept loop)
         // Thread cleans up its own client via defer self.removeClient(client) and exits when
@@ -489,9 +513,21 @@ pub const WebUIServer = struct {
                 };
                 request_owned = false;
             },
+            .confirm => |response| {
+                self.confirm_mutex.lock();
+                defer self.confirm_mutex.unlock();
+
+                if (self.pending_confirm) |*pending| {
+                    if (pending.id == response.confirm_id) {
+                        pending.response = if (response.approved) .yes else .no;
+                        self.confirm_condition.signal();
+                    }
+                }
+            },
             .stop => {
                 if (self.execution_running.load(.acquire)) {
                     self.execution_running.store(false, .release);
+                    self.cancelPendingConfirm();
 
                     if (builtin.os.tag != .windows) {
                         const pid = self.current_child_pid.load(.acquire);
@@ -508,38 +544,74 @@ pub const WebUIServer = struct {
     fn buildExecutionContext(
         self: *WebUIServer,
         request: *const ExecutionRequest,
-        callback_ctx: *ExecutionCallbackContext,
     ) context_mod.Context {
         var ctx = self.base_context;
         ctx.dry_run = self.base_context.dry_run or request.dry_run;
-        ctx.auto_yes = true; // Web UI has no interactive confirm transport yet.
+        ctx.auto_yes = self.base_context.auto_yes;
         ctx.watch_mode = false;
         ctx.color = color_mod.Color{ .enabled = false };
         ctx.positional_args = request.positional_args;
         ctx.cancellation_flag = &self.execution_running;
         ctx.current_child_pid = &self.current_child_pid;
+        ctx.event_emitter = self.getEmitter();
         ctx.output_callback = outputCallback;
-        ctx.output_callback_ctx = callback_ctx;
+        ctx.output_callback_ctx = self;
+
+        if (!ctx.dry_run and !ctx.auto_yes) {
+            ctx.confirm_callback = confirmCallback;
+            ctx.confirm_callback_ctx = self;
+        }
+
         return ctx;
     }
 
-    /// Context passed to outputCallback to avoid data races on current_task
-    const ExecutionCallbackContext = struct {
-        server: *WebUIServer,
-        task_name: []const u8,
-    };
-
     /// Output callback for streaming command output to WebSocket clients and console
     fn outputCallback(ctx: *anyopaque, line: []const u8, is_stderr: bool) void {
-        const exec_ctx: *ExecutionCallbackContext = @ptrCast(@alignCast(ctx));
-
-        // Send to WebSocket clients
-        exec_ctx.server.emitCommandOutput(exec_ctx.task_name, line, is_stderr);
+        _ = ctx;
 
         // Also write to console (tee behavior)
         const output = if (is_stderr) compat.getStdErr() else compat.getStdOut();
         output.writeAll(line) catch {};
         output.writeAll("\n") catch {};
+    }
+
+    fn confirmCallback(ctx: *anyopaque, task_name: []const u8, message: []const u8) anyerror!prompt_mod.ConfirmResult {
+        const self: *WebUIServer = @ptrCast(@alignCast(ctx));
+
+        self.confirm_mutex.lock();
+        defer self.confirm_mutex.unlock();
+
+        if (!self.execution_running.load(.acquire) or !self.running.load(.acquire)) {
+            return error.Cancelled;
+        }
+
+        const confirm_id = self.next_confirm_id;
+        self.next_confirm_id += 1;
+        self.pending_confirm = .{
+            .id = confirm_id,
+            .task_name = task_name,
+            .message = message,
+        };
+
+        self.broadcastPendingConfirmLocked();
+
+        while (true) {
+            if (self.pending_confirm) |pending| {
+                if (pending.id != confirm_id) return error.Cancelled;
+                if (pending.cancelled) {
+                    self.pending_confirm = null;
+                    return error.Cancelled;
+                }
+                if (pending.response) |response| {
+                    self.pending_confirm = null;
+                    return response;
+                }
+            } else {
+                return error.Cancelled;
+            }
+
+            self.confirm_condition.wait(&self.confirm_mutex);
+        }
     }
 
     /// Thread function that executes a recipe
@@ -556,18 +628,10 @@ pub const WebUIServer = struct {
         const index = self.index orelse return;
         const runtime = self.runtime orelse return;
 
-        // Emit task_start event
         const start_time = std.time.milliTimestamp();
-        self.emitTaskStart(task_name);
-
-        // Create callback context on the stack (lives for duration of execution)
-        var callback_ctx = ExecutionCallbackContext{
-            .server = self,
-            .task_name = task_name,
-        };
 
         // Create a context for this execution with cancellation flag and child PID tracking
-        var ctx = self.buildExecutionContext(&request, &callback_ctx);
+        var ctx = self.buildExecutionContext(&request);
 
         // Create executor
         var executor = executor_mod.Executor.initWithIndexAndContext(self.allocator, jakefile, index, &ctx, runtime);
@@ -577,7 +641,10 @@ pub const WebUIServer = struct {
         const success = blk: {
             executor.validateRequiredEnv() catch |err| {
                 if (ctx.isCancelled()) {
+                    self.emitTaskStart(task_name, self.lookupRecipeDeps(task_name));
                     self.emitCommandOutput(task_name, "Execution cancelled by user", true);
+                    self.emitTaskComplete(task_name, false, @intCast(@max(0, std.time.milliTimestamp() - start_time)));
+                    self.emitSummary(0, 1, @intCast(@max(0, std.time.milliTimestamp() - start_time)));
                     break :blk false;
                 }
 
@@ -585,16 +652,28 @@ pub const WebUIServer = struct {
                     error.MissingRequiredEnv => "Required environment variable is not set",
                     else => "Execution failed",
                 };
+                self.emitTaskStart(task_name, self.lookupRecipeDeps(task_name));
                 self.emitCommandOutput(task_name, msg, true);
+                self.emitTaskComplete(task_name, false, @intCast(@max(0, std.time.milliTimestamp() - start_time)));
+                self.emitSummary(0, 1, @intCast(@max(0, std.time.milliTimestamp() - start_time)));
                 break :blk false;
             };
 
             executor.execute(task_name) catch |err| {
                 // Check if this was a cancellation
                 if (ctx.isCancelled()) {
-                    self.emitCommandOutput(task_name, "Execution cancelled by user", true);
                     break :blk false;
                 }
+
+                if (err == executor_mod.ExecuteError.RecipeNotFound) {
+                    const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
+                    self.emitTaskStart(task_name, self.lookupRecipeDeps(task_name));
+                    self.emitCommandOutput(task_name, "Execution failed: RecipeNotFound", true);
+                    self.emitTaskComplete(task_name, false, duration_ms);
+                    self.emitSummary(0, 1, duration_ms);
+                    break :blk false;
+                }
+
                 // Emit error
                 var buf: [256]u8 = undefined;
                 const err_name = @errorName(err);
@@ -604,58 +683,42 @@ pub const WebUIServer = struct {
             };
             break :blk true;
         };
-
-        // Emit task_complete event
-        const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
-        self.emitTaskComplete(task_name, success, duration_ms);
-
-        // Emit summary
-        self.emitSummary(if (success) 1 else 0, if (success) 0 else 1, duration_ms);
+        _ = success;
     }
 
     /// Emit a task_start event to all clients
-    fn emitTaskStart(self: *WebUIServer, name: []const u8) void {
-        var buf: [512]u8 = undefined;
-        const json = std.fmt.bufPrint(&buf, "{{\"type\":\"task_start\",\"name\":\"{s}\",\"deps\":[]}}", .{name}) catch return;
-        self.broadcastJson(json);
+    fn emitTaskStart(self: *WebUIServer, name: []const u8, deps: []const []const u8) void {
+        self.getEmitter().emit(.{ .task_start = .{
+            .name = name,
+            .deps = deps,
+        } });
     }
 
     /// Emit a command output event to all clients
     fn emitCommandOutput(self: *WebUIServer, task: []const u8, line: []const u8, is_stderr: bool) void {
-        // Build JSON with proper escaping
-        var json: std.ArrayListUnmanaged(u8) = .empty;
-        defer json.deinit(self.allocator);
-
-        json.appendSlice(self.allocator, "{\"type\":\"output\",\"task\":\"") catch return;
-        appendJsonEscaped(self.allocator, &json, task) catch return;
-        json.appendSlice(self.allocator, "\",\"line\":\"") catch return;
-        appendJsonEscaped(self.allocator, &json, line) catch return;
-        json.appendSlice(self.allocator, "\",\"stderr\":") catch return;
-        json.appendSlice(self.allocator, if (is_stderr) "true}" else "false}") catch return;
-
-        self.broadcastJson(json.items);
+        self.getEmitter().emit(.{ .command_output = .{
+            .task = task,
+            .line = line,
+            .is_stderr = is_stderr,
+        } });
     }
 
     /// Emit a task_complete event to all clients
     fn emitTaskComplete(self: *WebUIServer, name: []const u8, success: bool, duration_ms: u64) void {
-        var buf: [512]u8 = undefined;
-        const json = std.fmt.bufPrint(&buf, "{{\"type\":\"task_complete\",\"name\":\"{s}\",\"success\":{s},\"duration_ms\":{d}}}", .{
-            name,
-            if (success) "true" else "false",
-            duration_ms,
-        }) catch return;
-        self.broadcastJson(json);
+        self.getEmitter().emit(.{ .task_complete = .{
+            .name = name,
+            .success = success,
+            .duration_ms = duration_ms,
+        } });
     }
 
     /// Emit an execution summary event to all clients
     fn emitSummary(self: *WebUIServer, tasks_run: usize, tasks_failed: usize, total_ms: u64) void {
-        var buf: [256]u8 = undefined;
-        const json = std.fmt.bufPrint(&buf, "{{\"type\":\"summary\",\"tasks_run\":{d},\"tasks_failed\":{d},\"total_ms\":{d}}}", .{
-            tasks_run,
-            tasks_failed,
-            total_ms,
-        }) catch return;
-        self.broadcastJson(json);
+        self.getEmitter().emit(.{ .execution_summary = .{
+            .tasks_run = tasks_run,
+            .tasks_failed = tasks_failed,
+            .total_ms = total_ms,
+        } });
     }
 
     /// Broadcast a raw JSON string to all connected clients
@@ -723,6 +786,73 @@ pub const WebUIServer = struct {
             self.allocator.destroy(client);
         }
     }
+
+    fn lookupRecipeDeps(self: *WebUIServer, name: []const u8) []const []const u8 {
+        const index = self.index orelse return &.{};
+        const recipe = index.getRecipe(name) orelse return &.{};
+        return recipe.dependencies;
+    }
+
+    fn sendPendingConfirm(self: *WebUIServer, client: *WebSocketClient) void {
+        self.confirm_mutex.lock();
+        defer self.confirm_mutex.unlock();
+
+        if (self.pending_confirm) |pending| {
+            self.sendConfirmMessage(client, pending) catch {};
+        }
+    }
+
+    fn broadcastPendingConfirmLocked(self: *WebUIServer) void {
+        if (self.pending_confirm) |pending| {
+            var failed_clients: std.ArrayListUnmanaged(*WebSocketClient) = .empty;
+            defer failed_clients.deinit(self.allocator);
+
+            self.mutex.lock();
+            var i: usize = 0;
+            while (i < self.clients.items.len) {
+                const client = self.clients.items[i];
+                self.sendConfirmMessage(client, pending) catch {
+                    failed_clients.append(self.allocator, client) catch {};
+                    _ = self.clients.swapRemove(i);
+                    continue;
+                };
+                i += 1;
+            }
+            self.mutex.unlock();
+
+            for (failed_clients.items) |client| {
+                client.deinit();
+                self.allocator.destroy(client);
+            }
+        }
+    }
+
+    fn sendConfirmMessage(self: *WebUIServer, client: *WebSocketClient, pending: PendingConfirm) !void {
+        var json: std.ArrayListUnmanaged(u8) = .empty;
+        defer json.deinit(self.allocator);
+
+        try json.appendSlice(self.allocator, "{\"type\":\"confirm\",\"confirmId\":");
+        var buf: [32]u8 = undefined;
+        const id_str = try std.fmt.bufPrint(&buf, "{d}", .{pending.id});
+        try json.appendSlice(self.allocator, id_str);
+        try json.appendSlice(self.allocator, ",\"task\":\"");
+        try appendJsonEscaped(self.allocator, &json, pending.task_name);
+        try json.appendSlice(self.allocator, "\",\"message\":\"");
+        try appendJsonEscaped(self.allocator, &json, pending.message);
+        try json.appendSlice(self.allocator, "\"}");
+
+        try client.sendText(json.items);
+    }
+
+    fn cancelPendingConfirm(self: *WebUIServer) void {
+        self.confirm_mutex.lock();
+        defer self.confirm_mutex.unlock();
+
+        if (self.pending_confirm) |*pending| {
+            pending.cancelled = true;
+            self.confirm_condition.signal();
+        }
+    }
 };
 
 fn isWebSocketUpgrade(request: []const u8) bool {
@@ -788,6 +918,26 @@ fn parseClientCommand(allocator: std.mem.Allocator, payload: []const u8) !Client
 
     if (std.mem.eql(u8, action_value.string, "stop")) {
         return .{ .stop = {} };
+    }
+    if (std.mem.eql(u8, action_value.string, "confirm")) {
+        const confirm_id_value = root.get("confirmId") orelse return error.InvalidCommand;
+        const confirm_id: u64 = blk: switch (confirm_id_value) {
+            .integer => |value| {
+                if (value < 0) return error.InvalidCommand;
+                break :blk @intCast(value);
+            },
+            else => return error.InvalidCommand,
+        };
+        const approved_value = root.get("approved") orelse return error.InvalidCommand;
+        const approved = switch (approved_value) {
+            .bool => |value| value,
+            else => return error.InvalidCommand,
+        };
+
+        return .{ .confirm = .{
+            .confirm_id = confirm_id,
+            .approved = approved,
+        } };
     }
     if (!std.mem.eql(u8, action_value.string, "run")) {
         return error.InvalidCommand;
@@ -1441,6 +1591,7 @@ test "parseClientCommand extracts run recipe params and dry-run flag" {
     var command = try parseClientCommand(std.testing.allocator, json);
     defer switch (command) {
         .run => |*request| request.deinit(std.testing.allocator),
+        .confirm => {},
         .stop => {},
     };
 
@@ -1452,7 +1603,7 @@ test "parseClientCommand extracts run recipe params and dry-run flag" {
             try std.testing.expect(containsString(request.positional_args, "name=Alice"));
             try std.testing.expect(containsString(request.positional_args, "target=prod"));
         },
-        .stop => return error.TestUnexpectedResult,
+        .confirm, .stop => return error.TestUnexpectedResult,
     }
 }
 
@@ -1460,12 +1611,30 @@ test "parseClientCommand extracts stop commands" {
     var command = try parseClientCommand(std.testing.allocator, "{\"action\":\"stop\"}");
     defer switch (command) {
         .run => |*request| request.deinit(std.testing.allocator),
+        .confirm => {},
         .stop => {},
     };
 
     switch (command) {
         .stop => {},
-        .run => return error.TestUnexpectedResult,
+        .run, .confirm => return error.TestUnexpectedResult,
+    }
+}
+
+test "parseClientCommand extracts confirm responses" {
+    var command = try parseClientCommand(std.testing.allocator, "{\"action\":\"confirm\",\"confirmId\":7,\"approved\":true}");
+    defer switch (command) {
+        .run => |*request| request.deinit(std.testing.allocator),
+        .confirm => {},
+        .stop => {},
+    };
+
+    switch (command) {
+        .confirm => |response| {
+            try std.testing.expectEqual(@as(u64, 7), response.confirm_id);
+            try std.testing.expect(response.approved);
+        },
+        .run, .stop => return error.TestUnexpectedResult,
     }
 }
 
@@ -1490,10 +1659,6 @@ test "buildExecutionContext preserves cli settings and applies web overrides" {
         .positional_args = &.{"ignored=value"},
     };
 
-    var callback_ctx = WebUIServer.ExecutionCallbackContext{
-        .server = &server,
-        .task_name = "build",
-    };
     var task_name = [_]u8{ 'b', 'u', 'i', 'l', 'd' };
     const request = ExecutionRequest{
         .task_name = task_name[0..],
@@ -1501,10 +1666,10 @@ test "buildExecutionContext preserves cli settings and applies web overrides" {
         .dry_run = false,
     };
 
-    const ctx = server.buildExecutionContext(&request, &callback_ctx);
+    const ctx = server.buildExecutionContext(&request);
     try std.testing.expect(ctx.dry_run);
     try std.testing.expect(ctx.verbose);
-    try std.testing.expect(ctx.auto_yes);
+    try std.testing.expect(!ctx.auto_yes);
     try std.testing.expect(!ctx.watch_mode);
     try std.testing.expectEqual(@as(usize, 4), ctx.jobs);
     try std.testing.expect(!ctx.color.enabled);
@@ -1513,5 +1678,32 @@ test "buildExecutionContext preserves cli settings and applies web overrides" {
     try std.testing.expect(ctx.cancellation_flag == &server.execution_running);
     try std.testing.expect(ctx.current_child_pid == &server.current_child_pid);
     try std.testing.expect(ctx.output_callback != null);
-    try std.testing.expect(ctx.output_callback_ctx == @as(*anyopaque, @ptrCast(&callback_ctx)));
+    try std.testing.expect(ctx.output_callback_ctx == @as(*anyopaque, @ptrCast(&server)));
+    try std.testing.expect(ctx.confirm_callback == null);
+    try std.testing.expect(ctx.event_emitter != null);
+}
+
+test "buildExecutionContext enables interactive confirm transport when needed" {
+    var server = WebUIServer.init(std.testing.allocator, 8420);
+    defer server.deinit();
+
+    server.base_context = context_mod.Context{
+        .dry_run = false,
+        .verbose = false,
+        .auto_yes = false,
+        .watch_mode = true,
+        .jobs = 2,
+        .color = color_mod.withEnabled(true),
+    };
+
+    var task_name = [_]u8{ 'r', 'u', 'n' };
+    const request = ExecutionRequest{
+        .task_name = task_name[0..],
+        .positional_args = &.{},
+        .dry_run = false,
+    };
+
+    const ctx = server.buildExecutionContext(&request);
+    try std.testing.expect(ctx.confirm_callback != null);
+    try std.testing.expect(ctx.confirm_callback_ctx == @as(*anyopaque, @ptrCast(&server)));
 }
