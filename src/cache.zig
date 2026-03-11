@@ -49,7 +49,6 @@ pub const Cache = struct {
     }
 
     pub fn deinit(self: *Cache) void {
-        // Free all allocated keys
         var iter = self.hashes.keyIterator();
         while (iter.next()) |key_ptr| {
             self.allocator.free(key_ptr.*);
@@ -57,8 +56,10 @@ pub const Cache = struct {
         self.hashes.deinit();
     }
 
-    /// Check if a file has changed since last run
-    /// Uses mtime as a fast path: if mtime matches cached value, skip hash computation
+    /// Check if a file has changed since its hash was last recorded.
+    /// Uses mtime as a fast-path: if mtime hasn't changed, skips the full
+    /// SHA-256 hash. This can miss edits that don't update mtime (e.g.,
+    /// writes within the same second on filesystems with 1s granularity).
     pub fn isStale(self: *Cache, path: []const u8) !bool {
         const file = std.fs.cwd().openFile(path, .{}) catch |err| {
             if (err == error.FileNotFound) return true;
@@ -93,7 +94,6 @@ pub const Cache = struct {
 
     /// Check if any file matching glob pattern has changed
     pub fn isGlobStale(self: *Cache, pattern: []const u8) !bool {
-        // Check if pattern contains glob chars
         if (glob_mod.isGlobPattern(pattern)) {
             // Expand the glob pattern to actual file paths
             const files = glob_mod.expandGlob(self.allocator, pattern) catch {
@@ -134,9 +134,7 @@ pub const Cache = struct {
             .mtime = stat.mtime,
         };
 
-        // Check if key already exists to avoid duplicating it
         if (self.hashes.getPtr(path)) |value_ptr| {
-            // Key exists, just update the value
             value_ptr.* = hash_entry;
         } else {
             // New key, allocate and insert
@@ -208,7 +206,6 @@ pub const Cache = struct {
                 .mtime = mtime,
             };
 
-            // Check if key already exists to avoid duplicating it
             if (self.hashes.getPtr(path)) |value_ptr| {
                 value_ptr.* = hash_entry;
             } else {

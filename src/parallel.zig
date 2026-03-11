@@ -25,8 +25,8 @@ const Context = context_mod.Context;
 /// Dependency graph node
 const GraphNode = struct {
     recipe: *const Recipe,
-    dependencies: std.ArrayListUnmanaged(usize), // Indices of dependencies
-    dependents: std.ArrayListUnmanaged(usize), // Indices of recipes that depend on this
+    dependencies: std.ArrayListUnmanaged(usize),
+    dependents: std.ArrayListUnmanaged(usize),
     in_degree: usize, // Number of unfinished dependencies
     state: State,
 
@@ -496,6 +496,9 @@ pub const ParallelExecutor = struct {
         worker.hook_runner.color = self.color;
         worker.hook_runner.theme = self.theme;
 
+        // Clone the shared cache into an isolated snapshot so the worker can read/write
+        // without holding cache_mutex during the entire recipe execution. Changes are
+        // merged back under the lock after execution completes.
         const cache_snapshot = blk: {
             self.cache_mutex.lock();
             defer self.cache_mutex.unlock();

@@ -67,8 +67,6 @@ pub fn main() !void {
     if (args.version) {
         const stdout = getStdout();
         const color = color_mod.init();
-        // v4 format: {j} jake 0.x.x
-        // {j} in Jake Rose (#f43f5e), version in muted gray (#71717a)
         stdout.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
         stdout.writeAll(color_mod.symbols.logo) catch {};
         stdout.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
@@ -91,7 +89,6 @@ pub fn main() !void {
         const stdout = getStdout();
         const stderr = getStderr();
 
-        // Determine shell: explicit arg > auto-detect
         const shell = blk: {
             if (args.completions) |shell_name| {
                 break :blk completions.Shell.fromString(shell_name) orelse {
@@ -111,7 +108,6 @@ pub fn main() !void {
         const stdout_writer = FileWriter{ .file = stdout };
 
         if (args.uninstall_completions) {
-            // Uninstall completions
             completions.uninstall(allocator, shell, stdout_writer) catch |err| {
                 var buf: [256]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to uninstall completions: {s}\n", .{@errorName(err)}) catch "error\n";
@@ -119,7 +115,6 @@ pub fn main() !void {
                 std.process.exit(1);
             };
         } else if (args.install_completions) {
-            // Install completions to user directory
             completions.install(allocator, shell, stdout_writer) catch |err| {
                 var buf: [256]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to install completions: {s}\n", .{@errorName(err)}) catch "error\n";
@@ -127,7 +122,7 @@ pub fn main() !void {
                 std.process.exit(1);
             };
         } else {
-            // Print completion script to stdout (generate to buffer first, then write)
+            // Print completion script to stdout
             var script_buf: [16384]u8 = undefined;
             var script_stream = std.io.fixedBufferStream(&script_buf);
             completions.generate(script_stream.writer(), shell) catch |err| {
@@ -189,7 +184,6 @@ pub fn main() !void {
 
     // Handle web UI mode
     if (args.web) {
-        // Load Jakefile first to get recipes
         var jakefile_data = loadJakefile(allocator, args.jakefile) catch |err| {
             const stderr = getStderr();
             const color = color_mod.init();
@@ -454,7 +448,6 @@ fn findJakefile(allocator: std.mem.Allocator, requested_path: []const u8) !struc
 
     // Traverse up the directory tree
     while (true) {
-        // Get parent directory
         const parent = std.fs.path.dirname(current_dir) orelse break;
         if (parent.len == 0 or std.mem.eql(u8, parent, current_dir)) break;
 

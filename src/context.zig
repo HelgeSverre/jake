@@ -65,9 +65,10 @@ pub const Context = struct {
         if (self.current_child_pid) |pid_atomic| {
             const pid = pid_atomic.load(.acquire);
             if (pid > 0) {
-                // Kill the process group to ensure all children are terminated
+                // Negative pid kills the entire process group, ensuring child processes
+                // spawned by the command are also terminated.
                 std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
-                // Also try killing just the process
+                // Also kill the process directly in case it isn't in a process group.
                 std.posix.kill(pid, std.posix.SIG.KILL) catch {};
             }
         }

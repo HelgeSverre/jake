@@ -25,7 +25,6 @@ pub const Prompt = struct {
         const color = color_mod.init();
 
         // In dry-run mode, show message but don't prompt
-        // v4 format: [dry-run] Would prompt: X [y/N]
         if (self.dry_run) {
             var buf: [512]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, "  [dry-run] Would prompt: {s} [y/N] \n", .{message}) catch return .yes;
@@ -34,7 +33,6 @@ pub const Prompt = struct {
         }
 
         // Auto-yes mode: skip prompt and return yes
-        // v4 format: "   auto-confirmed: Message?" in muted
         if (self.auto_yes) {
             stdout.writeAll("   ") catch {};
             stdout.writeAll(if (color.enabled) color_mod.codes.muted_gray else "") catch {};
@@ -46,7 +44,6 @@ pub const Prompt = struct {
         }
 
         // Actually prompt the user
-        // v4 format: "   ? Message? [y/N] " with ? in warning yellow
         {
             stdout.writeAll("\n   ") catch {};
             stdout.writeAll(if (color.enabled) color_mod.codes.warning_yellow else "") catch {};
@@ -61,13 +58,11 @@ pub const Prompt = struct {
             stdout.writeAll(" ") catch {};
         }
 
-        // Read from stdin (simple approach - read until newline)
         var line_buf: [256]u8 = undefined;
         var total_read: usize = 0;
         while (total_read < line_buf.len) {
             const bytes_read = stdin.read(line_buf[total_read..]) catch return .no;
             if (bytes_read == 0) {
-                // End of stream
                 break;
             }
             total_read += bytes_read;

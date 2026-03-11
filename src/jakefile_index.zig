@@ -53,7 +53,8 @@ pub const JakefileIndex = struct {
 
     fn insertRecipeName(self: *JakefileIndex, name: []const u8, recipe: *const parser.Recipe) !void {
         if (self.recipes.get(name) != null) {
-            return; // Preserve first definition behavior
+            // First definition wins - matches make's behavior for duplicate targets.
+            return;
         }
         try self.recipes.put(name, recipe);
     }

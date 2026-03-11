@@ -259,12 +259,10 @@ pub const Executor = struct {
     /// Check if a command exists in PATH or as an absolute path
     fn commandExists(self: *Executor, cmd: []const u8) bool {
         _ = self;
-        // Handle absolute paths
         if (cmd.len > 0 and cmd[0] == '/') {
             return std.fs.accessAbsolute(cmd, .{}) != error.FileNotFound;
         }
 
-        // Handle relative paths (contain '/')
         if (std.mem.indexOf(u8, cmd, "/") != null) {
             // Try to access the file relative to cwd
             const cwd = std.fs.cwd();
@@ -274,7 +272,6 @@ pub const Executor = struct {
             return false;
         }
 
-        // Search in PATH
         const path_env = std.process.getEnvVarOwned(std.heap.page_allocator, "PATH") catch return false;
         defer std.heap.page_allocator.free(path_env);
 
@@ -322,17 +319,12 @@ pub const Executor = struct {
     /// Check @needs directive - verify required commands exist
     /// Supports: @needs cmd, @needs cmd "hint", @needs cmd -> task, @needs cmd "hint" -> task
     fn checkNeedsDirective(self: *Executor, line: []const u8) ExecuteError!void {
-        // Parse command names (space or comma separated)
-        // Skip leading whitespace
+        // Parse "needs cmd1, cmd2 ..." - extract command names and optional hints
         var trimmed = std.mem.trim(u8, line, " \t");
 
-        // Skip the directive keyword "needs" at the start of the line
-        // The line format is: "needs sh cat ls" where "needs" is the keyword
         if (std.mem.startsWith(u8, trimmed, "needs")) {
             trimmed = std.mem.trimLeft(u8, trimmed[5..], " \t,");
         }
-
-        // Split by spaces and commas, but handle quoted hints and -> task refs
         var i: usize = 0;
         while (i < trimmed.len) {
             // Skip separators (spaces and commas)
@@ -860,7 +852,6 @@ pub const Executor = struct {
             for (recipe.file_deps) |file_dep| {
                 // Check if this file dependency has a recipe that produces it
                 if (self.findRecipeByOutput(file_dep)) |producing_recipe| {
-                    // Execute that recipe to ensure the file exists
                     try self.executeSequential(producing_recipe.name);
                 }
             }
@@ -871,7 +862,6 @@ pub const Executor = struct {
             const needs_run = self.checkFileTarget(recipe) catch true;
             if (!needs_run) {
                 if (self.ctx.verbose) {
-                    // v4: muted verbose prefix
                     self.print("   {s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), name, self.color.reset() });
                 }
                 self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
@@ -905,12 +895,12 @@ pub const Executor = struct {
         self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
     }
 
+    /// Execute the body of a single recipe: hooks, parameter binding, command
+    /// execution, and cache updates. Called by both sequential and parallel paths.
     pub fn executeRecipeBody(self: *Executor, name: []const u8, recipe: *const Recipe) ExecuteError!void {
-        // Update hook runner settings
         self.hook_runner.dry_run = self.ctx.dry_run;
         self.hook_runner.verbose = self.ctx.verbose;
 
-        // Create hook context
         var hook_context = HookContext{
             .recipe_name = name,
             .success = true,
@@ -935,8 +925,8 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
-        // Execute the recipe commands (with timeout if specified)
-        // For external recipes (Makefile/Justfile), delegate to the external tool
+        // Execution path: external recipe -> delegate to make/just;
+        // timeout specified -> executeCommandsWithTimeout; otherwise -> executeCommands.
         const exec_result = if (recipe.origin) |origin| blk: {
             if (origin.external_kind) |kind| {
                 break :blk self.executeExternalRecipe(origin, kind, recipe.name);

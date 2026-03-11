@@ -455,7 +455,7 @@ pub const ImportResolver = struct {
 
         const new_on_error_hooks_len = target.global_on_error_hooks.len + imported.global_on_error_hooks.len;
         const new_on_error_hooks = self.allocator.alloc(Hook, new_on_error_hooks_len) catch return ImportError.OutOfMemory;
-        // No errdefer needed on last allocation - if we reach here, all allocations succeeded
+        // No errdefer needed - remaining operations are infallible assignments.
         @memcpy(new_on_error_hooks[0..target.global_on_error_hooks.len], target.global_on_error_hooks);
         @memcpy(new_on_error_hooks[target.global_on_error_hooks.len..], imported.global_on_error_hooks);
 

@@ -157,7 +157,8 @@ fn removeConfigBlock(allocator: std.mem.Allocator, content: []const u8) ![]const
     const start_idx = std.mem.indexOf(u8, content, CONFIG_BLOCK_START) orelse return try allocator.dupe(u8, content);
     const end_idx = std.mem.indexOf(u8, content, CONFIG_BLOCK_END) orelse return try allocator.dupe(u8, content);
 
-    // Find the actual end (after the end marker and newline)
+    // Include preceding newline in removal range and trailing newline after the
+    // end marker, so surrounding content isn't accidentally joined into one line.
     var actual_end = end_idx + CONFIG_BLOCK_END.len;
     if (actual_end < content.len and content[actual_end] == '\n') {
         actual_end += 1;
@@ -195,10 +196,8 @@ fn patchZshrc(allocator: std.mem.Allocator, writer: anytype) !bool {
     var path_buf: [512]u8 = undefined;
     const zshrc_path = std.fmt.bufPrint(&path_buf, "{s}/.zshrc", .{home}) catch return error.PathTooLong;
 
-    // Read existing content
     const file = std.fs.cwd().openFile(zshrc_path, .{ .mode = .read_write }) catch |err| {
         if (err == error.FileNotFound) {
-            // Create new .zshrc with our block
             const new_file = try std.fs.cwd().createFile(zshrc_path, .{});
             defer new_file.close();
             const block = try generateZshConfigBlock(allocator);
@@ -210,7 +209,6 @@ fn patchZshrc(allocator: std.mem.Allocator, writer: anytype) !bool {
     };
     defer file.close();
 
-    // Read content
     const content = file.readToEndAlloc(allocator, 1024 * 1024) catch |err| {
         try writer.print("Warning: Could not read ~/.zshrc: {s}\n", .{@errorName(err)});
         return false;
@@ -219,18 +217,15 @@ fn patchZshrc(allocator: std.mem.Allocator, writer: anytype) !bool {
 
     // Check if block already exists
     if (hasConfigBlock(content)) {
-        // Remove old block first
         const cleaned = try removeConfigBlock(allocator, content);
         defer allocator.free(cleaned);
 
-        // Add new block at end
         const block = try generateZshConfigBlock(allocator);
         defer allocator.free(block);
 
         const new_content = try std.fmt.allocPrint(allocator, "{s}{s}", .{ cleaned, block });
         defer allocator.free(new_content);
 
-        // Rewrite file
         try file.seekTo(0);
         try file.writeAll(new_content);
         try file.setEndPos(new_content.len);
@@ -238,7 +233,6 @@ fn patchZshrc(allocator: std.mem.Allocator, writer: anytype) !bool {
         return true;
     }
 
-    // Append block to end
     const block = try generateZshConfigBlock(allocator);
     defer allocator.free(block);
 
