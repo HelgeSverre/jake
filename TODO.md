@@ -453,16 +453,6 @@ For edge cases requiring containerized builds.
 
 ---
 
-### Deferred Refactoring
-
-- [ ] executor.zig modularization (see REFACTOR.md)
-  - Extract platform.zig (~40 lines)
-  - Extract system.zig (~30 lines)
-  - Extract expansion.zig (~80 lines)
-  - Extract directive_parser.zig (~200 lines)
-  - Extract display.zig (~360 lines)
-
----
 
 ### Ability to add group level descriptions
 
