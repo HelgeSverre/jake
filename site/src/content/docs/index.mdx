@@ -65,8 +65,8 @@ app_name = "myapp"
 
 # Default task
 @default
+@description "Build the application"
 task build:
-    @description "Build the application"
     cargo build --release
 
 # Task with dependencies

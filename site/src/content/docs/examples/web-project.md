@@ -20,72 +20,72 @@ node_env = "development"
 # === Development ===
 
 @default
+@description "Start development server"
 task dev:
-    @description "Start development server"
     @needs node npm
     npm run dev
 
+@description "Install dependencies"
 task install:
-    @description "Install dependencies"
     @if exists(node_modules)
         echo "Dependencies installed, run 'jake install-fresh' to reinstall"
     @else
         npm install
     @end
 
+@description "Clean install dependencies"
 task install-fresh:
-    @description "Clean install dependencies"
     rm -rf node_modules
     npm install
 
 # === Build ===
 
 @group build
+@description "Compile TypeScript"
 file dist/app.js: src/**/*.ts tsconfig.json
-    @description "Compile TypeScript"
     npx tsc
 
 @group build
+@description "Bundle CSS"
 file dist/styles.css: src/**/*.css
-    @description "Bundle CSS"
     npx postcss src/index.css -o dist/styles.css
 
 @group build
+@description "Build everything"
 task build: [dist/app.js, dist/styles.css]
-    @description "Build everything"
     echo "Build complete!"
 
 # === Testing ===
 
 @group test
+@description "Run all tests"
 task test:
-    @description "Run all tests"
     npm test
 
 @group test
+@description "Run tests in watch mode"
 task test-watch:
-    @description "Run tests in watch mode"
     npm test -- --watch
 
 @group test
+@description "Run linter"
 task lint:
-    @description "Run linter"
     npm run lint
 
 @group test
+@description "Type check without emitting"
 task typecheck:
-    @description "Type check without emitting"
     npx tsc --noEmit
 
+@description "Run all checks"
 task check: [lint, typecheck, test]
-    @description "Run all checks"
     echo "All checks passed!"
 
 # === Deployment ===
 
 @group deploy
+@description "Deploy to production"
 task deploy: [build, check]
-    @description "Deploy to production"
     @confirm "Deploy to production?"
     @require DEPLOY_TOKEN
     @if env(CI)
@@ -97,36 +97,36 @@ task deploy: [build, check]
     @end
 
 @group deploy
+@description "Deploy to staging"
 task deploy-staging: [build]
-    @description "Deploy to staging"
     rsync -avz dist/ staging:/var/www/{{app_name}}/
 
 # === Utilities ===
 
+@description "Remove build artifacts"
 task clean:
-    @description "Remove build artifacts"
     rm -rf dist/
     rm -rf .cache/
 
+@description "Remove everything including node_modules"
 task clean-all: [clean]
-    @description "Remove everything including node_modules"
     rm -rf node_modules/
 
+@description "Format code"
 task format:
-    @description "Format code"
     npx prettier --write "src/**/*.{ts,css,json}"
 
 # === Docker ===
 
 @group docker
+@description "Build Docker image"
 task docker-build:
-    @description "Build Docker image"
     @needs docker
     docker build -t {{app_name}}:latest .
 
 @group docker
+@description "Run Docker container"
 task docker-run: [docker-build]
-    @description "Run Docker container"
     docker run -p 3000:3000 {{app_name}}:latest
 ```
 

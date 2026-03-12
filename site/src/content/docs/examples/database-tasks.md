@@ -17,47 +17,47 @@ A complete workflow for database management including migrations, seeding, backu
 # === Migrations ===
 
 @group db
+@description "Run pending migrations"
 task migrate:
-    @description "Run pending migrations"
     @needs npx
     @pre echo "Running migrations..."
     npx prisma migrate deploy
     @post echo "Migrations complete"
 
 @group db
+@description "Create a new migration"
 task migrate-create name:
-    @description "Create a new migration"
     @needs npx
     npx prisma migrate dev --name {{name}}
     echo "Created migration: {{name}}"
 
 @group db
+@description "Reset database and run all migrations"
 task migrate-reset:
-    @description "Reset database and run all migrations"
     @confirm "This will DELETE all data. Continue?"
     @needs npx
     npx prisma migrate reset --force
     @post echo "Database reset complete"
 
 @group db
+@description "Show migration status"
 task migrate-status:
-    @description "Show migration status"
     @needs npx
     npx prisma migrate status
 
 # === Seeding ===
 
 @group db
+@description "Seed database with sample data"
 task seed:
-    @description "Seed database with sample data"
     @needs npx
     @pre echo "Seeding database..."
     npx prisma db seed
     @post echo "Database seeded"
 
 @group db
+@description "Seed production essentials only"
 task seed-prod:
-    @description "Seed production essentials only"
     @confirm "Seed production database?"
     @needs npx
     NODE_ENV=production npx prisma db seed -- --production
@@ -66,8 +66,8 @@ task seed-prod:
 # === Backups ===
 
 @group backup
+@description "Create database backup"
 task backup:
-    @description "Create database backup"
     @needs pg_dump
     backup_file="backups/db-$(date +%Y%m%d-%H%M%S).sql"
     mkdir -p backups
@@ -76,22 +76,22 @@ task backup:
     @post echo "Backup created: ${backup_file}.gz"
 
 @group backup
+@description "List available backups"
 task backup-list:
-    @description "List available backups"
     @quiet
     ls -lah backups/*.sql.gz 2>/dev/null || echo "No backups found"
 
 @group backup
+@description "Restore from backup file"
 task restore file:
-    @description "Restore from backup file"
     @confirm "Restore from {{file}}? This will overwrite current data."
     @needs psql gunzip
     gunzip -c {{file}} | psql $DATABASE_URL
     @post echo "Database restored from {{file}}"
 
 @group backup
+@description "Backup to S3"
 task backup-s3:
-    @description "Backup to S3"
     @require AWS_BUCKET
     @needs aws pg_dump
     backup_file="db-$(date +%Y%m%d-%H%M%S).sql.gz"
@@ -101,74 +101,74 @@ task backup-s3:
 # === Schema ===
 
 @group schema
+@description "Push schema changes (dev only)"
 task schema-push:
-    @description "Push schema changes (dev only)"
     @needs npx
     npx prisma db push
     echo "Schema pushed"
 
 @group schema
+@description "Pull schema from database"
 task schema-pull:
-    @description "Pull schema from database"
     @needs npx
     npx prisma db pull
     echo "Schema pulled"
 
 @group schema
+@description "Generate Prisma client"
 task schema-generate:
-    @description "Generate Prisma client"
     @needs npx
     npx prisma generate
     echo "Client generated"
 
 @group schema
+@description "Open Prisma Studio"
 task schema-studio:
-    @description "Open Prisma Studio"
     @needs npx
     npx prisma studio
 
 # === Performance ===
 
 @group perf
+@description "Analyze slow queries"
 task analyze-queries:
-    @description "Analyze slow queries"
     @needs psql
     psql $DATABASE_URL -c "SELECT query, calls, mean_time, total_time FROM pg_stat_statements ORDER BY mean_time DESC LIMIT 10;"
 
 @group perf
+@description "Run VACUUM ANALYZE"
 task vacuum:
-    @description "Run VACUUM ANALYZE"
     @needs psql
     @pre echo "Running VACUUM ANALYZE..."
     psql $DATABASE_URL -c "VACUUM ANALYZE;"
     @post echo "Vacuum complete"
 
 @group perf
+@description "Show table sizes"
 task table-sizes:
-    @description "Show table sizes"
     @needs psql
     psql $DATABASE_URL -c "SELECT relname AS table, pg_size_pretty(pg_total_relation_size(relid)) AS size FROM pg_catalog.pg_statio_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;"
 
 # === Setup ===
 
 @default
+@description "Full database setup"
 task setup: [schema-generate, migrate, seed]
-    @description "Full database setup"
     echo "Database setup complete!"
 
+@description "Reset and reseed database"
 task reset: [migrate-reset, seed]
-    @description "Reset and reseed database"
     echo "Database reset complete!"
 
 # === Utilities ===
 
+@description "Open database shell"
 task shell:
-    @description "Open database shell"
     @needs psql
     psql $DATABASE_URL
 
+@description "Execute SQL query"
 task exec query:
-    @description "Execute SQL query"
     @needs psql
     psql $DATABASE_URL -c "{{query}}"
 ```

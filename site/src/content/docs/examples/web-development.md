@@ -22,27 +22,27 @@ port = "3000"
 # === Development ===
 
 @default
+@description "Start development server with hot reload"
 task dev:
-    @description "Start development server with hot reload"
     @needs node npm
     @pre echo "Starting development server on port {{port}}..."
     npm run dev
 
+@description "Build and watch for changes"
 task dev-watch:
-    @description "Build and watch for changes"
     @watch src/**/*.ts src/**/*.tsx src/**/*.css
     npm run build
 
 # === Build Pipeline ===
 
 @group build
+@description "Production build"
 task build: [clean, build-ts, build-css, build-assets]
-    @description "Production build"
     echo "Build complete! Output in {{dist_dir}}/"
 
 @group build
+@description "Compile TypeScript"
 file dist/app.js: src/**/*.ts src/**/*.tsx
-    @description "Compile TypeScript"
     @needs npx
     @pre echo "Compiling TypeScript..."
     mkdir -p dist
@@ -55,8 +55,8 @@ file dist/app.js: src/**/*.ts src/**/*.tsx
     @post echo "TypeScript compiled: dist/app.js"
 
 @group build
+@description "Build Tailwind CSS"
 file dist/app.css: src/**/*.css tailwind.config.js
-    @description "Build Tailwind CSS"
     @needs npx
     @pre echo "Processing CSS..."
     mkdir -p dist
@@ -70,8 +70,8 @@ task build-ts: [dist/app.js]
 task build-css: [dist/app.css]
     @echo "CSS build complete"
 
+@description "Copy static assets"
 task build-assets:
-    @description "Copy static assets"
     mkdir -p dist/assets
     @if exists(public)
         cp -r public/* dist/
@@ -83,59 +83,59 @@ task build-assets:
 # === Development Utilities ===
 
 @group dev
+@description "Run ESLint"
 task lint:
-    @description "Run ESLint"
     @needs npx
     npx eslint src/ --ext .ts,.tsx
 
 @group dev
+@description "Format code with Prettier"
 task format:
-    @description "Format code with Prettier"
     @needs npx
     npx prettier --write "src/**/*.{ts,tsx,css,json}"
 
 @group dev
+@description "Type-check without emitting"
 task typecheck:
-    @description "Type-check without emitting"
     @needs npx
     npx tsc --noEmit
 
+@description "Run all code quality checks"
 task check: [lint, typecheck]
-    @description "Run all code quality checks"
     echo "All checks passed!"
 
 # === Testing ===
 
 @group test
+@description "Run all tests"
 task test:
-    @description "Run all tests"
     @needs npm
     npm test
 
 @group test
+@description "Run tests in watch mode"
 task test-watch:
-    @description "Run tests in watch mode"
     @needs npm
     npm test -- --watch
 
 @group test
+@description "Run tests with coverage report"
 task test-coverage:
-    @description "Run tests with coverage report"
     @needs npm
     npm test -- --coverage
     @post echo "Coverage report: coverage/lcov-report/index.html"
 
 # === Cleanup ===
 
+@description "Remove build artifacts"
 task clean:
-    @description "Remove build artifacts"
     rm -rf dist/
     rm -rf .cache/
     rm -rf node_modules/.cache/
     echo "Cleaned build artifacts"
 
+@description "Remove everything including dependencies"
 task clean-all: [clean]
-    @description "Remove everything including dependencies"
     rm -rf node_modules/
     echo "Removed node_modules/"
 ```

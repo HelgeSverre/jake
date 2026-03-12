@@ -5,6 +5,8 @@ description: Complete release workflow with cross-platform builds, changelogs, a
 
 A comprehensive workflow for managing releases, changelogs, cross-platform builds, and checksums.
 
+This example assumes your project stores its version in source files such as `Cargo.toml` or `package.json`. If your project derives its version from Git tags, skip the `version-bump` task and treat the tag as the source of truth.
+
 ## Complete Jakefile
 
 ```jake
@@ -55,14 +57,14 @@ task check: [lint, test]
 # === Documentation ===
 
 @group docs
+@description "Generate documentation"
 task docs:
-    @description "Generate documentation"
     @needs cargo
     cargo doc --no-deps --open
 
 @group docs
+@description "Build docs for publishing"
 task docs-build:
-    @description "Build docs for publishing"
     @needs cargo
     cargo doc --no-deps
     echo "Documentation built: target/doc/"
@@ -70,14 +72,14 @@ task docs-build:
 # === Release Pipeline ===
 
 @group release
+@description "Build release binaries for all platforms"
 task release-build:
-    @description "Build release binaries for all platforms"
     @needs cross
     @pre echo "Building for all platforms..."
     mkdir -p dist
     @each {{targets}}
         echo "Building for {{item}}..."
-        @if contains("{{item}}", "windows")
+        @if eq("{{item}}", "x86_64-windows")
             cross build --release --target {{item}}-gnu
             cp target/{{item}}-gnu/release/{{name}}.exe dist/{{name}}-{{item}}.exe
         @else
@@ -88,15 +90,15 @@ task release-build:
     @post echo "All platforms built!"
 
 @group release
+@description "Generate SHA256 checksums"
 task checksums: [release-build]
-    @description "Generate SHA256 checksums"
     @cd dist
         shasum -a 256 {{name}}-* > checksums.txt
     echo "Checksums: dist/checksums.txt"
 
 @group release
+@description "Create release archive"
 task release-package: [checksums]
-    @description "Create release archive"
     @require VERSION
     @confirm "Create release package for v$VERSION?"
     mkdir -p releases/v$VERSION
@@ -108,8 +110,8 @@ task release-package: [checksums]
 # === Changelog Management ===
 
 @group release
+@description "Verify CHANGELOG has unreleased changes"
 task changelog-check:
-    @description "Verify CHANGELOG has unreleased changes"
     @if exists(CHANGELOG.md)
         grep -q "## \[Unreleased\]" CHANGELOG.md && \
         grep -A 100 "## \[Unreleased\]" CHANGELOG.md | grep -q "^### " || \
@@ -121,8 +123,8 @@ task changelog-check:
     @end
 
 @group release
+@description "Convert Unreleased to version entry"
 task changelog-release:
-    @description "Convert Unreleased to version entry"
     @require VERSION
     @needs sed
     @pre echo "Updating CHANGELOG.md for v$VERSION..."
@@ -133,8 +135,8 @@ task changelog-release:
 # === Version Management ===
 
 @group release
+@description "Bump version in project files"
 task version-bump:
-    @description "Bump version in project files"
     @require VERSION
     @confirm "Bump version to $VERSION?"
     sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
@@ -145,8 +147,8 @@ task version-bump:
     echo "Version bumped to $VERSION"
 
 @group release
+@description "Full release workflow"
 task release: [check, changelog-check]
-    @description "Full release workflow"
     @require VERSION
     @confirm "Release v$VERSION to GitHub?"
 
@@ -175,8 +177,8 @@ task release: [check, changelog-check]
 
 # === CI Helpers ===
 
+@description "Run CI checks locally"
 task ci: [lint, test, docs-build]
-    @description "Run CI checks locally"
     echo "CI simulation passed!"
 
 # === Cleanup ===
@@ -242,6 +244,8 @@ version = "1.0.0";
 repo = "username/myproject";
 targets = "x86_64-linux aarch64-linux x86_64-macos aarch64-macos";
 ```
+
+If you derive your version from tags instead of source files, remove the `version-bump` task and create the release from the changelog plus the Git tag.
 
 ## See Also
 

@@ -26,31 +26,31 @@ Placed at the top level of a Jakefile.
 
 Placed before a recipe definition.
 
-| Directive        | Description                          |
-| ---------------- | ------------------------------------ |
-| `@group name`    | Group recipe in listings             |
-| `@only-os os...` | Only run on specified OS             |
-| `@quiet`         | Suppress command echoing             |
-| `@hidden`        | Hide from listings (like `_` prefix) |
+| Directive                           | Description                          |
+| ----------------------------------- | ------------------------------------ |
+| `@description "text"` / `@desc "text"` | Add a description shown in listings |
+| `@group name`                       | Group recipe in listings             |
+| `@only-os os...`                    | Only run on specified OS             |
+| `@quiet`                            | Suppress command echoing             |
+| `@hidden`                           | Hide from listings (like `_` prefix) |
 
 ## Recipe Directives
 
 Used inside recipe bodies.
 
-| Directive              | Description              |
-| ---------------------- | ------------------------ |
-| `@description "text"`  | Recipe description       |
-| `@pre command`         | Recipe pre-hook          |
-| `@post command`        | Recipe post-hook         |
-| `@confirm "message"`   | Ask for confirmation     |
-| `@needs cmd...`        | Require commands exist   |
-| `@needs cmd "hint"`    | With installation hint   |
-| `@needs cmd -> recipe` | With auto-install recipe |
-| `@cd path`             | Change working directory |
-| `@shell name`          | Use different shell      |
-| `@ignore`              | Continue on failure      |
-| `@cache pattern...`    | Skip if files unchanged  |
-| `@watch pattern...`    | Watch patterns for `-w`; auto mode also tracks Jakefiles/imports |
+| Directive              | Description                                                         |
+| ---------------------- | ------------------------------------------------------------------- |
+| `@pre command`         | Recipe pre-hook                                                     |
+| `@post command`        | Recipe post-hook                                                    |
+| `@confirm "message"`   | Ask for confirmation                                                |
+| `@needs cmd...`        | Require commands exist                                              |
+| `@needs cmd "hint"`    | With installation hint                                              |
+| `@needs cmd -> recipe` | With auto-install recipe                                            |
+| `@cd path`             | Change working directory                                            |
+| `@shell name`          | Use different shell                                                 |
+| `@ignore`              | Continue on failure                                                 |
+| `@cache pattern...`    | Skip if files unchanged                                             |
+| `@watch pattern...`    | Watch patterns for `-w`; auto mode also tracks Jakefiles/imports    |
 
 ## Control Flow
 

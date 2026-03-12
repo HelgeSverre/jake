@@ -16,29 +16,29 @@ Streamline your Git workflow with automated commits, branch management, and pre-
 # === Pre-commit Checks ===
 
 @default
+@description "Run before every commit"
 task pre-commit: [lint, format-check, test-quick]
-    @description "Run before every commit"
     echo "Pre-commit checks passed!"
 
+@description "Run all linters"
 task lint:
-    @description "Run all linters"
     @needs npm
     npm run lint
 
+@description "Check code formatting"
 task format-check:
-    @description "Check code formatting"
     @needs npm
     npx prettier --check "src/**/*.{ts,tsx,js,json,css}"
 
+@description "Run fast unit tests only"
 task test-quick:
-    @description "Run fast unit tests only"
     @needs npm
     npm test -- --testPathPattern="unit" --bail
 
 # === Branch Workflows ===
 
+@description "Verify clean working directory"
 task branch-check:
-    @description "Verify clean working directory"
     @if neq($(git status --porcelain), "")
         echo "Error: Working directory is not clean"
         git status --short
@@ -46,30 +46,30 @@ task branch-check:
     @end
     echo "Working directory is clean"
 
+@description "Sync with upstream main"
 task branch-sync:
-    @description "Sync with upstream main"
     @pre echo "Syncing with upstream..."
     git fetch origin
     git rebase origin/main
     @post echo "Branch synced with main"
 
+@description "Delete merged local branches"
 task branch-cleanup:
-    @description "Delete merged local branches"
     @confirm "Delete merged branches?"
     git branch --merged main | grep -v "main" | xargs -r git branch -d
     echo "Cleaned up merged branches"
 
 # === Feature Branch Workflow ===
 
+@description "Start a new feature branch"
 task feature-start name:
-    @description "Start a new feature branch"
     git checkout main
     git pull origin main
     git checkout -b "feature/{{name}}"
     echo "Created feature/{{name}}"
 
+@description "Finish current feature branch"
 task feature-finish:
-    @description "Finish current feature branch"
     @pre echo "Running final checks..."
     jake pre-commit
     @confirm "Merge feature branch?"
@@ -83,46 +83,46 @@ task feature-finish:
 
 # === Commit Helpers ===
 
+@description "Create a fix commit"
 task commit-fix:
-    @description "Create a fix commit"
     @confirm "Stage all changes and commit as fix?"
     git add -A
     git commit -m "fix: {{$1}}"
 
+@description "Create a feature commit"
 task commit-feat:
-    @description "Create a feature commit"
     @confirm "Stage all changes and commit as feature?"
     git add -A
     git commit -m "feat: {{$1}}"
 
+@description "Create a docs commit"
 task commit-docs:
-    @description "Create a docs commit"
     git add -A
     git commit -m "docs: {{$1}}"
 
+@description "Create a chore commit"
 task commit-chore:
-    @description "Create a chore commit"
     git add -A
     git commit -m "chore: {{$1}}"
 
 # === Tagging ===
 
+@description "Create version tag"
 task tag-version:
-    @description "Create version tag"
     @require VERSION
     @confirm "Create tag v$VERSION?"
     git tag -a "v$VERSION" -m "Release v$VERSION"
     echo "Created tag v$VERSION"
 
+@description "Push all tags to origin"
 task tag-push:
-    @description "Push all tags to origin"
     git push origin --tags
     echo "Tags pushed"
 
 # === Git Hooks Setup ===
 
+@description "Install git hooks"
 task hooks-install:
-    @description "Install git hooks"
     mkdir -p .git/hooks
 
     echo '#!/bin/sh' > .git/hooks/pre-commit
@@ -131,16 +131,16 @@ task hooks-install:
 
     echo "Git hooks installed!"
 
+@description "Remove git hooks"
 task hooks-uninstall:
-    @description "Remove git hooks"
     rm -f .git/hooks/pre-commit
     rm -f .git/hooks/commit-msg
     echo "Git hooks removed"
 
 # === Utility ===
 
+@description "Show detailed git status"
 task status:
-    @description "Show detailed git status"
     @quiet
     echo "=== Branch ==="
     git branch --show-current
@@ -151,8 +151,8 @@ task status:
     echo "=== Recent Commits ==="
     git log --oneline -5
 
+@description "Pretty git log"
 task log:
-    @description "Pretty git log"
     git log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit -20
 ```
 

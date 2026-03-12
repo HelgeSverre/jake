@@ -17,12 +17,12 @@ Jake works seamlessly with GitHub Actions and other CI systems, providing consis
 # === Local CI Simulation ===
 
 @default
+@description "Run full CI pipeline locally"
 task ci: [install, lint, typecheck, test, build]
-    @description "Run full CI pipeline locally"
     echo "CI pipeline passed!"
 
+@description "Install dependencies"
 task install:
-    @description "Install dependencies"
     @needs npm
     @if env(CI)
         npm ci
@@ -30,18 +30,18 @@ task install:
         npm install
     @end
 
+@description "Run linters"
 task lint:
-    @description "Run linters"
     @needs npm
     npm run lint
 
+@description "Type checking"
 task typecheck:
-    @description "Type checking"
     @needs npm
     npm run typecheck
 
+@description "Run tests"
 task test:
-    @description "Run tests"
     @needs npm
     @if env(CI)
         npm test -- --coverage --ci
@@ -49,15 +49,15 @@ task test:
         npm test
     @end
 
+@description "Production build"
 task build:
-    @description "Production build"
     @needs npm
     npm run build
 
 # === Environment-Based Deployment ===
 
+@description "Deploy to appropriate environment"
 task deploy:
-    @description "Deploy to appropriate environment"
     @if env(GITHUB_REF_NAME)
         @if eq($GITHUB_REF_NAME, main)
             echo "Deploying to production..."
@@ -73,23 +73,23 @@ task deploy:
         echo "Not in CI - use deploy-staging or deploy-production directly"
     @end
 
+@description "Deploy to staging"
 task deploy-staging:
-    @description "Deploy to staging"
     @require STAGING_URL VERCEL_TOKEN
     @needs npx
     npx vercel deploy --prebuilt --token=$VERCEL_TOKEN
     echo "Deployed to staging: $STAGING_URL"
 
+@description "Deploy to production"
 task deploy-production:
-    @description "Deploy to production"
     @require PRODUCTION_URL VERCEL_TOKEN
     @confirm "Deploy to production?"
     @needs npx
     npx vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
     @post echo "Deployed to production: $PRODUCTION_URL"
 
+@description "Deploy preview environment"
 task deploy-preview:
-    @description "Deploy preview environment"
     @require VERCEL_TOKEN
     @needs npx
     npx vercel deploy --prebuilt --token=$VERCEL_TOKEN
@@ -97,8 +97,8 @@ task deploy-preview:
 
 # === GitHub Actions Helpers ===
 
+@description "Write summary for GitHub Actions"
 task gha-summary:
-    @description "Write summary for GitHub Actions"
     @if env(GITHUB_STEP_SUMMARY)
         echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
         echo "- Commit: $GITHUB_SHA" >> $GITHUB_STEP_SUMMARY
@@ -106,29 +106,29 @@ task gha-summary:
         echo "- Runner: $RUNNER_OS" >> $GITHUB_STEP_SUMMARY
     @end
 
+@description "Generate cache key for GitHub Actions"
 task gha-cache-key:
-    @description "Generate cache key for GitHub Actions"
     @quiet
     echo "npm-$RUNNER_OS-$(shasum package-lock.json | cut -c1-8)"
 
 # === Health Checks ===
 
+@description "Check deployment health"
 task health-check:
-    @description "Check deployment health"
     @require HEALTH_URL
     @pre echo "Checking health at $HEALTH_URL..."
     curl -sf "$HEALTH_URL/health" || (echo "Health check failed!" && exit 1)
     @post echo "Health check passed!"
 
+@description "Run smoke tests against deployment"
 task smoke-test:
-    @description "Run smoke tests against deployment"
     @require TEST_URL
     npm run test:e2e -- --url=$TEST_URL
 
 # === Rollback ===
 
+@description "Rollback production deployment"
 task rollback:
-    @description "Rollback production deployment"
     @require PREVIOUS_DEPLOY_ID VERCEL_TOKEN
     @confirm "Rollback production to $PREVIOUS_DEPLOY_ID?"
     npx vercel rollback $PREVIOUS_DEPLOY_ID --token=$VERCEL_TOKEN
@@ -136,16 +136,16 @@ task rollback:
 
 # === Notifications ===
 
+@description "Send success notification"
 task notify-success:
-    @description "Send success notification"
     @if env(SLACK_WEBHOOK)
         curl -X POST -H 'Content-type: application/json' \
             --data '{"text":"Deployment succeeded: '$GITHUB_REF_NAME'"}' \
             $SLACK_WEBHOOK
     @end
 
+@description "Send failure notification"
 task notify-failure:
-    @description "Send failure notification"
     @if env(SLACK_WEBHOOK)
         curl -X POST -H 'Content-type: application/json' \
             --data '{"text":"Deployment FAILED: '$GITHUB_REF_NAME'"}' \

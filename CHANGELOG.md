@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Target release: `0.8.0`
 
+### Documentation
+
+- fix website examples to place `@description` before recipe definitions, matching actual Jake parsing behavior
+- fix the open-source release example to use supported conditions and explain tag-derived release versioning
+- clarify website docs for directive placement and completion Jakefile discovery behavior
+
 ### Added
 
 - **Verbose Debugging**

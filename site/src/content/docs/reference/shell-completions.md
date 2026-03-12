@@ -136,7 +136,7 @@ done
 
 ### Wrong Recipes Showing
 
-Completions load recipes from the Jakefile in the current directory. Make sure you're in the right project directory.
+Completions load recipes from the nearest Jakefile Jake discovers in the current directory or one of its parent directories. Make sure you're in the right project, or pass `-f/--jakefile` to point completions at a specific file.
 
 ### Slow Completions
 

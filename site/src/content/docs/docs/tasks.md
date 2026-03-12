@@ -89,11 +89,11 @@ Arguments: a b c d
 
 ### Description
 
-Use `@description` for inline descriptions:
+Use `@description` or `@desc` as recipe metadata immediately before the recipe definition:
 
 ```jake
+@description "Deploy application to production server"
 task deploy:
-    @description "Deploy application to production server"
     ./deploy.sh
 ```
 
