@@ -3,7 +3,15 @@ title: Built-in Functions
 description: Functions available in variable expansion.
 ---
 
-Use functions in variable expansion with `{{function(arg)}}` syntax.
+Call functions inside `{{...}}` expressions. Arguments can be literal strings or variable names — Jake resolves variable names first, then passes the value to the function.
+
+```jake
+src = "src/components/Button.tsx"
+
+task info:
+    echo "{{basename(src)}}"         # uses variable → Button.tsx
+    echo "{{basename(lib/util.ts)}}" # literal       → util.ts
+```
 
 ## String Functions
 
@@ -26,55 +34,78 @@ Use functions in variable expansion with `{{function(arg)}}` syntax.
 
 ## System Functions
 
-| Function          | Description                 | Example                                                  |
-| ----------------- | --------------------------- | -------------------------------------------------------- |
-| `home()`          | User home directory         | `{{home()}}` → `/Users/alice` or `C:\Users\alice`        |
-| `local_bin(name)` | Path to ~/.local/bin binary | `{{local_bin("jake")}}` → `/Users/alice/.local/bin/jake` |
-| `shell_config()`  | Current shell's config file | `{{shell_config()}}` → `/Users/alice/.zshrc` or a PowerShell profile |
+| Function           | Description                             | Example                                                              |
+| ------------------ | --------------------------------------- | -------------------------------------------------------------------- |
+| `home()`           | User home directory                     | `{{home()}}` → `/Users/alice` or `C:\Users\alice`                    |
+| `local_bin(name)`  | Path to `~/.local/bin` binary           | `{{local_bin(jake)}}` → `/Users/alice/.local/bin/jake`               |
+| `shell_config()`   | Current shell's config file             | `{{shell_config()}}` → `/Users/alice/.zshrc`                         |
+| `launch(target)`   | Platform command to open a file or URL  | `{{launch(https://example.com)}}` → `open https://example.com`       |
+
+### launch(target)
+
+`launch()` returns the platform-specific command for opening a file or URL in the default application. It doesn't open the target directly — it expands to the correct command, which then runs as part of the recipe.
+
+| Platform | Expands to               |
+| -------- | ------------------------ |
+| macOS    | `open {target}`          |
+| Linux    | `xdg-open {target}`      |
+| Windows  | `cmd /c start "" {target}` |
+
+```jake
+docs_url = "https://jake.helge.dev"
+
+task open-docs:
+    {{launch(docs_url)}}
+
+task open-report:
+    {{launch(coverage/index.html)}}
+```
+
+On unsupported platforms (anything other than macOS, Linux, or Windows), `launch()` produces an error at evaluation time and the recipe will not run.
 
 ### Shell Config Detection
 
-The `shell_config()` function detects your shell from `$SHELL`. On Windows, it also understands Windows-style shell paths and falls back to PowerShell or `COMSPEC` when needed.
+`shell_config()` detects your shell from `$SHELL`. On Windows, it understands Windows-style shell paths and falls back to PowerShell or `COMSPEC` when needed.
 
-| Shell | Config File                  |
-| ----- | ---------------------------- |
-| bash  | `~/.bashrc`                  |
-| zsh   | `~/.zshrc`                   |
-| fish  | `~/.config/fish/config.fish` |
-| sh    | `~/.profile`                 |
-| ksh   | `~/.kshrc`                   |
-| csh   | `~/.cshrc`                   |
-| tcsh  | `~/.tcshrc`                  |
-| powershell | `~/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1` |
-| pwsh  | `~/Documents/PowerShell/Microsoft.PowerShell_profile.ps1` |
+| Shell      | Config File                                                               |
+| ---------- | ------------------------------------------------------------------------- |
+| bash       | `~/.bashrc`                                                               |
+| zsh        | `~/.zshrc`                                                                |
+| fish       | `~/.config/fish/config.fish`                                              |
+| sh         | `~/.profile`                                                              |
+| ksh        | `~/.kshrc`                                                                |
+| csh / tcsh | `~/.cshrc` / `~/.tcshrc`                                                  |
+| powershell | `~/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`          |
+| pwsh       | `~/Documents/PowerShell/Microsoft.PowerShell_profile.ps1`                 |
 
-`home()` resolves from `HOME` on Unix-like systems and from `HOME`, `USERPROFILE`, or `HOMEDRIVE` + `HOMEPATH` on Windows.
-`shell_config()` does not return a config path for plain `cmd.exe`.
+`shell_config()` returns nothing for plain `cmd.exe`. `home()` resolves from `HOME` on Unix and from `HOME`, `USERPROFILE`, or `HOMEDRIVE` + `HOMEPATH` on Windows.
 
-## Using with Variables
+## Chaining Functions
 
-```jake
-file_path = "src/components/Button.tsx"
-
-task info:
-    echo "Directory: {{dirname(file_path)}}"
-    echo "Filename: {{basename(file_path)}}"
-    echo "Extension: {{extension(file_path)}}"
-```
-
-Output:
-
-```
-Directory: src/components
-Filename: Button.tsx
-Extension: .tsx
-```
-
-## Chaining with Variables
+Functions can be nested — the inner call resolves first:
 
 ```jake
 src = "src/main.ts"
 
 task compile:
-    echo "Compiling {{basename(src)}} to {{without_extension(basename(src))}}.js"
+    tsc --outFile {{without_extension(basename(src))}}.js {{src}}
 ```
+
+Expands to: `tsc --outFile main.js src/main.ts`
+
+Another example — deploying to a path based on the source filename:
+
+```jake
+component = "src/components/Button.tsx"
+
+task deploy-component:
+    cp {{component}} dist/{{lowercase(without_extensions(basename(component)))}}.js
+```
+
+Expands to: `cp src/components/Button.tsx dist/button.js`
+
+## Error Behavior
+
+If a function receives an argument it can't handle (e.g., `launch()` on an unsupported OS), Jake reports the error and stops before executing any commands in the recipe. The error identifies the failing expression.
+
+If a variable name is used as an argument but the variable isn't defined, Jake expands it as an empty string. `basename("")` returns `""`, `dirname("")` returns `"."`, and so on — no error is produced. If that silent empty-string behavior would cause problems for your use case, set the variable to a sentinel value and check it with `@require`.

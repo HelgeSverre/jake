@@ -3,9 +3,9 @@ title: Dependencies
 description: Managing recipe dependencies in Jake.
 ---
 
-## Recipe Dependencies
+Dependencies let you declare that one recipe must complete before another runs. Jake resolves the full dependency graph before execution — you don't have to think about ordering.
 
-Run other recipes first using brackets:
+## Recipe Dependencies
 
 ```jake
 task build:
@@ -20,18 +20,53 @@ task deploy: [build, test]
 
 Running `jake deploy` executes: `build` → `test` → `deploy`
 
+## Deduplication
+
+Each recipe runs at most once per invocation, regardless of how many other recipes depend on it.
+
+```jake
+task compile:
+    echo "Compiling..."
+
+task test: [compile]
+    npm test
+
+task lint: [compile]
+    eslint src/
+
+task ci: [test, lint]
+    echo "Done"
+```
+
+Running `jake ci` executes: `compile` → `test` → `lint` → `ci`  
+`compile` runs once, even though both `test` and `lint` depend on it.
+
+## Parallel Execution
+
+When you run with `-j` (parallel jobs), recipes that don't depend on each other run concurrently. Dependencies are still respected — Jake builds a topological graph and runs as many independent recipes as possible in parallel.
+
+```bash
+jake -j4 ci
+```
+
+With the example above, `test` and `lint` can run in parallel once `compile` finishes, cutting total time roughly in half.
+
+## Dependency Order
+
+Dependencies in the list run in declaration order when executed sequentially. In parallel mode, order is determined by the dependency graph — unrelated recipes may run in any order.
+
 ## File Dependencies
 
-For file recipes, list source files/patterns after the colon:
+For `file` recipes, list source files or glob patterns after the colon:
 
 ```jake
 file dist/bundle.js: src/index.ts src/utils.ts
     esbuild src/index.ts --bundle --outfile=dist/bundle.js
 ```
 
-## Glob Patterns
+The recipe only runs if the output file is missing or any dependency file is newer than the output.
 
-Use glob patterns for file dependencies:
+## Glob Patterns
 
 ```jake
 file dist/app.js: src/**/*.ts
@@ -40,15 +75,15 @@ file dist/app.js: src/**/*.ts
 
 Supported patterns:
 
-- `*` - Match any characters except `/`
-- `**` - Match any characters including `/` (recursive)
-- `?` - Match single character
-- `[abc]` - Match character class
-- `[a-z]` - Match character range
+- `*` — any characters except `/`
+- `**` — any characters including `/` (recursive)
+- `?` — single character
+- `[abc]` — character class
+- `[a-z]` — character range
 
-## Dependency Chains
+## Chained File Recipes
 
-File recipes automatically run recipes that produce their dependencies:
+File recipes can depend on each other for multi-stage builds:
 
 ```jake
 file dist/compiled.js: src/**/*.ts
@@ -61,11 +96,11 @@ task build: [dist/bundle.js]
     echo "Build complete!"
 ```
 
-Running `jake build` automatically runs compilation first.
+Jake checks freshness at each stage — if only `dist/compiled.js` is stale, only the minification step reruns.
 
 ## Mixed Dependencies
 
-Combine recipe and file dependencies:
+Combine recipe and file dependencies freely:
 
 ```jake
 task setup:
@@ -78,12 +113,23 @@ task build: [setup, dist/app.js]
     echo "Build complete!"
 ```
 
-## Avoiding Cycles
+## Dependencies on Imported Recipes
 
-Jake detects cyclic dependencies:
+Recipes from imported files can be used as dependencies by their namespaced name:
 
 ```jake
-# This will error!
+@import "jake/docker.jake" as docker
+@import "jake/test.jake" as test
+
+task ci: [docker.build, test.unit, test.integration]
+    echo "CI complete"
+```
+
+## Cycle Detection
+
+Jake detects cyclic dependencies and exits with an error:
+
+```jake
 task a: [b]
     echo "A"
 

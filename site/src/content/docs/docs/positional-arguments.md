@@ -75,18 +75,31 @@ $ jake npm install lodash
 # Runs: npm install lodash
 ```
 
-## Conditional Handling
+## Conditional Logic on Arguments
 
-Check if arguments were provided:
+Positional args (`{{$1}}`, `{{$2}}`) do not work inside `@if` condition expressions. Condition strings are not pre-expanded, so `eq("{{$1}}", "")` looks up a variable literally named `$1` (not found), always resolves to empty string, and makes the condition useless.
+
+**Use named parameters instead.** Named parameters are stored in the variables map and work correctly with all condition functions:
 
 ```jake
-task greet:
-    @if eq("{{$1}}", "")
-        echo "Hello, stranger!"
+# Works: named parameter used in condition
+task greet name="stranger":
+    @if eq(name, stranger)
+        echo "No name given, using default"
     @else
-        echo "Hello, {{$1}}!"
+        echo "Hello, {{name}}!"
     @end
 ```
+
+```bash
+$ jake greet
+No name given, using default
+
+$ jake greet name=Alice
+Hello, Alice!
+```
+
+Named parameters also support `eq()`, `neq()`, `exists()`, and any other condition function.
 
 ## Syntax Notes
 

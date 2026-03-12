@@ -3,21 +3,33 @@ title: Watch Mode
 description: Automatically re-run tasks when files change.
 ---
 
-## Basic Watch
-
-Re-run recipe when files change:
+Watch mode re-runs a recipe whenever relevant files change. It's useful for development loops — running tests, rebuilding on save, or restarting a dev server.
 
 ```bash
 jake -w build
 ```
 
-Jake watches files based on:
+Jake polls for file changes every 500ms, with a 100ms debounce after the last detected change before triggering a re-run. This means the recipe fires roughly 100ms after files stop changing, not on every individual write.
 
-- The active Jakefile plus imported/external build files when you run `jake -w recipe` without an explicit pattern
-- File dependencies in file recipes
-- `@watch` directives in tasks
+## What Gets Watched
 
-When watch mode starts, Jake shows what's being monitored:
+Without an explicit pattern, Jake automatically watches:
+
+- The Jakefile and any imported files
+- File dependencies declared in `file` recipes
+- Patterns in `@watch` directives in the target recipe
+
+```bash
+jake -w build    # watches Jakefile + @watch patterns + file deps
+```
+
+With an explicit pattern, Jake watches only what you specify:
+
+```bash
+jake -w "src/**/*.ts" build
+```
+
+When watch mode starts, Jake shows what it's monitoring:
 
 ```
 [watch] Watching 5 file(s) for changes...
@@ -25,62 +37,87 @@ When watch mode starts, Jake shows what's being monitored:
 [watch] Press Ctrl+C to stop
 ```
 
-## Watch Specific Patterns
+## @watch Directive
 
-```bash
-jake -w "src/**/*.ts" build
-```
-
-With an explicit pattern, Jake watches the pattern you provided. If that pattern includes the Jakefile or imported build files, watch mode reloads them before rerunning the recipe.
-
-## Watch Directive
-
-Mark files to watch in a task:
+Declare additional watch patterns inside a recipe:
 
 ```jake
 task build:
-    @watch src/*.ts
+    @watch src/**/*.ts
     npm run build
 ```
 
-Multiple patterns:
+Multiple patterns on one line:
 
 ```jake
 task dev:
-    @watch src/**/*.ts tests/**/*.ts
+    @watch src/**/*.ts tests/**/*.ts config/*.json
     npm run dev
 ```
 
-## Watch with Verbose Output
+## Jakefile Reloads
 
-```bash
-jake -w -v build
-```
+If the Jakefile itself (or an imported file) changes while watch mode is running, Jake reloads it before the next run. The entire executor reinitializes with the updated recipe definitions — so changes to recipe commands, dependencies, or new recipes take effect immediately without restarting.
 
-Shows which files triggered the rebuild.
+When using an explicit pattern (`jake -w "src/**" build`), Jakefile reloading still happens if the Jakefile matches the pattern or is being auto-tracked.
 
-Deleted watched files also count as changes, and recreating them triggers the recipe again.
+## Deleted and Recreated Files
+
+Deleted files trigger a re-run. If you delete a watched file and then recreate it, both events trigger the recipe. This is useful for workflows that regenerate files from scratch.
 
 ## Conditional Watch Behavior
 
-Use `is_watching()` to adjust behavior:
+Use `is_watching()` to adjust what a recipe does in watch mode vs a one-off run:
 
 ```jake
 task build:
     @if is_watching()
-        echo "Watch mode: skipping expensive lint"
+        echo "Incremental build (skipping lint)..."
     @else
         npm run lint
     @end
     npm run build
 ```
 
-## Combining with Other Flags
+## Long-Running Recipes
+
+If a recipe is still running when the next file change is detected, Jake waits for the current run to finish before starting the next one. Changes that arrive during execution are not queued — only the latest change matters, and it triggers one re-run once the current execution completes.
+
+## Combining Flags
 
 ```bash
-# Watch with verbose output
+# Verbose output shows which file triggered the rebuild
 jake -w -v build
 
-# Watch with parallel jobs
-jake -w -j4 build
+# Parallel execution in watch mode
+jake -w -j4 test
+
+# Explicit pattern + verbose
+jake -w "src/**/*.go" -v test
+```
+
+## Common Patterns
+
+**Frontend dev loop** — watch TypeScript source, rebuild on change:
+
+```jake
+task dev:
+    @watch src/**/*.ts src/**/*.css public/**/*
+    npm run build:dev
+```
+
+**Test on save** — run only affected tests:
+
+```jake
+task test:
+    @watch src/**/*.ts tests/**/*.test.ts
+    npm test
+```
+
+**Go rebuild** — recompile and restart on source changes:
+
+```jake
+task run:
+    @watch **/*.go
+    go run ./cmd/server
 ```
