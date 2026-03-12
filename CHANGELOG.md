@@ -11,6 +11,9 @@ Target release: `0.8.0`
 
 ### Added
 
+- **Verbose Debugging**
+  - Added verbose logging for variable expansion results and cache dependency invalidation reasons during recipe execution
+
 - **Help & Completions**
   - Show `--[no-]` prefix for negatable flags in `--help` output (git-style), with `show_negatable` opt-out per flag
   - Shell completions now include `--no-X` variants for negatable flags (`--no-external`, `--no-verbose`, `--no-yes`)
@@ -119,6 +122,10 @@ Target release: `0.8.0`
   - Fixed automatic browser launch to skip headless/test contexts when `CI` or `JAKE_NO_BROWSER` is set
   - Styled the recipe-list scrollbar to better match the Web UI theme
   - Fixed browser-triggered runs to disable child-process stdin so terminal-only prompts fail instead of hanging indefinitely
+  - Fixed process-group handling so stop/cancel signals reliably terminate child processes spawned beneath the active shell command
+
+- **Tooling and Dependencies**
+  - Updated `editors/tree-sitter-jake` lockfile dependencies to resolve dependabot-reported security alerts
 
 - **Formatter**
   - Fixed formatter round-trips to keep variable values parseable by quoting canonicalized values and to avoid duplicating directive keywords like `@if`
