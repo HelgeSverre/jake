@@ -445,7 +445,7 @@ task test-cli:
 task test-web:
     echo ""
     echo "Web UI Tests"
-    sh -c 'rm -f /tmp/jake-e2e-web.html /tmp/jake-e2e-web-api.json /tmp/jake-e2e-web.log; CI=1 {{jake}} --web --verbose --port 18450 -f fixtures/webui/Jakefile >/tmp/jake-e2e-web.log 2>&1 & pid=$!; status=1; for i in 1 2 3 4 5 6 7 8 9 10; do if curl -fsS http://127.0.0.1:18450/ > /tmp/jake-e2e-web.html && curl -fsS http://127.0.0.1:18450/api/status > /tmp/jake-e2e-web-api.json; then python3 fixtures/webui/websocket_e2e.py 18450 && status=0; break; fi; sleep 1; done; kill $pid 2>/dev/null || true; wait $pid 2>/dev/null || true; exit $status'
+    sh -c 'port=$(python3 fixtures/webui/free_port.py); rm -f /tmp/jake-e2e-web.html /tmp/jake-e2e-web-api.json /tmp/jake-e2e-web.log; CI=1 {{jake}} --web --verbose --port "$port" -f fixtures/webui/Jakefile >/tmp/jake-e2e-web.log 2>&1 & pid=$!; status=1; for i in 1 2 3 4 5 6 7 8 9 10; do if curl -fsS "http://127.0.0.1:$port/" > /tmp/jake-e2e-web.html && curl -fsS "http://127.0.0.1:$port/api/status" > /tmp/jake-e2e-web-api.json; then python3 fixtures/webui/websocket_e2e.py "$port" && status=0; break; fi; sleep 1; done; kill $pid 2>/dev/null || true; wait $pid 2>/dev/null || true; exit $status'
     grep -q "Jake Web UI" /tmp/jake-e2e-web.html && grep -q "\"status\":\"ok\"" /tmp/jake-e2e-web-api.json
     echo "  Web UI serves HTTP, confirm, streaming, and cancel ... PASS"
 

@@ -88,7 +88,10 @@ pub fn currentShellConfigPathOwned(allocator: std.mem.Allocator) !?[]const u8 {
     const home = try currentHomeDirOwned(allocator) orelse return null;
     defer allocator.free(home);
 
-    const shell = currentShellKind() orelse return null;
+    const shell = currentShellKind() orelse switch (builtin.os.tag) {
+        .windows => return null,
+        else => .sh,
+    };
     return shellConfigPathOwned(allocator, shell, home);
 }
 

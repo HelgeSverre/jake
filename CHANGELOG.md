@@ -107,6 +107,9 @@ Target release: `0.8.0`
   - Fixed relative glob expansion from the current working directory on macOS/Darwin
   - Fixed read-only listing and `--show` flows to stop saving cache on teardown, avoiding spurious cache-permission warnings for non-mutating commands
 
+- **Functions and Environment Detection**
+  - Fixed `shell_config()` to fall back to `.profile` for unknown Unix shells instead of leaving the template literal unexpanded
+
 - **Watch Mode**
   - Fixed `--watch` to reparse Jakefile/import/external-build changes instead of rerunning a stale AST
   - Fixed watch-mode execution to preserve the full CLI/runtime context, including parallel job settings and required-environment validation
@@ -129,6 +132,7 @@ Target release: `0.8.0`
   - Styled the recipe-list scrollbar to better match the Web UI theme
   - Fixed browser-triggered runs to disable child-process stdin so terminal-only prompts fail instead of hanging indefinitely
   - Fixed process-group handling so stop/cancel signals reliably terminate child processes spawned beneath the active shell command
+  - Fixed the Web UI E2E harness to use a per-run high port instead of relying on one fixed port for every test run
 
 - **Tooling and Dependencies**
   - Updated `editors/tree-sitter-jake` lockfile dependencies to resolve dependabot-reported security alerts
