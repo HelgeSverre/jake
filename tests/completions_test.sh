@@ -167,10 +167,16 @@ else
 	fail "bash: missing complete command"
 fi
 
-if echo "$BASH_COMP" | grep -q "jake --summary"; then
+if echo "$BASH_COMP" | grep -q -- "--summary"; then
 	pass "bash: calls jake --summary"
 else
 	fail "bash: missing jake --summary call"
+fi
+
+if echo "$BASH_COMP" | grep -q "\-\-groups"; then
+	pass "bash: includes --groups support"
+else
+	fail "bash: missing --groups support"
 fi
 
 # Zsh: should have #compdef and _arguments
@@ -193,6 +199,12 @@ else
 	fail "zsh: missing --summary call"
 fi
 
+if echo "$ZSH_COMP" | grep -q "\-\-groups"; then
+	pass "zsh: includes --groups support"
+else
+	fail "zsh: missing --groups support"
+fi
+
 # Fish: should have complete -c jake and __jake_recipes function
 FISH_COMP=$("$JAKE_BIN" --completions fish 2>/dev/null)
 if echo "$FISH_COMP" | grep -q "function __jake_recipes"; then
@@ -213,6 +225,12 @@ else
 	fail "fish: missing --summary call"
 fi
 
+if echo "$FISH_COMP" | grep -q "__jake_groups"; then
+	pass "fish: has __jake_groups function"
+else
+	fail "fish: missing __jake_groups function"
+fi
+
 # Test that all flags are included in completions
 echo ""
 echo "--- Testing flag completions ---"
@@ -230,6 +248,12 @@ EXPECTED_FLAGS=(
 	"short"
 	"show"
 	"summary"
+	"json"
+	"group"
+	"filter"
+	"type"
+	"groups"
+	"external"
 	"completions"
 	"install"
 	"uninstall"

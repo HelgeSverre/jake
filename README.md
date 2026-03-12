@@ -89,8 +89,13 @@ OPTIONS:
   -l, --list              List recipes
   -a, --all               Include hidden recipes (with -l)
       --short             One recipe per line
+  --summary           Space-separated recipe names
+      --json              JSON output for listing modes
   -s, --show RECIPE       Show detailed recipe info
-      --summary           Space-separated recipe names
+      --group GROUP       Filter recipes by group
+      --filter PATTERN    Filter recipes by glob
+      --type TYPE         Filter recipes by type (task/file/simple/external)
+      --groups            List available group names
       --external [TYPE]   Show external recipes (make/just)
       --no-external       Hide external recipes
   -n, --dry-run           Print without executing

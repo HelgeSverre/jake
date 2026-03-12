@@ -1341,12 +1341,18 @@ jake -f <TAB>               # → file completion
 
 ### Machine-Readable Output
 
-For scripting and integration with other tools, use `--summary`:
+For scripting and integration with other tools, use `--summary`, `--short`, or `--json`:
 
 ```bash
 # Get space-separated list of recipe names
 jake --summary
 # Output: build test deploy clean lint
+
+# Get one recipe per line
+jake --list --short
+
+# Get structured recipe metadata
+jake --json
 
 # Use in scripts
 for recipe in $(jake --summary); do
@@ -1370,7 +1376,6 @@ OPTIONS:
     -V, --version           Show version
     -l, --list              List available recipes
         --short             Output one recipe per line (for scripting)
-    -s, --show RECIPE       Show detailed recipe information
     -n, --dry-run           Print commands without executing
     -v, --verbose           Show verbose output
     -y, --yes               Auto-confirm all @confirm prompts
@@ -1378,6 +1383,12 @@ OPTIONS:
     -w, --watch [PATTERN]   Watch and re-run on changes
     -j, --jobs [N]          Parallel jobs (default: CPU count)
         --summary           Print recipe names (for scripting/completions)
+        --json              Emit JSON for listing-style output
+    -s, --show RECIPE       Show detailed recipe information
+        --group GROUP       Filter recipes to a specific group
+        --filter PATTERN    Filter recipe names by glob pattern
+        --type TYPE         Filter recipes by type (task/file/simple/external)
+        --groups            List available group names
         --completions [SHELL] Print shell completion script (bash/zsh/fish)
         --install           Install completions to user directory
         --uninstall         Remove completions and config
@@ -1398,6 +1409,7 @@ EXAMPLES:
     jake -w build           Watch and rebuild
     jake -n deploy          Show what 'deploy' would do
     jake -l --short         List recipes for piping/scripting
+    jake --group dev --json Show only dev recipes as JSON
     jake -s build           Show all details about 'build' recipe
     jake --completions --install   Install shell completions
     jake --install                 Alias for completion auto-install
@@ -1426,6 +1438,30 @@ jake -l --short | grep test
 
 # Run all test recipes
 for r in $(jake -l --short | grep test); do jake "$r"; done
+```
+
+### Listing Filters and JSON
+
+Use listing filters to narrow recipe output before piping it into scripts or tools:
+
+```bash
+# Only recipes in the dev group
+jake --group dev --list --short
+
+# Recipe names that match a glob
+jake --filter "build*" --summary
+
+# Only file recipes
+jake --type file --summary
+
+# List distinct group names
+jake --groups
+
+# Structured recipe metadata
+jake --json
+jake --group dev --json
+jake --summary --json
+jake --groups --json
 ```
 
 ### Recipe Inspection

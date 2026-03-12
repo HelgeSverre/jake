@@ -33,6 +33,11 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 | `--show RECIPE`     | `-s`  | Show recipe details                 |
 | `--summary`         |       | Print recipe names for scripts      |
 | `--short`           |       | Output one recipe name per line     |
+| `--json`            |       | Emit JSON for listing-style output  |
+| `--group GROUP`     |       | Filter recipes to a specific group  |
+| `--filter PATTERN`  |       | Filter recipe names by glob pattern |
+| `--type TYPE`       |       | Filter recipes by type (`task`, `file`, `simple`, `external`) |
+| `--groups`          |       | List available group names          |
 | `--web`             |       | Start web UI server                 |
 | `--port PORT`       |       | Web UI port (default: 8420)         |
 | `--external [TYPE]` |       | Show external recipes (make/just)   |
@@ -80,6 +85,15 @@ jake -y deploy
 # Machine-readable output
 jake --summary
 jake --list --short
+jake --json
+jake --summary --json
+jake --groups --json
+
+# Filter listings
+jake --group dev --list --short
+jake --filter "build*" --summary
+jake --type file --summary
+jake --groups
 
 # Validate formatting
 jake --fmt --check -f build.jake

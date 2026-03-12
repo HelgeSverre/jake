@@ -44,6 +44,16 @@ pub const ExecuteError = error{
     Cancelled,
 };
 
+pub const ListOptions = struct {
+    show_all: bool = false,
+    external_filter: ?[]const u8 = null,
+    external_only: bool = false,
+    hide_externals: bool = false,
+    group: ?[]const u8 = null,
+    name_filter: ?[]const u8 = null,
+    recipe_type: ?[]const u8 = null,
+};
+
 /// Default CLI context used by init() and initWithIndex() for backwards compatibility.
 /// For production use, pass a Context explicitly via initWithContext().
 var default_context: Context = .{
@@ -2209,67 +2219,147 @@ pub const Executor = struct {
         }
     }
 
-    /// List all available recipes
+    fn getExternalKind(recipe: *const Recipe) ?parser.RecipeOrigin.ExternalKind {
+        if (recipe.origin) |origin| {
+            return origin.external_kind;
+        }
+        return null;
+    }
+
+    fn externalKindName(kind: parser.RecipeOrigin.ExternalKind) []const u8 {
+        return switch (kind) {
+            .makefile => "make",
+            .justfile => "just",
+        };
+    }
+
+    fn matchesNameFilter(recipe: *const Recipe, pattern: []const u8) bool {
+        if (glob_mod.match(pattern, recipe.name)) return true;
+        for (recipe.aliases) |alias| {
+            if (glob_mod.match(pattern, alias)) return true;
+        }
+        return false;
+    }
+
+    fn matchesTypeFilter(recipe: *const Recipe, external_kind: ?parser.RecipeOrigin.ExternalKind, recipe_type: []const u8) bool {
+        if (std.mem.eql(u8, recipe_type, "external")) {
+            return external_kind != null;
+        }
+        if (external_kind != null) return false;
+        return switch (recipe.kind) {
+            .task => std.mem.eql(u8, recipe_type, "task"),
+            .file => std.mem.eql(u8, recipe_type, "file"),
+            .simple => std.mem.eql(u8, recipe_type, "simple"),
+        };
+    }
+
+    fn matchesListOptions(_: *Executor, recipe: *const Recipe, options: ListOptions) bool {
+        const external_kind = getExternalKind(recipe);
+
+        if (!options.show_all and recipe.isPrivate()) return false;
+
+        if (external_kind) |kind| {
+            if (options.hide_externals) return false;
+            if (options.external_filter) |filter| {
+                if (!std.mem.eql(u8, filter, externalKindName(kind))) return false;
+            }
+        } else {
+            if (options.external_only) return false;
+        }
+
+        if (options.group) |group_name| {
+            if (recipe.group == null or !std.mem.eql(u8, recipe.group.?, group_name)) {
+                return false;
+            }
+        }
+
+        if (options.name_filter) |pattern| {
+            if (!matchesNameFilter(recipe, pattern)) return false;
+        }
+
+        if (options.recipe_type) |recipe_type| {
+            if (!matchesTypeFilter(recipe, external_kind, recipe_type)) return false;
+        }
+
+        return true;
+    }
+
+    fn collectListedRecipes(self: *Executor, options: ListOptions) !std.ArrayListUnmanaged(*const Recipe) {
+        var recipes: std.ArrayListUnmanaged(*const Recipe) = .{};
+        errdefer recipes.deinit(self.allocator);
+
+        for (self.jakefile.recipes) |*recipe| {
+            if (!self.matchesListOptions(recipe, options)) continue;
+            try recipes.append(self.allocator, recipe);
+        }
+
+        return recipes;
+    }
+
+    fn collectGroupNames(self: *Executor, recipes: []const *const Recipe) !std.ArrayListUnmanaged([]const u8) {
+        var unique_groups = std.StringHashMap(void).init(self.allocator);
+        defer unique_groups.deinit();
+
+        for (recipes) |recipe| {
+            if (recipe.group) |group_name| {
+                try unique_groups.put(group_name, {});
+            }
+        }
+
+        var group_names: std.ArrayListUnmanaged([]const u8) = .{};
+        errdefer group_names.deinit(self.allocator);
+
+        var it = unique_groups.keyIterator();
+        while (it.next()) |key| {
+            try group_names.append(self.allocator, key.*);
+        }
+
+        std.mem.sort([]const u8, group_names.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+
+        return group_names;
+    }
+
+    fn writeJsonValue(self: *Executor, value: anytype) !void {
+        const stdout = compat.getStdOut();
+        var out: std.io.Writer.Allocating = .init(self.allocator);
+        defer out.deinit();
+        try std.json.Stringify.value(value, .{}, &out.writer);
+        try stdout.writeAll(out.written());
+        try stdout.writeAll("\n");
+    }
+
+    /// List all available recipes in the human-readable CLI format.
     // TODO: Highlight the default recipe in the list output (e.g., with a star or "default" label).
     // Currently `jake --verbose` runs the default but `-> build` appears first because it's a
     // dependency, which can confuse users into thinking `build` is the target instead of `all`.
-    pub fn listRecipes(self: *Executor, short_mode: bool, show_all: bool, external_filter: ?[]const u8, external_only: bool, hide_externals: bool) void {
+    pub fn listRecipes(self: *Executor, options: ListOptions) !void {
         const stdout = compat.getStdOut();
+        var filtered = try self.collectListedRecipes(options);
+        defer filtered.deinit(self.allocator);
 
-        // Short mode: one recipe name per line, no colors, no formatting
-        if (short_mode) {
-            for (self.jakefile.recipes) |*recipe| {
-                if (!show_all and recipe.isPrivate()) continue;
+        const external_type_only = if (options.recipe_type) |recipe_type|
+            std.mem.eql(u8, recipe_type, "external")
+        else
+            false;
 
-                // Check if external filtering applies
-                if (recipe.origin) |origin| {
-                    if (origin.external_kind) |kind| {
-                        // Skip external if --no-externals
-                        if (hide_externals) continue;
-                        // Filter by type if specified
-                        if (external_filter) |filter| {
-                            const matches = switch (kind) {
-                                .makefile => std.mem.eql(u8, filter, "make"),
-                                .justfile => std.mem.eql(u8, filter, "just"),
-                            };
-                            if (!matches) continue;
-                        }
-                    } else {
-                        // Jake recipe - skip if external_only
-                        if (external_only) continue;
-                    }
-                } else {
-                    // No origin (Jake recipe) - skip if external_only
-                    if (external_only) continue;
-                }
-
-                stdout.writeAll(recipe.name) catch {};
-                stdout.writeAll("\n") catch {};
-            }
-            return;
-        }
-
-        // v4 format: {j} jake N recipes • M groups (skip if --external)
-        if (!external_only) {
-            // Count visible Jake recipes and groups
+        if (!options.external_only and !external_type_only) {
             var recipe_count: usize = 0;
             var unique_groups = std.StringHashMap(void).init(self.allocator);
             defer unique_groups.deinit();
 
-            for (self.jakefile.recipes) |*recipe| {
-                if (!show_all and recipe.isPrivate()) continue;
-                // Don't count external recipes
-                if (recipe.origin) |origin| {
-                    if (origin.external_kind != null) continue;
-                }
+            for (filtered.items) |recipe| {
+                if (getExternalKind(recipe) != null) continue;
                 recipe_count += 1;
-                if (recipe.group) |g| {
-                    unique_groups.put(g, {}) catch continue;
+                if (recipe.group) |group_name| {
+                    try unique_groups.put(group_name, {});
                 }
             }
             const group_count = unique_groups.count();
 
-            // Print header
             stdout.writeAll(self.color.jakeRose()) catch {};
             stdout.writeAll(color_mod.symbols.logo) catch {};
             stdout.writeAll(self.color.reset()) catch {};
@@ -2291,7 +2381,6 @@ pub const Executor = struct {
             stdout.writeAll("\n") catch {};
         }
 
-        // Separate Jake recipes from external recipes (Makefile/Justfile)
         var make_recipes: std.ArrayListUnmanaged(*const Recipe) = .{};
         defer make_recipes.deinit(self.allocator);
         var just_recipes: std.ArrayListUnmanaged(*const Recipe) = .{};
@@ -2299,7 +2388,6 @@ pub const Executor = struct {
         var make_source_file: ?[]const u8 = null;
         var just_source_file: ?[]const u8 = null;
 
-        // Group Jake recipes by their group field
         var groups = std.StringHashMap(std.ArrayListUnmanaged(*const Recipe)).init(self.allocator);
         defer {
             var it = groups.valueIterator();
@@ -2315,80 +2403,44 @@ pub const Executor = struct {
         var hidden: std.ArrayListUnmanaged(*const Recipe) = .{};
         defer hidden.deinit(self.allocator);
 
-        // Collect recipes into groups, separating external ones
-        for (self.jakefile.recipes) |*recipe| {
-            // Check if this is an external recipe
-            if (recipe.origin) |origin| {
-                if (origin.external_kind) |kind| {
-                    // Skip external if --no-externals
-                    if (hide_externals) continue;
-
-                    const is_private = recipe.isPrivate();
-                    if (!show_all and is_private) continue;
-
-                    // Filter by type if specified
-                    if (external_filter) |filter| {
-                        const matches = switch (kind) {
-                            .makefile => std.mem.eql(u8, filter, "make"),
-                            .justfile => std.mem.eql(u8, filter, "just"),
-                        };
-                        if (!matches) continue;
-                    }
-
-                    switch (kind) {
-                        .makefile => {
-                            make_recipes.append(self.allocator, recipe) catch continue;
-                            if (make_source_file == null) make_source_file = origin.source_file;
-                        },
-                        .justfile => {
-                            just_recipes.append(self.allocator, recipe) catch continue;
-                            if (just_source_file == null) just_source_file = origin.source_file;
-                        },
-                    }
-                    continue;
-                }
-            }
-
-            // Regular Jake recipe - skip if --external
-            if (external_only) continue;
-
-            const is_private = recipe.isPrivate();
-
-            if (is_private) {
-                if (show_all) {
-                    hidden.append(self.allocator, recipe) catch continue;
+        for (filtered.items) |recipe| {
+            if (getExternalKind(recipe)) |kind| {
+                switch (kind) {
+                    .makefile => {
+                        try make_recipes.append(self.allocator, recipe);
+                        if (make_source_file == null and recipe.origin != null) {
+                            make_source_file = recipe.origin.?.source_file;
+                        }
+                    },
+                    .justfile => {
+                        try just_recipes.append(self.allocator, recipe);
+                        if (just_source_file == null and recipe.origin != null) {
+                            just_source_file = recipe.origin.?.source_file;
+                        }
+                    },
                 }
                 continue;
             }
 
+            if (recipe.isPrivate()) {
+                try hidden.append(self.allocator, recipe);
+                continue;
+            }
+
             if (recipe.group) |group_name| {
-                const gop = groups.getOrPut(group_name) catch continue;
+                const gop = try groups.getOrPut(group_name);
                 if (!gop.found_existing) {
                     gop.value_ptr.* = .{};
                 }
-                gop.value_ptr.append(self.allocator, recipe) catch continue;
+                try gop.value_ptr.append(self.allocator, recipe);
             } else {
-                ungrouped.append(self.allocator, recipe) catch continue;
+                try ungrouped.append(self.allocator, recipe);
             }
         }
 
-        // Get sorted group names
-        var group_names: std.ArrayListUnmanaged([]const u8) = .{};
+        var group_names = try self.collectGroupNames(filtered.items);
         defer group_names.deinit(self.allocator);
 
-        var key_it = groups.keyIterator();
-        while (key_it.next()) |key| {
-            group_names.append(self.allocator, key.*) catch continue;
-        }
-
-        // Sort group names alphabetically
-        std.mem.sort([]const u8, group_names.items, {}, struct {
-            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-                return std.mem.lessThan(u8, a, b);
-            }
-        }.lessThan);
-
-        // Print grouped recipes - v4: bold group names (not Rose)
         for (group_names.items) |group_name| {
             if (groups.get(group_name)) |recipes| {
                 stdout.writeAll("\n") catch {};
@@ -2403,7 +2455,6 @@ pub const Executor = struct {
             }
         }
 
-        // Print ungrouped recipes
         if (ungrouped.items.len > 0) {
             if (group_names.items.len > 0) {
                 stdout.writeAll("\n") catch {};
@@ -2413,10 +2464,8 @@ pub const Executor = struct {
             }
         }
 
-        // Print hidden recipes (when --all is used)
         if (hidden.items.len > 0) {
             stdout.writeAll("\n") catch {};
-            // Muted color for hidden group header
             stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("(hidden):") catch {};
             stdout.writeAll(self.color.reset()) catch {};
@@ -2426,7 +2475,6 @@ pub const Executor = struct {
             }
         }
 
-        // Print external Makefile recipes
         if (make_recipes.items.len > 0) {
             stdout.writeAll("\n") catch {};
             stdout.writeAll(self.color.bold()) catch {};
@@ -2443,7 +2491,6 @@ pub const Executor = struct {
             }
         }
 
-        // Print external Justfile recipes
         if (just_recipes.items.len > 0) {
             stdout.writeAll("\n") catch {};
             stdout.writeAll(self.color.bold()) catch {};
@@ -2461,21 +2508,114 @@ pub const Executor = struct {
         }
     }
 
-    /// Print space-separated recipe names (for shell completion/scripting)
-    pub fn printSummary(self: *Executor) void {
+    pub fn printShort(self: *Executor, options: ListOptions) !void {
         const stdout = compat.getStdOut();
-        var first = true;
+        var filtered = try self.collectListedRecipes(options);
+        defer filtered.deinit(self.allocator);
 
-        for (self.jakefile.recipes) |*recipe| {
-            if (recipe.isPrivate()) continue;
-
-            if (!first) {
-                stdout.writeAll(" ") catch {};
-            }
-            stdout.writeAll(recipe.name) catch {};
-            first = false;
+        for (filtered.items) |recipe| {
+            try stdout.writeAll(recipe.name);
+            try stdout.writeAll("\n");
         }
-        stdout.writeAll("\n") catch {};
+    }
+
+    /// Print space-separated recipe names (for shell completion/scripting)
+    pub fn printSummary(self: *Executor, options: ListOptions) !void {
+        const stdout = compat.getStdOut();
+        var filtered = try self.collectListedRecipes(options);
+        defer filtered.deinit(self.allocator);
+
+        for (filtered.items, 0..) |recipe, idx| {
+            if (idx > 0) {
+                try stdout.writeAll(" ");
+            }
+            try stdout.writeAll(recipe.name);
+        }
+        try stdout.writeAll("\n");
+    }
+
+    pub fn printGroups(self: *Executor, options: ListOptions) !void {
+        const stdout = compat.getStdOut();
+        var filtered = try self.collectListedRecipes(options);
+        defer filtered.deinit(self.allocator);
+
+        var group_names = try self.collectGroupNames(filtered.items);
+        defer group_names.deinit(self.allocator);
+
+        for (group_names.items) |group_name| {
+            try stdout.writeAll(group_name);
+            try stdout.writeAll("\n");
+        }
+    }
+
+    pub fn printRecipeNamesJson(self: *Executor, options: ListOptions) !void {
+        var filtered = try self.collectListedRecipes(options);
+        defer filtered.deinit(self.allocator);
+
+        var names: std.ArrayListUnmanaged([]const u8) = .{};
+        defer names.deinit(self.allocator);
+
+        for (filtered.items) |recipe| {
+            try names.append(self.allocator, recipe.name);
+        }
+
+        try self.writeJsonValue(names.items);
+    }
+
+    pub fn printGroupsJson(self: *Executor, options: ListOptions) !void {
+        var filtered = try self.collectListedRecipes(options);
+        defer filtered.deinit(self.allocator);
+
+        var group_names = try self.collectGroupNames(filtered.items);
+        defer group_names.deinit(self.allocator);
+
+        try self.writeJsonValue(group_names.items);
+    }
+
+    pub fn printRecipesJson(self: *Executor, options: ListOptions) !void {
+        const JsonRecipe = struct {
+            name: []const u8,
+            kind: []const u8,
+            group: ?[]const u8,
+            description: ?[]const u8,
+            doc_comment: ?[]const u8,
+            hidden: bool,
+            default: bool,
+            aliases: []const []const u8,
+            output: ?[]const u8,
+            external_kind: ?[]const u8,
+            source_file: ?[]const u8,
+        };
+
+        var filtered = try self.collectListedRecipes(options);
+        defer filtered.deinit(self.allocator);
+
+        var recipes: std.ArrayListUnmanaged(JsonRecipe) = .{};
+        defer recipes.deinit(self.allocator);
+
+        for (filtered.items) |recipe| {
+            const external_kind = if (getExternalKind(recipe)) |kind| externalKindName(kind) else null;
+            const source_file = if (recipe.origin) |origin| origin.source_file else null;
+            try recipes.append(self.allocator, .{
+                .name = recipe.name,
+                .kind = switch (recipe.kind) {
+                    .task => "task",
+                    .file => "file",
+                    .simple => "simple",
+                },
+                .group = recipe.group,
+                .description = recipe.description,
+                .doc_comment = recipe.doc_comment,
+                .hidden = recipe.isPrivate(),
+                .default = recipe.is_default,
+                .aliases = recipe.aliases,
+                .output = recipe.output,
+                .external_kind = external_kind,
+                .source_file = source_file,
+            });
+        }
+
+        try self.writeJsonValue(recipes.items);
     }
 
     /// Print a single recipe with its metadata (v4 format - no type badges)

@@ -525,6 +525,14 @@ pub fn generateBash(writer: anytype) !void {
         \\        prev="${COMP_WORDS[COMP_CWORD-1]}"
         \\    fi
         \\
+        \\    local jakefile="Jakefile"
+        \\    for ((i=1; i < ${#words[@]}; i++)); do
+        \\        if [[ "${words[i]}" == "-f" || "${words[i]}" == "--jakefile" ]]; then
+        \\            jakefile="${words[i+1]}"
+        \\            break
+        \\        fi
+        \\    done
+        \\
         \\    # Options that take values
         \\    case "${prev}" in
         \\        -f|--jakefile)
@@ -532,8 +540,17 @@ pub fn generateBash(writer: anytype) !void {
         \\            return 0
         \\            ;;
         \\        -s|--show)
-        \\            local recipes=$(jake --summary 2>/dev/null)
+        \\            local recipes=$(jake -f "${jakefile}" --summary 2>/dev/null)
         \\            COMPREPLY=($(compgen -W "${recipes}" -- "${cur}"))
+        \\            return 0
+        \\            ;;
+        \\        --group)
+        \\            local groups=$(jake -f "${jakefile}" --groups 2>/dev/null | tr '\n' ' ')
+        \\            COMPREPLY=($(compgen -W "${groups}" -- "${cur}"))
+        \\            return 0
+        \\            ;;
+        \\        --type)
+        \\            COMPREPLY=($(compgen -W "task file simple external" -- "${cur}"))
         \\            return 0
         \\            ;;
         \\        --completions)
@@ -580,14 +597,6 @@ pub fn generateBash(writer: anytype) !void {
         \\    fi
         \\
         \\    # Complete recipe names
-        \\    local jakefile="Jakefile"
-        \\    for ((i=1; i < ${#words[@]}; i++)); do
-        \\        if [[ "${words[i]}" == "-f" || "${words[i]}" == "--jakefile" ]]; then
-        \\            jakefile="${words[i+1]}"
-        \\            break
-        \\        fi
-        \\    done
-        \\
         \\    local recipes=$(jake -f "${jakefile}" --summary 2>/dev/null)
         \\    if [[ $? -eq 0 ]]; then
         \\        COMPREPLY=($(compgen -W "${recipes}" -- "${cur}"))
@@ -687,6 +696,15 @@ pub fn generateZsh(writer: anytype) !void {
         \\                    recipes=(${=$(jake -f "$jakefile" --summary 2>/dev/null)})
         \\                    _describe -t recipes 'recipe' recipes
         \\                    ;;
+        \\                --group)
+        \\                    local jakefile="${opt_args[-f]:-${opt_args[--jakefile]:-Jakefile}}"
+        \\                    local -a groups
+        \\                    groups=(${(f)$(jake -f "$jakefile" --groups 2>/dev/null)})
+        \\                    _describe -t groups 'group' groups
+        \\                    ;;
+        \\                --type)
+        \\                    _values 'type' task file simple external
+        \\                    ;;
         \\                --completions)
         \\                    _values 'shell' bash zsh fish
         \\                    ;;
@@ -722,6 +740,18 @@ pub fn generateFish(writer: anytype) !void {
         \\    jake -f "$jakefile" --summary 2>/dev/null | string split ' '
         \\end
         \\
+        \\function __jake_groups
+        \\    set -l jakefile "Jakefile"
+        \\    set -l tokens (commandline -opc)
+        \\    for i in (seq (count $tokens))
+        \\        if test "$tokens[$i]" = "-f" -o "$tokens[$i]" = "--jakefile"
+        \\            set jakefile $tokens[(math $i + 1)]
+        \\            break
+        \\        end
+        \\    end
+        \\    jake -f "$jakefile" --groups 2>/dev/null
+        \\end
+        \\
         \\# Disable file completion by default
         \\complete -c jake -f
         \\
@@ -745,6 +775,10 @@ pub fn generateFish(writer: anytype) !void {
                         try writer.writeAll(" -F");
                     } else if (std.mem.eql(u8, flag.long, "show")) {
                         try writer.writeAll(" -a '(__jake_recipes)'");
+                    } else if (std.mem.eql(u8, flag.long, "group")) {
+                        try writer.writeAll(" -a '(__jake_groups)'");
+                    } else if (std.mem.eql(u8, flag.long, "type")) {
+                        try writer.writeAll(" -a 'task file simple external'");
                     }
                     try writer.writeAll("\n");
                 },
@@ -767,6 +801,10 @@ pub fn generateFish(writer: anytype) !void {
                         try writer.writeAll(" -a 'bash zsh fish'");
                     } else if (std.mem.eql(u8, flag.long, "external")) {
                         try writer.writeAll(" -a 'make just'");
+                    } else if (std.mem.eql(u8, flag.long, "group")) {
+                        try writer.writeAll(" -a '(__jake_groups)'");
+                    } else if (std.mem.eql(u8, flag.long, "type")) {
+                        try writer.writeAll(" -a 'task file simple external'");
                     }
                     try writer.writeAll("\n");
                 },

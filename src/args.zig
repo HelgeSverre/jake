@@ -89,8 +89,13 @@ pub const flags = [_]Flag{
     .{ .short = 'l', .long = "list", .desc = "List available recipes", .category = "Output", .mutually_exclusive = "show" },
     .{ .short = 'a', .long = "all", .desc = "Show all recipes including hidden (use with -l)", .category = "Output" },
     .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)", .category = "Output" },
-    .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE", .category = "Output", .mutually_exclusive = "list" },
     .{ .short = null, .long = "summary", .desc = "Print recipe names (space-separated, for scripts)", .category = "Output" },
+    .{ .short = null, .long = "json", .desc = "Emit JSON for listing-style output", .category = "Output" },
+    .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE", .category = "Output", .mutually_exclusive = "list" },
+    .{ .short = null, .long = "group", .desc = "Filter recipes to a specific group", .takes_value = .required, .value_name = "GROUP", .category = "Output" },
+    .{ .short = null, .long = "filter", .desc = "Filter recipe names by glob pattern", .takes_value = .required, .value_name = "PATTERN", .category = "Output" },
+    .{ .short = null, .long = "type", .desc = "Filter recipes by type", .takes_value = .required, .value_name = "TYPE", .choices = &.{ "task", "file", "simple", "external" }, .category = "Output" },
+    .{ .short = null, .long = "groups", .desc = "List available group names", .category = "Output" },
     .{ .short = null, .long = "external", .desc = "Show only external recipes (optionally: make, just)", .takes_value = .optional, .value_name = "TYPE", .choices = &.{ "make", "just" }, .category = "Output", .negatable = true },
     // Execution
     .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing", .category = "Execution", .env = "JAKE_DRY_RUN", .aliases = &.{"dryrun"} },
@@ -194,6 +199,7 @@ pub fn validateFlags() void {
 
 // Trigger compile-time validation when this module is imported
 comptime {
+    @setEvalBranchQuota(5000);
     validateFlags();
 }
 
@@ -215,6 +221,11 @@ pub const Args = struct {
     recipe: ?[]const u8 = null,
     positional: []const []const u8 = &.{},
     summary: bool = false, // Print recipe names space-separated
+    json: bool = false, // Emit JSON for listing-style output
+    group: ?[]const u8 = null, // Filter recipes by group name
+    filter: ?[]const u8 = null, // Filter recipe names by glob pattern
+    recipe_type: ?[]const u8 = null, // Filter recipes by kind (task/file/simple/external)
+    groups: bool = false, // List available group names
     external: ?[]const u8 = null, // "make", "just", or null (show all external)
     external_enabled: bool = false, // True if --external was passed
     hide_externals: bool = false, // True if --no-external was passed
@@ -427,6 +438,10 @@ pub const Args = struct {
                     self.short = true;
                 } else if (std.mem.eql(u8, name, "summary")) {
                     self.summary = true;
+                } else if (std.mem.eql(u8, name, "json")) {
+                    self.json = true;
+                } else if (std.mem.eql(u8, name, "groups")) {
+                    self.groups = true;
                 } else if (std.mem.eql(u8, name, "install")) {
                     self.install_completions = true;
                 } else if (std.mem.eql(u8, name, "uninstall")) {
@@ -454,6 +469,13 @@ pub const Args = struct {
                     self.jakefile = value;
                 } else if (std.mem.eql(u8, name, "show")) {
                     self.show = value;
+                } else if (std.mem.eql(u8, name, "group")) {
+                    self.group = value;
+                } else if (std.mem.eql(u8, name, "filter")) {
+                    self.filter = value;
+                } else if (std.mem.eql(u8, name, "type")) {
+                    if (!isValidListType(value)) return error.InvalidValue;
+                    self.recipe_type = value;
                 } else if (std.mem.eql(u8, name, "port")) {
                     self.web_port = std.fmt.parseInt(u16, value, 10) catch {
                         return error.InvalidValue;
@@ -591,6 +613,15 @@ pub const Args = struct {
         if (self.list and self.show != null) {
             return .{ .err = error.MutuallyExclusive, .flag1 = "--list", .flag2 = "--show" };
         }
+        if (self.show != null) {
+            if (self.short) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--short" };
+            if (self.summary) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--summary" };
+            if (self.groups) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--groups" };
+            if (self.json) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--json" };
+            if (self.group != null) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--group" };
+            if (self.filter != null) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--filter" };
+            if (self.recipe_type != null) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--type" };
+        }
         if (self.check and !self.fmt) {
             return .{ .err = error.RequiredTogether, .flag1 = "--check", .flag2 = "--fmt" };
         }
@@ -676,6 +707,13 @@ fn isValidShell(s: []const u8) bool {
 
 fn isValidExternalType(s: []const u8) bool {
     return std.mem.eql(u8, s, "make") or std.mem.eql(u8, s, "just");
+}
+
+fn isValidListType(s: []const u8) bool {
+    return std.mem.eql(u8, s, "task") or
+        std.mem.eql(u8, s, "file") or
+        std.mem.eql(u8, s, "simple") or
+        std.mem.eql(u8, s, "external");
 }
 
 /// Check if a value is valid for a flag with choices
@@ -1279,6 +1317,31 @@ test "parse --summary flag" {
     try expect(args.summary == true);
 }
 
+test "parse --json flag" {
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--json" });
+    try expect(args.json == true);
+}
+
+test "parse --group with value" {
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--group", "dev" });
+    try expectEqualStrings("dev", args.group.?);
+}
+
+test "parse --filter with value" {
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--filter", "build*" });
+    try expectEqualStrings("build*", args.filter.?);
+}
+
+test "parse --type with value" {
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--type", "file" });
+    try expectEqualStrings("file", args.recipe_type.?);
+}
+
+test "parse --groups flag" {
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--groups" });
+    try expect(args.groups == true);
+}
+
 test "parse --completions bash" {
     const args = try Args.parse(testing.allocator, &.{ "jake", "--completions", "bash" });
     try expect(args.completions_enabled);
@@ -1335,6 +1398,11 @@ test "parse --completions=invalid rejects inline invalid shell value" {
 
 test "parse --external rejects invalid type value" {
     const result = Args.parse(testing.allocator, &.{ "jake", "--external", "ninja" });
+    try expectError(error.InvalidValue, result);
+}
+
+test "parse --type rejects invalid list type value" {
+    const result = Args.parse(testing.allocator, &.{ "jake", "--type", "make" });
     try expectError(error.InvalidValue, result);
 }
 
@@ -2004,6 +2072,16 @@ test "--list and --show cannot be used together" {
 
 test "-l and -s cannot be used together" {
     const result = Args.parse(testing.allocator, &.{ "jake", "-l", "-s", "build" });
+    try expectError(error.MutuallyExclusive, result);
+}
+
+test "--show and --json cannot be used together" {
+    const result = Args.parse(testing.allocator, &.{ "jake", "--show", "build", "--json" });
+    try expectError(error.MutuallyExclusive, result);
+}
+
+test "--show and --group cannot be used together" {
+    const result = Args.parse(testing.allocator, &.{ "jake", "--show", "build", "--group", "dev" });
     try expectError(error.MutuallyExclusive, result);
 }
 

@@ -2215,6 +2215,13 @@ jake task name=value             # With parameter
 jake task arg1 arg2              # Positional arguments ({{$1}}, {{$2}})
 
 jake -l, --list                  # List available tasks
+jake --summary                   # Space-separated recipe names
+jake -l --short                  # One recipe per line
+jake --json                      # JSON output for listing modes
+jake --group dev                 # Only recipes in the dev group
+jake --filter "build*"          # Recipe names matching a glob
+jake --type file                # Only file recipes
+jake --groups                   # List distinct group names
 jake -n, --dry-run               # Show commands without running
 jake -v, --verbose               # Verbose output
 jake -y, --yes                   # Auto-confirm prompts

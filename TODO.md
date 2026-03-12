@@ -202,20 +202,19 @@ Checks for these files in cwd (first match wins):
 
 ---
 
-- [ ] `--json` flag - Machine-readable output
-  - `--list --json` - recipes as JSON array
-  - `--dry-run --json` - execution plan as JSON
-  - `--vars --json` - resolved variables as JSON
+- [x] `--json` flag for listing output
+  - `--list --json` / `--summary --json` / `--groups --json` - machine-readable listing output
+  - [ ] `--dry-run --json` - execution plan as JSON
+  - [ ] `--vars --json` - resolved variables as JSON
 
 ---
 
 ### List Filtering
 
-- [ ] `--group GROUP` - Filter recipes to specified group (aka, show only "dev" commands with `jake --group dev`, etc.)
-- [ ] `--filter PATTERN` - Filter recipes by glob pattern: `jake --filter "test*"` shows all recipes starting with "
-      test"
-- [ ] `--type TYPE` - Filter recipes by type: `jake --type file` or `jake --type task` or `jake --type simple` (?)
-- [ ] `--groups` - List available group names
+- [x] `--group GROUP` - Filter recipes to specified group (aka, show only "dev" commands with `jake --group dev`, etc.)
+- [x] `--filter PATTERN` - Filter recipes by glob pattern: `jake --filter "test*"`
+- [x] `--type TYPE` - Filter recipes by type: `jake --type file`, `jake --type task`, `jake --type simple`, or `jake --type external`
+- [x] `--groups` - List available group names
 
 ---
 

@@ -84,7 +84,7 @@ Tab completion works for:
 
 - **Recipe names** - Dynamically loaded from your Jakefile
 - **CLI flags** - All options like `--list`, `--dry-run`, `--verbose`
-- **Flag values** - File paths for `-f/--jakefile`, shell names for `--completions`
+- **Flag values** - File paths for `-f/--jakefile`, shell names for `--completions`, group names for `--group`, and type values for `--type`
 
 ## Using Completions
 
@@ -100,6 +100,8 @@ jake --<TAB>        # Shows all available flags
 # Complete flag values
 jake --completions <TAB>    # → bash, zsh, fish
 jake -f <TAB>               # → file completion
+jake --group <TAB>          # → groups from the current Jakefile
+jake --type <TAB>           # → task, file, simple, external
 ```
 
 ## Machine-Readable Output

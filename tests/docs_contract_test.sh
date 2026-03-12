@@ -90,6 +90,7 @@ fi
 ACTIVE_DOCS=(
 	README.md
 	GUIDE.md
+	docs/TUTORIAL.md
 	CHANGELOG.md
 	site/src/content/docs/reference/cli.md
 	site/src/content/docs/reference/shell-completions.md
@@ -108,6 +109,11 @@ VERSION_OUTPUT="$(NO_COLOR=1 "$JAKE_BIN" --version | strip_ansi)"
 require_contains "help shows optional completions shell" "$HELP_OUTPUT" "--completions [SHELL]"
 require_contains "help shows external listing flag" "$HELP_OUTPUT" "--[no-]external [TYPE]"
 require_contains "help shows summary flag" "$HELP_OUTPUT" "--summary"
+require_contains "help shows json flag" "$HELP_OUTPUT" "--json"
+require_contains "help shows group flag" "$HELP_OUTPUT" "--group GROUP"
+require_contains "help shows filter flag" "$HELP_OUTPUT" "--filter PATTERN"
+require_contains "help shows type flag" "$HELP_OUTPUT" "--type TYPE"
+require_contains "help shows groups flag" "$HELP_OUTPUT" "--groups"
 require_contains "help shows web flag" "$HELP_OUTPUT" "--web"
 require_contains "help shows port flag" "$HELP_OUTPUT" "--port PORT"
 require_contains "help shows formatter check flag" "$HELP_OUTPUT" "--check"
@@ -122,6 +128,7 @@ require_no_match "active docs do not show standalone jake --dump" "jake --dump" 
 
 LIST_FIXTURE="$PROJECT_DIR/tests/e2e/fixtures/cli/list.jake"
 SHOW_FIXTURE="$PROJECT_DIR/tests/e2e/fixtures/cli/show.jake"
+FILTER_FIXTURE="$PROJECT_DIR/tests/e2e/fixtures/cli/filtering.jake"
 FORMAT_FIXTURE="$PROJECT_DIR/tests/e2e/fixtures/basic/hello.jake"
 EXTERNAL_FIXTURE="$PROJECT_DIR/tests/e2e/fixtures/external/nested/Jakefile"
 
@@ -136,6 +143,23 @@ require_contains "--list --short output includes build" "$SHORT_OUTPUT" "build"
 
 SUMMARY_OUTPUT="$(run_capture "documented --summary example succeeds" "$JAKE_BIN" -f "$LIST_FIXTURE" --summary)"
 require_contains "--summary output includes test" "$SUMMARY_OUTPUT" "test"
+
+GROUP_OUTPUT="$(run_capture "documented --group example succeeds" env NO_COLOR=1 "$JAKE_BIN" -f "$FILTER_FIXTURE" --group dev --list --short)"
+require_contains "--group output includes build" "$GROUP_OUTPUT" "build"
+require_contains "--group output includes test" "$GROUP_OUTPUT" "test"
+
+GROUPS_OUTPUT="$(run_capture "documented --groups example succeeds" env NO_COLOR=1 "$JAKE_BIN" -f "$FILTER_FIXTURE" --groups)"
+require_contains "--groups output includes assets" "$GROUPS_OUTPUT" "assets"
+require_contains "--groups output includes dev" "$GROUPS_OUTPUT" "dev"
+require_contains "--groups output includes prod" "$GROUPS_OUTPUT" "prod"
+
+JSON_OUTPUT="$(run_capture "documented --json example succeeds" env NO_COLOR=1 "$JAKE_BIN" -f "$FILTER_FIXTURE" --json)"
+require_contains "--json output includes build metadata" "$JSON_OUTPUT" "\"name\":\"build\""
+require_contains "--json output includes file recipe type" "$JSON_OUTPUT" "\"kind\":\"file\""
+
+SUMMARY_JSON_OUTPUT="$(run_capture "documented --summary --json example succeeds" env NO_COLOR=1 "$JAKE_BIN" -f "$FILTER_FIXTURE" --summary --json)"
+require_contains "--summary --json output includes build" "$SUMMARY_JSON_OUTPUT" "\"build\""
+require_contains "--summary --json output includes deploy" "$SUMMARY_JSON_OUTPUT" "\"deploy\""
 
 SHOW_OUTPUT="$(run_capture "documented --show example succeeds" env NO_COLOR=1 "$JAKE_BIN" -f "$SHOW_FIXTURE" --show build)"
 require_contains "--show output includes recipe header" "$SHOW_OUTPUT" "Recipe:"

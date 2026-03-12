@@ -306,18 +306,15 @@ pub fn main() !void {
         }
     };
 
-    // List recipes or run default if no recipe specified
-    // --short, --all, --external, --no-external imply listing (they're listing format/filter options)
-    if (args.list or args.short or args.all or args.external_enabled or args.hide_externals or (args.recipe == null and raw_args.len == 1)) {
-        executor.listRecipes(args.short, args.all, args.external, args.external_enabled, args.hide_externals);
-        return;
-    }
-
-    // Summary: space-separated recipe names for scripting/completions
-    if (args.summary) {
-        executor.printSummary();
-        return;
-    }
+    const list_options = jake.ListOptions{
+        .show_all = args.all,
+        .external_filter = args.external,
+        .external_only = args.external_enabled,
+        .hide_externals = args.hide_externals,
+        .group = args.group,
+        .name_filter = args.filter,
+        .recipe_type = args.recipe_type,
+    };
 
     // Show detailed recipe information
     if (args.show) |recipe_name| {
@@ -330,6 +327,110 @@ pub fn main() !void {
             std.process.exit(1);
         }
         return;
+    }
+
+    // Listing-style outputs
+    const listing_requested = args.list or
+        args.short or
+        args.summary or
+        args.groups or
+        args.all or
+        args.external_enabled or
+        args.hide_externals or
+        args.group != null or
+        args.filter != null or
+        args.recipe_type != null or
+        (args.recipe == null and (raw_args.len == 1 or args.json));
+
+    if (listing_requested) {
+        if (args.groups) {
+            if (args.json) {
+                executor.printGroupsJson(list_options) catch |err| {
+                    const stderr = getStderr();
+                    var buf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to render groups as JSON: {s}\n", .{@errorName(err)}) catch "error\n";
+                    stderr.writeAll(msg) catch {};
+                    std.process.exit(1);
+                };
+            } else {
+                executor.printGroups(list_options) catch |err| {
+                    const stderr = getStderr();
+                    var buf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to list groups: {s}\n", .{@errorName(err)}) catch "error\n";
+                    stderr.writeAll(msg) catch {};
+                    std.process.exit(1);
+                };
+            }
+            return;
+        }
+
+        if (args.short) {
+            if (args.json) {
+                executor.printRecipeNamesJson(list_options) catch |err| {
+                    const stderr = getStderr();
+                    var buf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to render recipe names as JSON: {s}\n", .{@errorName(err)}) catch "error\n";
+                    stderr.writeAll(msg) catch {};
+                    std.process.exit(1);
+                };
+            } else {
+                executor.printShort(list_options) catch |err| {
+                    const stderr = getStderr();
+                    var buf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to list recipe names: {s}\n", .{@errorName(err)}) catch "error\n";
+                    stderr.writeAll(msg) catch {};
+                    std.process.exit(1);
+                };
+            }
+            return;
+        }
+
+        if (args.summary) {
+            if (args.json) {
+                executor.printRecipeNamesJson(list_options) catch |err| {
+                    const stderr = getStderr();
+                    var buf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to render summary as JSON: {s}\n", .{@errorName(err)}) catch "error\n";
+                    stderr.writeAll(msg) catch {};
+                    std.process.exit(1);
+                };
+            } else {
+                executor.printSummary(list_options) catch |err| {
+                    const stderr = getStderr();
+                    var buf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to print summary: {s}\n", .{@errorName(err)}) catch "error\n";
+                    stderr.writeAll(msg) catch {};
+                    std.process.exit(1);
+                };
+            }
+            return;
+        }
+
+        if (args.json) {
+            executor.printRecipesJson(list_options) catch |err| {
+                const stderr = getStderr();
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to render recipe list as JSON: {s}\n", .{@errorName(err)}) catch "error\n";
+                stderr.writeAll(msg) catch {};
+                std.process.exit(1);
+            };
+            return;
+        }
+
+        executor.listRecipes(list_options) catch |err| {
+            const stderr = getStderr();
+            var buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to list recipes: {s}\n", .{@errorName(err)}) catch "error\n";
+            stderr.writeAll(msg) catch {};
+            std.process.exit(1);
+        };
+        return;
+    }
+
+    if (args.json) {
+        const stderr = getStderr();
+        stderr.writeAll(args_mod.ansi.err_prefix ++ "Option --json currently supports listing output only\n") catch {};
+        std.process.exit(1);
     }
 
     // Get recipe to run

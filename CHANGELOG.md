@@ -16,7 +16,13 @@ Target release: `0.8.0`
   - Shell completions now include `--no-X` variants for negatable flags (`--no-external`, `--no-verbose`, `--no-yes`)
   - Shell completions now include flag aliases (e.g., `--dryrun` for `--dry-run`)
   - Shell completions now include `--external` value choices (`make`, `just`)
+  - Shell completions now include dynamic group completion for `--group` and type choices for `--type`
   - Shell completions now skip hidden and deprecated flags
+
+- **Listing Output**
+  - Added `--json` for machine-readable listing output
+  - Added `--group`, `--filter`, `--type`, and `--groups` for recipe discovery and filtering
+  - Added E2E coverage for JSON listing output and the new listing/filter flags
 
 - **API Documentation**
   - Added `zig build docs` step to generate browsable HTML documentation via Zig's autodoc
@@ -77,6 +83,7 @@ Target release: `0.8.0`
   - Expanded `docs/CODE-REVIEW-CODEX.md` with a continuation handoff and current implementation status
   - Reconciled active CLI docs, README snippets, install docs, and guide examples with the current binary and flag set
   - Added a docs-contract release gate that validates representative documented commands against fixture Jakefiles
+  - Expanded the docs-contract gate to cover JSON listing output and the new recipe-filtering flags
 
 ### Fixed
 

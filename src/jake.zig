@@ -35,6 +35,7 @@ pub const webui = @import("webui.zig");
 pub const Lexer = lexer.Lexer;
 pub const Parser = parser.Parser;
 pub const Executor = executor.Executor;
+pub const ListOptions = executor.ListOptions;
 pub const Jakefile = parser.Jakefile;
 pub const JakefileIndex = jakefile_index.JakefileIndex;
 pub const ImportDirective = parser.ImportDirective;
