@@ -256,7 +256,7 @@ pub fn main() !void {
             stderr.writeAll(" " ++ args_mod.ansi.err_prefix ++ "no Jakefile found\n") catch {};
             stderr.writeAll("\n   ") catch {};
             stderr.writeAll(if (color.enabled) color_mod.codes.muted_gray else "") catch {};
-            stderr.writeAll("Searched: Jakefile, jakefile, Jakefile.jake") catch {};
+            stderr.writeAll("Searched: Jakefile in current and parent directories") catch {};
             stderr.writeAll(if (color.enabled) color_mod.codes.reset else "") catch {};
             stderr.writeAll("\n   ") catch {};
             stderr.writeAll(if (color.enabled) color_mod.codes.info_blue else "") catch {};

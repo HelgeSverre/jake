@@ -1114,13 +1114,15 @@ pub const Executor = struct {
     ) ExecuteError!void {
         // Context shared between main thread and watchdog, heap-allocated for safety
         const TimeoutContext = struct {
-            timeout_expired: std.atomic.Value(bool),
+            stop_requested: std.atomic.Value(bool),
+            timeout_fired: std.atomic.Value(bool),
             current_child: std.atomic.Value(?*std.process.Child),
             deadline_ms: i64,
 
             fn init(deadline: i64) @This() {
                 return .{
-                    .timeout_expired = std.atomic.Value(bool).init(false),
+                    .stop_requested = std.atomic.Value(bool).init(false),
+                    .timeout_fired = std.atomic.Value(bool).init(false),
                     .current_child = std.atomic.Value(?*std.process.Child).init(null),
                     .deadline_ms = deadline,
                 };
@@ -1129,11 +1131,11 @@ pub const Executor = struct {
 
         const WatchdogThread = struct {
             fn run(ctx: *TimeoutContext) void {
-                while (!ctx.timeout_expired.load(.acquire)) {
+                while (!ctx.stop_requested.load(.acquire)) {
                     const now = std.time.milliTimestamp();
                     if (now >= ctx.deadline_ms) {
                         // Timeout! Signal the child to terminate (don't wait - main thread does that)
-                        ctx.timeout_expired.store(true, .release);
+                        ctx.timeout_fired.store(true, .release);
                         if (ctx.current_child.load(.acquire)) |child| {
                             // Kill the entire process group (shell + children) via negative PID
                             if (builtin.os.tag != .windows) {
@@ -1174,11 +1176,11 @@ pub const Executor = struct {
         const result = self.executeCommandsWithTimeoutCheck(cmds, ctx);
 
         // Signal watchdog to stop and wait for it
-        ctx.timeout_expired.store(true, .release);
+        ctx.stop_requested.store(true, .release);
         watchdog.join();
 
-        // Check if we timed out
-        if (ctx.timeout_expired.load(.acquire) and result == ExecuteError.CommandFailed) {
+        // Only report a timeout if the watchdog actually observed the deadline.
+        if (ctx.timeout_fired.load(.acquire) and result == ExecuteError.CommandFailed) {
             self.print("{s}Recipe '{s}' exceeded timeout of {d}s\n", .{
                 self.color.errPrefix(),
                 recipe_name,
@@ -1212,7 +1214,7 @@ pub const Executor = struct {
 
         // Check if timeout already expired
         if (has_timeout) {
-            if (timeout_ctx.timeout_expired.load(.acquire)) {
+            if (timeout_ctx.timeout_fired.load(.acquire)) {
                 return ExecuteError.CommandFailed;
             }
         }
@@ -1247,7 +1249,7 @@ pub const Executor = struct {
 
             // Check timeout before each command
             if (has_timeout) {
-                if (timeout_ctx.timeout_expired.load(.acquire)) {
+                if (timeout_ctx.timeout_fired.load(.acquire)) {
                     return ExecuteError.CommandFailed;
                 }
             }

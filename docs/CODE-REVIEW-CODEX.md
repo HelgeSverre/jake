@@ -721,8 +721,38 @@ Recommended next step:
 
 - Reconcile the remaining docs and release process details in Phase 6 so the published examples and release checklist stay in sync with the built binary.
 
+## Handoff Update (2026-03-12, review closure)
+
+The remaining correctness and documentation follow-up items from this review have now been closed.
+
+Completed:
+
+- Timeout reporting no longer conflates watchdog shutdown with an actual deadline expiry. Ordinary command failures under `@timeout` are no longer mislabeled as timeout failures.
+- The "no Jakefile found" CLI message now matches the actual search behavior by reporting that Jake searched for `Jakefile` in the current and parent directories, instead of claiming support for additional filenames that are not probed.
+- E2E coverage now verifies both behaviors:
+  - fast commands under `@timeout` do not report a timeout
+  - ordinary failures under `@timeout` do not print `exceeded timeout`
+  - the no-Jakefile error output no longer mentions stale alternate filenames
+- The website documentation was further reconciled with the runtime after Phase 6:
+  - recipe-description examples now place `@description` / `@desc` before recipe definitions
+  - the directive reference no longer misclassifies `@description` as a recipe-body directive
+  - the shell completions reference now describes nearest-Jakefile discovery accurately
+  - the open-source release example now uses supported condition syntax and explains tag-derived version workflows
+
+Verification now includes:
+
+- `zig test src/executor.zig --test-filter "@timeout"`
+- `zig build`
+- `cd tests/e2e && ../../zig-out/bin/jake test-directives`
+- `cd tests/e2e && ../../zig-out/bin/jake test-traverse`
+- `bash ./tests/docs_contract_test.sh`
+
+Still open:
+
+- No blocker-level items from this review remain open. Future work is backlog-driven rather than review-mandated.
+
 ## Final Verdict
 
-Request changes.
+Review follow-up complete.
 
-Jake has a workable architecture at the top level, but the current implementation is carrying too many runtime variants with subtly different behavior. The main opportunity is not adding more features. It is consolidating semantics, making failure modes explicit, and turning the documented behavior back into an enforceable contract.
+Jake has a workable architecture at the top level, and the high-risk semantic-drift issues identified in this review have now been addressed across execution, watch mode, Web UI, external integration, parser/runtime robustness, CI coverage, Windows behavior, and documentation discipline. The remaining work is product backlog and release polish, not unresolved review debt.

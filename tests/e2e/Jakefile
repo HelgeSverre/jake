@@ -193,6 +193,17 @@ task test-directives:
     {{jake}} -f fixtures/directives/confirm.jake -n dangerous > {{out}} 2>&1
     grep -q "would run" {{out}}
     echo "  @confirm in dry-run mode .............................. PASS"
+    # @timeout on a fast task does not report a timeout
+    {{jake}} -f fixtures/directives/timeout.jake quick > {{out}} 2>&1
+    grep -q "Quick task" {{out}} && ! grep -q "exceeded timeout" {{out}}
+    echo "  @timeout does not misreport successful commands ....... PASS"
+    # Ordinary failures under @timeout are not mislabeled as timeouts
+    printf '@timeout 10s\ntask fail-fast:\n    python3 -c "import sys; sys.exit(1)"\n' > /tmp/jake-timeout-failure.jake
+    @ignore
+    {{jake}} -f /tmp/jake-timeout-failure.jake fail-fast > {{out}} 2>&1 || true
+    grep -q "command exited with code 1" {{out}} && ! grep -q "exceeded timeout" {{out}}
+    rm -f /tmp/jake-timeout-failure.jake
+    echo "  @timeout does not misreport normal failures ........... PASS"
 
 # ============================================================================
 # Hook Tests
@@ -478,7 +489,7 @@ task test-traverse:
     # Test: -f flag bypasses traversal
     JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm /tmp/jake-traverse-test/subdir/nested/Jakefile; (cd /tmp/jake-traverse-test/subdir/nested && "$JAKE_ABS" -f /tmp/jake-traverse-test/Jakefile hello > {{out}} 2>&1); grep -q "Found parent Jakefile" {{out}}; echo "  -f flag bypasses traversal ............................ PASS"
     # Test: shows proper error when no Jakefile found
-    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm -rf /tmp/jake-no-jakefile; mkdir -p /tmp/jake-no-jakefile; (cd /tmp/jake-no-jakefile && "$JAKE_ABS" hello > {{out}} 2>&1 || true); grep -q "No Jakefile found" {{out}}; grep -q "parent directories" {{out}}; echo "  Shows proper error when no Jakefile found ............. PASS"
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm -rf /tmp/jake-no-jakefile; mkdir -p /tmp/jake-no-jakefile; (cd /tmp/jake-no-jakefile && "$JAKE_ABS" hello > {{out}} 2>&1 || true); grep -q "No Jakefile found" {{out}}; grep -q "Searched: Jakefile in current and parent directories" {{out}}; ! grep -q "Jakefile.jake" {{out}}; echo "  Shows proper error when no Jakefile found ............. PASS"
     # Test: runs in Jakefile's directory (relative paths work)
     JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; printf 'task check-dir:\n    test -f Jakefile && echo "Running in Jakefile dir"\n' > /tmp/jake-traverse-test/Jakefile; (cd /tmp/jake-traverse-test/subdir/nested && "$JAKE_ABS" check-dir > {{out}} 2>&1); grep -q "Running in Jakefile dir" {{out}}; echo "  Runs in Jakefile directory (relative paths work) ...... PASS"
     # Cleanup
