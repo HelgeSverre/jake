@@ -143,6 +143,7 @@ pub const RuntimeContext = struct {
     color: color_mod.Color,
     theme: color_mod.Theme,
     cache_loaded: bool,
+    save_cache_on_deinit: bool,
 
     pub fn init(allocator: std.mem.Allocator) RuntimeContext {
         return .{
@@ -154,6 +155,7 @@ pub const RuntimeContext = struct {
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
             .cache_loaded = false,
+            .save_cache_on_deinit = true,
         };
     }
 
@@ -174,9 +176,11 @@ pub const RuntimeContext = struct {
     }
 
     pub fn deinit(self: *RuntimeContext) void {
-        self.cache.save() catch |err| {
-            printRuntimeWarning("failed to save cache", err);
-        };
+        if (self.save_cache_on_deinit) {
+            self.cache.save() catch |err| {
+                printRuntimeWarning("failed to save cache", err);
+            };
+        }
         self.cache.deinit();
         self.environment.deinit();
         self.hook_runner.deinit();
@@ -493,4 +497,25 @@ test "RuntimeContext.configure propagates dotenv load errors" {
         return;
     };
     return error.TestExpectedError;
+}
+
+test "RuntimeContext.deinit skips cache save when disabled" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    var runtime = RuntimeContext.init(std.testing.allocator);
+    runtime.save_cache_on_deinit = false;
+    runtime.deinit();
+
+    try std.testing.expectError(error.FileNotFound, std.fs.cwd().access(".jake/cache", .{}));
 }

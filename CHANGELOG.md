@@ -96,6 +96,7 @@ Target release: `0.8.0`
 - **Caching and Glob Handling**
   - Fixed `@cache` glob refresh so glob patterns update the cache entries for matched files instead of treating the glob itself as a literal path
   - Fixed relative glob expansion from the current working directory on macOS/Darwin
+  - Fixed read-only listing and `--show` flows to stop saving cache on teardown, avoiding spurious cache-permission warnings for non-mutating commands
 
 - **Watch Mode**
   - Fixed `--watch` to reparse Jakefile/import/external-build changes instead of rerunning a stale AST

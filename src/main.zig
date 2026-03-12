@@ -316,6 +316,12 @@ pub fn main() !void {
         .recipe_type = args.recipe_type,
     };
 
+    // Read-only flows do not mutate cache; suppress teardown save noise if the
+    // on-disk cache is currently unwritable.
+    if (args.show != null) {
+        jakefile_data.runtime.save_cache_on_deinit = false;
+    }
+
     // Show detailed recipe information
     if (args.show) |recipe_name| {
         if (!executor.showRecipe(recipe_name)) {
@@ -343,6 +349,7 @@ pub fn main() !void {
         (args.recipe == null and (raw_args.len == 1 or args.json));
 
     if (listing_requested) {
+        jakefile_data.runtime.save_cache_on_deinit = false;
         if (args.groups) {
             if (args.json) {
                 executor.printGroupsJson(list_options) catch |err| {
