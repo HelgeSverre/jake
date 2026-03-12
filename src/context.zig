@@ -28,6 +28,7 @@ pub const Context = struct {
     auto_yes: bool = false,
     watch_mode: bool = false,
     jobs: usize = 0, // 0 = sequential, >0 = parallel with N workers
+    allow_interactive_stdin: bool = true,
 
     // Color output configuration
     color: color_mod.Color,
@@ -269,6 +270,7 @@ test "Context.init creates default context" {
     try std.testing.expect(!ctx.verbose);
     try std.testing.expect(!ctx.auto_yes);
     try std.testing.expect(!ctx.watch_mode);
+    try std.testing.expect(ctx.allow_interactive_stdin);
     try std.testing.expectEqual(@as(usize, 0), ctx.jobs);
     try std.testing.expectEqual(@as(usize, 0), ctx.positional_args.len);
 }
@@ -277,9 +279,11 @@ test "Context fields can be set" {
     var ctx = Context.init();
     ctx.dry_run = true;
     ctx.verbose = true;
+    ctx.allow_interactive_stdin = false;
     ctx.jobs = 4;
     try std.testing.expect(ctx.dry_run);
     try std.testing.expect(ctx.verbose);
+    try std.testing.expect(!ctx.allow_interactive_stdin);
     try std.testing.expectEqual(@as(usize, 4), ctx.jobs);
 }
 

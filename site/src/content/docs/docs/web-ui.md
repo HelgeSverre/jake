@@ -39,6 +39,8 @@ Command output streams to the browser via WebSocket as it runs. No need to refre
 
 `@confirm` prompts are forwarded to the browser so you can approve or reject them without leaving the Web UI.
 
+Subprocess prompts are different: commands that try to read from stdin themselves, such as `npx` install prompts or other terminal-driven wizards, are not interactive in the Web UI. Browser-triggered runs disable child stdin so those commands fail instead of hanging indefinitely. Use tool-specific non-interactive flags such as `npx --yes`, or run those recipes from a terminal instead.
+
 ### Stop / Cancel
 
 Use the stop control in the browser to cancel the active run. Jake terminates the running command tree and reports the cancellation back through the normal task output and summary stream.
@@ -56,6 +58,7 @@ Web-triggered runs inherit the same execution settings as the CLI process that s
 - `@require` validation runs before execution starts
 - Recipe parameter values entered in the UI are forwarded as normal `name=value` arguments
 - `@confirm` prompts are handled interactively in the browser
+- Child-process stdin is disabled to avoid browser-triggered runs hanging on terminal-only prompts
 
 ### Recipe Browser
 

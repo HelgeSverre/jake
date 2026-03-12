@@ -549,6 +549,7 @@ pub const WebUIServer = struct {
         ctx.dry_run = self.base_context.dry_run or request.dry_run;
         ctx.auto_yes = self.base_context.auto_yes;
         ctx.watch_mode = false;
+        ctx.allow_interactive_stdin = false;
         ctx.color = color_mod.Color{ .enabled = false };
         ctx.positional_args = request.positional_args;
         ctx.cancellation_flag = &self.execution_running;
@@ -1680,6 +1681,7 @@ test "buildExecutionContext preserves cli settings and applies web overrides" {
     try std.testing.expect(ctx.verbose);
     try std.testing.expect(!ctx.auto_yes);
     try std.testing.expect(!ctx.watch_mode);
+    try std.testing.expect(!ctx.allow_interactive_stdin);
     try std.testing.expectEqual(@as(usize, 4), ctx.jobs);
     try std.testing.expect(!ctx.color.enabled);
     try std.testing.expectEqual(@as(usize, 1), ctx.positional_args.len);
@@ -1713,6 +1715,7 @@ test "buildExecutionContext enables interactive confirm transport when needed" {
     };
 
     const ctx = server.buildExecutionContext(&request);
+    try std.testing.expect(!ctx.allow_interactive_stdin);
     try std.testing.expect(ctx.confirm_callback != null);
     try std.testing.expect(ctx.confirm_callback_ctx == @as(*anyopaque, @ptrCast(&server)));
 }

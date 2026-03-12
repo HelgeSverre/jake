@@ -1518,6 +1518,9 @@ pub const Executor = struct {
         // Use Pipe if we have an output callback (web UI), otherwise Inherit for terminal
         const capture_output = self.ctx.hasOutputCallback();
         if (capture_output) {
+            if (!self.ctx.allow_interactive_stdin) {
+                child.stdin_behavior = .Ignore;
+            }
             child.stderr_behavior = .Pipe;
             child.stdout_behavior = .Pipe;
         } else {
@@ -1852,6 +1855,9 @@ pub const Executor = struct {
 
         // Set up stdio
         if (self.ctx.hasOutputCallback()) {
+            if (!self.ctx.allow_interactive_stdin) {
+                child.stdin_behavior = .Ignore;
+            }
             child.stdout_behavior = .Pipe;
             child.stderr_behavior = .Pipe;
         } else {

@@ -410,9 +410,9 @@ task build-highlighters:
     @needs npx
     mkdir -p site/public/libs
     # Minify prism-jake (index.js)
-    npx terser editors/prism-jake/index.js -o site/public/libs/prism-jake.min.js -c -m
+    npx --yes terser editors/prism-jake/index.js -o site/public/libs/prism-jake.min.js -c -m
     # Minify highlightjs-jake (src/languages/jake.js)
-    npx terser editors/highlightjs-jake/src/languages/jake.js -o site/public/libs/highlightjs-jake.min.js -c -m
+    npx --yes terser editors/highlightjs-jake/src/languages/jake.js -o site/public/libs/highlightjs-jake.min.js -c -m
     # Copy shiki grammar (JSON doesn't need minification)
     cp editors/shiki-jake/jake.tmLanguage.json site/public/libs/shiki-jake.tmLanguage.json
     echo "Built JS highlighter libs to site/public/libs/"

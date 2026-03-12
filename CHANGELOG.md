@@ -118,6 +118,7 @@ Target release: `0.8.0`
   - Fixed stale execution-thread ownership so completed Web UI runs are joined cleanly before the next run
   - Fixed automatic browser launch to skip headless/test contexts when `CI` or `JAKE_NO_BROWSER` is set
   - Styled the recipe-list scrollbar to better match the Web UI theme
+  - Fixed browser-triggered runs to disable child-process stdin so terminal-only prompts fail instead of hanging indefinitely
 
 - **Formatter**
   - Fixed formatter round-trips to keep variable values parseable by quoting canonicalized values and to avoid duplicating directive keywords like `@if`
