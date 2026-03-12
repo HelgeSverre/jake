@@ -28,6 +28,11 @@
       /* Colors - Border */
       --border-default: #27272a;
       --border-light: #3f3f46;
+      /* Scrollbars */
+      --scrollbar-track: rgba(255,255,255,.035);
+      --scrollbar-thumb: rgba(244,63,94,.28);
+      --scrollbar-thumb-hover: rgba(251,113,133,.5);
+      --scrollbar-thumb-active: rgba(244,63,94,.62);
       /* Spacing */
       --space-xs: 4px;
       --space-sm: 8px;
@@ -144,7 +149,41 @@
     }
     .search-input::placeholder { color: var(--text-muted); }
     .search-input:focus { border-color: var(--color-accent); }
-    .recipe-list { flex: 1; overflow-y: auto; padding: 4px; }
+    .recipe-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 4px 8px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+      scrollbar-gutter: stable;
+    }
+    .recipe-list::-webkit-scrollbar {
+      width: 12px;
+    }
+    .recipe-list::-webkit-scrollbar-track {
+      margin: 6px 0;
+      border-radius: var(--radius-full);
+      background: linear-gradient(180deg, transparent 0%, var(--scrollbar-track) 14%, var(--scrollbar-track) 86%, transparent 100%);
+    }
+    .recipe-list::-webkit-scrollbar-thumb {
+      min-height: 36px;
+      border: 3px solid transparent;
+      border-radius: var(--radius-full);
+      background: linear-gradient(180deg, rgba(251,113,133,.55) 0%, var(--scrollbar-thumb) 100%);
+      background-clip: padding-box;
+    }
+    .recipe-list:hover::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(251,113,133,.7) 0%, var(--scrollbar-thumb-hover) 100%);
+      background-clip: padding-box;
+    }
+    .recipe-list::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, rgba(251,113,133,.88) 0%, var(--scrollbar-thumb-hover) 100%);
+      background-clip: padding-box;
+    }
+    .recipe-list::-webkit-scrollbar-thumb:active {
+      background: linear-gradient(180deg, rgba(251,113,133,.96) 0%, var(--scrollbar-thumb-active) 100%);
+      background-clip: padding-box;
+    }
     .recipe-group { margin-bottom: 8px; }
     .recipe-group.collapsed .recipe { display: none; }
     .recipe-group-title {
