@@ -110,6 +110,10 @@ fn getSystemEnv(key: []const u8) ?[]const u8 {
 fn evaluateExists(args: []const u8, variables: *const std.StringHashMap([]const u8)) bool {
     const path = expandVariablesSimple(stripQuotes(std.mem.trim(u8, args, " \t")), variables);
 
+    // Empty path is never "existing"; some platforms (Windows) treat empty as "current dir"
+    // and would return true, which is surprising for `exists("")`.
+    if (path.len == 0) return false;
+
     std.fs.cwd().access(path, .{}) catch {
         return false;
     };

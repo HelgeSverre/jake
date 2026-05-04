@@ -1082,13 +1082,28 @@ test "watcher detects deleted files and reappearance once" {
 }
 
 fn expectWatchPattern(watcher: *Watcher, pattern: []const u8) !void {
+    // Normalize separators so the test passes on Windows (where stored patterns
+    // may use '\') as well as POSIX.
+    var pattern_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const normalized_pattern = normalizeForCompare(&pattern_buf, pattern) orelse return error.TestExpectedEqual;
     for (watcher.watch_patterns.items) |existing| {
-        if (std.mem.eql(u8, existing, pattern)) {
+        var existing_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const normalized_existing = normalizeForCompare(&existing_buf, existing) orelse continue;
+        if (std.mem.eql(u8, normalized_existing, normalized_pattern)) {
             return;
         }
     }
 
     return error.TestExpectedEqual;
+}
+
+fn normalizeForCompare(buf: []u8, path: []const u8) ?[]const u8 {
+    if (path.len > buf.len) return null;
+    @memcpy(buf[0..path.len], path);
+    for (buf[0..path.len]) |*c| {
+        if (c.* == '\\') c.* = '/';
+    }
+    return buf[0..path.len];
 }
 
 // --- Pattern feedback tests ---

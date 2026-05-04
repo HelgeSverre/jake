@@ -634,6 +634,11 @@ test "cache detects content change" {
         try std.testing.expect(!stale);
     }
 
+    // Sleep briefly so the rewrite gets a strictly newer mtime. Windows mtime
+    // resolution can collapse two writes inside a few-ms window onto the same
+    // timestamp, which would make isStale's mtime fast-path falsely say "fresh".
+    std.Thread.sleep(20 * std.time.ns_per_ms);
+
     // Modify the file
     {
         const file = try std.fs.cwd().createFile("test.txt", .{});
