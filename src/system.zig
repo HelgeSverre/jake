@@ -180,13 +180,33 @@ pub fn commandExists(cmd: []const u8) bool {
 
         for (candidates) |candidate| {
             const full_path = joinDirAndBase(allocator, dir, candidate) catch continue;
-            if (std.fs.accessAbsolute(full_path, .{})) |_| {
-                return true;
-            } else |_| {}
+            if (pathExistsForLookup(full_path)) return true;
         }
     }
 
     return false;
+}
+
+/// Existence check used during PATH and command lookup. On Windows we go directly
+/// through `GetFileAttributesW` because Zig's `std.fs.accessAbsolute` panics on
+/// `OBJECT_NAME_INVALID`, which Windows returns for plenty of real PATH entries
+/// (relative paths, mixed separators, malformed substrings). On POSIX we keep
+/// using the standard access call.
+fn pathExistsForLookup(path: []const u8) bool {
+    if (builtin.os.tag == .windows) return windowsPathExists(path);
+    if (std.fs.accessAbsolute(path, .{})) |_| return true else |_| return false;
+}
+
+extern "kernel32" fn GetFileAttributesW(lpFileName: [*:0]const u16) callconv(.winapi) u32;
+const INVALID_FILE_ATTRIBUTES_W: u32 = 0xFFFFFFFF;
+
+fn windowsPathExists(path: []const u8) bool {
+    var buf: [std.os.windows.PATH_MAX_WIDE]u16 = undefined;
+    const len = std.unicode.utf8ToUtf16Le(&buf, path) catch return false;
+    if (len >= buf.len) return false;
+    buf[len] = 0;
+    const wpath: [:0]const u16 = buf[0..len :0];
+    return GetFileAttributesW(wpath.ptr) != INVALID_FILE_ATTRIBUTES_W;
 }
 
 pub fn commandCandidatesOwned(
@@ -234,7 +254,9 @@ fn explicitPathExists(os_tag: std.Target.Os.Tag, raw_path: []const u8, pathext_o
     const candidates = commandCandidatesOwned(allocator, os_tag, raw_path, pathext_opt) catch return false;
     for (candidates) |candidate| {
         const normalized_candidate = normalizeSeparatorsOwned(allocator, candidate, std.fs.path.sep) catch continue;
-        if (isAbsolutePathForOs(os_tag, candidate)) {
+        if (builtin.os.tag == .windows) {
+            if (windowsPathExists(normalized_candidate)) return true;
+        } else if (isAbsolutePathForOs(os_tag, candidate)) {
             if (std.fs.accessAbsolute(normalized_candidate, .{})) |_| return true else |_| {}
         } else {
             if (std.fs.cwd().access(normalized_candidate, .{})) |_| return true else |_| {}
