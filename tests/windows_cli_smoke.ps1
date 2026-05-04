@@ -27,8 +27,12 @@ function Get-GitBashPath {
 }
 
 function Invoke-Jake {
+    # Note: parameter is named $Arguments (not $Args) because $Args is a PowerShell
+    # automatic variable. Declaring `param($Args)` does not actually bind the value
+    # to the declared parameter on invocation — `@Args` then splats empty and the
+    # external program is run with zero arguments.
     param(
-        [string[]] $Args,
+        [string[]] $Arguments,
         [string] $WorkingDirectory
     )
 
@@ -37,7 +41,7 @@ function Invoke-Jake {
     }
 
     try {
-        $output = & $script:jakeExe @Args 2>&1 | Out-String
+        $output = & $script:jakeExe @Arguments 2>&1 | Out-String
         return @{
             ExitCode = $LASTEXITCODE
             Output = $output.Trim()
@@ -99,32 +103,7 @@ try {
     $env:PATH = "$fakeBin;$($env:PATH)"
     $env:SHELL = Get-GitBashPath
 
-    # --- DEBUG: capture state and try multiple invocation patterns ---
-    Write-Host "DEBUG SHELL=$env:SHELL"
-    Write-Host "DEBUG jakeExe=$jakeExe"
-
-    $versionResult = Invoke-Jake -Args @("--version")
-    Write-Host "DEBUG --version exit=$($versionResult.ExitCode)"
-    Write-Host "DEBUG --version output=$($versionResult.Output)"
-
-    $completionResult = Invoke-Jake -Args @("--completions")
-    Write-Host "DEBUG --completions exit=$($completionResult.ExitCode)"
-    $completionPreview = if ($completionResult.Output.Length -gt 300) { $completionResult.Output.Substring(0, 300) } else { $completionResult.Output }
-    Write-Host "DEBUG --completions output (first 300 chars)=$completionPreview"
-
-    # Direct invocation, bypassing the Invoke-Jake wrapper, to rule out wrapper issues
-    $directOutput = & $jakeExe '--completions' 2>&1 | Out-String
-    Write-Host "DEBUG direct-invoke exit=$LASTEXITCODE"
-    $directPreview = if ($directOutput.Length -gt 300) { $directOutput.Substring(0, 300) } else { $directOutput }
-    Write-Host "DEBUG direct-invoke output (first 300 chars)=$directPreview"
-
-    # Explicit shell argument as fallback verification
-    $explicitResult = Invoke-Jake -Args @("--completions", "bash")
-    Write-Host "DEBUG --completions bash exit=$($explicitResult.ExitCode)"
-    $explicitPreview = if ($explicitResult.Output.Length -gt 200) { $explicitResult.Output.Substring(0, 200) } else { $explicitResult.Output }
-    Write-Host "DEBUG --completions bash output (first 200 chars)=$explicitPreview"
-    # --- END DEBUG ---
-
+    $completionResult = Invoke-Jake -Arguments @("--completions")
     Assert-Success -Result $completionResult -Label "completion auto-detect"
     Assert-Contains -Text $completionResult.Output -Needle "complete -F _jake jake" -Label "completion auto-detect"
 
@@ -152,25 +131,25 @@ task needs-relative:
     echo relative-ok
 '@ | Set-Content -Path $jakefilePath
 
-    $envResult = Invoke-Jake -Args @("-f", $jakefilePath, "env-check") -WorkingDirectory $tempRoot
+    $envResult = Invoke-Jake -Arguments @("-f", $jakefilePath, "env-check") -WorkingDirectory $tempRoot
     Assert-Success -Result $envResult -Label "env(USERPROFILE) condition"
     Assert-Contains -Text $envResult.Output -Needle "env-ok" -Label "env(USERPROFILE) condition"
 
-    $homeResult = Invoke-Jake -Args @("-f", $jakefilePath, "home-check") -WorkingDirectory $tempRoot
+    $homeResult = Invoke-Jake -Arguments @("-f", $jakefilePath, "home-check") -WorkingDirectory $tempRoot
     Assert-Success -Result $homeResult -Label "home() function"
     if ($env:USERPROFILE) {
         Assert-Contains -Text $homeResult.Output -Needle $env:USERPROFILE -Label "home() function"
     }
 
-    $shellResult = Invoke-Jake -Args @("-f", $jakefilePath, "shell-check") -WorkingDirectory $tempRoot
+    $shellResult = Invoke-Jake -Arguments @("-f", $jakefilePath, "shell-check") -WorkingDirectory $tempRoot
     Assert-Success -Result $shellResult -Label "shell_config() function"
     Assert-Contains -Text $shellResult.Output -Needle ".bashrc" -Label "shell_config() function"
 
-    $pathNeedsResult = Invoke-Jake -Args @("-f", $jakefilePath, "needs-path") -WorkingDirectory $tempRoot
+    $pathNeedsResult = Invoke-Jake -Arguments @("-f", $jakefilePath, "needs-path") -WorkingDirectory $tempRoot
     Assert-Success -Result $pathNeedsResult -Label "@needs PATH lookup"
     Assert-Contains -Text $pathNeedsResult.Output -Needle "path-ok" -Label "@needs PATH lookup"
 
-    $relativeNeedsResult = Invoke-Jake -Args @("-f", $jakefilePath, "needs-relative") -WorkingDirectory $tempRoot
+    $relativeNeedsResult = Invoke-Jake -Arguments @("-f", $jakefilePath, "needs-relative") -WorkingDirectory $tempRoot
     Assert-Success -Result $relativeNeedsResult -Label "@needs relative lookup"
     Assert-Contains -Text $relativeNeedsResult.Output -Needle "relative-ok" -Label "@needs relative lookup"
 }
