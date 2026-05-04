@@ -145,6 +145,15 @@ task needs-relative:
     Assert-Success -Result $shellResult -Label "shell_config() function"
     Assert-Contains -Text $shellResult.Output -Needle ".bashrc" -Label "shell_config() function"
 
+    # --- DEBUG: state going into @needs PATH lookup ---
+    Write-Host "DEBUG fakeBin=$fakeBin"
+    Write-Host "DEBUG fake-tool exists=$(Test-Path (Join-Path $fakeBin 'fake-tool.cmd'))"
+    Write-Host "DEBUG PATHEXT=$env:PATHEXT"
+    Write-Host "DEBUG PATH first-entry=$($env:PATH.Split(';')[0])"
+    $whereResult = & where.exe fake-tool 2>&1 | Out-String
+    Write-Host "DEBUG where.exe fake-tool=$whereResult"
+    # --- END DEBUG ---
+
     $pathNeedsResult = Invoke-Jake -Arguments @("-f", $jakefilePath, "needs-path") -WorkingDirectory $tempRoot
     Assert-Success -Result $pathNeedsResult -Label "@needs PATH lookup"
     Assert-Contains -Text $pathNeedsResult.Output -Needle "path-ok" -Label "@needs PATH lookup"
