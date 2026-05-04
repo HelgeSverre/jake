@@ -99,7 +99,32 @@ try {
     $env:PATH = "$fakeBin;$($env:PATH)"
     $env:SHELL = Get-GitBashPath
 
+    # --- DEBUG: capture state and try multiple invocation patterns ---
+    Write-Host "DEBUG SHELL=$env:SHELL"
+    Write-Host "DEBUG jakeExe=$jakeExe"
+
+    $versionResult = Invoke-Jake -Args @("--version")
+    Write-Host "DEBUG --version exit=$($versionResult.ExitCode)"
+    Write-Host "DEBUG --version output=$($versionResult.Output)"
+
     $completionResult = Invoke-Jake -Args @("--completions")
+    Write-Host "DEBUG --completions exit=$($completionResult.ExitCode)"
+    $completionPreview = if ($completionResult.Output.Length -gt 300) { $completionResult.Output.Substring(0, 300) } else { $completionResult.Output }
+    Write-Host "DEBUG --completions output (first 300 chars)=$completionPreview"
+
+    # Direct invocation, bypassing the Invoke-Jake wrapper, to rule out wrapper issues
+    $directOutput = & $jakeExe '--completions' 2>&1 | Out-String
+    Write-Host "DEBUG direct-invoke exit=$LASTEXITCODE"
+    $directPreview = if ($directOutput.Length -gt 300) { $directOutput.Substring(0, 300) } else { $directOutput }
+    Write-Host "DEBUG direct-invoke output (first 300 chars)=$directPreview"
+
+    # Explicit shell argument as fallback verification
+    $explicitResult = Invoke-Jake -Args @("--completions", "bash")
+    Write-Host "DEBUG --completions bash exit=$($explicitResult.ExitCode)"
+    $explicitPreview = if ($explicitResult.Output.Length -gt 200) { $explicitResult.Output.Substring(0, 200) } else { $explicitResult.Output }
+    Write-Host "DEBUG --completions bash output (first 200 chars)=$explicitPreview"
+    # --- END DEBUG ---
+
     Assert-Success -Result $completionResult -Label "completion auto-detect"
     Assert-Contains -Text $completionResult.Output -Needle "complete -F _jake jake" -Label "completion auto-detect"
 
