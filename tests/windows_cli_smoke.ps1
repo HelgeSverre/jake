@@ -154,6 +154,7 @@ task needs-relative:
     Write-Host "DEBUG where.exe fake-tool=$whereResult"
     $jakeZdbg = Join-Path $tempRoot "zdbg.txt"
     $env:JAKE_ZDEBUG_FILE = $jakeZdbg
+    $env:JAKE_ZPROBE_PATH = Join-Path $fakeBin 'fake-tool.cmd'
     # --- END DEBUG ---
 
     $pathNeedsResult = Invoke-Jake -Arguments @("-f", $jakefilePath, "needs-path") -WorkingDirectory $tempRoot

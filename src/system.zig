@@ -182,13 +182,35 @@ pub fn commandExists(cmd: []const u8) bool {
                 defer dbg_file.close();
                 dbg_file.seekFromEnd(0) catch {};
                 const probes = [_][]const u8{ "C:\\Windows", "C:\\Windows\\System32\\cmd.exe", "C:\\does\\not\\exist.xyz" };
-                var pbuf: [512]u8 = undefined;
+                var pbuf: [4096]u8 = undefined;
                 for (probes) |p| {
                     const r = windowsPathExists(p);
                     if (std.fmt.bufPrint(&pbuf, "PROBE '{s}' exists={}\n", .{ p, r })) |m| {
                         dbg_file.writeAll(m) catch {};
                     } else |_| {}
                 }
+                // Probe an explicit caller-supplied path in both case variants to test case-sensitivity behavior.
+                if (std.process.getEnvVarOwned(std.heap.page_allocator, "JAKE_ZPROBE_PATH")) |zpath| {
+                    defer std.heap.page_allocator.free(zpath);
+                    const r1 = windowsPathExists(zpath);
+                    if (std.fmt.bufPrint(&pbuf, "ZPROBE '{s}' exists={}\n", .{ zpath, r1 })) |m| {
+                        dbg_file.writeAll(m) catch {};
+                    } else |_| {}
+                    // Build an uppercase-extension variant: replace last 4 chars with uppercase (assumes ".cmd").
+                    if (zpath.len >= 4) {
+                        var upper_buf: [4096]u8 = undefined;
+                        if (zpath.len < upper_buf.len) {
+                            @memcpy(upper_buf[0..zpath.len], zpath);
+                            const tail = upper_buf[zpath.len - 4 .. zpath.len];
+                            for (tail) |*c| c.* = std.ascii.toUpper(c.*);
+                            const upper_path = upper_buf[0..zpath.len];
+                            const r2 = windowsPathExists(upper_path);
+                            if (std.fmt.bufPrint(&pbuf, "ZPROBE '{s}' exists={}\n", .{ upper_path, r2 })) |m| {
+                                dbg_file.writeAll(m) catch {};
+                            } else |_| {}
+                        }
+                    }
+                } else |_| {}
             } else |_| {}
         } else |_| {}
     }
