@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-05-04
+
+Windows fix-up release. Brings Windows CI from fully red to fully green and unblocks the build/parse pipeline on Windows checkouts.
+
 ### Fixed
 
 - **Lexer**: accept CRLF line endings so Windows checkouts of Jakefiles parse correctly (previously a bare `\r` on a blank line emitted an invalid token)
@@ -14,12 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Path lookup on Windows**: `commandExists` no longer panics on `OBJECT_NAME_INVALID` from `accessAbsolute` — uses `GetFileAttributesW` directly
 - **Hooks**: `@pre`, `@post`, and `@on_error` execution now uses the platform-default shell (`cmd.exe /C` on Windows, `/bin/sh -c` elsewhere), fixing hooks on Windows
 - **Recipe execution**: command spawning falls back to the platform-default shell when no `@shell` directive is set, fixing recipe execution on Windows where `/bin/sh` is unavailable
+- **Conditions**: `exists("")` now returns false on all platforms (was returning true on Windows because `cwd().access("")` treats empty as the current directory)
 - **Version**: `--version` stays semver-shaped on shallow checkouts that lack tags (e.g. CI with `fetch-depth: 1`); falls back to `0.0.0-dev-{hash}` instead of a bare commit SHA
 
 ### Internal
 
 - Memory Check CI workflow now uses Zig 0.15.2 (was stuck on 0.14.0 and failing to compile current source)
 - Skip Windows-specific PATHEXT test on non-Windows hosts so the Linux test job stays green
+- Switch formatter and upgrade verifyChecksum tests from hardcoded `/tmp/...` paths to `std.testing.tmpDir` so they run on Windows
+- Normalize path separators when comparing watch patterns in tests (Windows stores `\`, POSIX stores `/`)
+- Sleep 20ms before rewriting the file in `cache detects content change` test so mtime moves forward (Windows mtime resolution can collapse fast consecutive writes)
+- Skip the parallel `@confirm` parity test on Windows; the test asserts POSIX shell behavior that doesn't survive `cmd.exe`'s `echo` trailing-space quirk
+- Rename the `Invoke-Jake -Args` parameter in the Windows smoke test wrapper to avoid PowerShell's `$Args` automatic-variable shadowing (the wrapper was silently passing zero args)
 
 ## [0.8.0] - 2026-03-12
 
