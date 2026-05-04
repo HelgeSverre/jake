@@ -180,7 +180,14 @@ pub fn commandExists(cmd: []const u8) bool {
 
         for (candidates) |candidate| {
             const full_path = joinDirAndBase(allocator, dir, candidate) catch continue;
-            if (pathExistsForLookup(full_path)) return true;
+            const exists = pathExistsForLookup(full_path);
+            if (builtin.os.tag == .windows) {
+                var dbgbuf: [4096]u8 = undefined;
+                if (std.fmt.bufPrint(&dbgbuf, "ZDEBUG cmdExists try='{s}' exists={}\n", .{ full_path, exists })) |msg| {
+                    compat.getStdErr().writeAll(msg) catch {};
+                } else |_| {}
+            }
+            if (exists) return true;
         }
     }
 
