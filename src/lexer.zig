@@ -173,8 +173,10 @@ pub const Lexer = struct {
             }
         }
 
-        // Skip non-significant whitespace (spaces and tabs not at line start)
-        while (self.index < self.source.len and (self.source[self.index] == ' ' or self.source[self.index] == '\t')) {
+        // Skip non-significant whitespace (spaces, tabs, and bare CRs not at line start).
+        // CR handling lets the lexer accept CRLF-terminated Jakefiles (Windows checkouts) —
+        // the `\n` after `\r` then drives line-tracking via the `'\n'` case below.
+        while (self.index < self.source.len and (self.source[self.index] == ' ' or self.source[self.index] == '\t' or self.source[self.index] == '\r')) {
             self.advanceIndex();
         }
 
@@ -827,6 +829,21 @@ test "lexer newlines only" {
 
     try std.testing.expectEqual(Token.Tag.newline, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.newline, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.newline, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
+}
+
+test "lexer accepts CRLF line endings" {
+    // Windows checkouts produce CRLF — bare CR before \n must not produce invalid tokens.
+    const source = "task foo\r\n\r\n@dotenv\r\n";
+    var lex = Lexer.init(source);
+
+    try std.testing.expectEqual(Token.Tag.kw_task, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.ident, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.newline, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.newline, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.kw_dotenv, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.newline, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
 }
