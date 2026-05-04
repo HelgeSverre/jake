@@ -229,9 +229,24 @@ pub fn commandExists(cmd: []const u8) bool {
                         defer dbg_file.close();
                         dbg_file.seekFromEnd(0) catch {};
                         var dbgbuf: [4096]u8 = undefined;
-                        if (std.fmt.bufPrint(&dbgbuf, "try='{s}' exists={}\n", .{ full_path, exists })) |msg| {
+                        if (std.fmt.bufPrint(&dbgbuf, "try len={d} exists={} hex='", .{ full_path.len, exists })) |msg| {
                             dbg_file.writeAll(msg) catch {};
                         } else |_| {}
+                        // Dump path bytes as hex pairs so we see hidden chars (BOM, nulls, trailing whitespace).
+                        var hexbuf: [3]u8 = undefined;
+                        for (full_path) |byte| {
+                            if (std.fmt.bufPrint(&hexbuf, "{x:0>2}", .{byte})) |hx| {
+                                dbg_file.writeAll(hx) catch {};
+                            } else |_| {}
+                        }
+                        dbg_file.writeAll("' tail='") catch {};
+                        // Also dump the last 8 bytes as ASCII (with ? for non-printable) so it's easy to spot.
+                        const tail_start = if (full_path.len > 8) full_path.len - 8 else 0;
+                        for (full_path[tail_start..]) |byte| {
+                            const safe: u8 = if (byte >= 0x20 and byte < 0x7f) byte else '?';
+                            dbg_file.writeAll(&[_]u8{safe}) catch {};
+                        }
+                        dbg_file.writeAll("'\n") catch {};
                     } else |_| {}
                 } else |_| {}
             }
