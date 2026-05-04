@@ -17,7 +17,6 @@ const glob_mod = @import("glob.zig");
 const color_mod = @import("color.zig");
 const progress_mod = @import("progress.zig");
 const context_mod = @import("context.zig");
-const system = @import("system.zig");
 const RuntimeContext = context_mod.RuntimeContext;
 const Context = context_mod.Context;
 
