@@ -1710,7 +1710,8 @@ test "parser strips trailing CR from command lines (CRLF source)" {
 
     const needs_line = recipe.commands[0].line;
     try std.testing.expect(std.mem.indexOfScalar(u8, needs_line, '\r') == null);
-    try std.testing.expectEqualStrings("@needs fake-tool", needs_line);
+    // The `@` is consumed as a separate token; the captured body starts at `needs`.
+    try std.testing.expectEqualStrings("needs fake-tool", needs_line);
 
     const echo_line = recipe.commands[1].line;
     try std.testing.expect(std.mem.indexOfScalar(u8, echo_line, '\r') == null);
