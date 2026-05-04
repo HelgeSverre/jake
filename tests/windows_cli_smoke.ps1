@@ -152,9 +152,19 @@ task needs-relative:
     Write-Host "DEBUG PATH first-entry=$($env:PATH.Split(';')[0])"
     $whereResult = & where.exe fake-tool 2>&1 | Out-String
     Write-Host "DEBUG where.exe fake-tool=$whereResult"
+    $jakeZdbg = Join-Path $tempRoot "zdbg.txt"
+    $env:JAKE_ZDEBUG_FILE = $jakeZdbg
     # --- END DEBUG ---
 
     $pathNeedsResult = Invoke-Jake -Arguments @("-f", $jakefilePath, "needs-path") -WorkingDirectory $tempRoot
+
+    if (Test-Path $jakeZdbg) {
+        Write-Host "DEBUG zdbg file contents:"
+        Get-Content $jakeZdbg | ForEach-Object { Write-Host "  $_" }
+    } else {
+        Write-Host "DEBUG zdbg file not created"
+    }
+    Remove-Item Env:JAKE_ZDEBUG_FILE -ErrorAction SilentlyContinue
     Assert-Success -Result $pathNeedsResult -Label "@needs PATH lookup"
     Assert-Contains -Text $pathNeedsResult.Output -Needle "path-ok" -Label "@needs PATH lookup"
 

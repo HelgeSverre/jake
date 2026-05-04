@@ -182,9 +182,16 @@ pub fn commandExists(cmd: []const u8) bool {
             const full_path = joinDirAndBase(allocator, dir, candidate) catch continue;
             const exists = pathExistsForLookup(full_path);
             if (builtin.os.tag == .windows) {
-                var dbgbuf: [4096]u8 = undefined;
-                if (std.fmt.bufPrint(&dbgbuf, "ZDEBUG cmdExists try='{s}' exists={}\n", .{ full_path, exists })) |msg| {
-                    compat.getStdErr().writeAll(msg) catch {};
+                if (std.process.getEnvVarOwned(std.heap.page_allocator, "JAKE_ZDEBUG_FILE")) |dbg_path| {
+                    defer std.heap.page_allocator.free(dbg_path);
+                    if (std.fs.createFileAbsolute(dbg_path, .{ .truncate = false })) |dbg_file| {
+                        defer dbg_file.close();
+                        dbg_file.seekFromEnd(0) catch {};
+                        var dbgbuf: [4096]u8 = undefined;
+                        if (std.fmt.bufPrint(&dbgbuf, "try='{s}' exists={}\n", .{ full_path, exists })) |msg| {
+                            dbg_file.writeAll(msg) catch {};
+                        } else |_| {}
+                    } else |_| {}
                 } else |_| {}
             }
             if (exists) return true;
