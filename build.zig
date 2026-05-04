@@ -1,16 +1,22 @@
 const std = @import("std");
 
 /// Get version from git tags using `git describe`
-/// Returns semver like "0.4.0" at a tag, or "0.4.0-5-g1234abc" for dev builds
+/// Returns semver like "0.4.0" at a tag, "0.4.0-5-g1234abc" after a tag,
+/// or "0.0.0-dev-1234abc" when no tag is reachable (e.g. shallow CI checkouts).
 fn getGitVersion(b: *std.Build) []const u8 {
     var code: u8 = 0;
     const result = b.runAllowFail(&.{ "git", "describe", "--tags", "--always" }, &code, .Ignore) catch {
         return "0.0.0-unknown";
     };
     const trimmed = std.mem.trim(u8, result, "\n\r ");
+    if (trimmed.len == 0) return "0.0.0-unknown";
     // Strip leading 'v' if present (v0.4.0 -> 0.4.0)
-    if (trimmed.len > 0 and trimmed[0] == 'v') {
+    if (trimmed[0] == 'v') {
         return trimmed[1..];
+    }
+    // No tag reachable — describe fell back to a bare SHA. Wrap so output stays semver-shaped.
+    if (std.mem.indexOfScalar(u8, trimmed, '.') == null) {
+        return std.fmt.allocPrint(b.allocator, "0.0.0-dev-{s}", .{trimmed}) catch "0.0.0-unknown";
     }
     return trimmed;
 }
