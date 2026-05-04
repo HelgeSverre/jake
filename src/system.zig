@@ -174,6 +174,25 @@ pub fn commandExists(cmd: []const u8) bool {
     const allocator = arena.allocator();
     const candidates = commandCandidatesOwned(allocator, builtin.os.tag, cmd, pathext) catch return false;
 
+    // ZDEBUG: probe two known-existing system paths once to verify the binding works
+    if (builtin.os.tag == .windows) {
+        if (std.process.getEnvVarOwned(std.heap.page_allocator, "JAKE_ZDEBUG_FILE")) |dbg_path| {
+            defer std.heap.page_allocator.free(dbg_path);
+            if (std.fs.createFileAbsolute(dbg_path, .{ .truncate = false })) |dbg_file| {
+                defer dbg_file.close();
+                dbg_file.seekFromEnd(0) catch {};
+                const probes = [_][]const u8{ "C:\\Windows", "C:\\Windows\\System32\\cmd.exe", "C:\\does\\not\\exist.xyz" };
+                var pbuf: [512]u8 = undefined;
+                for (probes) |p| {
+                    const r = windowsPathExists(p);
+                    if (std.fmt.bufPrint(&pbuf, "PROBE '{s}' exists={}\n", .{ p, r })) |m| {
+                        dbg_file.writeAll(m) catch {};
+                    } else |_| {}
+                }
+            } else |_| {}
+        } else |_| {}
+    }
+
     var path_iter = std.mem.splitScalar(u8, path_env, pathListSeparator(builtin.os.tag));
     while (path_iter.next()) |dir| {
         if (dir.len == 0) continue;
