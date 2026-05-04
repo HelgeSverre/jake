@@ -10,6 +10,7 @@ const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
 const parallel_mod = @import("parallel.zig");
 const env_mod = @import("env.zig");
 const hooks_mod = @import("hooks.zig");
+const system = @import("system.zig");
 const prompt_mod = @import("prompt.zig");
 const functions = @import("functions.zig");
 const glob_mod = @import("glob.zig");
@@ -1510,10 +1511,15 @@ pub const Executor = struct {
             self.print("   {s}jake: executing '{s}'{s}\n", .{ self.color.muted(), line, self.color.reset() });
         }
 
-        const shell_cmd = if (self.current_shell) |shell| shell else "/bin/sh";
+        // If the recipe specified @shell <name>, use that with sh-style `-c`.
+        // Otherwise fall back to the platform default so commands run on Windows too.
+        const inv: system.ShellInvocation = if (self.current_shell) |shell|
+            .{ .shell = shell, .flag = "-c" }
+        else
+            system.defaultShellInvocation();
 
         var child = std.process.Child.init(
-            &[_][]const u8{ shell_cmd, "-c", line },
+            &[_][]const u8{ inv.shell, inv.flag, line },
             self.allocator,
         );
 
