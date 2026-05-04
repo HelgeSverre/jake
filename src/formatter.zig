@@ -1418,15 +1418,13 @@ test "roundtrip: complex jakefile remains parseable" {
 test "formatFile: writes formatted output to file" {
     const allocator = std.testing.allocator;
 
-    // Create a temp file with unformatted content
-    const tmp_path = "/tmp/jake-formatter-test.jake";
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
     const unformatted = "x=\"1\"\ny=\"2\"\ntask build:\n    echo hi\n";
+    try tmp.dir.writeFile(.{ .sub_path = "fmt.jake", .data = unformatted });
 
-    std.fs.cwd().writeFile(.{ .sub_path = tmp_path, .data = unformatted }) catch |err| {
-        std.debug.print("Failed to write test file: {any}\n", .{err});
-        return error.TestUnexpectedResult;
-    };
-    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath("fmt.jake", &path_buf);
 
     // Format and write
     const result = try formatFile(allocator, tmp_path, false);
@@ -1447,14 +1445,13 @@ test "formatFile: writes formatted output to file" {
 test "formatFile: check_only does not modify file" {
     const allocator = std.testing.allocator;
 
-    const tmp_path = "/tmp/jake-formatter-check-test.jake";
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
     const original = "x=\"1\"\ntask build:\n    echo hi\n";
+    try tmp.dir.writeFile(.{ .sub_path = "fmt-check.jake", .data = original });
 
-    std.fs.cwd().writeFile(.{ .sub_path = tmp_path, .data = original }) catch |err| {
-        std.debug.print("Failed to write test file: {any}\n", .{err});
-        return error.TestUnexpectedResult;
-    };
-    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath("fmt-check.jake", &path_buf);
 
     // Format with check_only=true
     const result = try formatFile(allocator, tmp_path, true);

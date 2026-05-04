@@ -806,14 +806,12 @@ test "verifyChecksum fails on non-existent file" {
 }
 
 test "verifyChecksum returns false on mismatched hash" {
-    // Create a temp file with known content
-    const tmp_path = "/tmp/jake-test-checksum-mismatch";
-    {
-        const file = try std.fs.cwd().createFile(tmp_path, .{});
-        defer file.close();
-        try file.writeAll("test content for checksum");
-    }
-    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "checksum-mismatch", .data = "test content for checksum" });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath("checksum-mismatch", &path_buf);
 
     // Use a wrong checksum (all zeros)
     const wrong_checksum: [64]u8 = .{'0'} ** 64;
@@ -822,15 +820,13 @@ test "verifyChecksum returns false on mismatched hash" {
 }
 
 test "verifyChecksum returns true on correct hash" {
-    // Create a temp file with known content
-    const tmp_path = "/tmp/jake-test-checksum-correct";
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
     const content = "hello world";
-    {
-        const file = try std.fs.cwd().createFile(tmp_path, .{});
-        defer file.close();
-        try file.writeAll(content);
-    }
-    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+    try tmp.dir.writeFile(.{ .sub_path = "checksum-correct", .data = content });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath("checksum-correct", &path_buf);
 
     // SHA256 of "hello world" is known
     const correct_checksum = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9".*;
@@ -839,12 +835,12 @@ test "verifyChecksum returns true on correct hash" {
 }
 
 test "verifyChecksum handles empty file" {
-    const tmp_path = "/tmp/jake-test-checksum-empty";
-    {
-        const file = try std.fs.cwd().createFile(tmp_path, .{});
-        file.close();
-    }
-    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "checksum-empty", .data = "" });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath("checksum-empty", &path_buf);
 
     // SHA256 of empty string
     const empty_checksum = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".*;
