@@ -891,7 +891,7 @@ pub const Parser = struct {
                 self.advance();
             }
             const cmd_end = self.current.loc.start;
-            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t");
+            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
 
             const hook = Hook{
                 .command = command,
@@ -926,7 +926,7 @@ pub const Parser = struct {
                 self.advance();
             }
             const cmd_end = self.current.loc.start;
-            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t");
+            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
 
             const hook = Hook{
                 .command = command,
@@ -985,7 +985,7 @@ pub const Parser = struct {
                 self.advance();
             }
             const cmd_end = self.current.loc.start;
-            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t");
+            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
 
             const hook = Hook{
                 .command = command,
@@ -1156,7 +1156,7 @@ pub const Parser = struct {
                         self.advance();
                     }
                     const cmd_end = self.current.loc.start;
-                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t");
+                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
 
                     const hook = Hook{
                         .command = command,
@@ -1202,7 +1202,7 @@ pub const Parser = struct {
                     }
                     const cmd_end = self.current.loc.start;
                     commands.append(self.allocator, .{
-                        .line = self.source[cmd_start..cmd_end],
+                        .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
                         .directive = null,
                     }) catch return ParseError.OutOfMemory;
                     if (self.current.tag == .newline) self.advance();
@@ -1217,7 +1217,7 @@ pub const Parser = struct {
             }
             const cmd_end = self.current.loc.start;
             commands.append(self.allocator, .{
-                .line = self.source[cmd_start..cmd_end],
+                .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
                 .directive = null,
             }) catch return ParseError.OutOfMemory;
             if (self.current.tag == .newline) self.advance();
@@ -1353,7 +1353,7 @@ pub const Parser = struct {
                         self.advance();
                     }
                     const cmd_end = self.current.loc.start;
-                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t");
+                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
 
                     const hook = Hook{
                         .command = command,
@@ -1426,7 +1426,7 @@ pub const Parser = struct {
             const cmd_end = self.current.loc.start;
 
             commands.append(self.allocator, .{
-                .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t"),
+                .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
                 .directive = directive,
             }) catch return ParseError.OutOfMemory;
 
@@ -1533,7 +1533,7 @@ pub const Parser = struct {
                         self.advance();
                     }
                     const cmd_end = self.current.loc.start;
-                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t");
+                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
 
                     const hook = Hook{
                         .command = command,
@@ -1579,7 +1579,7 @@ pub const Parser = struct {
                     }
                     const cmd_end = self.current.loc.start;
                     commands.append(self.allocator, .{
-                        .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t"),
+                        .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
                         .directive = null,
                     }) catch return ParseError.OutOfMemory;
                     if (self.current.tag == .newline) self.advance();
@@ -1593,7 +1593,7 @@ pub const Parser = struct {
             }
             const cmd_end = self.current.loc.start;
             commands.append(self.allocator, .{
-                .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t"),
+                .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
                 .directive = null,
             }) catch return ParseError.OutOfMemory;
             if (self.current.tag == .newline) self.advance();
@@ -1692,6 +1692,29 @@ test "parse recipe with deps" {
 
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
     try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].dependencies.len);
+}
+
+test "parser strips trailing CR from command lines (CRLF source)" {
+    // CRLF in source must not leave \r at the end of captured directive bodies.
+    // Regression: @needs fake-tool was being matched as `fake-tool\r`, breaking
+    // PATH lookup on Windows where the source is checked out with CRLF.
+    const source = "task build:\r\n    @needs fake-tool\r\n    echo done\r\n";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(@as(usize, 2), recipe.commands.len);
+
+    const needs_line = recipe.commands[0].line;
+    try std.testing.expect(std.mem.indexOfScalar(u8, needs_line, '\r') == null);
+    try std.testing.expectEqualStrings("@needs fake-tool", needs_line);
+
+    const echo_line = recipe.commands[1].line;
+    try std.testing.expect(std.mem.indexOfScalar(u8, echo_line, '\r') == null);
+    try std.testing.expectEqualStrings("echo done", echo_line);
 }
 
 test "parser error message with line and column" {

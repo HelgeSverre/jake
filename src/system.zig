@@ -174,83 +174,13 @@ pub fn commandExists(cmd: []const u8) bool {
     const allocator = arena.allocator();
     const candidates = commandCandidatesOwned(allocator, builtin.os.tag, cmd, pathext) catch return false;
 
-    // ZDEBUG: probe two known-existing system paths once to verify the binding works
-    if (builtin.os.tag == .windows) {
-        if (std.process.getEnvVarOwned(std.heap.page_allocator, "JAKE_ZDEBUG_FILE")) |dbg_path| {
-            defer std.heap.page_allocator.free(dbg_path);
-            if (std.fs.createFileAbsolute(dbg_path, .{ .truncate = false })) |dbg_file| {
-                defer dbg_file.close();
-                dbg_file.seekFromEnd(0) catch {};
-                const probes = [_][]const u8{ "C:\\Windows", "C:\\Windows\\System32\\cmd.exe", "C:\\does\\not\\exist.xyz" };
-                var pbuf: [4096]u8 = undefined;
-                for (probes) |p| {
-                    const r = windowsPathExists(p);
-                    if (std.fmt.bufPrint(&pbuf, "PROBE '{s}' exists={}\n", .{ p, r })) |m| {
-                        dbg_file.writeAll(m) catch {};
-                    } else |_| {}
-                }
-                // Probe an explicit caller-supplied path in both case variants to test case-sensitivity behavior.
-                if (std.process.getEnvVarOwned(std.heap.page_allocator, "JAKE_ZPROBE_PATH")) |zpath| {
-                    defer std.heap.page_allocator.free(zpath);
-                    const r1 = windowsPathExists(zpath);
-                    if (std.fmt.bufPrint(&pbuf, "ZPROBE '{s}' exists={}\n", .{ zpath, r1 })) |m| {
-                        dbg_file.writeAll(m) catch {};
-                    } else |_| {}
-                    // Build an uppercase-extension variant: replace last 4 chars with uppercase (assumes ".cmd").
-                    if (zpath.len >= 4) {
-                        var upper_buf: [4096]u8 = undefined;
-                        if (zpath.len < upper_buf.len) {
-                            @memcpy(upper_buf[0..zpath.len], zpath);
-                            const tail = upper_buf[zpath.len - 4 .. zpath.len];
-                            for (tail) |*c| c.* = std.ascii.toUpper(c.*);
-                            const upper_path = upper_buf[0..zpath.len];
-                            const r2 = windowsPathExists(upper_path);
-                            if (std.fmt.bufPrint(&pbuf, "ZPROBE '{s}' exists={}\n", .{ upper_path, r2 })) |m| {
-                                dbg_file.writeAll(m) catch {};
-                            } else |_| {}
-                        }
-                    }
-                } else |_| {}
-            } else |_| {}
-        } else |_| {}
-    }
-
     var path_iter = std.mem.splitScalar(u8, path_env, pathListSeparator(builtin.os.tag));
     while (path_iter.next()) |dir| {
         if (dir.len == 0) continue;
 
         for (candidates) |candidate| {
             const full_path = joinDirAndBase(allocator, dir, candidate) catch continue;
-            const exists = pathExistsForLookup(full_path);
-            if (builtin.os.tag == .windows) {
-                if (std.process.getEnvVarOwned(std.heap.page_allocator, "JAKE_ZDEBUG_FILE")) |dbg_path| {
-                    defer std.heap.page_allocator.free(dbg_path);
-                    if (std.fs.createFileAbsolute(dbg_path, .{ .truncate = false })) |dbg_file| {
-                        defer dbg_file.close();
-                        dbg_file.seekFromEnd(0) catch {};
-                        var dbgbuf: [4096]u8 = undefined;
-                        if (std.fmt.bufPrint(&dbgbuf, "try len={d} exists={} hex='", .{ full_path.len, exists })) |msg| {
-                            dbg_file.writeAll(msg) catch {};
-                        } else |_| {}
-                        // Dump path bytes as hex pairs so we see hidden chars (BOM, nulls, trailing whitespace).
-                        var hexbuf: [3]u8 = undefined;
-                        for (full_path) |byte| {
-                            if (std.fmt.bufPrint(&hexbuf, "{x:0>2}", .{byte})) |hx| {
-                                dbg_file.writeAll(hx) catch {};
-                            } else |_| {}
-                        }
-                        dbg_file.writeAll("' tail='") catch {};
-                        // Also dump the last 8 bytes as ASCII (with ? for non-printable) so it's easy to spot.
-                        const tail_start = if (full_path.len > 8) full_path.len - 8 else 0;
-                        for (full_path[tail_start..]) |byte| {
-                            const safe: u8 = if (byte >= 0x20 and byte < 0x7f) byte else '?';
-                            dbg_file.writeAll(&[_]u8{safe}) catch {};
-                        }
-                        dbg_file.writeAll("'\n") catch {};
-                    } else |_| {}
-                } else |_| {}
-            }
-            if (exists) return true;
+            if (pathExistsForLookup(full_path)) return true;
         }
     }
 

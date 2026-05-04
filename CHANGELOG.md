@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Lexer**: accept CRLF line endings so Windows checkouts of Jakefiles parse correctly (previously a bare `\r` on a blank line emitted an invalid token)
+- **Parser**: strip trailing `\r` from captured directive/command bodies so values like `@needs fake-tool` aren't matched as `fake-tool\r` on CRLF sources
+- **Path lookup on Windows**: `commandExists` no longer panics on `OBJECT_NAME_INVALID` from `accessAbsolute` — uses `GetFileAttributesW` directly
 - **Hooks**: `@pre`, `@post`, and `@on_error` execution now uses the platform-default shell (`cmd.exe /C` on Windows, `/bin/sh -c` elsewhere), fixing hooks on Windows
 - **Recipe execution**: command spawning falls back to the platform-default shell when no `@shell` directive is set, fixing recipe execution on Windows where `/bin/sh` is unavailable
 - **Version**: `--version` stays semver-shaped on shallow checkouts that lack tags (e.g. CI with `fetch-depth: 1`); falls back to `0.0.0-dev-{hash}` instead of a bare commit SHA
