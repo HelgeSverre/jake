@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Lexer**: accept CRLF line endings so Windows checkouts of Jakefiles parse correctly (previously a bare `\r` on a blank line emitted an invalid token)
+- **Hooks**: `@pre`, `@post`, and `@on_error` execution now uses the platform-default shell (`cmd.exe /C` on Windows, `/bin/sh -c` elsewhere), fixing hooks on Windows
+- **Version**: `--version` stays semver-shaped on shallow checkouts that lack tags (e.g. CI with `fetch-depth: 1`); falls back to `0.0.0-dev-{hash}` instead of a bare commit SHA
+
+### Internal
+
+- Memory Check CI workflow now uses Zig 0.15.2 (was stuck on 0.14.0 and failing to compile current source)
+- Skip Windows-specific PATHEXT test on non-Windows hosts so the Linux test job stays green
+
 ## [0.8.0] - 2026-03-12
 
 ### Documentation
