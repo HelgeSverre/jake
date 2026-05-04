@@ -56,6 +56,24 @@ pub fn currentHomeDirOwned(allocator: std.mem.Allocator) !?[]const u8 {
     return homeDirOwnedFromEnv(allocator, builtin.os.tag, null);
 }
 
+pub const ShellInvocation = struct {
+    shell: []const u8,
+    flag: []const u8,
+};
+
+/// Returns the platform-default shell + invocation flag for running a single command string.
+/// Use as `&[_][]const u8{ inv.shell, inv.flag, command }` when building child argv.
+pub fn defaultShellInvocation() ShellInvocation {
+    return shellInvocationForOs(builtin.os.tag);
+}
+
+pub fn shellInvocationForOs(os_tag: std.Target.Os.Tag) ShellInvocation {
+    return if (os_tag == .windows)
+        .{ .shell = "cmd.exe", .flag = "/C" }
+    else
+        .{ .shell = "/bin/sh", .flag = "-c" };
+}
+
 pub fn homeDirOwnedFromEnv(
     allocator: std.mem.Allocator,
     os_tag: std.Target.Os.Tag,
@@ -363,6 +381,20 @@ test "commandCandidatesOwned expands PATHEXT on Windows" {
     try std.testing.expectEqualStrings("tool.CMD", candidates[1]);
 }
 
+test "shellInvocationForOs picks platform-appropriate shell" {
+    const win = shellInvocationForOs(.windows);
+    try std.testing.expectEqualStrings("cmd.exe", win.shell);
+    try std.testing.expectEqualStrings("/C", win.flag);
+
+    const nix = shellInvocationForOs(.linux);
+    try std.testing.expectEqualStrings("/bin/sh", nix.shell);
+    try std.testing.expectEqualStrings("-c", nix.flag);
+
+    const mac = shellInvocationForOs(.macos);
+    try std.testing.expectEqualStrings("/bin/sh", mac.shell);
+    try std.testing.expectEqualStrings("-c", mac.flag);
+}
+
 test "commandCandidatesOwned preserves explicit executable extension on Windows" {
     const candidates = try commandCandidatesOwned(std.testing.allocator, .windows, "tool.cmd", ".EXE;.CMD");
     defer {
@@ -375,6 +407,8 @@ test "commandCandidatesOwned preserves explicit executable extension on Windows"
 }
 
 test "commandExists honors PATHEXT for relative explicit paths on Windows" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 

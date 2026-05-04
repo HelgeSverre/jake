@@ -8,6 +8,7 @@
 const std = @import("std");
 const compat = @import("compat.zig");
 const color_mod = @import("color.zig");
+const system = @import("system.zig");
 
 /// Represents a single hook (pre, post, or on_error execution)
 pub const Hook = struct {
@@ -193,9 +194,10 @@ pub const HookRunner = struct {
             self.printHook("   {s}jake: running @{s} hook: {s}{s}\n", .{ self.color.muted(), @tagName(hook.kind), expanded_cmd, self.color.reset() });
         }
 
-        // Execute via shell
+        // Execute via the platform-default shell so @pre/@post/@on_error work on Windows too.
+        const inv = system.defaultShellInvocation();
         var child = std.process.Child.init(
-            &[_][]const u8{ "/bin/sh", "-c", expanded_cmd },
+            &[_][]const u8{ inv.shell, inv.flag, expanded_cmd },
             self.allocator,
         );
         child.stderr_behavior = .Inherit;
