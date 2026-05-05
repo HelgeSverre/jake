@@ -80,11 +80,16 @@ Ensure environment variables are set:
 
 ### `@confirm` - User Confirmation
 
-Prompt before dangerous operations:
+Prompt before dangerous operations (`@confirm` is recipe-body only — wrap it in a task):
 
 ```jake
-@confirm Delete all data?     # Prompts with y/n
-@confirm Deploy to prod?
+task wipe:
+    @confirm Delete all data?     # Prompts with y/n
+    rm -rf data/
+
+task deploy-prod:
+    @confirm Deploy to prod?
+    ./deploy.sh production
 ```
 
 Use `-y` flag to auto-confirm all prompts:
@@ -113,11 +118,11 @@ Combine with conditionals for platform-aware validation:
 ```jake
 @desc "Platform-specific setup"
 task setup:
-    @if os(macos)
-        @needs brew
+    @if is_macos()
         brew install dependencies
-    @elif os(linux)
-        @needs apt-get
+    @elif is_linux()
         sudo apt-get install dependencies
     @end
 ```
+
+The condition functions are `is_macos()`, `is_linux()`, `is_windows()`, and `is_unix()`; see [Conditionals](/docs/conditionals/) for the full set.

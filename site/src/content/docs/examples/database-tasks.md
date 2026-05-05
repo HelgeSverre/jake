@@ -83,11 +83,11 @@ task backup-list:
 
 @group backup
 @description "Restore from backup file"
-task restore file:
-    @confirm "Restore from {{file}}? This will overwrite current data."
-    @needs psql gunzip
-    gunzip -c {{file}} | psql $DATABASE_URL
-    @post echo "Database restored from {{file}}"
+@needs psql gunzip
+task restore source:
+    @confirm "Restore from {{source}}? This will overwrite current data."
+    gunzip -c {{source}} | psql $DATABASE_URL
+    @post echo "Database restored from {{source}}"
 
 @group backup
 @description "Backup to S3"

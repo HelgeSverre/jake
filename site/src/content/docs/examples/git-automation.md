@@ -39,11 +39,9 @@ task test-quick:
 
 @description "Verify clean working directory"
 task branch-check:
-    @if neq($(git status --porcelain), "")
-        echo "Error: Working directory is not clean"
-        git status --short
-        exit 1
-    @end
+    # Jake's @if conditions don't evaluate $(...) shell substitutions —
+    # do the cleanliness check at shell level and exit non-zero on failure.
+    git diff-index --quiet HEAD -- || (echo "Error: working directory is not clean" >&2; git status --short; exit 1)
     echo "Working directory is clean"
 
 @description "Sync with upstream main"
@@ -210,10 +208,8 @@ Check for clean working directory before operations:
 
 ```jake
 task branch-check:
-    @if neq($(git status --porcelain), "")
-        echo "Error: Working directory is not clean"
-        exit 1
-    @end
+    # @if conditions don't evaluate $(...); do the check in the shell.
+    git diff-index --quiet HEAD -- || (echo "Working directory not clean" >&2; exit 1)
 ```
 
 ## Customization

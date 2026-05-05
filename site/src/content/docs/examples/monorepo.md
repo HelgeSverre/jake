@@ -37,7 +37,9 @@ monorepo/
 @import "jake/infra.jake" as infra
 
 @dotenv
-@export MONOREPO_ROOT={{absolute_path(.)}}
+# @export values are passed verbatim — they don't expand {{...}}.
+# Set MONOREPO_ROOT inline on the commands that need it, e.g.
+#   MONOREPO_ROOT=$(pwd) ./script.sh
 
 @pre echo "=== Monorepo Build System ==="
 

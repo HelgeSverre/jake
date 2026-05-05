@@ -14,8 +14,12 @@ node_env = "development"
 @dotenv
 @dotenv ".env.local"
 
-# Export for all commands
-@export NODE_ENV={{node_env}}
+node_env = "development"
+
+# @export values are passed verbatim — {{...}} substitution does not happen
+# inside an @export. Set the literal value here, or set NODE_ENV inline on
+# the consuming command (e.g. `NODE_ENV={{node_env}} npm start`).
+@export NODE_ENV=development
 
 # === Development ===
 

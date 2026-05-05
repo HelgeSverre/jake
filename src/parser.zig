@@ -1139,7 +1139,13 @@ pub const Parser = struct {
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
-        while (self.current.tag == .indent) {
+        while (true) {
+            // Skip blank lines that appear between commands so recipe bodies
+            // can use vertical whitespace for grouping. Without this, a blank
+            // line silently terminated the recipe body (parser landed back at
+            // top level and the next indented line failed with "unexpected token").
+            while (self.current.tag == .newline) self.advance();
+            if (self.current.tag != .indent) break;
             self.advance();
 
             // Check for @pre or @post hook directive
@@ -1333,7 +1339,13 @@ pub const Parser = struct {
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
-        while (self.current.tag == .indent) {
+        while (true) {
+            // Skip blank lines that appear between commands so recipe bodies
+            // can use vertical whitespace for grouping. Without this, a blank
+            // line silently terminated the recipe body (parser landed back at
+            // top level and the next indented line failed with "unexpected token").
+            while (self.current.tag == .newline) self.advance();
+            if (self.current.tag != .indent) break;
             self.advance();
 
             // Check for directive
@@ -1516,7 +1528,13 @@ pub const Parser = struct {
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
-        while (self.current.tag == .indent) {
+        while (true) {
+            // Skip blank lines that appear between commands so recipe bodies
+            // can use vertical whitespace for grouping. Without this, a blank
+            // line silently terminated the recipe body (parser landed back at
+            // top level and the next indented line failed with "unexpected token").
+            while (self.current.tag == .newline) self.advance();
+            if (self.current.tag != .indent) break;
             self.advance();
 
             // Check for @pre or @post hook directive
@@ -1692,6 +1710,28 @@ test "parse recipe with deps" {
 
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
     try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].dependencies.len);
+}
+
+test "parse allows blank lines inside recipe body" {
+    // Regression: a blank line previously terminated the recipe and the next
+    // indented command parsed as an unexpected top-level token.
+    const source =
+        \\task build:
+        \\    echo "first"
+        \\
+        \\    # comment after a blank line
+        \\    echo "second"
+        \\
+        \\    echo "third"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    // Three echo commands; the comment is captured as its own command line.
+    try std.testing.expectEqual(@as(usize, 4), jakefile.recipes[0].commands.len);
 }
 
 test "parser strips trailing CR from command lines (CRLF source)" {

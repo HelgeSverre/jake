@@ -43,7 +43,6 @@ task build: [clean, build-ts, build-css, build-assets]
 @group build
 @description "Compile TypeScript"
 file dist/app.js: src/**/*.ts src/**/*.tsx
-    @needs npx
     @pre echo "Compiling TypeScript..."
     mkdir -p dist
     npx esbuild src/index.tsx \
@@ -57,18 +56,20 @@ file dist/app.js: src/**/*.ts src/**/*.tsx
 @group build
 @description "Build Tailwind CSS"
 file dist/app.css: src/**/*.css tailwind.config.js
-    @needs npx
     @pre echo "Processing CSS..."
     mkdir -p dist
     npx tailwindcss -i src/styles/main.css -o dist/app.css --minify
     @post echo "CSS built: dist/app.css"
 
-# Convenience tasks that depend on file targets
+# Convenience tasks that wrap the file targets. @needs is recipe-modifier
+# only — it doesn't work inside a file recipe body — so it lives on the task.
+@needs npx
 task build-ts: [dist/app.js]
-    @echo "TypeScript build complete"
+    echo "TypeScript build complete"
 
+@needs npx
 task build-css: [dist/app.css]
-    @echo "CSS build complete"
+    echo "CSS build complete"
 
 @description "Copy static assets"
 task build-assets:
@@ -176,12 +177,13 @@ task dev-watch:
 
 ### Conditional Asset Copying
 
-Handle optional directories gracefully:
+Handle optional directories gracefully (`@if` is recipe-body-only — wrap it in a task):
 
 ```jake
-@if exists(public)
-    cp -r public/* dist/
-@end
+task copy-public:
+    @if exists(public)
+        cp -r public/* dist/
+    @end
 ```
 
 ## Customization

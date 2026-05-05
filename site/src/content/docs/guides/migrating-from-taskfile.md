@@ -396,9 +396,12 @@ build_dir = "dist"
 
 @default
 @desc "Build the application"
-task build: [clean, install, dist/{{app_name}}]
+task build: [clean, install, dist/myapp]
 
-file dist/{{app_name}}: src/**/*.go go.mod
+# Note: file recipe targets are literal — variable interpolation isn't allowed
+# in the target name itself. Use the literal output path here, and reference
+# {{app_name}} only in the body.
+file dist/myapp: src/**/*.go go.mod
     mkdir -p {{build_dir}}
     go build -o {{build_dir}}/{{app_name}}
 

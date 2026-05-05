@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Parser**: blank lines inside a recipe body no longer terminate the recipe. Previously `task t:` with `\n    cmd1\n\n    cmd2` failed to parse — the second indented line was treated as an unexpected top-level token. The body now continues across blank-line separators in `task`, `file`, and simple recipe forms.
+- **WebUI**: output and command-preview panels preserve indentation. `tree`-style output, ASCII tables, and any leading spaces in commands now render with `white-space: pre-wrap` instead of collapsing.
+
 ## [0.8.1] - 2026-05-04
 
 Windows fix-up release. Brings Windows CI from fully red to fully green and unblocks the build/parse pipeline on Windows checkouts.

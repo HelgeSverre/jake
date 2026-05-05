@@ -97,7 +97,7 @@ cc = "gcc"
 cflags = "-Wall -O2"
 
 @default
-task all: [build, test]
+task all: [app, test]
     echo "Done"
 
 file app: main.o utils.o
@@ -109,7 +109,7 @@ file main.o: main.c
 file utils.o: utils.c
     {{cc}} {{cflags}} -c utils.c -o utils.o
 
-task test: [build]
+task test: [app]
     ./test_runner
 
 task clean:

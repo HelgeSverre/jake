@@ -236,13 +236,14 @@ task install:
 Automatic environment selection:
 
 ```jake
-@if eq($GITHUB_REF_NAME, main)
-    jake deploy-production
-@elif eq($GITHUB_REF_NAME, staging)
-    jake deploy-staging
-@else
-    jake deploy-preview
-@end
+task deploy-by-branch:
+    @if eq($GITHUB_REF_NAME, main)
+        jake deploy-production
+    @elif eq($GITHUB_REF_NAME, staging)
+        jake deploy-staging
+    @else
+        jake deploy-preview
+    @end
 ```
 
 ### GitHub Actions Integration

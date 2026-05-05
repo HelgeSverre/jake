@@ -17,16 +17,21 @@ Run it:
 
 ```bash
 $ jake hello
--> hello
+   → hello
 Hello from Jake!
+
+   ✓ hello     0.00s
+
+   Successfully ran 1 task
+   Total time: 0.00s
 ```
 
 ## Listing Recipes
 
 ```bash
 $ jake --list
-Available recipes:
-  hello [task]
+{j} jake 1 recipes
+  hello
 ```
 
 ## Setting a Default

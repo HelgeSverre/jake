@@ -296,10 +296,9 @@ Here's what a fully highlighted Jakefile looks like:
 
 ```jake
 # Build configuration
-CC := gcc
-CFLAGS := -Wall -O2
+CC = "gcc"
+CFLAGS = "-Wall -O2"
 
-@import "common.jake"
 @dotenv
 
 task build target="release": [clean]
@@ -314,7 +313,7 @@ task build target="release": [clean]
 task clean:
     rm -rf bin/
 
-file bin/app: [src/main.c, src/utils.c]
+file bin/app: src/main.c src/utils.c
     mkdir -p bin
-    {{CC}} {{CFLAGS}} $^ -o $@
+    {{CC}} {{CFLAGS}} src/main.c src/utils.c -o bin/app
 ```
