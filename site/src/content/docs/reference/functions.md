@@ -80,32 +80,48 @@ On unsupported platforms (anything other than macOS, Linux, or Windows), `launch
 
 `shell_config()` returns nothing for plain `cmd.exe`. `home()` resolves from `HOME` on Unix and from `HOME`, `USERPROFILE`, or `HOMEDRIVE` + `HOMEPATH` on Windows.
 
-## Chaining Functions
+## Composing Functions
 
-Functions can be nested — the inner call resolves first:
+Each `{{...}}` expansion takes a single function call. Nested calls inside a single
+expansion (e.g. `{{outer(inner(x))}}`) are **not** evaluated recursively — the inner
+text is passed to `outer` as a literal string. Use one of these patterns instead:
+
+**Top-level variable for the intermediate value:**
+
+```jake
+src      = "src/main.ts"
+src_base = "main"   # precomputed
+
+task compile:
+    tsc --outFile {{src_base}}.js {{src}}
+```
+
+**Shell substitution inside the command** (cleanest when the intermediate isn't
+reused):
 
 ```jake
 src = "src/main.ts"
 
 task compile:
-    tsc --outFile {{without_extension(basename(src))}}.js {{src}}
+    tsc --outFile $(basename {{src}} .ts).js {{src}}
 ```
-
-Expands to: `tsc --outFile main.js src/main.ts`
-
-Another example — deploying to a path based on the source filename:
 
 ```jake
 component = "src/components/Button.tsx"
 
 task deploy-component:
-    cp {{component}} dist/{{lowercase(without_extensions(basename(component)))}}.js
+    cp {{component}} dist/$(basename {{component}} .tsx | tr A-Z a-z).js
 ```
-
-Expands to: `cp src/components/Button.tsx dist/button.js`
 
 ## Error Behavior
 
 If a function receives an argument it can't handle (e.g., `launch()` on an unsupported OS), Jake reports the error and stops before executing any commands in the recipe. The error identifies the failing expression.
 
-If a variable name is used as an argument but the variable isn't defined, Jake expands it as an empty string. `basename("")` returns `""`, `dirname("")` returns `"."`, and so on — no error is produced. If that silent empty-string behavior would cause problems for your use case, set the variable to a sentinel value and check it with `@require`.
+If the argument to a function is an identifier that doesn't match any defined variable, Jake passes the literal identifier text through to the function. So `{{basename(unknown)}}` becomes `basename("unknown")` → `unknown`. This is intentional: it lets you write `{{basename(src/main.ts)}}` without quoting. If you want the empty-string-on-undefined behavior, define the variable up top with an empty default:
+
+```jake
+maybe = ""
+
+task show:
+    echo "{{basename(maybe)}}"   # prints empty
+```

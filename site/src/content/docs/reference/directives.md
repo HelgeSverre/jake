@@ -21,6 +21,7 @@ Placed at the top level of a Jakefile (outside any recipe).
 | `@before recipe command` | Targeted pre-hook — runs before a specific recipe only                      |
 | `@after recipe command`  | Targeted post-hook — runs after a specific recipe only                      |
 | `@on_error command`      | Error hook — runs if any recipe fails                                       |
+| `@on_error recipe command` | Targeted error hook — runs only when the specified recipe fails           |
 
 ## Recipe Modifiers
 
@@ -29,8 +30,9 @@ Placed immediately before a recipe definition (no blank lines between).
 | Directive                               | Description                                              |
 | --------------------------------------- | -------------------------------------------------------- |
 | `@description "text"` / `@desc "text"` | Description shown in `jake --list` output                |
+| `@alias name...`                        | Alternate names for the next recipe (`jake <alias>` runs it) |
 | `@group name`                           | Group recipes together in `jake --list` output           |
-| `@only-os os...`                        | Only register this recipe on the specified OS(es)        |
+| `@platform os...` / `@only-os os...`    | Only register this recipe on the specified OS(es) (`@platform` is the preferred spelling; `@only-os` and bare `@only` are accepted aliases) |
 | `@quiet`                                | Suppress command echoing for this recipe                 |
 | `@hidden`                               | Hide from `jake --list` (same as `_` name prefix)       |
 | `@timeout duration`                     | Kill the recipe if it runs longer than `duration`        |
@@ -107,17 +109,22 @@ Used inside recipe bodies.
 | `@cache pattern...`    | Skip the recipe if none of the matched files have changed since last run          |
 | `@watch pattern...`    | Register additional file patterns to watch in `-w` mode                           |
 | `@timeout duration`    | Kill this recipe if it runs longer than the specified duration                     |
+| `@launch target`       | Open a file or URL with the OS-default app (`open` / `xdg-open` / `start`)        |
 
 ### @ignore
 
-Normally a failing command stops the recipe. `@ignore` marks the *next* command as non-fatal:
+Normally a failing command stops the recipe. `@ignore` marks the *next* command as non-fatal. Place it on its own line, immediately before the command:
 
 ```jake
 task clean:
-    @ignore rm -rf dist/       # ok if dist/ doesn't exist
-    @ignore rm -rf node_modules/
+    @ignore
+    rm -rf dist/             # ok if dist/ doesn't exist
+    @ignore
+    rm -rf node_modules/
     echo "Cleaned up"
 ```
+
+Putting the command on the same line as `@ignore` (e.g. `@ignore rm -rf dist/`) is a common mistake — the trailing text is treated as part of the directive and the command is silently dropped.
 
 ### @cd
 
