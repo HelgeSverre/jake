@@ -395,28 +395,28 @@ app_name = "myapp"
 build_dir = "dist"
 
 @default
+@desc "Build the application"
 task build: [clean, install, dist/{{app_name}}]
-    @desc "Build the application"
 
 file dist/{{app_name}}: src/**/*.go go.mod
     mkdir -p {{build_dir}}
     go build -o {{build_dir}}/{{app_name}}
 
+@desc "Install dependencies"
 task install:
-    @desc "Install dependencies"
     @cache go.mod go.sum
     go mod download
 
+@desc "Remove build artifacts"
 task clean:
-    @desc "Remove build artifacts"
     rm -rf {{build_dir}}
 
+@desc "Run tests"
 task test: [build]
-    @desc "Run tests"
     go test ./... -v
 
+@desc "Deploy to server"
 task deploy: [test]
-    @desc "Deploy to server"
     @confirm "Deploy to production?"
     rsync -avz {{build_dir}}/ server:/app/
 ```

@@ -7,26 +7,26 @@ Jake can run independent tasks in parallel, dramatically speeding up builds with
 
 ```jake
 # Independent components that can build simultaneously
+@desc "Build React frontend"
 task frontend:
-    @desc "Build React frontend"
     cd frontend && npm run build
 
+@desc "Build Go backend"
 task backend:
-    @desc "Build Go backend"
     cd backend && go build -o dist/server
 
+@desc "Build documentation"
 task docs:
-    @desc "Build documentation"
     mkdocs build
 
+@desc "Optimize images and assets"
 task assets:
-    @desc "Optimize images and assets"
     npx imagemin src/images/* --out-dir=dist/images
 
 # Dependencies run in parallel when possible
 @default
+@desc "Build everything"
 task build: [frontend, backend, docs, assets]
-    @desc "Build everything"
     echo "All components built!"
 
 # Testing can also be parallelized

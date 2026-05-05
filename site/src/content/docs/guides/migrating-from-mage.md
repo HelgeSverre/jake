@@ -317,34 +317,34 @@ func (Docker) Push() error {
 @export CGO_ENABLED=0
 
 @default
+@desc "Build the application"
 task build: [install]
-    @desc "Build the application"
     @pre echo "Building..."
     go build -o bin/app ./cmd/app
 
+@desc "Install dependencies"
 task install:
-    @desc "Install dependencies"
     @pre echo "Installing dependencies..."
     go mod download
 
+@desc "Run the test suite"
 task test: [build]
-    @desc "Run the test suite"
     go test -v ./...
 
+@desc "Remove build artifacts"
 task clean:
-    @desc "Remove build artifacts"
     @pre echo "Cleaning..."
     rm -rf bin/
 
 # Docker namespace via import or inline
 @group docker
+@desc "Build Docker image"
 task docker-build: [build]
-    @desc "Build Docker image"
     docker build -t myapp:latest .
 
 @group docker
+@desc "Push to registry"
 task docker-push:
-    @desc "Push to registry"
     docker push myapp:latest
 ```
 

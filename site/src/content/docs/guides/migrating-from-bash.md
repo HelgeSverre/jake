@@ -323,22 +323,22 @@ task build-frontend:
     mkdir -p {{build_dir}}
     npm run build
 
+@desc "Install dependencies"
 task install:
-    @desc "Install dependencies"
     npm install
     go mod download
 
+@desc "Run all tests"
 task test: [build]
-    @desc "Run all tests"
     go test ./... -v
     npm test
 
+@desc "Remove build artifacts"
 task clean:
-    @desc "Remove build artifacts"
     rm -rf {{build_dir}} dist/ node_modules/
 
+@desc "Deploy to environment"
 task deploy env="staging": [build]
-    @desc "Deploy to environment"
     @if eq({{env}}, "production")
         @confirm "Deploy to PRODUCTION?"
     @end

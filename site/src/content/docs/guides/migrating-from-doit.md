@@ -303,15 +303,15 @@ def task_deploy():
 
 ```jake
 @default
+@desc "Build the application"
 task build: [install, dist/app.pyz]
-    @desc "Build the application"
 
+@desc "Remove build artifacts"
 task clean:
-    @desc "Remove build artifacts"
     rm -rf build/ dist/
 
+@desc "Install dependencies"
 task install:
-    @desc "Install dependencies"
     @cache requirements.txt
     pip install -r requirements.txt
 
@@ -319,12 +319,12 @@ file dist/app.pyz: src/**/*.py
     mkdir -p dist
     python -m zipapp src -o dist/app.pyz
 
+@desc "Run tests"
 task test: [install]
-    @desc "Run tests"
     pytest tests/ -v
 
+@desc "Deploy to server"
 task deploy env="staging": [build, test]
-    @desc "Deploy to server"
     echo "Deploying to {{env}}..."
     ./deploy.sh {{env}}
 ```

@@ -22,7 +22,8 @@ task bf:
 If you need shortcuts, use aliases:
 
 ```jake
-task build-frontend | bf:
+@alias bf
+task build-frontend:
     npm run build
 ```
 

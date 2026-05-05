@@ -65,8 +65,8 @@ task long-command:
 ### Defining Variables
 
 ```jake
-name = "Jake";
-version = "1.0.0";
+name = "Jake"
+version = "1.0.0"
 ```
 
 ### Using Variables
@@ -145,7 +145,8 @@ test: [build]
 Define alternative names:
 
 ```jake
-task build | b | compile:
+@alias b compile
+task build:
     cargo build
 ```
 

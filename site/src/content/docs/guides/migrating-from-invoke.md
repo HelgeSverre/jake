@@ -93,8 +93,8 @@ Usage: `invoke deploy --env=production --force`
 ### Jake
 
 ```jake
+@desc "Deploy to environment"
 task deploy env="staging" force="":
-    @desc "Deploy to environment"
     @if eq({{force}}, "true")
         ./deploy.sh {{env}} --force
     @else
@@ -366,41 +366,41 @@ ns.add_collection(docker)
 ### After (Jakefile)
 
 ```jake
+@desc "Remove build artifacts"
 task clean:
-    @desc "Remove build artifacts"
     rm -rf dist/ build/ *.egg-info
 
+@desc "Install dependencies"
 task install:
-    @desc "Install dependencies"
     pip install -r requirements.txt
 
+@desc "Build the package"
 task build: [install]
-    @desc "Build the package"
     python setup.py build
 
+@desc "Run tests"
 task test verbose="": [build]
-    @desc "Run tests"
     @if eq({{verbose}}, "true")
         pytest tests/ -v
     @else
         pytest tests/
     @end
 
+@desc "Deploy to environment"
 task deploy env="staging": [test]
-    @desc "Deploy to environment"
     @if eq({{env}}, "production")
         @confirm "Deploy to PRODUCTION?"
     @end
     ./deploy.sh {{env}}
 
 @group docker
+@desc "Build Docker image"
 task docker-build:
-    @desc "Build Docker image"
     docker build -t myapp .
 
 @group docker
+@desc "Push Docker image"
 task docker-push:
-    @desc "Push Docker image"
     docker push myapp
 ```
 
