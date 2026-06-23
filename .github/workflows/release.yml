@@ -126,7 +126,7 @@ jobs:
 
       - name: Checkout jake (for formula template)
         if: steps.gate.outputs.enabled == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Get version
         if: steps.gate.outputs.enabled == 'true'
@@ -154,7 +154,7 @@ jobs:
 
       - name: Checkout tap
         if: steps.gate.outputs.enabled == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: helgesverre/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
