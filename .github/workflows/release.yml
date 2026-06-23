@@ -38,7 +38,7 @@ jobs:
             artifact: jake-windows-x86_64.exe
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
@@ -71,7 +71,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download All Artifacts
         uses: actions/download-artifact@v8
