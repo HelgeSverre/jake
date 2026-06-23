@@ -102,3 +102,95 @@ jobs:
           prerelease: ${{ contains(github.ref, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publish/update the Homebrew formula in helgesverre/homebrew-tap.
+  # Requires a HOMEBREW_TAP_TOKEN secret: a PAT (or fine-grained token) with
+  # contents:write on helgesverre/homebrew-tap. Skipped automatically if the
+  # secret is absent (e.g. on forks). Prerelease tags (containing "-") are
+  # skipped so the formula only ever tracks stable releases.
+  homebrew:
+    name: Update Homebrew Formula
+    needs: release
+    if: ${{ !contains(github.ref, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for tap token
+        id: gate
+        run: |
+          if [ -n "${{ secrets.HOMEBREW_TAP_TOKEN }}" ]; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+            echo "::notice::HOMEBREW_TAP_TOKEN not set; skipping Homebrew formula update."
+          fi
+
+      - name: Checkout jake (for formula template)
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v6
+
+      - name: Get version
+        if: steps.gate.outputs.enabled == 'true'
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Download release artifacts
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Compute checksums
+        if: steps.gate.outputs.enabled == 'true'
+        id: sha
+        run: |
+          cd artifacts
+          {
+            echo "macos_aarch64=$(sha256sum jake-macos-aarch64 | cut -d' ' -f1)"
+            echo "macos_x86_64=$(sha256sum jake-macos-x86_64 | cut -d' ' -f1)"
+            echo "linux_aarch64=$(sha256sum jake-linux-aarch64 | cut -d' ' -f1)"
+            echo "linux_x86_64=$(sha256sum jake-linux-x86_64 | cut -d' ' -f1)"
+          } >> $GITHUB_OUTPUT
+
+      - name: Checkout tap
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: helgesverre/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Render formula
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+          MACOS_AARCH64: ${{ steps.sha.outputs.macos_aarch64 }}
+          MACOS_X86_64: ${{ steps.sha.outputs.macos_x86_64 }}
+          LINUX_AARCH64: ${{ steps.sha.outputs.linux_aarch64 }}
+          LINUX_X86_64: ${{ steps.sha.outputs.linux_x86_64 }}
+        run: |
+          VERSION_NUMBER="${VERSION#v}"
+          sed \
+            -e "s|__VERSION_NUMBER__|${VERSION_NUMBER}|g" \
+            -e "s|__VERSION__|${VERSION}|g" \
+            -e "s|__MACOS_AARCH64__|${MACOS_AARCH64}|g" \
+            -e "s|__MACOS_X86_64__|${MACOS_X86_64}|g" \
+            -e "s|__LINUX_AARCH64__|${LINUX_AARCH64}|g" \
+            -e "s|__LINUX_X86_64__|${LINUX_X86_64}|g" \
+            .github/homebrew/jake.rb.tmpl > tap/Formula/jake.rb
+          echo "Rendered formula:"
+          cat tap/Formula/jake.rb
+
+      - name: Commit and push formula
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/jake.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date; nothing to commit."
+          else
+            git commit -m "jake ${{ steps.get_version.outputs.VERSION }}"
+            git push
+          fi
