@@ -490,12 +490,17 @@ pub const ParallelExecutor = struct {
             return false;
         }
 
-        // Update cache for file targets (thread-safe)
+        // Update cache for file targets (thread-safe). Record both the output
+        // and every dependency, mirroring the sequential path — otherwise deps
+        // are never cached and file targets always rebuild (jake#17).
         if (recipe.kind == .file) {
+            self.cache_mutex.lock();
+            defer self.cache_mutex.unlock();
             if (recipe.output) |output| {
-                self.cache_mutex.lock();
-                defer self.cache_mutex.unlock();
                 self.cache.update(output) catch {};
+            }
+            for (recipe.file_deps) |dep| {
+                self.cache.updatePattern(dep) catch {};
             }
         }
 
@@ -563,7 +568,7 @@ pub const ParallelExecutor = struct {
         };
 
         worker.cache.deinit();
-        worker.cache = snapshot;
+        worker.cache.* = snapshot;
         defer worker.deinitWithoutSavingCache();
 
         const needs_prompt = !worker_ctx.dry_run and !worker_ctx.auto_yes and recipeUsesDirective(recipe, .confirm);
@@ -579,7 +584,7 @@ pub const ParallelExecutor = struct {
 
         self.cache_mutex.lock();
         defer self.cache_mutex.unlock();
-        self.cache.mergeFrom(&worker.cache) catch {
+        self.cache.mergeFrom(worker.cache) catch {
             self.rememberError(ExecuteError.OutOfMemory);
             return false;
         };

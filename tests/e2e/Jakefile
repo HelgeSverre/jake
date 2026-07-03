@@ -278,6 +278,21 @@ task test-files:
     echo "  File target skips when up-to-date ..................... PASS"
     # Cleanup
     rm -f fixtures/files/output.txt
+    # Incremental rebuild across process runs (regression: jake#17, where the
+    # incremental cache never persisted so file targets always rebuilt). Run in
+    # a self-contained temp dir so the tracked dependency and the cache resolve
+    # against one cwd, independent of where the suite is invoked from.
+    rm -rf /tmp/jake-inc && mkdir -p /tmp/jake-inc
+    printf 'file out.txt: in.txt\n    cat in.txt > out.txt\n    echo BUILT\n' > /tmp/jake-inc/Jakefile
+    echo one > /tmp/jake-inc/in.txt
+    cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && grep -q BUILT {{out}}
+    echo "  File target builds first run (incremental) ............ PASS"
+    cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && ! grep -q BUILT {{out}}
+    echo "  File target skips when input unchanged (incremental) .. PASS"
+    sleep 1 && echo two > /tmp/jake-inc/in.txt
+    cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && grep -q BUILT {{out}}
+    echo "  File target rebuilds when input changes (incremental) . PASS"
+    rm -rf /tmp/jake-inc
 
 # ============================================================================
 # Function Tests

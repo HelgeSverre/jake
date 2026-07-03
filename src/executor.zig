@@ -66,7 +66,13 @@ pub const Executor = struct {
     jakefile: *const Jakefile,
     index: *const JakefileIndex,
     owned_index: ?*JakefileIndex = null,
-    cache: Cache,
+    // Pointer, not a value: the shared (RuntimeContext) path points this at
+    // `runtime.cache` so cache writes made during execution reach the same
+    // instance RuntimeContext.deinit saves. A by-value copy would diverge on
+    // the first HashMap growth and the saved cache would stay empty (jake#17).
+    cache: *Cache,
+    // Set only on the owning path (Executor.init); freed in deinit.
+    owned_cache: ?*Cache = null,
 
     executed: std.StringHashMap(void),
     in_progress: std.StringHashMap(void),
@@ -124,7 +130,9 @@ pub const Executor = struct {
             .allocator = allocator,
             .jakefile = jakefile,
             .index = index,
-            .cache = runtime.cache,
+            // Share the runtime's cache by pointer so writes are visible to
+            // RuntimeContext.deinit, which is what persists .jake/cache.
+            .cache = &runtime.cache,
             .executed = std.StringHashMap(void).init(allocator),
             .in_progress = std.StringHashMap(void).init(allocator),
             .variables = variables,
@@ -207,8 +215,12 @@ pub const Executor = struct {
             try hook_runner.addGlobalHook(hook);
         }
 
-        // Initialize cache and load from disk
-        var cache = Cache.init(allocator);
+        // Initialize cache and load from disk. Heap-allocated so the `cache`
+        // pointer field has a stable address that outlives this return; freed
+        // in deinit via `owned_cache`.
+        const cache = try allocator.create(Cache);
+        errdefer allocator.destroy(cache);
+        cache.* = Cache.init(allocator);
         errdefer cache.deinit();
         try cache.load();
 
@@ -217,6 +229,7 @@ pub const Executor = struct {
             .jakefile = jakefile,
             .index = index,
             .cache = cache,
+            .owned_cache = cache,
             .executed = std.StringHashMap(void).init(allocator),
             .in_progress = std.StringHashMap(void).init(allocator),
             .variables = variables,
@@ -736,6 +749,10 @@ pub const Executor = struct {
                 self.cache.save() catch {};
             }
             self.cache.deinit();
+            if (self.owned_cache) |owned| {
+                self.allocator.destroy(owned);
+                self.owned_cache = null;
+            }
             self.environment.deinit();
             self.hook_runner.deinit();
         }
@@ -1004,6 +1021,13 @@ pub const Executor = struct {
             if (recipe.output) |output| {
                 // Cache update is best-effort; failure doesn't affect recipe execution
                 self.cache.update(output) catch {};
+            }
+            // Record each dependency too. checkFileTarget decides staleness via
+            // isGlobStale(dep); without recording the deps here they are never in
+            // the cache, so isStale() always returns true and the target rebuilds
+            // on every run (jake#17).
+            for (recipe.file_deps) |dep| {
+                self.cache.updatePattern(dep) catch {};
             }
         }
     }
