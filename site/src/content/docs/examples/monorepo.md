@@ -46,18 +46,18 @@ monorepo/
 # === Full Builds ===
 
 @default
-@description "Build all packages"
+@desc "Build all packages"
 task all: [web.build, api.build, mobile.build]
     echo "All packages built!"
 
-@description "Build all packages in parallel"
+@desc "Build all packages in parallel"
 task all-parallel:
     jake -j4 web.build api.build mobile.build
     echo "Parallel build complete!"
 
 # === Development ===
 
-@description "Start all dev servers"
+@desc "Start all dev servers"
 task dev:
     @pre echo "Starting development environment..."
     jake web.dev &
@@ -65,19 +65,19 @@ task dev:
     wait
     echo "All dev servers running"
 
-@description "Start web dev server only"
+@desc "Start web dev server only"
 task dev-web: [web.dev]
 
-@description "Start API dev server only"
+@desc "Start API dev server only"
 task dev-api: [api.dev]
 
 # === Testing ===
 
-@description "Run all tests"
+@desc "Run all tests"
 task test: [web.test, api.test, mobile.test]
     echo "All tests passed!"
 
-@description "Test only affected packages"
+@desc "Test only affected packages"
 task test-affected:
     @pre echo "Determining affected packages..."
     @if exists(packages/web)
@@ -90,40 +90,40 @@ task test-affected:
 
 # === Linting & Formatting ===
 
-@description "Lint all packages"
+@desc "Lint all packages"
 task lint: [web.lint, api.lint, mobile.lint]
     echo "All packages linted!"
 
-@description "Format all packages"
+@desc "Format all packages"
 task format: [web.format, api.format, mobile.format]
     echo "All packages formatted!"
 
 # === Deployment ===
 
-@description "Deploy all to staging"
+@desc "Deploy all to staging"
 task deploy-staging: [web.deploy-staging, api.deploy-staging]
     echo "Deployed to staging!"
 
-@description "Deploy all to production"
+@desc "Deploy all to production"
 task deploy-production: [web.deploy-production, api.deploy-production]
     @confirm "Deploy ALL packages to production?"
     echo "Deployed to production!"
 
 # === Infrastructure ===
 
-@description "Plan infrastructure changes"
+@desc "Plan infrastructure changes"
 task infra-plan: [infra.plan]
 
-@description "Apply infrastructure changes"
+@desc "Apply infrastructure changes"
 task infra-apply: [infra.apply]
 
 # === Utilities ===
 
-@description "Clean all packages"
+@desc "Clean all packages"
 task clean: [web.clean, api.clean, mobile.clean]
     echo "All packages cleaned!"
 
-@description "Install all dependencies"
+@desc "Install all dependencies"
 task install:
     @needs npm
     npm install
@@ -133,7 +133,7 @@ task install:
     @end
     echo "All dependencies installed!"
 
-@description "Update dependencies in all packages"
+@desc "Update dependencies in all packages"
 task deps-update:
     @needs npx
     npx ncu -u
@@ -145,11 +145,11 @@ task deps-update:
 
 # === CI/CD ===
 
-@description "Full CI pipeline"
+@desc "Full CI pipeline"
 task ci: [install, lint, test, all]
     echo "CI passed!"
 
-@description "CI for affected packages only"
+@desc "CI for affected packages only"
 task ci-affected:
     jake install
     jake test-affected
@@ -165,28 +165,28 @@ task ci-affected:
 
 root = "packages/web"
 
-@description "Build web app"
+@desc "Build web app"
 task build:
     @cd {{root}}
         npm run build
     echo "Web app built"
 
-@description "Start web dev server"
+@desc "Start web dev server"
 task dev:
     @cd {{root}}
         npm run dev
 
-@description "Run web tests"
+@desc "Run web tests"
 task test:
     @cd {{root}}
         npm test
 
-@description "Lint web code"
+@desc "Lint web code"
 task lint:
     @cd {{root}}
         npm run lint
 
-@description "Format web code"
+@desc "Format web code"
 task format:
     @cd {{root}}
         npm run format
@@ -215,28 +215,28 @@ task deploy-production:
 
 root = "packages/api"
 
-@description "Build API"
+@desc "Build API"
 task build:
     @cd {{root}}
         npm run build
     echo "API built"
 
-@description "Start API dev server"
+@desc "Start API dev server"
 task dev:
     @cd {{root}}
         npm run dev
 
-@description "Run API tests"
+@desc "Run API tests"
 task test:
     @cd {{root}}
         npm test
 
-@description "Lint API code"
+@desc "Lint API code"
 task lint:
     @cd {{root}}
         npm run lint
 
-@description "Format API code"
+@desc "Format API code"
 task format:
     @cd {{root}}
         npm run format
@@ -245,7 +245,7 @@ task clean:
     rm -rf {{root}}/dist
     echo "API cleaned"
 
-@description "Run API migrations"
+@desc "Run API migrations"
 task migrate:
     @cd {{root}}
         npm run migrate

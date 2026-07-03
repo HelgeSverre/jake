@@ -677,6 +677,74 @@ Removed the `Jakefile.register()` abstraction and updated:
 
 ---
 
+## Concept Review Feedback (pre-1.0)
+
+External review of Jake as a concept/product. Captured for later evaluation —
+not all of these are necessarily right, but each is worth a deliberate
+yes/no before 1.0.
+
+### Pitch & positioning
+
+- [ ] Reframe README from "best of Make and Just" to lead with the actual
+      wedge: *Make's correctness model (file targets, stale rebuilds) with
+      Just's ergonomics, in a fast single binary*. Current framing puts Jake
+      directly in Just's competitive frame where Just wins on maturity.
+- [ ] "Smart rebuilds" oversells what is `mtime`-based file targets. Either
+      back it with content hashing or rename it to be honest about the
+      mechanism.
+- [ ] Decide the audience: solo devs who want Just + rebuilds (small
+      surface, polish path), or teams replacing Make in real build pipelines
+      (correctness, hermeticity, caching primitives). Current feature set
+      straddles. Straddling is expensive.
+
+### Surface area / scope creep
+
+- [ ] Inventory all `@directives` and cut or merge before 1.0. Current
+      count (~30+) is well past Just's "deliberately small" stance.
+- [x] Resolve directive aliases — kept `@desc` (dropped `@description`) and
+      `@platform` (dropped `@only` and `@only-os`). Lexer, parser, formatter,
+      docs, examples, and editor grammars all updated.
+- [x] Audit hook system. Final design: `@pre`/`@post`/`@on_error` are
+      available at both global (top-level, no name) and recipe-body
+      (indented inside recipe) scope. `@before recipe` / `@after recipe`
+      remain as the cross-cutting form for attaching hooks to recipes
+      defined elsewhere (e.g., imported). Top-level targeted `@on_error`
+      removed (had no real users; was the source of POTENTIAL_ISSUES #3).
+- [ ] Decide whether the web UI (`webui.zig`, ~1700 lines) belongs pre-1.0
+      or should be feature-gated / extracted until core is stable.
+- [x] `parser.zig` Tier 1 structural pass: extracted 13 per-directive
+      handlers from the 375-line `parseDirective` chain, and unified recipe
+      finalization into a single `finalizeRecipe` helper used by all 3
+      recipe parsers. Tier 2 (data-driven dispatch table, collapse
+      `pending_X` cluster, unify recipe body parsing) deferred until the
+      directive surface is pruned.
+
+### Correctness items already known (cross-ref POTENTIAL_ISSUES.md)
+
+- [x] Fix `@on_error` parsing heuristic. Top-level `@on_error` is now
+      always global; body-level `@on_error` (inside recipe) is the
+      recipe-specific form, mirroring `@pre`/`@post`. The heuristic is
+      gone. (POTENTIAL_ISSUES #3)
+- [ ] Remove global `chdir()` from Jakefile loading — process-wide side
+      effect from a load operation breaks embedders and concurrent loads.
+      (POTENTIAL_ISSUES #1)
+- [ ] Route hooks through the same shell-selection abstraction as the rest
+      of the codebase — hard-coded `/bin/sh` breaks Windows.
+      (POTENTIAL_ISSUES #2)
+
+### Open questions to resolve before 1.0
+
+- [ ] What is Jake's *one-line* differentiator vs Just for a developer who
+      already uses Just happily? File targets is the answer; make sure the
+      docs and landing page make this immediately obvious.
+- [ ] Lock the directive surface — every `@thing` shipped in 1.0 is a
+      forever-API. Better to ship fewer.
+- [ ] Decide whether parallel cache merge (POTENTIAL_ISSUES #4) is a 1.0
+      blocker or a "fix when someone hits it" item. Depends on target user
+      (small Jakefiles vs. real build pipelines).
+
+---
+
 # Stabilize v0.6.0
 
 Ensure documents are up to date with coedbase, archive useless odl reports, remove old verisons of specs, remove

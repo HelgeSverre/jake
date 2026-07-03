@@ -47,8 +47,8 @@ syn match jakeConditional "^\s\+@\(if\|elif\|else\|end\)\>"
 syn match jakeLoop "^\s\+@each\>"
 " Other directives
 syn match jakeDirective "^\s\+@\(needs\|require\|confirm\|cache\|watch\)\>"
-syn match jakeDirective "^\s\+@\(cd\|shell\|group\|desc\|description\|alias\)\>"
-syn match jakeDirective "^\s\+@\(quiet\|ignore\|only\|only-os\|platform\)\>"
+syn match jakeDirective "^\s\+@\(cd\|shell\|group\|desc\|alias\)\>"
+syn match jakeDirective "^\s\+@\(quiet\|ignore\|platform\)\>"
 syn match jakeDirective "^\s\+@\(export\|pre\|post\|timeout\|launch\)\>"
 
 " Variable definitions (top-level)

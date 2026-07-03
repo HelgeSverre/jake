@@ -107,7 +107,7 @@ task tree-sitter-parse:
 
 @group editors
 @desc "Install Vim syntax files to ~/.vim"
-@only-os macos linux
+@platform macos linux
 task vim-install:
     @if exists(editors/vim-jake/syntax/jake.vim)
         mkdir -p ~/.vim/syntax ~/.vim/ftdetect ~/.vim/ftplugin
@@ -121,7 +121,7 @@ task vim-install:
 
 @group editors
 @desc "Install Neovim syntax files to ~/.config/nvim"
-@only-os macos linux
+@platform macos linux
 task neovim-install:
     @if exists(editors/vim-jake/syntax/jake.vim)
         mkdir -p ~/.config/nvim/syntax ~/.config/nvim/ftdetect ~/.config/nvim/ftplugin
@@ -135,14 +135,14 @@ task neovim-install:
 
 @group editors
 @desc "Launch Neovim with plugin loaded from source (fast dev mode)"
-@only-os macos linux
+@platform macos linux
 task neovim-run:
     @needs nvim
     nvim --cmd "set rtp+=editors/vim-jake" --cmd "syntax on" --cmd "filetype plugin on" Jakefile
 
 @group editors
 @desc "Launch Vim with plugin loaded from source (fast dev mode)"
-@only-os macos linux
+@platform macos linux
 task vim-run:
     @needs vim
     vim --cmd "set rtp+=editors/vim-jake" --cmd "syntax on" --cmd "filetype plugin on" Jakefile
@@ -220,16 +220,16 @@ task intellij-publish:
 
 @group editors
 @desc "Install Sublime Text syntax files"
-@only-os macos linux
+@platform macos linux
 task sublime-install:
     @if exists(editors/sublime-jake/Jake.tmLanguage.json)
-        @only-os macos
+        @platform macos
             mkdir -p ~/Library/Application\ Support/Sublime\ Text/Packages/Jake
             cp editors/sublime-jake/Jake.tmLanguage.json ~/Library/Application\ Support/Sublime\ Text/Packages/Jake/
             cp editors/sublime-jake/Comments.tmPreferences ~/Library/Application\ Support/Sublime\ Text/Packages/Jake/
             cp editors/sublime-jake/Jake.sublime-settings ~/Library/Application\ Support/Sublime\ Text/Packages/Jake/
             echo "Sublime Text syntax installed to ~/Library/Application Support/Sublime Text/Packages/Jake/"
-        @only-os linux
+        @platform linux
             mkdir -p ~/.config/sublime-text/Packages/Jake
             cp editors/sublime-jake/Jake.tmLanguage.json ~/.config/sublime-text/Packages/Jake/
             cp editors/sublime-jake/Comments.tmPreferences ~/.config/sublime-text/Packages/Jake/
@@ -241,7 +241,7 @@ task sublime-install:
 
 @group editors
 @desc "Install Sublime Text syntax and open current directory"
-@only-os macos linux
+@platform macos linux
 task sublime-run: [sublime-install]
     @needs subl "Sublime Text CLI (install from Sublime Text: Tools > Install subl)"
     subl .
@@ -250,13 +250,13 @@ task sublime-run: [sublime-install]
 
 @group editors
 @desc "Uninstall Sublime Text syntax files"
-@only-os macos linux
+@platform macos linux
 task sublime-uninstall:
-    @only-os macos
+    @platform macos
         @ignore
         rm -rf ~/Library/Application\ Support/Sublime\ Text/Packages/Jake
         echo "Sublime Text syntax uninstalled"
-    @only-os linux
+    @platform linux
         @ignore
         rm -rf ~/.config/sublime-text/Packages/Jake
         echo "Sublime Text syntax uninstalled"
@@ -267,7 +267,7 @@ task sublime-uninstall:
 
 @group editors
 @desc "Build and install tree-sitter grammar for Helix"
-@only-os macos linux
+@platform macos linux
 task helix-install:
     @needs npx hx
     @cd editors/tree-sitter-jake
@@ -285,21 +285,21 @@ task helix-install:
 
 @group editors
 @desc "Open current directory in Helix to test Jake highlighting"
-@only-os macos linux
+@platform macos linux
 task helix-run:
     @needs hx
     hx Jakefile
 
 @group editors
 @desc "Show Helix Jake language health status"
-@only-os macos linux
+@platform macos linux
 task helix-health:
     @needs hx
     hx --health jake
 
 @group editors
 @desc "Uninstall Helix Jake grammar"
-@only-os macos linux
+@platform macos linux
 task helix-uninstall:
     @ignore
     rm -f ~/.config/helix/runtime/grammars/jake.so

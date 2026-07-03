@@ -273,7 +273,7 @@ const jake = {
         },
         {
           name: "meta.directive.desc.jake",
-          match: "^\\s*(@(?:desc|description))\\s+(\"[^\"]*\"|'[^']*'|.*)$",
+          match: "^\\s*(@desc)\\s+(\"[^\"]*\"|'[^']*'|.*)$",
           captures: {
             1: { name: "keyword.control.directive.jake" },
             2: { name: "string.quoted.jake" },
@@ -293,7 +293,7 @@ const jake = {
         },
         {
           name: "meta.directive.platform.jake",
-          match: "^\\s*(@(?:only|only-os|platform))\\s+(.*)$",
+          match: "^\\s*(@platform)\\s+(.*)$",
           captures: {
             1: { name: "keyword.control.directive.jake" },
             2: { name: "constant.language.platform.jake" },

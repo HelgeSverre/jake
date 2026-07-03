@@ -68,7 +68,7 @@ task docker:
 
 @desc "Test Homebrew formula locally"
 @group packaging
-@only-os macos
+@platform macos
 task homebrew-test:
     @needs brew
     @pre echo "Testing Homebrew formula..."

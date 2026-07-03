@@ -18,7 +18,7 @@ Part of the [Jake](https://github.com/HelgeSverre/jake) task runner project.
 ## Highlighted Elements
 
 - **Keywords**: `task`, `file`, `import`, `as`
-- **Directives**: `@if`, `@else`, `@each`, `@end`, `@needs`, `@require`, `@cache`, `@watch`, `@confirm`, `@group`, `@desc`, `@alias`, `@quiet`, `@ignore`, `@only-os`, `@platform`, `@cd`, `@shell`, `@export`, `@pre`, `@post`, `@before`, `@after`, `@on_error`
+- **Directives**: `@if`, `@else`, `@each`, `@end`, `@needs`, `@require`, `@cache`, `@watch`, `@confirm`, `@group`, `@desc`, `@alias`, `@quiet`, `@ignore`, `@platform`, `@cd`, `@shell`, `@export`, `@pre`, `@post`, `@before`, `@after`, `@on_error`
 - **Variables**: `{{variable}}`, `{{function(arg)}}`, `$VAR`, `${VAR}`, `$1`, `$@`
 - **Functions**: `dirname()`, `basename()`, `extension()`, `uppercase()`, `lowercase()`, `trim()`, `home()`, `env()`, `exists()`, `eq()`, `neq()`
 - **Strings**: Double and single quoted strings with escape sequences
@@ -111,7 +111,7 @@ file dist/bundle.js: src/**/*.ts
 
 task deploy:
     @confirm "Deploy to production?"
-    @only-os linux macos
+    @platform linux macos
     ./scripts/deploy.sh
 ```
 

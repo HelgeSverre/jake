@@ -105,11 +105,8 @@
       "directives": [
         "@group",
         "@desc",
-        "@description",
         "@alias",
         "@quiet",
-        "@only",
-        "@only-os",
         "@platform",
         "@needs"
       ]
@@ -154,8 +151,8 @@
     "all": [
       "@import", "@dotenv", "@require", "@export", "@default",
       "@pre", "@post", "@on_error", "@before", "@after",
-      "@group", "@desc", "@description", "@alias", "@quiet",
-      "@only", "@only-os", "@platform", "@needs",
+      "@group", "@desc", "@alias", "@quiet",
+      "@platform", "@needs",
       "@if", "@elif", "@else", "@end", "@each",
       "@cd", "@shell", "@timeout", "@launch",
       "@cache", "@watch", "@confirm", "@ignore"

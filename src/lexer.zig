@@ -46,10 +46,7 @@ pub const Token = struct {
         kw_ignore,
         kw_group,
         kw_desc,
-        kw_description, // long form of @desc
-        kw_only,
-        kw_only_os, // only-os (hyphenated keyword)
-        kw_platform, // preferred name for OS filtering
+        kw_platform,
         kw_alias,
         kw_quiet,
         kw_hidden,
@@ -400,12 +397,6 @@ pub const Lexer = struct {
             .kw_group
         else if (std.mem.eql(u8, text, "desc"))
             .kw_desc
-        else if (std.mem.eql(u8, text, "description"))
-            .kw_description
-        else if (std.mem.eql(u8, text, "only"))
-            .kw_only
-        else if (std.mem.eql(u8, text, "only-os"))
-            .kw_only_os
         else if (std.mem.eql(u8, text, "platform"))
             .kw_platform
         else if (std.mem.eql(u8, text, "alias"))
@@ -608,7 +599,7 @@ test "lexer tab column tracking" {
 // --- Token Types: All Keywords ---
 
 test "lexer all keywords" {
-    const source = "task file default if elif else end import as dotenv require watch cache needs confirm each pre post export cd shell ignore group desc only only-os alias quiet timeout launch";
+    const source = "task file default if elif else end import as dotenv require watch cache needs confirm each pre post export cd shell ignore group desc platform alias quiet timeout launch";
     var lex = Lexer.init(source);
 
     try std.testing.expectEqual(Token.Tag.kw_task, lex.next().tag);
@@ -635,8 +626,7 @@ test "lexer all keywords" {
     try std.testing.expectEqual(Token.Tag.kw_ignore, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_group, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_desc, lex.next().tag);
-    try std.testing.expectEqual(Token.Tag.kw_only, lex.next().tag);
-    try std.testing.expectEqual(Token.Tag.kw_only_os, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.kw_platform, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_alias, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_quiet, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_timeout, lex.next().tag);
@@ -1248,14 +1238,14 @@ test "lexer desc keyword" {
     try std.testing.expectEqual(Token.Tag.string, lex.next().tag);
 }
 
-test "lexer only keyword" {
-    const source = "@only linux macos";
+test "lexer platform keyword" {
+    const source = "@platform linux macos";
     var lex = Lexer.init(source);
 
     try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
     const tok = lex.next();
-    try std.testing.expectEqual(Token.Tag.kw_only, tok.tag);
-    try std.testing.expectEqualStrings("only", tok.slice(source));
+    try std.testing.expectEqual(Token.Tag.kw_platform, tok.tag);
+    try std.testing.expectEqualStrings("platform", tok.slice(source));
     try std.testing.expectEqual(Token.Tag.ident, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.ident, lex.next().tag);
 }
@@ -1320,7 +1310,7 @@ test "lexer new keywords as identifiers with suffix" {
 }
 
 test "lexer multiple new directives" {
-    const source = "@cd src\n@shell zsh\n@ignore\n@group dev\n@desc \"Test task\"\n@only macos\n@alias t\n@quiet";
+    const source = "@cd src\n@shell zsh\n@ignore\n@group dev\n@desc \"Test task\"\n@platform macos\n@alias t\n@quiet";
     var lex = Lexer.init(source);
 
     // @cd src
@@ -1352,9 +1342,9 @@ test "lexer multiple new directives" {
     try std.testing.expectEqual(Token.Tag.string, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.newline, lex.next().tag);
 
-    // @only macos
+    // @platform macos
     try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
-    try std.testing.expectEqual(Token.Tag.kw_only, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.kw_platform, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.ident, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.newline, lex.next().tag);
 
@@ -1367,18 +1357,6 @@ test "lexer multiple new directives" {
     // @quiet
     try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_quiet, lex.next().tag);
-    try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
-}
-
-test "lexer description keyword" {
-    const source = "@description \"Build the app\"";
-    var lex = Lexer.init(source);
-
-    try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
-    const desc_tok = lex.next();
-    try std.testing.expectEqual(Token.Tag.kw_description, desc_tok.tag);
-    try std.testing.expectEqualStrings("description", desc_tok.slice(source));
-    try std.testing.expectEqual(Token.Tag.string, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
 }
 

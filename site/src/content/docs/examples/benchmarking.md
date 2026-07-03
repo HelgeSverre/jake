@@ -54,20 +54,20 @@ task sizes:
     @post ls -lh /tmp/sizes/
 
 @desc "Profile CPU usage"
-@only-os macos
+@platform macos
 task profile:
     @needs samply "brew install samply"
     samply record ./app benchmark-workload
 
 @desc "Check for memory leaks"
-@only-os macos
+@platform macos
 task leaks:
     @pre echo "Running with leak detection..."
     leaks --atExit -- ./app benchmark-workload
     @post echo "Leak check complete"
 
 @desc "Show peak memory usage"
-@only-os macos
+@platform macos
 task memory:
     /usr/bin/time -l ./app benchmark-workload 2>&1 | grep -E "maximum resident|real"
 
@@ -111,11 +111,11 @@ task bench-all: [bench-startup, bench-scaling, bench-compare, sizes]
 ### Platform-Specific Tasks
 
 ```jake
-@only-os macos
+@platform macos
 task leaks:
     leaks --atExit -- ./app
 
-@only-os linux
+@platform linux
 task valgrind:
     valgrind --leak-check=full ./app
 ```

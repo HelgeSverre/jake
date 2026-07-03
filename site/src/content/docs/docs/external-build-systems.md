@@ -129,7 +129,7 @@ Use external support to migrate incrementally:
 3. Have Jake recipes call make targets during transition:
 
 ```jake
-@description "New Jake build"
+@desc "New Jake build"
 task build:
     # Can still call old make targets
     make legacy-step

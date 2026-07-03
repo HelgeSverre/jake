@@ -240,6 +240,20 @@ task test-hooks:
     {{jake}} -f fixtures/hooks/on-error-global.jake build > {{out}} 2>&1 || true
     grep -q "GLOBAL ERROR HANDLER" {{out}}
     echo "  @on_error runs on build failure ....................... PASS"
+    # body-level @on_error fires for the failing recipe
+    @ignore
+    {{jake}} -f fixtures/hooks/on-error-body.jake fail > {{out}} 2>&1 || true
+    grep -q "BODY ERROR HOOK" {{out}}
+    echo "  body-level @on_error fires on failure ................. PASS"
+    # body-level @on_error does not fire on success
+    {{jake}} -f fixtures/hooks/on-error-body.jake succeed > {{out}} 2>&1
+    grep -q "Success path" {{out}} && ! grep -q "BODY ERROR HOOK" {{out}}
+    echo "  body-level @on_error does not fire on success ......... PASS"
+    # body-level @on_error does not fire for OTHER recipe failures
+    @ignore
+    {{jake}} -f fixtures/hooks/on-error-body.jake other-fails > {{out}} 2>&1 || true
+    ! grep -q "BODY ERROR HOOK" {{out}}
+    echo "  body-level @on_error scoped to its recipe only ........ PASS"
     # Hooks run for target with dependencies
     {{jake}} -f fixtures/hooks/with-deps.jake deploy > {{out}} 2>&1
     grep -q "Building" {{out}} && grep -q "PRE-DEPLOY" {{out}} && grep -q "Deploying" {{out}} && grep -q "POST-DEPLOY" {{out}}

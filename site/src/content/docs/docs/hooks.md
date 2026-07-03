@@ -20,14 +20,22 @@ task test:
 
 ```jake
 @after deploy curl -s -X POST $SLACK_WEBHOOK -d '{"text":"Deploy complete"}'
-@on_error deploy curl -s -X POST $SLACK_WEBHOOK -d '{"text":"Deploy FAILED"}'
+
+task deploy:
+    ./deploy.sh
+    @on_error curl -s -X POST $SLACK_WEBHOOK -d '{"text":"Deploy FAILED"}'
 ```
 
 **Automatic rollback** — Trigger a rollback script if a deploy or migration fails.
 
 ```jake
-@on_error deploy ./scripts/rollback.sh --env production
-@on_error migrate psql $DATABASE_URL -f migrations/rollback.sql
+task deploy:
+    ./deploy.sh --env production
+    @on_error ./scripts/rollback.sh --env production
+
+task migrate:
+    psql $DATABASE_URL -f migrations/up.sql
+    @on_error psql $DATABASE_URL -f migrations/rollback.sql
 ```
 
 **Environment validation** — Check that required tools, credentials, or conditions exist before a recipe runs. Because pre-hook failures stop execution, this acts as a clean gate.
@@ -102,17 +110,21 @@ For any recipe that runs, hooks fire in this order:
 
 ## Error Hooks
 
-`@on_error` runs when a recipe fails. Use it for notifications, cleanup that shouldn't run on success, or logging:
+`@on_error` runs when a recipe fails. Use it for notifications, cleanup that shouldn't run on success, or logging.
+
+**Global** — top-level `@on_error` runs whenever any recipe fails:
 
 ```jake
 @on_error echo "Build failed — check logs at ./build.log"
 @on_error notify "CI failure on {{BRANCH}}"
 ```
 
-`@on_error` hooks can also be targeted to a specific recipe:
+**Recipe-local** — body-level `@on_error` inside a recipe runs only when that recipe fails:
 
 ```jake
-@on_error deploy rollback --last
+task deploy:
+    ./deploy.sh
+    @on_error rollback --last
 ```
 
 ## Failure Behavior
@@ -138,5 +150,8 @@ app = "myapp"
 
 @before deploy echo "Deploying {{app}} to production..."
 @after deploy notify "{{app}} deployment complete"
-@on_error deploy notify "{{app}} deployment failed!"
+
+task deploy:
+    ./deploy.sh
+    @on_error notify "{{app}} deployment failed!"
 ```

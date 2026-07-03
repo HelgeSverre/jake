@@ -22,13 +22,13 @@ port = "3000"
 # === Development ===
 
 @default
-@description "Start development server with hot reload"
+@desc "Start development server with hot reload"
 task dev:
     @needs node npm
     @pre echo "Starting development server on port {{port}}..."
     npm run dev
 
-@description "Build and watch for changes"
+@desc "Build and watch for changes"
 task dev-watch:
     @watch src/**/*.ts src/**/*.tsx src/**/*.css
     npm run build
@@ -36,12 +36,12 @@ task dev-watch:
 # === Build Pipeline ===
 
 @group build
-@description "Production build"
+@desc "Production build"
 task build: [clean, build-ts, build-css, build-assets]
     echo "Build complete! Output in {{dist_dir}}/"
 
 @group build
-@description "Compile TypeScript"
+@desc "Compile TypeScript"
 file dist/app.js: src/**/*.ts src/**/*.tsx
     @pre echo "Compiling TypeScript..."
     mkdir -p dist
@@ -54,7 +54,7 @@ file dist/app.js: src/**/*.ts src/**/*.tsx
     @post echo "TypeScript compiled: dist/app.js"
 
 @group build
-@description "Build Tailwind CSS"
+@desc "Build Tailwind CSS"
 file dist/app.css: src/**/*.css tailwind.config.js
     @pre echo "Processing CSS..."
     mkdir -p dist
@@ -71,7 +71,7 @@ task build-ts: [dist/app.js]
 task build-css: [dist/app.css]
     echo "CSS build complete"
 
-@description "Copy static assets"
+@desc "Copy static assets"
 task build-assets:
     mkdir -p dist/assets
     @if exists(public)
@@ -84,43 +84,43 @@ task build-assets:
 # === Development Utilities ===
 
 @group dev
-@description "Run ESLint"
+@desc "Run ESLint"
 task lint:
     @needs npx
     npx eslint src/ --ext .ts,.tsx
 
 @group dev
-@description "Format code with Prettier"
+@desc "Format code with Prettier"
 task format:
     @needs npx
     npx prettier --write "src/**/*.{ts,tsx,css,json}"
 
 @group dev
-@description "Type-check without emitting"
+@desc "Type-check without emitting"
 task typecheck:
     @needs npx
     npx tsc --noEmit
 
-@description "Run all code quality checks"
+@desc "Run all code quality checks"
 task check: [lint, typecheck]
     echo "All checks passed!"
 
 # === Testing ===
 
 @group test
-@description "Run all tests"
+@desc "Run all tests"
 task test:
     @needs npm
     npm test
 
 @group test
-@description "Run tests in watch mode"
+@desc "Run tests in watch mode"
 task test-watch:
     @needs npm
     npm test -- --watch
 
 @group test
-@description "Run tests with coverage report"
+@desc "Run tests with coverage report"
 task test-coverage:
     @needs npm
     npm test -- --coverage
@@ -128,14 +128,14 @@ task test-coverage:
 
 # === Cleanup ===
 
-@description "Remove build artifacts"
+@desc "Remove build artifacts"
 task clean:
     rm -rf dist/
     rm -rf .cache/
     rm -rf node_modules/.cache/
     echo "Cleaned build artifacts"
 
-@description "Remove everything including dependencies"
+@desc "Remove everything including dependencies"
 task clean-all: [clean]
     rm -rf node_modules/
     echo "Removed node_modules/"

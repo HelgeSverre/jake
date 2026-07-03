@@ -57,13 +57,13 @@ task check: [lint, test]
 # === Documentation ===
 
 @group docs
-@description "Generate documentation"
+@desc "Generate documentation"
 task docs:
     @needs cargo
     cargo doc --no-deps --open
 
 @group docs
-@description "Build docs for publishing"
+@desc "Build docs for publishing"
 task docs-build:
     @needs cargo
     cargo doc --no-deps
@@ -72,7 +72,7 @@ task docs-build:
 # === Release Pipeline ===
 
 @group release
-@description "Build release binaries for all platforms"
+@desc "Build release binaries for all platforms"
 task release-build:
     @needs cross
     @pre echo "Building for all platforms..."
@@ -90,14 +90,14 @@ task release-build:
     @post echo "All platforms built!"
 
 @group release
-@description "Generate SHA256 checksums"
+@desc "Generate SHA256 checksums"
 task checksums: [release-build]
     @cd dist
         shasum -a 256 {{name}}-* > checksums.txt
     echo "Checksums: dist/checksums.txt"
 
 @group release
-@description "Create release archive"
+@desc "Create release archive"
 task release-package: [checksums]
     @require VERSION
     @confirm "Create release package for v$VERSION?"
@@ -110,7 +110,7 @@ task release-package: [checksums]
 # === Changelog Management ===
 
 @group release
-@description "Verify CHANGELOG has unreleased changes"
+@desc "Verify CHANGELOG has unreleased changes"
 task changelog-check:
     @if exists(CHANGELOG.md)
         grep -q "## \[Unreleased\]" CHANGELOG.md && \
@@ -123,7 +123,7 @@ task changelog-check:
     @end
 
 @group release
-@description "Convert Unreleased to version entry"
+@desc "Convert Unreleased to version entry"
 task changelog-release:
     @require VERSION
     @needs sed
@@ -135,7 +135,7 @@ task changelog-release:
 # === Version Management ===
 
 @group release
-@description "Bump version in project files"
+@desc "Bump version in project files"
 task version-bump:
     @require VERSION
     @confirm "Bump version to $VERSION?"
@@ -147,7 +147,7 @@ task version-bump:
     echo "Version bumped to $VERSION"
 
 @group release
-@description "Full release workflow"
+@desc "Full release workflow"
 task release: [check, changelog-check]
     @require VERSION
     @confirm "Release v$VERSION to GitHub?"
@@ -177,7 +177,7 @@ task release: [check, changelog-check]
 
 # === CI Helpers ===
 
-@description "Run CI checks locally"
+@desc "Run CI checks locally"
 task ci: [lint, test, docs-build]
     echo "CI simulation passed!"
 

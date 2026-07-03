@@ -273,14 +273,14 @@ module.exports = grammar({
         optional($.recipe_body),
       ),
 
-    // Recipe metadata directives (@group, @desc, @alias, @needs, @quiet, @only, etc.)
+    // Recipe metadata directives (@group, @desc, @alias, @needs, @quiet, @platform, etc.)
     recipe_attribute: ($) =>
       choice(
         seq("@group", field("name", choice($.identifier, $.string)), $._newline),
-        seq(choice("@desc", "@description"), field("text", $.string), $._newline),
+        seq("@desc", field("text", $.string), $._newline),
         seq("@alias", repeat1(field("name", $.identifier)), $._newline),
         seq("@quiet", $._newline),
-        seq(choice("@only", "@only-os", "@platform"), repeat1(field("platform", $.identifier)), $._newline),
+        seq("@platform", repeat1(field("platform", $.identifier)), $._newline),
         seq("@needs", repeat1(choice(
           seq($.identifier, $.string, "->", $.identifier),  // cmd "hint" -> install_task
           seq($.identifier, "->", $.identifier),  // cmd -> install_task

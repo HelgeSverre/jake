@@ -161,19 +161,26 @@ pub const HookRunner = struct {
         if (first_error) |err| return err;
     }
 
-    /// Run all on_error hooks for a recipe (only runs when recipe fails)
+    /// Run on_error hooks for a recipe (only runs when recipe fails).
+    /// Combines global @on_error hooks with the recipe's own body-level hooks.
     pub fn runOnErrorHooks(
         self: *HookRunner,
+        recipe_hooks: []const Hook,
         context: *const HookContext,
     ) void {
         // Only run if the recipe failed
         if (context.success) return;
 
-        // Run global on_error hooks (only if they match the current recipe)
+        // Global @on_error hooks fire for every recipe.
         for (self.global_on_error_hooks.items) |hook| {
             if (shouldRunHook(hook, context.recipe_name)) {
                 self.executeHook(hook, context) catch {};
             }
+        }
+
+        // Recipe-local @on_error hooks fire only for this recipe.
+        for (recipe_hooks) |hook| {
+            self.executeHook(hook, context) catch {};
         }
     }
 

@@ -88,7 +88,7 @@ task profile:
 
 @desc "Memory leak check (macOS)"
 @group perf
-@only-os macos
+@platform macos
 task leaks:
     @needs leaks
     @needs zig
@@ -106,7 +106,7 @@ task memory:
 
 @desc "Profile with Instruments (macOS)"
 @group perf
-@only-os macos
+@platform macos
 task instruments:
     @needs xctrace "Install Xcode Command Line Tools"
     @needs zig

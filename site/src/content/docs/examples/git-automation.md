@@ -16,42 +16,42 @@ Streamline your Git workflow with automated commits, branch management, and pre-
 # === Pre-commit Checks ===
 
 @default
-@description "Run before every commit"
+@desc "Run before every commit"
 task pre-commit: [lint, format-check, test-quick]
     echo "Pre-commit checks passed!"
 
-@description "Run all linters"
+@desc "Run all linters"
 task lint:
     @needs npm
     npm run lint
 
-@description "Check code formatting"
+@desc "Check code formatting"
 task format-check:
     @needs npm
     npx prettier --check "src/**/*.{ts,tsx,js,json,css}"
 
-@description "Run fast unit tests only"
+@desc "Run fast unit tests only"
 task test-quick:
     @needs npm
     npm test -- --testPathPattern="unit" --bail
 
 # === Branch Workflows ===
 
-@description "Verify clean working directory"
+@desc "Verify clean working directory"
 task branch-check:
     # Jake's @if conditions don't evaluate $(...) shell substitutions —
     # do the cleanliness check at shell level and exit non-zero on failure.
     git diff-index --quiet HEAD -- || (echo "Error: working directory is not clean" >&2; git status --short; exit 1)
     echo "Working directory is clean"
 
-@description "Sync with upstream main"
+@desc "Sync with upstream main"
 task branch-sync:
     @pre echo "Syncing with upstream..."
     git fetch origin
     git rebase origin/main
     @post echo "Branch synced with main"
 
-@description "Delete merged local branches"
+@desc "Delete merged local branches"
 task branch-cleanup:
     @confirm "Delete merged branches?"
     git branch --merged main | grep -v "main" | xargs -r git branch -d
@@ -59,14 +59,14 @@ task branch-cleanup:
 
 # === Feature Branch Workflow ===
 
-@description "Start a new feature branch"
+@desc "Start a new feature branch"
 task feature-start name:
     git checkout main
     git pull origin main
     git checkout -b "feature/{{name}}"
     echo "Created feature/{{name}}"
 
-@description "Finish current feature branch"
+@desc "Finish current feature branch"
 task feature-finish:
     @pre echo "Running final checks..."
     jake pre-commit
@@ -81,45 +81,45 @@ task feature-finish:
 
 # === Commit Helpers ===
 
-@description "Create a fix commit"
+@desc "Create a fix commit"
 task commit-fix:
     @confirm "Stage all changes and commit as fix?"
     git add -A
     git commit -m "fix: {{$1}}"
 
-@description "Create a feature commit"
+@desc "Create a feature commit"
 task commit-feat:
     @confirm "Stage all changes and commit as feature?"
     git add -A
     git commit -m "feat: {{$1}}"
 
-@description "Create a docs commit"
+@desc "Create a docs commit"
 task commit-docs:
     git add -A
     git commit -m "docs: {{$1}}"
 
-@description "Create a chore commit"
+@desc "Create a chore commit"
 task commit-chore:
     git add -A
     git commit -m "chore: {{$1}}"
 
 # === Tagging ===
 
-@description "Create version tag"
+@desc "Create version tag"
 task tag-version:
     @require VERSION
     @confirm "Create tag v$VERSION?"
     git tag -a "v$VERSION" -m "Release v$VERSION"
     echo "Created tag v$VERSION"
 
-@description "Push all tags to origin"
+@desc "Push all tags to origin"
 task tag-push:
     git push origin --tags
     echo "Tags pushed"
 
 # === Git Hooks Setup ===
 
-@description "Install git hooks"
+@desc "Install git hooks"
 task hooks-install:
     mkdir -p .git/hooks
 
@@ -129,7 +129,7 @@ task hooks-install:
 
     echo "Git hooks installed!"
 
-@description "Remove git hooks"
+@desc "Remove git hooks"
 task hooks-uninstall:
     rm -f .git/hooks/pre-commit
     rm -f .git/hooks/commit-msg
@@ -137,7 +137,7 @@ task hooks-uninstall:
 
 # === Utility ===
 
-@description "Show detailed git status"
+@desc "Show detailed git status"
 task status:
     @quiet
     echo "=== Branch ==="
@@ -149,7 +149,7 @@ task status:
     echo "=== Recent Commits ==="
     git log --oneline -5
 
-@description "Pretty git log"
+@desc "Pretty git log"
 task log:
     git log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit -20
 ```

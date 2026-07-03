@@ -17,7 +17,7 @@ A complete workflow for database management including migrations, seeding, backu
 # === Migrations ===
 
 @group db
-@description "Run pending migrations"
+@desc "Run pending migrations"
 task migrate:
     @needs npx
     @pre echo "Running migrations..."
@@ -25,14 +25,14 @@ task migrate:
     @post echo "Migrations complete"
 
 @group db
-@description "Create a new migration"
+@desc "Create a new migration"
 task migrate-create name:
     @needs npx
     npx prisma migrate dev --name {{name}}
     echo "Created migration: {{name}}"
 
 @group db
-@description "Reset database and run all migrations"
+@desc "Reset database and run all migrations"
 task migrate-reset:
     @confirm "This will DELETE all data. Continue?"
     @needs npx
@@ -40,7 +40,7 @@ task migrate-reset:
     @post echo "Database reset complete"
 
 @group db
-@description "Show migration status"
+@desc "Show migration status"
 task migrate-status:
     @needs npx
     npx prisma migrate status
@@ -48,7 +48,7 @@ task migrate-status:
 # === Seeding ===
 
 @group db
-@description "Seed database with sample data"
+@desc "Seed database with sample data"
 task seed:
     @needs npx
     @pre echo "Seeding database..."
@@ -56,7 +56,7 @@ task seed:
     @post echo "Database seeded"
 
 @group db
-@description "Seed production essentials only"
+@desc "Seed production essentials only"
 task seed-prod:
     @confirm "Seed production database?"
     @needs npx
@@ -66,7 +66,7 @@ task seed-prod:
 # === Backups ===
 
 @group backup
-@description "Create database backup"
+@desc "Create database backup"
 task backup:
     @needs pg_dump
     backup_file="backups/db-$(date +%Y%m%d-%H%M%S).sql"
@@ -76,13 +76,13 @@ task backup:
     @post echo "Backup created: ${backup_file}.gz"
 
 @group backup
-@description "List available backups"
+@desc "List available backups"
 task backup-list:
     @quiet
     ls -lah backups/*.sql.gz 2>/dev/null || echo "No backups found"
 
 @group backup
-@description "Restore from backup file"
+@desc "Restore from backup file"
 @needs psql gunzip
 task restore source:
     @confirm "Restore from {{source}}? This will overwrite current data."
@@ -90,7 +90,7 @@ task restore source:
     @post echo "Database restored from {{source}}"
 
 @group backup
-@description "Backup to S3"
+@desc "Backup to S3"
 task backup-s3:
     @require AWS_BUCKET
     @needs aws pg_dump
@@ -101,28 +101,28 @@ task backup-s3:
 # === Schema ===
 
 @group schema
-@description "Push schema changes (dev only)"
+@desc "Push schema changes (dev only)"
 task schema-push:
     @needs npx
     npx prisma db push
     echo "Schema pushed"
 
 @group schema
-@description "Pull schema from database"
+@desc "Pull schema from database"
 task schema-pull:
     @needs npx
     npx prisma db pull
     echo "Schema pulled"
 
 @group schema
-@description "Generate Prisma client"
+@desc "Generate Prisma client"
 task schema-generate:
     @needs npx
     npx prisma generate
     echo "Client generated"
 
 @group schema
-@description "Open Prisma Studio"
+@desc "Open Prisma Studio"
 task schema-studio:
     @needs npx
     npx prisma studio
@@ -130,13 +130,13 @@ task schema-studio:
 # === Performance ===
 
 @group perf
-@description "Analyze slow queries"
+@desc "Analyze slow queries"
 task analyze-queries:
     @needs psql
     psql $DATABASE_URL -c "SELECT query, calls, mean_time, total_time FROM pg_stat_statements ORDER BY mean_time DESC LIMIT 10;"
 
 @group perf
-@description "Run VACUUM ANALYZE"
+@desc "Run VACUUM ANALYZE"
 task vacuum:
     @needs psql
     @pre echo "Running VACUUM ANALYZE..."
@@ -144,7 +144,7 @@ task vacuum:
     @post echo "Vacuum complete"
 
 @group perf
-@description "Show table sizes"
+@desc "Show table sizes"
 task table-sizes:
     @needs psql
     psql $DATABASE_URL -c "SELECT relname AS table, pg_size_pretty(pg_total_relation_size(relid)) AS size FROM pg_catalog.pg_statio_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;"
@@ -152,22 +152,22 @@ task table-sizes:
 # === Setup ===
 
 @default
-@description "Full database setup"
+@desc "Full database setup"
 task setup: [schema-generate, migrate, seed]
     echo "Database setup complete!"
 
-@description "Reset and reseed database"
+@desc "Reset and reseed database"
 task reset: [migrate-reset, seed]
     echo "Database reset complete!"
 
 # === Utilities ===
 
-@description "Open database shell"
+@desc "Open database shell"
 task shell:
     @needs psql
     psql $DATABASE_URL
 
-@description "Execute SQL query"
+@desc "Execute SQL query"
 task exec query:
     @needs psql
     psql $DATABASE_URL -c "{{query}}"

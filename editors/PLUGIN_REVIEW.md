@@ -245,8 +245,8 @@ To maintain consistency, all plugins should recognize these elements:
 
 **Recipe attributes (before recipe):**
 
-- `@group`, `@desc`, `@description`, `@alias`, `@quiet`
-- `@only`, `@only-os`, `@platform`
+- `@group`, `@desc`, `@alias`, `@quiet`
+- `@platform`
 - `@needs` (with hint/fallback variants)
 
 **Body directives (inside recipes):**

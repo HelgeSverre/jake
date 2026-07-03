@@ -259,7 +259,7 @@ Appear at the top level of a Jakefile (not indented).
 | `@post`     | Global post-hook               | `@post echo "Done!"`                 |
 | `@before`   | Targeted pre-hook              | `@before deploy echo "Deploying..."` |
 | `@after`    | Targeted post-hook             | `@after deploy notify-slack`         |
-| `@on_error` | Error handler                  | `@on_error echo "Failed!"`           |
+| `@on_error` | Global error handler           | `@on_error echo "Failed!"`           |
 | `@default`  | Mark next recipe as default    | `@default`                           |
 
 **Scope Name:** `keyword.control.directive.jake`
@@ -271,11 +271,11 @@ Appear before a recipe definition to set metadata.
 | Directive                          | Purpose                         | Example                     |
 | ---------------------------------- | ------------------------------- | --------------------------- |
 | `@group`                           | Organize recipes into groups    | `@group testing`            |
-| `@desc` / `@description`           | Recipe description              | `@desc "Build the project"` |
+| `@desc`                            | Recipe description              | `@desc "Build the project"` |
 | `@alias`                           | Alternative recipe names        | `@alias b`                  |
 | `@quiet`                           | Suppress command echoing        | `@quiet`                    |
 | `@hidden`                          | Hide from recipe listings       | `@hidden`                   |
-| `@only` / `@only-os` / `@platform` | OS-specific recipe              | `@platform macos linux`     |
+| `@platform`                        | OS-specific recipe              | `@platform macos linux`     |
 | `@needs`                           | Require commands (recipe-level) | `@needs docker kubectl`     |
 
 **Scope Names:**
@@ -307,6 +307,7 @@ Appear inside recipe body (indented).
 | `@export`  | Export to environment        | `@export NODE_ENV = production` |
 | `@pre`     | Recipe pre-hook              | `@pre echo "Starting..."`       |
 | `@post`    | Recipe post-hook             | `@post cleanup`                 |
+| `@on_error`| Recipe error hook            | `@on_error ./rollback.sh`       |
 
 **Scope Names:**
 

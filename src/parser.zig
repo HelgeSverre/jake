@@ -20,6 +20,7 @@ pub const Recipe = struct {
     commands: []const Command,
     pre_hooks: []const Hook, // @pre commands to run before recipe
     post_hooks: []const Hook, // @post commands to run after recipe
+    on_error_hooks: []const Hook, // @on_error commands to run if recipe fails
     doc_comment: ?[]const u8,
     is_default: bool,
     aliases: []const []const u8, // Alternative names for this recipe
@@ -153,6 +154,7 @@ pub const Jakefile = struct {
             allocator.free(recipe.commands);
             allocator.free(recipe.pre_hooks);
             allocator.free(recipe.post_hooks);
+            allocator.free(recipe.on_error_hooks);
             allocator.free(recipe.aliases);
             allocator.free(recipe.only_os);
             allocator.free(recipe.needs);
@@ -372,6 +374,7 @@ pub const Parser = struct {
             self.allocator.free(recipe.commands);
             self.allocator.free(recipe.pre_hooks);
             self.allocator.free(recipe.post_hooks);
+            self.allocator.free(recipe.on_error_hooks);
             self.allocator.free(recipe.aliases);
             self.allocator.free(recipe.only_os);
             self.allocator.free(recipe.needs);
@@ -588,7 +591,7 @@ pub const Parser = struct {
             // Allow keywords as names in identifier position
             .kw_default, .kw_import, .kw_as, .kw_if, .kw_elif, .kw_else, .kw_end => true,
             .kw_task, .kw_file, .kw_dotenv, .kw_require, .kw_watch, .kw_cache => true,
-            .kw_needs, .kw_confirm, .kw_group, .kw_desc, .kw_only_os, .kw_quiet => true,
+            .kw_needs, .kw_confirm, .kw_group, .kw_desc, .kw_platform, .kw_quiet => true,
             .kw_hidden, .kw_export, .kw_alias, .kw_shell, .kw_cd, .kw_pre, .kw_post => true,
             .kw_on_error, .kw_timeout, .kw_ignore, .kw_each => true,
             else => false,
@@ -658,363 +661,277 @@ pub const Parser = struct {
         return result;
     }
 
+    /// Parse a top-level `@directive`. Dispatches to per-directive handlers
+    /// after consuming the leading `@`. Each handler is responsible for
+    /// advancing past its own keyword.
     fn parseDirective(self: *Parser) ParseError!void {
         _ = try self.expect(.at);
 
-        if (self.current.tag == .kw_default) {
-            self.advance();
-            self.pending_default = true;
-
-            if (self.current.tag != .newline and self.current.tag != .eof and self.current.tag != .comment) {
-                self.setError("expected recipe after '@default'", null);
-                return ParseError.UnexpectedToken;
-            }
-
-            while (self.current.tag != .newline and self.current.tag != .eof) {
+        switch (self.current.tag) {
+            .kw_default => try self.parseDefaultDirective(),
+            .kw_import => {
                 self.advance();
-            }
-            return;
-        }
-
-        // Handle @import specially with "as prefix" support
-        if (self.current.tag == .kw_import) {
-            self.advance();
-            try self.parseImportDirective();
-            return;
-        }
-
-        // Handle @alias directive for recipes
-        if (self.current.tag == .kw_alias) {
-            self.advance();
-
-            // Collect alias names until newline
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                if (self.current.tag == .ident) {
-                    self.pending_aliases.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
-                }
-                self.advance();
-            }
-            return;
-        }
-
-        // Handle @group directive for recipe organization
-        if (self.current.tag == .kw_group) {
-            self.advance();
-
-            // Get group name (identifier or string)
-            if (self.current.tag == .ident or self.current.tag == .string) {
-                self.pending_group = stripQuotes(self.slice(self.current));
-                self.advance();
-            }
-
-            // Skip to end of line
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            return;
-        }
-
-        // Handle @desc or @description directive
-        if (self.current.tag == .kw_desc or self.current.tag == .kw_description) {
-            self.advance();
-            // Clear doc_comment when explicit description is provided
-            self.pending_doc_comment = null;
-
-            // Get description (string or remaining text)
-            if (self.current.tag == .string) {
-                self.pending_description = stripQuotes(self.slice(self.current));
-                self.advance();
-            } else {
-                // Collect everything until newline as description
-                const desc_start = self.current.loc.start;
-                while (self.current.tag != .newline and self.current.tag != .eof) {
-                    self.advance();
-                }
-                const desc_end = self.current.loc.start;
-                const desc = std.mem.trim(u8, self.source[desc_start..desc_end], " \t");
-                if (desc.len > 0) {
-                    self.pending_description = desc;
-                }
-            }
-
-            // Skip to end of line
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            return;
-        }
-
-        // Handle @only, @only-os, or @platform directive for OS-specific recipes
-        if (self.current.tag == .kw_only or self.current.tag == .kw_only_os or self.current.tag == .kw_platform) {
-            self.advance();
-
-            // Collect OS names until newline (e.g., linux macos windows)
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                if (self.current.tag == .ident) {
-                    self.pending_only_os.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
-                }
-                self.advance();
-            }
-            return;
-        }
-
-        // Handle @quiet directive for suppressing command echoing
-        if (self.current.tag == .kw_quiet) {
-            self.advance();
-            self.pending_quiet = true;
-
-            // Skip to end of line
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            return;
-        }
-
-        // Handle @hidden directive for hiding recipe from listings
-        if (self.current.tag == .kw_hidden) {
-            self.advance();
-            self.pending_hidden = true;
-
-            // Skip to end of line
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            return;
-        }
-
-        // Handle @timeout directive for recipe timeout
-        // Syntax: @timeout 30s | @timeout 5m | @timeout 2h
-        if (self.current.tag == .kw_timeout) {
-            self.advance();
-
-            // Expect timeout value (ident like "30s" or number + unit like "30" + "s")
-            var timeout_str: []const u8 = undefined;
-
-            if (self.current.tag == .ident) {
-                // Case 1: "30s" tokenized as single ident (unlikely but handle it)
-                timeout_str = self.slice(self.current);
-                self.advance();
-            } else if (self.current.tag == .number) {
-                // Case 2: "30" + "s" tokenized as number + ident
-                const num_start = self.current.loc.start;
-                self.advance();
-
-                // Next token should be the unit (s, m, h)
-                if (self.current.tag == .ident) {
-                    const unit_end = self.current.loc.end;
-                    // Concatenate number + unit from source
-                    timeout_str = self.source[num_start..unit_end];
-                    self.advance();
-                } else {
-                    self.setError("Expected time unit (s, m, or h) after number", .ident);
-                    return ParseError.InvalidTimeoutFormat;
-                }
-            } else {
-                self.setError("Expected timeout value (e.g., 30s, 5m, 2h)", null);
-                return ParseError.InvalidTimeoutFormat;
-            }
-
-            // Parse timeout value
-            const timeout_seconds = self.parseTimeoutValue(timeout_str) catch |err| {
-                const msg = switch (err) {
-                    ParseError.InvalidTimeoutFormat => "Invalid timeout format. Expected format: 30s, 5m, or 2h",
-                    ParseError.InvalidTimeoutValue => "Timeout must be a positive value",
-                    else => "Failed to parse timeout",
-                };
-                self.setError(msg, null);
-                return ParseError.InvalidTimeoutFormat;
-            };
-
-            self.pending_timeout = timeout_seconds;
-
-            // Skip to end of line
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            return;
-        }
-
-        // Handle @needs directive for recipe-level command requirements
-        // Syntax: @needs cmd1 cmd2 ...
-        //         @needs cmd "hint"
-        //         @needs cmd -> install-task
-        //         @needs cmd "hint" -> install-task
-        if (self.current.tag == .kw_needs) {
-            self.advance();
-
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                if (self.current.tag == .ident or self.current.tag == .string) {
-                    const cmd = if (self.current.tag == .string)
-                        stripQuotes(self.slice(self.current))
-                    else
-                        self.slice(self.current);
-                    self.advance();
-
-                    var hint: ?[]const u8 = null;
-                    var install_task: ?[]const u8 = null;
-
-                    // Check for optional hint (string)
-                    if (self.current.tag == .string) {
-                        hint = stripQuotes(self.slice(self.current));
-                        self.advance();
-                    }
-
-                    // Check for optional -> task reference
-                    if (self.current.tag == .arrow) {
-                        self.advance();
-                        if (self.current.tag == .ident) {
-                            install_task = self.slice(self.current);
-                            self.advance();
-                        }
-                    }
-
-                    self.pending_needs.append(self.allocator, .{
-                        .command = cmd,
-                        .hint = hint,
-                        .install_task = install_task,
-                    }) catch return ParseError.OutOfMemory;
-                } else {
-                    self.advance(); // Skip commas, etc.
-                }
-            }
-            return;
-        }
-
-        // Handle global @pre and @post hooks
-        if (self.current.tag == .kw_pre or self.current.tag == .kw_post) {
-            const hook_kind: Hook.Kind = if (self.current.tag == .kw_pre) .pre else .post;
-            self.advance();
-
-            // Collect the command until newline
-            const cmd_start = self.current.loc.start;
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            const cmd_end = self.current.loc.start;
-            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
-
-            const hook = Hook{
-                .command = command,
-                .kind = hook_kind,
-                .recipe_name = null, // Global hook
-            };
-
-            switch (hook_kind) {
-                .pre => self.global_pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                .post => self.global_post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                .on_error => {}, // Not applicable for @pre/@post
-            }
-            return;
-        }
-
-        // Handle targeted hooks: @before recipe_name, @after recipe_name
-        if (self.current.tag == .kw_before or self.current.tag == .kw_after) {
-            const hook_kind: Hook.Kind = if (self.current.tag == .kw_before) .pre else .post;
-            self.advance();
-
-            // Get the target recipe name (can be keyword like "default")
-            if (!self.isNameToken()) {
-                self.setError("expected recipe name after targeted hook directive", .ident);
-                return ParseError.UnexpectedToken;
-            }
-            const target_recipe = self.slice(self.current);
-            self.advance();
-
-            // Collect the command until newline
-            const cmd_start = self.current.loc.start;
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            const cmd_end = self.current.loc.start;
-            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
-
-            const hook = Hook{
-                .command = command,
-                .kind = hook_kind,
-                .recipe_name = target_recipe, // Targeted hook
-            };
-
-            switch (hook_kind) {
-                .pre => self.global_pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                .post => self.global_post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                .on_error => {}, // Not applicable
-            }
-            return;
-        }
-
-        // Handle @on_error hook
-        // Supports both global and targeted forms:
-        //   @on_error echo "Something failed!"           (global - command starts with ident)
-        //   @on_error deploy echo "Deploy failed!"       (targeted - ident followed by ident)
-        // Heuristic: treat as targeted only if first ident is followed by another ident
-        // This distinguishes "echo args" (command) from "recipe command args"
-        if (self.current.tag == .kw_on_error) {
-            self.advance();
-
-            var target_recipe: ?[]const u8 = null;
-            var cmd_start: usize = self.current.loc.start;
-
-            // Check if first token looks like a recipe name (ident followed by another ident)
-            if (self.current.tag == .ident) {
-                const potential_recipe = self.slice(self.current);
-                const saved_index = self.lexer.index;
-                const saved_current = self.current;
-                self.advance();
-
-                // Only treat as targeted if next token is also an ident (the actual command)
-                // BUT: if next ident starts with '-', it's a flag (like -X), not a command
-                if (self.current.tag == .ident) {
-                    const next_token = self.slice(self.current);
-                    if (next_token.len > 0 and next_token[0] == '-') {
-                        // Next token is a flag (e.g., -X), not a command name - treat as global
-                        self.lexer.index = saved_index;
-                        self.current = saved_current;
-                    } else {
-                        target_recipe = potential_recipe;
-                        cmd_start = self.current.loc.start;
-                    }
-                } else {
-                    // Next token is not an ident (e.g., string, newline) - restore and treat as global
-                    self.lexer.index = saved_index;
-                    self.current = saved_current;
-                }
-            }
-
-            // Collect the command until newline
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            const cmd_end = self.current.loc.start;
-            const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
-
-            const hook = Hook{
-                .command = command,
-                .kind = .on_error,
-                .recipe_name = target_recipe,
-            };
-
-            self.global_on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory;
-            return;
-        }
-
-        // Other directives
-        const kind: Directive.Kind = switch (self.current.tag) {
-            .kw_dotenv => .dotenv,
-            .kw_require => .require,
-            .kw_export => .@"export",
+                try self.parseImportDirective();
+            },
+            .kw_alias => try self.parseAliasDirective(),
+            .kw_group => try self.parseGroupDirective(),
+            .kw_desc => try self.parseDescDirective(),
+            .kw_platform => try self.parsePlatformDirective(),
+            .kw_quiet => try self.parseQuietDirective(),
+            .kw_hidden => try self.parseHiddenDirective(),
+            .kw_timeout => try self.parseTimeoutDirective(),
+            .kw_needs => try self.parseNeedsDirective(),
+            .kw_pre, .kw_post => try self.parseGlobalHookDirective(),
+            .kw_before, .kw_after => try self.parseTargetedHookDirective(),
+            .kw_on_error => try self.parseOnErrorDirective(),
             .newline, .eof => {
                 self.setError("expected directive name after '@'", null);
                 return ParseError.UnexpectedToken;
             },
+            .kw_dotenv, .kw_require, .kw_export => try self.parseGenericDirective(),
             else => {
                 self.setError("unknown directive", null);
                 return ParseError.UnexpectedToken;
             },
+        }
+    }
+
+    /// Skip remaining tokens on the current logical line.
+    fn skipToEndOfLine(self: *Parser) void {
+        while (self.current.tag != .newline and self.current.tag != .eof) {
+            self.advance();
+        }
+    }
+
+    fn parseDefaultDirective(self: *Parser) ParseError!void {
+        self.advance();
+        self.pending_default = true;
+
+        if (self.current.tag != .newline and self.current.tag != .eof and self.current.tag != .comment) {
+            self.setError("expected recipe after '@default'", null);
+            return ParseError.UnexpectedToken;
+        }
+
+        self.skipToEndOfLine();
+    }
+
+    fn parseAliasDirective(self: *Parser) ParseError!void {
+        self.advance();
+        while (self.current.tag != .newline and self.current.tag != .eof) {
+            if (self.current.tag == .ident) {
+                self.pending_aliases.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
+            }
+            self.advance();
+        }
+    }
+
+    fn parseGroupDirective(self: *Parser) ParseError!void {
+        self.advance();
+        if (self.current.tag == .ident or self.current.tag == .string) {
+            self.pending_group = stripQuotes(self.slice(self.current));
+            self.advance();
+        }
+        self.skipToEndOfLine();
+    }
+
+    fn parseDescDirective(self: *Parser) ParseError!void {
+        self.advance();
+        // Clear doc_comment when explicit description is provided
+        self.pending_doc_comment = null;
+
+        if (self.current.tag == .string) {
+            self.pending_description = stripQuotes(self.slice(self.current));
+            self.advance();
+        } else {
+            // Collect everything until newline as description
+            const desc_start = self.current.loc.start;
+            self.skipToEndOfLine();
+            const desc_end = self.current.loc.start;
+            const desc = std.mem.trim(u8, self.source[desc_start..desc_end], " \t");
+            if (desc.len > 0) {
+                self.pending_description = desc;
+            }
+            return;
+        }
+
+        self.skipToEndOfLine();
+    }
+
+    fn parsePlatformDirective(self: *Parser) ParseError!void {
+        self.advance();
+        while (self.current.tag != .newline and self.current.tag != .eof) {
+            if (self.current.tag == .ident) {
+                self.pending_only_os.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
+            }
+            self.advance();
+        }
+    }
+
+    fn parseQuietDirective(self: *Parser) ParseError!void {
+        self.advance();
+        self.pending_quiet = true;
+        self.skipToEndOfLine();
+    }
+
+    fn parseHiddenDirective(self: *Parser) ParseError!void {
+        self.advance();
+        self.pending_hidden = true;
+        self.skipToEndOfLine();
+    }
+
+    /// `@timeout 30s` | `@timeout 5m` | `@timeout 2h`
+    fn parseTimeoutDirective(self: *Parser) ParseError!void {
+        self.advance();
+
+        // Value is either a single ident ("30s") or number + unit ident ("30" + "s").
+        var timeout_str: []const u8 = undefined;
+
+        if (self.current.tag == .ident) {
+            timeout_str = self.slice(self.current);
+            self.advance();
+        } else if (self.current.tag == .number) {
+            const num_start = self.current.loc.start;
+            self.advance();
+
+            if (self.current.tag == .ident) {
+                const unit_end = self.current.loc.end;
+                timeout_str = self.source[num_start..unit_end];
+                self.advance();
+            } else {
+                self.setError("Expected time unit (s, m, or h) after number", .ident);
+                return ParseError.InvalidTimeoutFormat;
+            }
+        } else {
+            self.setError("Expected timeout value (e.g., 30s, 5m, 2h)", null);
+            return ParseError.InvalidTimeoutFormat;
+        }
+
+        const timeout_seconds = self.parseTimeoutValue(timeout_str) catch |err| {
+            const msg = switch (err) {
+                ParseError.InvalidTimeoutFormat => "Invalid timeout format. Expected format: 30s, 5m, or 2h",
+                ParseError.InvalidTimeoutValue => "Timeout must be a positive value",
+                else => "Failed to parse timeout",
+            };
+            self.setError(msg, null);
+            return ParseError.InvalidTimeoutFormat;
+        };
+
+        self.pending_timeout = timeout_seconds;
+        self.skipToEndOfLine();
+    }
+
+    /// `@needs cmd1 cmd2 ...` | `@needs cmd "hint"` | `@needs cmd -> install-task`
+    fn parseNeedsDirective(self: *Parser) ParseError!void {
+        self.advance();
+
+        while (self.current.tag != .newline and self.current.tag != .eof) {
+            if (self.current.tag == .ident or self.current.tag == .string) {
+                const cmd = if (self.current.tag == .string)
+                    stripQuotes(self.slice(self.current))
+                else
+                    self.slice(self.current);
+                self.advance();
+
+                var hint: ?[]const u8 = null;
+                var install_task: ?[]const u8 = null;
+
+                if (self.current.tag == .string) {
+                    hint = stripQuotes(self.slice(self.current));
+                    self.advance();
+                }
+
+                if (self.current.tag == .arrow) {
+                    self.advance();
+                    if (self.current.tag == .ident) {
+                        install_task = self.slice(self.current);
+                        self.advance();
+                    }
+                }
+
+                self.pending_needs.append(self.allocator, .{
+                    .command = cmd,
+                    .hint = hint,
+                    .install_task = install_task,
+                }) catch return ParseError.OutOfMemory;
+            } else {
+                self.advance(); // Skip commas, etc.
+            }
+        }
+    }
+
+    /// Global `@pre` / `@post` hook (no recipe target).
+    fn parseGlobalHookDirective(self: *Parser) ParseError!void {
+        const hook_kind: Hook.Kind = if (self.current.tag == .kw_pre) .pre else .post;
+        self.advance();
+        try self.appendHookFromRemainingLine(hook_kind, null);
+    }
+
+    /// Targeted `@before recipe` / `@after recipe` hook.
+    fn parseTargetedHookDirective(self: *Parser) ParseError!void {
+        const hook_kind: Hook.Kind = if (self.current.tag == .kw_before) .pre else .post;
+        self.advance();
+
+        if (!self.isNameToken()) {
+            self.setError("expected recipe name after targeted hook directive", .ident);
+            return ParseError.UnexpectedToken;
+        }
+        const target_recipe = self.slice(self.current);
+        self.advance();
+
+        try self.appendHookFromRemainingLine(hook_kind, target_recipe);
+    }
+
+    /// Trim and capture the rest of the current line as a hook command, then
+    /// append to the appropriate global hook list.
+    fn appendHookFromRemainingLine(self: *Parser, kind: Hook.Kind, target: ?[]const u8) ParseError!void {
+        const cmd_start = self.current.loc.start;
+        self.skipToEndOfLine();
+        const cmd_end = self.current.loc.start;
+        const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
+
+        const hook = Hook{
+            .command = command,
+            .kind = kind,
+            .recipe_name = target,
+        };
+
+        switch (kind) {
+            .pre => self.global_pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+            .post => self.global_post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+            .on_error => {}, // Routed through parseOnErrorDirective instead.
+        }
+    }
+
+    /// Top-level `@on_error cmd...` — global error hook that runs whenever
+    /// any recipe fails. Use body-level `@on_error` inside a recipe to attach
+    /// a recipe-specific error handler.
+    fn parseOnErrorDirective(self: *Parser) ParseError!void {
+        self.advance();
+
+        const cmd_start = self.current.loc.start;
+        self.skipToEndOfLine();
+        const cmd_end = self.current.loc.start;
+        const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
+
+        self.global_on_error_hooks.append(self.allocator, .{
+            .command = command,
+            .kind = .on_error,
+            .recipe_name = null,
+        }) catch return ParseError.OutOfMemory;
+    }
+
+    /// `@dotenv`, `@require`, `@export` — directives that collect free-form
+    /// arguments until end of line.
+    fn parseGenericDirective(self: *Parser) ParseError!void {
+        const kind: Directive.Kind = switch (self.current.tag) {
+            .kw_dotenv => .dotenv,
+            .kw_require => .require,
+            .kw_export => .@"export",
+            else => unreachable, // dispatcher restricts the tags reaching here
         };
 
         self.advance();
 
-        // Collect arguments until newline
         var args: std.ArrayListUnmanaged([]const u8) = .empty;
         errdefer args.deinit(self.allocator);
         while (self.current.tag != .newline and self.current.tag != .eof) {
@@ -1100,6 +1017,89 @@ pub const Parser = struct {
         }
     }
 
+    /// Inputs to finalizeRecipe. Kind-specific list pointers are optional;
+    /// when null the corresponding Recipe field is set to an empty slice.
+    const RecipeInputs = struct {
+        name: []const u8,
+        name_loc: Token.Loc,
+        kind: Recipe.Kind,
+        deps: ?*std.ArrayListUnmanaged([]const u8) = null,
+        file_deps: ?*std.ArrayListUnmanaged([]const u8) = null,
+        output: ?[]const u8 = null,
+        params: ?*std.ArrayListUnmanaged(Recipe.Param) = null,
+        commands: *std.ArrayListUnmanaged(Recipe.Command),
+        pre_hooks: *std.ArrayListUnmanaged(Hook),
+        post_hooks: *std.ArrayListUnmanaged(Hook),
+        on_error_hooks: *std.ArrayListUnmanaged(Hook),
+        shell: ?[]const u8 = null,
+        working_dir: ?[]const u8 = null,
+    };
+
+    /// Convert builder lists to owned slices, drain pending metadata, and
+    /// append the assembled Recipe. Centralizes the finalization logic
+    /// shared by parseSimpleRecipe / parseTaskRecipe / parseFileRecipe.
+    fn finalizeRecipe(self: *Parser, info: RecipeInputs) ParseError!void {
+        const aliases = try self.consumePendingAliases();
+        errdefer self.allocator.free(aliases);
+        const only_os = try self.consumePendingOnlyOs();
+        errdefer self.allocator.free(only_os);
+        const needs = try self.consumePendingNeeds();
+        errdefer self.allocator.free(needs);
+
+        const owned_deps: []const []const u8 = if (info.deps) |d|
+            (d.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory)
+        else
+            &[_][]const u8{};
+        errdefer self.allocator.free(owned_deps);
+
+        const owned_file_deps: []const []const u8 = if (info.file_deps) |fd|
+            (fd.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory)
+        else
+            &[_][]const u8{};
+        errdefer self.allocator.free(owned_file_deps);
+
+        const owned_params: []const Recipe.Param = if (info.params) |p|
+            (p.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory)
+        else
+            &[_]Recipe.Param{};
+        errdefer self.allocator.free(owned_params);
+
+        const owned_commands = info.commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_commands);
+        const owned_pre_hooks = info.pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_pre_hooks);
+        const owned_post_hooks = info.post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_post_hooks);
+        const owned_on_error_hooks = info.on_error_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+        errdefer self.allocator.free(owned_on_error_hooks);
+
+        self.recipes.append(self.allocator, .{
+            .name = info.name,
+            .loc = info.name_loc,
+            .kind = info.kind,
+            .dependencies = owned_deps,
+            .file_deps = owned_file_deps,
+            .output = info.output,
+            .params = owned_params,
+            .commands = owned_commands,
+            .pre_hooks = owned_pre_hooks,
+            .post_hooks = owned_post_hooks,
+            .on_error_hooks = owned_on_error_hooks,
+            .doc_comment = self.consumePendingDocComment(),
+            .is_default = self.consumePendingDefault(),
+            .aliases = aliases,
+            .group = self.consumePendingGroup(),
+            .description = self.consumePendingDescription(),
+            .shell = info.shell,
+            .working_dir = info.working_dir,
+            .only_os = only_os,
+            .quiet = self.consumePendingQuiet(),
+            .hidden = self.consumePendingHidden(),
+            .needs = needs,
+            .timeout_seconds = self.consumePendingTimeout(),
+        }) catch return ParseError.OutOfMemory;
+    }
+
     fn parseSimpleRecipe(self: *Parser, name: []const u8, name_loc: Token.Loc) ParseError!void {
         _ = try self.expectWithMessage(.colon, "expected ':' after recipe name");
 
@@ -1133,9 +1133,11 @@ pub const Parser = struct {
         var commands: std.ArrayListUnmanaged(Recipe.Command) = .empty;
         var pre_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         var post_hooks: std.ArrayListUnmanaged(Hook) = .empty;
+        var on_error_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         errdefer commands.deinit(self.allocator);
         errdefer pre_hooks.deinit(self.allocator);
         errdefer post_hooks.deinit(self.allocator);
+        errdefer on_error_hooks.deinit(self.allocator);
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
@@ -1148,13 +1150,18 @@ pub const Parser = struct {
             if (self.current.tag != .indent) break;
             self.advance();
 
-            // Check for @pre or @post hook directive
+            // Check for @pre / @post / @on_error hook directive
             if (self.current.tag == .at) {
                 const at_pos = self.current.loc.start;
                 self.advance();
 
-                if (self.current.tag == .kw_pre or self.current.tag == .kw_post) {
-                    const hook_kind: Hook.Kind = if (self.current.tag == .kw_pre) .pre else .post;
+                if (self.current.tag == .kw_pre or self.current.tag == .kw_post or self.current.tag == .kw_on_error) {
+                    const hook_kind: Hook.Kind = switch (self.current.tag) {
+                        .kw_pre => .pre,
+                        .kw_post => .post,
+                        .kw_on_error => .on_error,
+                        else => unreachable,
+                    };
                     self.advance();
 
                     const cmd_start = self.current.loc.start;
@@ -1173,7 +1180,7 @@ pub const Parser = struct {
                     switch (hook_kind) {
                         .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                         .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                        .on_error => {}, // on_error not valid inside recipe
+                        .on_error => on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                     }
 
                     if (self.current.tag == .newline) self.advance();
@@ -1229,47 +1236,18 @@ pub const Parser = struct {
             if (self.current.tag == .newline) self.advance();
         }
 
-        // Consume any pending metadata
-        const aliases = try self.consumePendingAliases();
-        errdefer self.allocator.free(aliases);
-        const only_os = try self.consumePendingOnlyOs();
-        errdefer self.allocator.free(only_os);
-        const needs = try self.consumePendingNeeds();
-        errdefer self.allocator.free(needs);
-
-        const owned_deps = deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_deps);
-        const owned_commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_commands);
-        const owned_pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_pre_hooks);
-        const owned_post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_post_hooks);
-
-        self.recipes.append(self.allocator, .{
+        try self.finalizeRecipe(.{
             .name = name,
-            .loc = name_loc,
+            .name_loc = name_loc,
             .kind = .simple,
-            .dependencies = owned_deps,
-            .file_deps = &[_][]const u8{},
-            .output = null,
-            .params = &[_]Recipe.Param{},
-            .commands = owned_commands,
-            .pre_hooks = owned_pre_hooks,
-            .post_hooks = owned_post_hooks,
-            .doc_comment = self.consumePendingDocComment(),
-            .is_default = self.consumePendingDefault(),
-            .aliases = aliases,
-            .group = self.consumePendingGroup(),
-            .description = self.consumePendingDescription(),
+            .deps = &deps,
+            .commands = &commands,
+            .pre_hooks = &pre_hooks,
+            .post_hooks = &post_hooks,
+            .on_error_hooks = &on_error_hooks,
             .shell = shell,
             .working_dir = working_dir,
-            .only_os = only_os,
-            .quiet = self.consumePendingQuiet(),
-            .hidden = self.consumePendingHidden(),
-            .needs = needs,
-            .timeout_seconds = self.consumePendingTimeout(),
-        }) catch return ParseError.OutOfMemory;
+        });
     }
 
     fn parseTaskRecipe(self: *Parser) ParseError!void {
@@ -1333,9 +1311,11 @@ pub const Parser = struct {
         var commands: std.ArrayListUnmanaged(Recipe.Command) = .empty;
         var pre_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         var post_hooks: std.ArrayListUnmanaged(Hook) = .empty;
+        var on_error_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         errdefer commands.deinit(self.allocator);
         errdefer pre_hooks.deinit(self.allocator);
         errdefer post_hooks.deinit(self.allocator);
+        errdefer on_error_hooks.deinit(self.allocator);
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
@@ -1355,9 +1335,14 @@ pub const Parser = struct {
                 at_pos = self.current.loc.start;
                 self.advance();
 
-                // Check for @pre or @post hook
-                if (self.current.tag == .kw_pre or self.current.tag == .kw_post) {
-                    const hook_kind: Hook.Kind = if (self.current.tag == .kw_pre) .pre else .post;
+                // Check for @pre / @post / @on_error hook
+                if (self.current.tag == .kw_pre or self.current.tag == .kw_post or self.current.tag == .kw_on_error) {
+                    const hook_kind: Hook.Kind = switch (self.current.tag) {
+                        .kw_pre => .pre,
+                        .kw_post => .post,
+                        .kw_on_error => .on_error,
+                        else => unreachable,
+                    };
                     self.advance();
 
                     const cmd_start = self.current.loc.start;
@@ -1376,7 +1361,7 @@ pub const Parser = struct {
                     switch (hook_kind) {
                         .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                         .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                        .on_error => {}, // on_error not valid inside recipe
+                        .on_error => on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                     }
 
                     if (self.current.tag == .newline) self.advance();
@@ -1445,49 +1430,19 @@ pub const Parser = struct {
             if (self.current.tag == .newline) self.advance();
         }
 
-        // Consume any pending metadata
-        const aliases = try self.consumePendingAliases();
-        errdefer self.allocator.free(aliases);
-        const only_os = try self.consumePendingOnlyOs();
-        errdefer self.allocator.free(only_os);
-        const needs = try self.consumePendingNeeds();
-        errdefer self.allocator.free(needs);
-
-        const owned_deps = deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_deps);
-        const owned_params = params.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_params);
-        const owned_commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_commands);
-        const owned_pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_pre_hooks);
-        const owned_post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_post_hooks);
-
-        self.recipes.append(self.allocator, .{
+        try self.finalizeRecipe(.{
             .name = name,
-            .loc = name_loc,
+            .name_loc = name_loc,
             .kind = .task,
-            .dependencies = owned_deps,
-            .file_deps = &[_][]const u8{},
-            .output = null,
-            .params = owned_params,
-            .commands = owned_commands,
-            .pre_hooks = owned_pre_hooks,
-            .post_hooks = owned_post_hooks,
-            .doc_comment = self.consumePendingDocComment(),
-            .is_default = self.consumePendingDefault(),
-            .aliases = aliases,
-            .group = self.consumePendingGroup(),
-            .description = self.consumePendingDescription(),
+            .deps = &deps,
+            .params = &params,
+            .commands = &commands,
+            .pre_hooks = &pre_hooks,
+            .post_hooks = &post_hooks,
+            .on_error_hooks = &on_error_hooks,
             .shell = shell,
             .working_dir = working_dir,
-            .only_os = only_os,
-            .quiet = self.consumePendingQuiet(),
-            .hidden = self.consumePendingHidden(),
-            .needs = needs,
-            .timeout_seconds = self.consumePendingTimeout(),
-        }) catch return ParseError.OutOfMemory;
+        });
     }
 
     fn parseFileRecipe(self: *Parser) ParseError!void {
@@ -1522,9 +1477,11 @@ pub const Parser = struct {
         var commands: std.ArrayListUnmanaged(Recipe.Command) = .empty;
         var pre_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         var post_hooks: std.ArrayListUnmanaged(Hook) = .empty;
+        var on_error_hooks: std.ArrayListUnmanaged(Hook) = .empty;
         errdefer commands.deinit(self.allocator);
         errdefer pre_hooks.deinit(self.allocator);
         errdefer post_hooks.deinit(self.allocator);
+        errdefer on_error_hooks.deinit(self.allocator);
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
@@ -1537,13 +1494,18 @@ pub const Parser = struct {
             if (self.current.tag != .indent) break;
             self.advance();
 
-            // Check for @pre or @post hook directive
+            // Check for @pre / @post / @on_error hook directive
             if (self.current.tag == .at) {
                 const at_pos = self.current.loc.start;
                 self.advance();
 
-                if (self.current.tag == .kw_pre or self.current.tag == .kw_post) {
-                    const hook_kind: Hook.Kind = if (self.current.tag == .kw_pre) .pre else .post;
+                if (self.current.tag == .kw_pre or self.current.tag == .kw_post or self.current.tag == .kw_on_error) {
+                    const hook_kind: Hook.Kind = switch (self.current.tag) {
+                        .kw_pre => .pre,
+                        .kw_post => .post,
+                        .kw_on_error => .on_error,
+                        else => unreachable,
+                    };
                     self.advance();
 
                     const cmd_start = self.current.loc.start;
@@ -1562,7 +1524,7 @@ pub const Parser = struct {
                     switch (hook_kind) {
                         .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                         .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                        .on_error => {}, // on_error not valid inside recipe
+                        .on_error => on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
                     }
 
                     if (self.current.tag == .newline) self.advance();
@@ -1617,48 +1579,20 @@ pub const Parser = struct {
             if (self.current.tag == .newline) self.advance();
         }
 
-        // Consume any pending metadata
-        const aliases = try self.consumePendingAliases();
-        errdefer self.allocator.free(aliases);
-        const only_os = try self.consumePendingOnlyOs();
-        errdefer self.allocator.free(only_os);
-        const needs = try self.consumePendingNeeds();
-        errdefer self.allocator.free(needs);
-
-        const owned_file_deps = file_deps.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_file_deps);
-        const owned_commands = commands.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_commands);
-        const owned_pre_hooks = pre_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_pre_hooks);
-        const owned_post_hooks = post_hooks.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
-        errdefer self.allocator.free(owned_post_hooks);
-
-        // Use output as recipe name
-        self.recipes.append(self.allocator, .{
+        // Use output as both recipe name and output path.
+        try self.finalizeRecipe(.{
             .name = output,
-            .loc = output_loc,
+            .name_loc = output_loc,
             .kind = .file,
-            .dependencies = &[_][]const u8{},
-            .file_deps = owned_file_deps,
+            .file_deps = &file_deps,
             .output = output,
-            .params = &[_]Recipe.Param{},
-            .commands = owned_commands,
-            .pre_hooks = owned_pre_hooks,
-            .post_hooks = owned_post_hooks,
-            .doc_comment = self.consumePendingDocComment(),
-            .is_default = self.consumePendingDefault(),
-            .aliases = aliases,
-            .group = self.consumePendingGroup(),
-            .description = self.consumePendingDescription(),
+            .commands = &commands,
+            .pre_hooks = &pre_hooks,
+            .post_hooks = &post_hooks,
+            .on_error_hooks = &on_error_hooks,
             .shell = shell,
             .working_dir = working_dir,
-            .only_os = only_os,
-            .quiet = self.consumePendingQuiet(),
-            .hidden = self.consumePendingHidden(),
-            .needs = needs,
-            .timeout_seconds = self.consumePendingTimeout(),
-        }) catch return ParseError.OutOfMemory;
+        });
     }
 };
 
@@ -2038,55 +1972,58 @@ test "parse @on_error with command taking string arg is global" {
     try std.testing.expectEqual(@as(?[]const u8, null), jakefile.global_on_error_hooks[0].recipe_name);
 }
 
-test "parse @on_error targeted to specific recipe" {
-    // @on_error recipe_name command - targeted to specific recipe
+test "parse body-level @on_error attaches to recipe" {
     const source =
-        \\@on_error deploy notify "Deploy failed!"
-        \\
         \\task deploy:
         \\    echo "deploying"
+        \\    @on_error notify "Deploy failed!"
     ;
     var lex = Lexer.init(source);
     var p = Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    try std.testing.expectEqual(@as(usize, 1), jakefile.global_on_error_hooks.len);
-    try std.testing.expectEqualStrings("notify \"Deploy failed!\"", jakefile.global_on_error_hooks[0].command);
-    try std.testing.expectEqual(Hook.Kind.on_error, jakefile.global_on_error_hooks[0].kind);
-    try std.testing.expectEqualStrings("deploy", jakefile.global_on_error_hooks[0].recipe_name.?);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(@as(usize, 1), recipe.on_error_hooks.len);
+    try std.testing.expectEqualStrings("notify \"Deploy failed!\"", recipe.on_error_hooks[0].command);
+    try std.testing.expectEqual(Hook.Kind.on_error, recipe.on_error_hooks[0].kind);
+    try std.testing.expectEqualStrings("deploy", recipe.on_error_hooks[0].recipe_name.?);
+    try std.testing.expectEqual(@as(usize, 0), jakefile.global_on_error_hooks.len);
 }
 
-test "parse multiple @on_error hooks mixed global and targeted" {
+test "parse mixed global and body-level @on_error" {
     const source =
         \\@on_error echo "Global error handler"
-        \\@on_error build notify "Build failed!"
-        \\@on_error deploy rollback --auto
         \\
         \\task build:
         \\    echo "building"
+        \\    @on_error notify "Build failed!"
         \\
         \\task deploy:
         \\    echo "deploying"
+        \\    @on_error rollback --auto
     ;
     var lex = Lexer.init(source);
     var p = Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    try std.testing.expectEqual(@as(usize, 3), jakefile.global_on_error_hooks.len);
-
-    // First is global
+    // One global hook
+    try std.testing.expectEqual(@as(usize, 1), jakefile.global_on_error_hooks.len);
     try std.testing.expectEqual(@as(?[]const u8, null), jakefile.global_on_error_hooks[0].recipe_name);
     try std.testing.expectEqualStrings("echo \"Global error handler\"", jakefile.global_on_error_hooks[0].command);
 
-    // Second targets build
-    try std.testing.expectEqualStrings("build", jakefile.global_on_error_hooks[1].recipe_name.?);
-    try std.testing.expectEqualStrings("notify \"Build failed!\"", jakefile.global_on_error_hooks[1].command);
+    // Two recipes, each with its own on_error
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
 
-    // Third targets deploy
-    try std.testing.expectEqualStrings("deploy", jakefile.global_on_error_hooks[2].recipe_name.?);
-    try std.testing.expectEqualStrings("rollback --auto", jakefile.global_on_error_hooks[2].command);
+    const build = jakefile.getRecipe("build").?;
+    try std.testing.expectEqual(@as(usize, 1), build.on_error_hooks.len);
+    try std.testing.expectEqualStrings("notify \"Build failed!\"", build.on_error_hooks[0].command);
+
+    const deploy = jakefile.getRecipe("deploy").?;
+    try std.testing.expectEqual(@as(usize, 1), deploy.on_error_hooks.len);
+    try std.testing.expectEqualStrings("rollback --auto", deploy.on_error_hooks[0].command);
 }
 
 test "parse @on_error with complex shell command" {
@@ -2790,7 +2727,7 @@ test "parse task with ignore directive" {
     try std.testing.expect(jakefile.recipes[0].commands[4].directive == null);
 }
 
-// --- @group and @description Tests ---
+// --- @group and @desc Tests ---
 
 test "parse group directive" {
     const source =
@@ -2824,55 +2761,9 @@ test "parse desc directive with string" {
     try std.testing.expectEqualStrings("Build the application", jakefile.recipes[0].description.?);
 }
 
-test "parse description directive with string" {
+test "parse @desc with unquoted text" {
     const source =
-        \\@description "Run all tests"
-        \\task test:
-        \\    npm test
-    ;
-    var lex = Lexer.init(source);
-    var p = Parser.init(std.testing.allocator, &lex);
-    var jakefile = try p.parseJakefile();
-    defer jakefile.deinit(std.testing.allocator);
-
-    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
-    try std.testing.expectEqualStrings("test", jakefile.recipes[0].name);
-    try std.testing.expectEqualStrings("Run all tests", jakefile.recipes[0].description.?);
-}
-
-test "parse @desc and @description work identically" {
-    // @desc version
-    const source_desc =
-        \\@desc "Build with desc"
-        \\task build-desc:
-        \\    echo "building"
-    ;
-    var lex1 = Lexer.init(source_desc);
-    var p1 = Parser.init(std.testing.allocator, &lex1);
-    var jakefile1 = try p1.parseJakefile();
-    defer jakefile1.deinit(std.testing.allocator);
-
-    // @description version
-    const source_description =
-        \\@description "Build with description"
-        \\task build-description:
-        \\    echo "building"
-    ;
-    var lex2 = Lexer.init(source_description);
-    var p2 = Parser.init(std.testing.allocator, &lex2);
-    var jakefile2 = try p2.parseJakefile();
-    defer jakefile2.deinit(std.testing.allocator);
-
-    // Both should parse correctly
-    try std.testing.expectEqual(@as(usize, 1), jakefile1.recipes.len);
-    try std.testing.expectEqual(@as(usize, 1), jakefile2.recipes.len);
-    try std.testing.expectEqualStrings("Build with desc", jakefile1.recipes[0].description.?);
-    try std.testing.expectEqualStrings("Build with description", jakefile2.recipes[0].description.?);
-}
-
-test "parse @description with unquoted text" {
-    const source =
-        \\@description Run the test suite
+        \\@desc Run the test suite
         \\task test:
         \\    npm test
     ;
@@ -3108,11 +2999,11 @@ test "alias with default directive" {
     try std.testing.expectEqualStrings("b", jakefile.recipes[0].aliases[0]);
 }
 
-// --- @only-os and @only Tests ---
+// --- @platform Tests ---
 
-test "parse only-os directive with single os" {
+test "parse platform directive with single os" {
     const source =
-        \\@only-os linux
+        \\@platform linux
         \\task build-linux:
         \\    ./build.sh
     ;
@@ -3126,9 +3017,9 @@ test "parse only-os directive with single os" {
     try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
 }
 
-test "parse only-os directive with multiple os" {
+test "parse platform directive with multiple os" {
     const source =
-        \\@only-os linux macos
+        \\@platform linux macos
         \\task build-unix:
         \\    ./build.sh
     ;
@@ -3143,9 +3034,9 @@ test "parse only-os directive with multiple os" {
     try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[1]);
 }
 
-test "parse only directive with multiple os" {
+test "parse platform directive with three os" {
     const source =
-        \\@only linux macos windows
+        \\@platform linux macos windows
         \\task cross-platform:
         \\    ./build.sh
     ;
@@ -3161,9 +3052,9 @@ test "parse only directive with multiple os" {
     try std.testing.expectEqualStrings("windows", jakefile.recipes[0].only_os[2]);
 }
 
-test "parse only-os applies only to next recipe" {
+test "parse platform applies only to next recipe" {
     const source =
-        \\@only-os windows
+        \\@platform windows
         \\task build-windows:
         \\    build.bat
         \\
@@ -3181,9 +3072,9 @@ test "parse only-os applies only to next recipe" {
     try std.testing.expectEqual(@as(usize, 0), jakefile.recipes[1].only_os.len);
 }
 
-test "parse only-os with simple recipe" {
+test "parse platform with simple recipe" {
     const source =
-        \\@only-os macos
+        \\@platform macos
         \\brew-install:
         \\    brew install deps
     ;
@@ -3197,9 +3088,9 @@ test "parse only-os with simple recipe" {
     try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[0]);
 }
 
-test "parse only-os with file recipe" {
+test "parse platform with file recipe" {
     const source =
-        \\@only-os linux
+        \\@platform linux
         \\file output.so: src/*.c
         \\    gcc -shared -o output.so src/*.c
     ;
@@ -3213,9 +3104,9 @@ test "parse only-os with file recipe" {
     try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
 }
 
-test "parse only-os combined with other directives" {
+test "parse platform combined with other directives" {
     const source =
-        \\@only-os linux macos
+        \\@platform linux macos
         \\@alias b
         \\@group build
         \\task build-unix:
@@ -3231,72 +3122,6 @@ test "parse only-os combined with other directives" {
     try std.testing.expectEqual(@as(usize, 2), recipe.only_os.len);
     try std.testing.expectEqual(@as(usize, 1), recipe.aliases.len);
     try std.testing.expectEqualStrings("build", recipe.group.?);
-}
-
-test "parse @platform directive" {
-    const source =
-        \\@platform linux macos
-        \\task build-unix:
-        \\    ./build.sh
-    ;
-    var lex = Lexer.init(source);
-    var p = Parser.init(std.testing.allocator, &lex);
-    var jakefile = try p.parseJakefile();
-    defer jakefile.deinit(std.testing.allocator);
-
-    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
-    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].only_os.len);
-    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
-    try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[1]);
-}
-
-test "parse @platform directive with single OS" {
-    const source =
-        \\@platform windows
-        \\task build-win:
-        \\    msbuild.exe project.sln
-    ;
-    var lex = Lexer.init(source);
-    var p = Parser.init(std.testing.allocator, &lex);
-    var jakefile = try p.parseJakefile();
-    defer jakefile.deinit(std.testing.allocator);
-
-    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
-    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].only_os.len);
-    try std.testing.expectEqualStrings("windows", jakefile.recipes[0].only_os[0]);
-}
-
-test "parse @only directive (alias for @platform)" {
-    const source =
-        \\@only linux
-        \\task linux-only:
-        \\    apt-get update
-    ;
-    var lex = Lexer.init(source);
-    var p = Parser.init(std.testing.allocator, &lex);
-    var jakefile = try p.parseJakefile();
-    defer jakefile.deinit(std.testing.allocator);
-
-    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
-    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].only_os.len);
-    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[0]);
-}
-
-test "parse @only-os directive (alias for @platform)" {
-    const source =
-        \\@only-os macos linux
-        \\task unix-only:
-        \\    ./unix-script.sh
-    ;
-    var lex = Lexer.init(source);
-    var p = Parser.init(std.testing.allocator, &lex);
-    var jakefile = try p.parseJakefile();
-    defer jakefile.deinit(std.testing.allocator);
-
-    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
-    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].only_os.len);
-    try std.testing.expectEqualStrings("macos", jakefile.recipes[0].only_os[0]);
-    try std.testing.expectEqualStrings("linux", jakefile.recipes[0].only_os[1]);
 }
 
 // Recipe-level @needs tests
@@ -3628,10 +3453,10 @@ test "doc comment only applies to next recipe" {
     try std.testing.expect(test_recipe.doc_comment == null);
 }
 
-test "description clears doc_comment when explicitly set" {
+test "desc clears doc_comment when explicitly set" {
     const source =
         \\# Doc comment here
-        \\@description "Explicit description"
+        \\@desc "Explicit description"
         \\task build:
         \\    echo "building"
     ;
@@ -3643,7 +3468,7 @@ test "description clears doc_comment when explicitly set" {
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
     const recipe = jakefile.recipes[0];
 
-    // doc_comment is cleared when @description is provided (avoids file headers showing)
+    // doc_comment is cleared when @desc is provided (avoids file headers showing)
     try std.testing.expect(recipe.doc_comment == null);
     try std.testing.expectEqualStrings("Explicit description", recipe.description.?);
 }

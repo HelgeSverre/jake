@@ -32,7 +32,7 @@ task build:  # This has no doc comment
     zig build
 ```
 
-For recipe descriptions, use `@desc` or `@description` on the line immediately before the recipe definition:
+For recipe descriptions, use `@desc` or `@desc` on the line immediately before the recipe definition:
 
 ```jake
 @desc "Build the application"

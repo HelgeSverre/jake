@@ -285,7 +285,7 @@ fn renderRecipe(writer: anytype, recipe: *const Recipe) !void {
         try formatDuration(writer, timeout);
     }
     if (recipe.only_os.len > 0) {
-        try writer.writeAll("@only");
+        try writer.writeAll("@platform");
         for (recipe.only_os) |os| {
             try writer.print(" {s}", .{os});
         }

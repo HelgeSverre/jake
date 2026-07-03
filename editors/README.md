@@ -254,8 +254,8 @@ vscode.tasks.registerTaskProvider("jake", new JakeTaskProvider());
 
 ### Recipe Attributes (before recipe)
 
-- `@group`, `@desc`, `@description`, `@alias`, `@quiet`
-- `@only`, `@only-os`, `@platform`
+- `@group`, `@desc`, `@alias`, `@quiet`
+- `@platform`
 - `@needs` (with hint/fallback variants)
 
 ### Body Directives (inside recipes)

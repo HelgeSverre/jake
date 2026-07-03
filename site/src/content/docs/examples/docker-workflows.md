@@ -23,7 +23,7 @@ tag = "latest"
 
 @default
 @group docker
-@description "Build Docker image"
+@desc "Build Docker image"
 task build:
     @needs docker
     @pre echo "Building {{app_name}}:{{tag}}..."
@@ -32,13 +32,13 @@ task build:
     @post echo "Built: {{registry}}/{{app_name}}:{{tag}}"
 
 @group docker
-@description "Build without cache"
+@desc "Build without cache"
 task build-no-cache:
     @needs docker
     docker build --no-cache -t {{app_name}}:{{tag}} .
 
 @group docker
-@description "Build for multiple architectures"
+@desc "Build for multiple architectures"
 task build-multi-platform:
     @needs docker
     docker buildx build \
@@ -51,14 +51,14 @@ task build-multi-platform:
 # === Registry Operations ===
 
 @group registry
-@description "Login to Docker registry"
+@desc "Login to Docker registry"
 task login:
     @require DOCKER_USERNAME DOCKER_PASSWORD
     echo $DOCKER_PASSWORD | docker login {{registry}} -u $DOCKER_USERNAME --password-stdin
     echo "Logged in to {{registry}}"
 
 @group registry
-@description "Push image to registry"
+@desc "Push image to registry"
 task push: [build]
     @needs docker
     @confirm "Push {{app_name}}:{{tag}} to {{registry}}?"
@@ -66,7 +66,7 @@ task push: [build]
     @post echo "Pushed: {{registry}}/{{app_name}}:{{tag}}"
 
 @group registry
-@description "Pull latest image"
+@desc "Pull latest image"
 task pull:
     @needs docker
     docker pull {{registry}}/{{app_name}}:{{tag}}
@@ -74,61 +74,61 @@ task pull:
 # === Local Development ===
 
 @group dev
-@description "Start services with docker-compose"
+@desc "Start services with docker-compose"
 task up:
     @needs docker-compose
     docker-compose up -d
     @post echo "Services started"
 
 @group dev
-@description "Stop services"
+@desc "Stop services"
 task down:
     @needs docker-compose
     docker-compose down
     @post echo "Services stopped"
 
 @group dev
-@description "Restart all services"
+@desc "Restart all services"
 task restart: [down, up]
     echo "Services restarted"
 
 @group dev
-@description "Follow container logs"
+@desc "Follow container logs"
 task logs:
     @needs docker-compose
     docker-compose logs -f
 
 @group dev
-@description "Open shell in app container"
+@desc "Open shell in app container"
 task shell:
     @needs docker
     docker-compose exec app /bin/sh
 
 @group dev
-@description "List running containers"
+@desc "List running containers"
 task ps:
     docker-compose ps
 
 # === Database Containers ===
 
 @group db
-@description "Start database container only"
+@desc "Start database container only"
 task db-start:
     docker-compose up -d db
     @post echo "Database started"
 
 @group db
-@description "Stop database container"
+@desc "Stop database container"
 task db-stop:
     docker-compose stop db
 
 @group db
-@description "Open database CLI"
+@desc "Open database CLI"
 task db-shell:
     docker-compose exec db psql -U postgres
 
 @group db
-@description "Reset database (DESTRUCTIVE)"
+@desc "Reset database (DESTRUCTIVE)"
 task db-reset:
     @confirm "This will DELETE all data. Continue?"
     docker-compose stop db
@@ -140,26 +140,26 @@ task db-reset:
 # === Cleanup ===
 
 @group cleanup
-@description "Remove stopped containers"
+@desc "Remove stopped containers"
 task clean-containers:
     docker container prune -f
     echo "Removed stopped containers"
 
 @group cleanup
-@description "Remove dangling images"
+@desc "Remove dangling images"
 task clean-images:
     docker image prune -f
     echo "Removed dangling images"
 
 @group cleanup
-@description "Remove unused volumes"
+@desc "Remove unused volumes"
 task clean-volumes:
     @confirm "Remove unused volumes?"
     docker volume prune -f
     echo "Removed unused volumes"
 
 @group cleanup
-@description "Full Docker cleanup"
+@desc "Full Docker cleanup"
 task clean-all: [clean-containers, clean-images]
     @confirm "This will remove all unused Docker resources. Continue?"
     docker system prune -af
@@ -168,7 +168,7 @@ task clean-all: [clean-containers, clean-images]
 # === Production ===
 
 @group prod
-@description "Build and deploy to production"
+@desc "Build and deploy to production"
 task deploy: [build, push]
     @confirm "Deploy to production?"
     @require DEPLOY_HOST
@@ -176,7 +176,7 @@ task deploy: [build, push]
     @post echo "Deployed to production!"
 
 @group prod
-@description "Rollback to previous version"
+@desc "Rollback to previous version"
 task rollback:
     @require DEPLOY_HOST PREVIOUS_TAG
     @confirm "Rollback to $PREVIOUS_TAG?"
@@ -185,7 +185,7 @@ task rollback:
 
 # === Utility ===
 
-@description "Show current image version"
+@desc "Show current image version"
 task version:
     @quiet
     docker images {{app_name}} --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"

@@ -67,7 +67,7 @@ task all: [_build-x86_64-linux, _build-aarch64-linux, _build-x86_64-macos, _buil
     @post ls -lh dist/
 
 @group release
-@only-os linux
+@platform linux
 @desc "Native Linux release build"
 task linux:
     @needs zig
@@ -75,7 +75,7 @@ task linux:
     zig build -Doptimize=ReleaseFast
 
 @group release
-@only-os macos
+@platform macos
 @desc "Native macOS release build"
 task macos:
     @needs zig

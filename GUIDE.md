@@ -123,7 +123,7 @@ task foo:  # Inline comment
     echo "Hello"
 ```
 
-Comments immediately before a recipe (no blank lines) become doc comments shown in `jake -l`. See [@description](#description---recipe-description) for details.
+Comments immediately before a recipe (no blank lines) become doc comments shown in `jake -l`. See [@desc](#desc---recipe-description) for details.
 
 ### Indentation
 
@@ -710,17 +710,20 @@ Target specific recipes without modifying them:
 
 ### Error Hooks
 
-Run commands when any recipe fails:
+Run commands when a recipe fails. Top-level `@on_error` is global (runs on any recipe failure):
 
 ```jake
-# Error handler - runs on any recipe failure
 @on_error echo "Recipe failed! Check logs."
-
-# Send notification on failure
 @on_error notify "Build failed - see logs"
 ```
 
-Note: `@on_error` is always global - it runs when any recipe fails.
+Body-level `@on_error` runs only when its containing recipe fails:
+
+```jake
+task deploy:
+    ./deploy.sh
+    @on_error ./scripts/rollback.sh
+```
 
 ### Complete Hook Execution Order
 
@@ -964,13 +967,13 @@ task test-unit:
 
 `jake --list` will show recipes organized by group.
 
-### @description - Recipe Description
+### @desc - Recipe Description
 
 Add a description shown in listings:
 
 ```jake
 task deploy:
-    @description "Deploy application to production server"
+    @desc "Deploy application to production server"
     ./deploy.sh
 ```
 
@@ -1017,8 +1020,6 @@ task install-deps:
 ```
 
 Valid OS values: `linux`, `macos`, `windows`
-
-> **Note:** `@only-os` and `@only` are aliases for `@platform` and work identically.
 
 ### @quiet - Suppress Output
 

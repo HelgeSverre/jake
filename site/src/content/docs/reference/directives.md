@@ -20,8 +20,7 @@ Placed at the top level of a Jakefile (outside any recipe).
 | `@post command`          | Global post-hook — runs after every recipe                                  |
 | `@before recipe command` | Targeted pre-hook — runs before a specific recipe only                      |
 | `@after recipe command`  | Targeted post-hook — runs after a specific recipe only                      |
-| `@on_error command`      | Error hook — runs if any recipe fails                                       |
-| `@on_error recipe command` | Targeted error hook — runs only when the specified recipe fails           |
+| `@on_error command`      | Global error hook — runs if any recipe fails. For recipe-specific error hooks, use `@on_error` inside the recipe body. |
 
 ## Recipe Modifiers
 
@@ -29,10 +28,10 @@ Placed immediately before a recipe definition (no blank lines between).
 
 | Directive                               | Description                                              |
 | --------------------------------------- | -------------------------------------------------------- |
-| `@description "text"` / `@desc "text"` | Description shown in `jake --list` output                |
+| `@desc "text"`                          | Description shown in `jake --list` output                |
 | `@alias name...`                        | Alternate names for the next recipe (`jake <alias>` runs it) |
 | `@group name`                           | Group recipes together in `jake --list` output           |
-| `@platform os...` / `@only-os os...`    | Only register this recipe on the specified OS(es) (`@platform` is the preferred spelling; `@only-os` and bare `@only` are accepted aliases) |
+| `@platform os...`                       | Only register this recipe on the specified OS(es)        |
 | `@quiet`                                | Suppress command echoing for this recipe                 |
 | `@hidden`                               | Hide from `jake --list` (same as `_` name prefix)       |
 | `@timeout duration`                     | Kill the recipe if it runs longer than `duration`        |
@@ -77,16 +76,16 @@ task setup:
     brew install ripgrep
 ```
 
-### @only-os
+### @platform
 
 Valid values: `linux`, `macos`, `windows`. You can list multiple — the recipe is registered if the current OS matches any of them.
 
 ```jake
-@only-os linux macos
+@platform linux macos
 task set-permissions:
     chmod +x ./scripts/*.sh
 
-@only-os windows
+@platform windows
 task set-permissions:
     icacls scripts\*.bat /grant Everyone:F
 ```

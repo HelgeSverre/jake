@@ -69,7 +69,7 @@ task profile:
 
 @desc "Check for memory leaks (macOS)"
 @group bench
-@only-os macos
+@platform macos
 task leaks:
     @needs zig
     @pre echo "Building release-safe binary..."
@@ -118,7 +118,7 @@ task sizes: [_size-debug, _size-releasesafe, _size-releasefast, _size-releasesma
 
 @desc "Show peak memory usage"
 @group bench
-@only-os macos
+@platform macos
 task memory:
     @needs zig
     zig build -Doptimize=ReleaseFast

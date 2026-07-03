@@ -117,7 +117,7 @@ app_name = "myapp"
 
 # Default task
 @default
-@description "Build the application"
+@desc "Build the application"
 task build:
     cargo build --release
 

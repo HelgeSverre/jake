@@ -89,10 +89,10 @@ Arguments: a b c d
 
 ### Description
 
-Use `@description` or `@desc` as recipe metadata immediately before the recipe definition:
+Use `@desc` or `@desc` as recipe metadata immediately before the recipe definition:
 
 ```jake
-@description "Deploy application to production server"
+@desc "Deploy application to production server"
 task deploy:
     ./deploy.sh
 ```
@@ -122,11 +122,11 @@ task build-backend:
 ### Platform-Specific
 
 ```jake
-@only-os linux macos
+@platform linux macos
 task install-deps:
     ./install.sh
 
-@only-os windows
+@platform windows
 task install-deps:
     install.bat
 ```

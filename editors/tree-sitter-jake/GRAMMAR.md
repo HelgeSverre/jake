@@ -67,10 +67,10 @@ hook_command    : (TEXT | INTERPOLATION)+
 recipe          : recipe_attribute* recipe_header NEWLINE recipe_body?
 
 recipe_attribute: '@group' (IDENTIFIER | STRING) NEWLINE
-                | ('@desc' | '@description') STRING NEWLINE
+                | '@desc' STRING NEWLINE
                 | '@alias' IDENTIFIER+ NEWLINE
                 | '@quiet' NEWLINE
-                | ('@only' | '@only-os' | '@platform') IDENTIFIER+ NEWLINE
+                | '@platform' IDENTIFIER+ NEWLINE
                 | '@needs' needs_spec+ NEWLINE
 
 needs_spec      : IDENTIFIER '->' IDENTIFIER     # command -> install_task

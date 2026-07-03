@@ -284,13 +284,13 @@ port = "3000"
 
 @default
 task dev:
-    @description "Start development server with hot reload"
+    @desc "Start development server with hot reload"
     @needs node npm
     @pre echo "Starting development server on port {{port}}..."
     npm run dev
 
 task dev-watch:
-    @description "Build and watch for changes"
+    @desc "Build and watch for changes"
     @watch src/**/*.ts src/**/*.tsx src/**/*.css
     npm run build
 
@@ -298,12 +298,12 @@ task dev-watch:
 
 @group build
 task build: [clean, build-ts, build-css, build-assets]
-    @description "Production build"
+    @desc "Production build"
     echo "Build complete! Output in {{dist_dir}}/"
 
 @group build
 file dist/app.js: src/**/*.ts src/**/*.tsx
-    @description "Compile TypeScript"
+    @desc "Compile TypeScript"
     @needs npx
     @pre echo "Compiling TypeScript..."
     mkdir -p dist
@@ -317,7 +317,7 @@ file dist/app.js: src/**/*.ts src/**/*.tsx
 
 @group build
 file dist/app.css: src/**/*.css tailwind.config.js
-    @description "Build Tailwind CSS"
+    @desc "Build Tailwind CSS"
     @needs npx
     @pre echo "Processing CSS..."
     mkdir -p dist
@@ -332,7 +332,7 @@ task build-css: [dist/app.css]
     @echo "CSS build complete"
 
 task build-assets:
-    @description "Copy static assets"
+    @desc "Copy static assets"
     mkdir -p dist/assets
     @if exists(public)
         cp -r public/* dist/
@@ -344,7 +344,7 @@ task build-assets:
 # === Cache Busting ===
 
 task build-production: [build]
-    @description "Production build with cache busting"
+    @desc "Production build with cache busting"
     @export NODE_ENV=production
     @cd dist
         # Add hash to filenames
@@ -358,37 +358,37 @@ task build-production: [build]
 
 @group dev
 task lint:
-    @description "Run ESLint"
+    @desc "Run ESLint"
     @needs npx
     npx eslint src/ --ext .ts,.tsx
 
 @group dev
 task format:
-    @description "Format code with Prettier"
+    @desc "Format code with Prettier"
     @needs npx
     npx prettier --write "src/**/*.{ts,tsx,css,json}"
 
 @group dev
 task typecheck:
-    @description "Type-check without emitting"
+    @desc "Type-check without emitting"
     @needs npx
     npx tsc --noEmit
 
 task check: [lint, typecheck]
-    @description "Run all code quality checks"
+    @desc "Run all code quality checks"
     echo "All checks passed!"
 
 # === Cleanup ===
 
 task clean:
-    @description "Remove build artifacts"
+    @desc "Remove build artifacts"
     rm -rf dist/
     rm -rf .cache/
     rm -rf node_modules/.cache/
     echo "Cleaned build artifacts"
 
 task clean-all: [clean]
-    @description "Remove everything including dependencies"
+    @desc "Remove everything including dependencies"
     rm -rf node_modules/
     echo "Removed node_modules/"
 
@@ -396,19 +396,19 @@ task clean-all: [clean]
 
 @group test
 task test:
-    @description "Run all tests"
+    @desc "Run all tests"
     @needs npm
     npm test
 
 @group test
 task test-watch:
-    @description "Run tests in watch mode"
+    @desc "Run tests in watch mode"
     @needs npm
     npm test -- --watch
 
 @group test
 task test-coverage:
-    @description "Run tests with coverage report"
+    @desc "Run tests with coverage report"
     @needs npm
     npm test -- --coverage
     @post echo "Coverage report: coverage/lcov-report/index.html"
@@ -480,13 +480,13 @@ task check: [lint, test]
 
 @group docs
 task docs:
-    @description "Generate documentation"
+    @desc "Generate documentation"
     @needs cargo
     cargo doc --no-deps --open
 
 @group docs
 task docs-build:
-    @description "Build docs for publishing"
+    @desc "Build docs for publishing"
     @needs cargo
     cargo doc --no-deps
     echo "Documentation built: target/doc/"
@@ -495,7 +495,7 @@ task docs-build:
 
 @group release
 task release-build:
-    @description "Build release binaries for all platforms"
+    @desc "Build release binaries for all platforms"
     @needs cargo
     @pre echo "Building for all platforms..."
     mkdir -p dist
@@ -512,14 +512,14 @@ task release-build:
 
 @group release
 task checksums: [release-build]
-    @description "Generate SHA256 checksums"
+    @desc "Generate SHA256 checksums"
     @cd dist
         shasum -a 256 {{name}}-* > checksums.txt
     echo "Checksums: dist/checksums.txt"
 
 @group release
 task release-package: [checksums]
-    @description "Create release archive"
+    @desc "Create release archive"
     @require VERSION
     @confirm Create release package for v$VERSION?
     mkdir -p releases/v$VERSION
@@ -532,7 +532,7 @@ task release-package: [checksums]
 
 @group release
 task changelog-check:
-    @description "Verify CHANGELOG has unreleased changes"
+    @desc "Verify CHANGELOG has unreleased changes"
     @if exists(CHANGELOG.md)
         grep -q "## \[Unreleased\]" CHANGELOG.md && \
         grep -A 100 "## \[Unreleased\]" CHANGELOG.md | grep -q "^### " || \
@@ -545,7 +545,7 @@ task changelog-check:
 
 @group release
 task changelog-release:
-    @description "Convert Unreleased to version entry"
+    @desc "Convert Unreleased to version entry"
     @require VERSION
     @needs sed
     @pre echo "Updating CHANGELOG.md for v$VERSION..."
@@ -558,7 +558,7 @@ task changelog-release:
 
 @group release
 task version-bump:
-    @description "Bump version in project files"
+    @desc "Bump version in project files"
     @require VERSION
     @confirm Bump version to $VERSION?
     # Update Cargo.toml
@@ -572,7 +572,7 @@ task version-bump:
 
 @group release
 task release: [check, changelog-check]
-    @description "Full release workflow"
+    @desc "Full release workflow"
     @require VERSION
     @confirm Release v$VERSION to GitHub?
 
@@ -602,7 +602,7 @@ task release: [check, changelog-check]
 # === CI Helpers ===
 
 task ci: [lint, test, docs-build]
-    @description "Run CI checks locally"
+    @desc "Run CI checks locally"
     echo "CI simulation passed!"
 
 # === Cleanup ===
@@ -641,28 +641,28 @@ Automate commits, branches, and pre-commit checks.
 
 @default
 task pre-commit: [lint, format-check, test-quick]
-    @description "Run before every commit"
+    @desc "Run before every commit"
     echo "Pre-commit checks passed!"
 
 task lint:
-    @description "Run all linters"
+    @desc "Run all linters"
     @needs npm
     npm run lint
 
 task format-check:
-    @description "Check code formatting"
+    @desc "Check code formatting"
     @needs npm
     npx prettier --check "src/**/*.{ts,tsx,js,json,css}"
 
 task test-quick:
-    @description "Run fast unit tests only"
+    @desc "Run fast unit tests only"
     @needs npm
     npm test -- --testPathPattern="unit" --bail
 
 # === Branch Workflows ===
 
 task branch-check:
-    @description "Verify clean working directory"
+    @desc "Verify clean working directory"
     @if neq($(git status --porcelain), "")
         echo "Error: Working directory is not clean"
         git status --short
@@ -671,14 +671,14 @@ task branch-check:
     echo "Working directory is clean"
 
 task branch-sync:
-    @description "Sync with upstream main"
+    @desc "Sync with upstream main"
     @pre echo "Syncing with upstream..."
     git fetch origin
     git rebase origin/main
     @post echo "Branch synced with main"
 
 task branch-cleanup:
-    @description "Delete merged local branches"
+    @desc "Delete merged local branches"
     @confirm Delete merged branches?
     git branch --merged main | grep -v "main" | xargs -r git branch -d
     echo "Cleaned up merged branches"
@@ -686,14 +686,14 @@ task branch-cleanup:
 # === Feature Branch Workflow ===
 
 task feature-start name:
-    @description "Start a new feature branch"
+    @desc "Start a new feature branch"
     git checkout main
     git pull origin main
     git checkout -b "feature/{{name}}"
     echo "Created feature/{{name}}"
 
 task feature-finish:
-    @description "Finish current feature branch"
+    @desc "Finish current feature branch"
     @pre echo "Running final checks..."
     jake pre-commit
     @confirm Merge feature branch?
@@ -710,45 +710,45 @@ task feature-finish:
 # === Commit Helpers ===
 
 task commit-fix:
-    @description "Create a fix commit"
+    @desc "Create a fix commit"
     @confirm Stage all changes and commit as fix?
     git add -A
     git commit -m "fix: {{$1}}"
 
 task commit-feat:
-    @description "Create a feature commit"
+    @desc "Create a feature commit"
     @confirm Stage all changes and commit as feature?
     git add -A
     git commit -m "feat: {{$1}}"
 
 task commit-docs:
-    @description "Create a docs commit"
+    @desc "Create a docs commit"
     git add -A
     git commit -m "docs: {{$1}}"
 
 task commit-chore:
-    @description "Create a chore commit"
+    @desc "Create a chore commit"
     git add -A
     git commit -m "chore: {{$1}}"
 
 # === Tagging ===
 
 task tag-version:
-    @description "Create version tag"
+    @desc "Create version tag"
     @require VERSION
     @confirm Create tag v$VERSION?
     git tag -a "v$VERSION" -m "Release v$VERSION"
     echo "Created tag v$VERSION"
 
 task tag-push:
-    @description "Push all tags to origin"
+    @desc "Push all tags to origin"
     git push origin --tags
     echo "Tags pushed"
 
 # === Git Hooks Setup ===
 
 task hooks-install:
-    @description "Install git hooks"
+    @desc "Install git hooks"
     mkdir -p .git/hooks
 
     # Pre-commit hook
@@ -759,7 +759,7 @@ task hooks-install:
     echo "Git hooks installed!"
 
 task hooks-uninstall:
-    @description "Remove git hooks"
+    @desc "Remove git hooks"
     rm -f .git/hooks/pre-commit
     rm -f .git/hooks/commit-msg
     echo "Git hooks removed"
@@ -767,7 +767,7 @@ task hooks-uninstall:
 # === Utility ===
 
 task status:
-    @description "Show detailed git status"
+    @desc "Show detailed git status"
     @quiet
     echo "=== Branch ==="
     git branch --show-current
@@ -779,7 +779,7 @@ task status:
     git log --oneline -5
 
 task log:
-    @description "Pretty git log"
+    @desc "Pretty git log"
     git log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit -20
 ```
 
@@ -816,7 +816,7 @@ tag = "latest"
 @default
 @group docker
 task build:
-    @description "Build Docker image"
+    @desc "Build Docker image"
     @needs docker
     @pre echo "Building {{app_name}}:{{tag}}..."
     docker build -t {{app_name}}:{{tag}} .
@@ -825,13 +825,13 @@ task build:
 
 @group docker
 task build-no-cache:
-    @description "Build without cache"
+    @desc "Build without cache"
     @needs docker
     docker build --no-cache -t {{app_name}}:{{tag}} .
 
 @group docker
 task build-multi-platform:
-    @description "Build for multiple architectures"
+    @desc "Build for multiple architectures"
     @needs docker
     docker buildx build \
         --platform linux/amd64,linux/arm64 \
@@ -844,14 +844,14 @@ task build-multi-platform:
 
 @group registry
 task login:
-    @description "Login to Docker registry"
+    @desc "Login to Docker registry"
     @require DOCKER_USERNAME DOCKER_PASSWORD
     echo $DOCKER_PASSWORD | docker login {{registry}} -u $DOCKER_USERNAME --password-stdin
     echo "Logged in to {{registry}}"
 
 @group registry
 task push: [build]
-    @description "Push image to registry"
+    @desc "Push image to registry"
     @needs docker
     @confirm Push {{app_name}}:{{tag}} to {{registry}}?
     docker push {{registry}}/{{app_name}}:{{tag}}
@@ -859,7 +859,7 @@ task push: [build]
 
 @group registry
 task pull:
-    @description "Pull latest image"
+    @desc "Pull latest image"
     @needs docker
     docker pull {{registry}}/{{app_name}}:{{tag}}
 
@@ -867,61 +867,61 @@ task pull:
 
 @group dev
 task up:
-    @description "Start services with docker-compose"
+    @desc "Start services with docker-compose"
     @needs docker-compose
     docker-compose up -d
     @post echo "Services started"
 
 @group dev
 task down:
-    @description "Stop services"
+    @desc "Stop services"
     @needs docker-compose
     docker-compose down
     @post echo "Services stopped"
 
 @group dev
 task restart: [down, up]
-    @description "Restart all services"
+    @desc "Restart all services"
     echo "Services restarted"
 
 @group dev
 task logs:
-    @description "Follow container logs"
+    @desc "Follow container logs"
     @needs docker-compose
     docker-compose logs -f
 
 @group dev
 task shell:
-    @description "Open shell in app container"
+    @desc "Open shell in app container"
     @needs docker
     docker-compose exec app /bin/sh
 
 @group dev
 task ps:
-    @description "List running containers"
+    @desc "List running containers"
     docker-compose ps
 
 # === Database Containers ===
 
 @group db
 task db-start:
-    @description "Start database container only"
+    @desc "Start database container only"
     docker-compose up -d db
     @post echo "Database started"
 
 @group db
 task db-stop:
-    @description "Stop database container"
+    @desc "Stop database container"
     docker-compose stop db
 
 @group db
 task db-shell:
-    @description "Open database CLI"
+    @desc "Open database CLI"
     docker-compose exec db psql -U postgres
 
 @group db
 task db-reset:
-    @description "Reset database (DESTRUCTIVE)"
+    @desc "Reset database (DESTRUCTIVE)"
     @confirm This will DELETE all data. Continue?
     docker-compose stop db
     docker-compose rm -f db
@@ -933,26 +933,26 @@ task db-reset:
 
 @group cleanup
 task clean-containers:
-    @description "Remove stopped containers"
+    @desc "Remove stopped containers"
     docker container prune -f
     echo "Removed stopped containers"
 
 @group cleanup
 task clean-images:
-    @description "Remove dangling images"
+    @desc "Remove dangling images"
     docker image prune -f
     echo "Removed dangling images"
 
 @group cleanup
 task clean-volumes:
-    @description "Remove unused volumes"
+    @desc "Remove unused volumes"
     @confirm Remove unused volumes?
     docker volume prune -f
     echo "Removed unused volumes"
 
 @group cleanup
 task clean-all: [clean-containers, clean-images]
-    @description "Full Docker cleanup"
+    @desc "Full Docker cleanup"
     @confirm This will remove all unused Docker resources. Continue?
     docker system prune -af
     echo "Full cleanup complete"
@@ -961,7 +961,7 @@ task clean-all: [clean-containers, clean-images]
 
 @group prod
 task deploy: [build, push]
-    @description "Build and deploy to production"
+    @desc "Build and deploy to production"
     @confirm Deploy to production?
     @require DEPLOY_HOST
     ssh $DEPLOY_HOST "docker pull {{registry}}/{{app_name}}:{{tag}} && docker-compose up -d"
@@ -969,7 +969,7 @@ task deploy: [build, push]
 
 @group prod
 task rollback:
-    @description "Rollback to previous version"
+    @desc "Rollback to previous version"
     @require DEPLOY_HOST PREVIOUS_TAG
     @confirm Rollback to $PREVIOUS_TAG?
     ssh $DEPLOY_HOST "docker pull {{registry}}/{{app_name}}:$PREVIOUS_TAG && docker-compose up -d"
@@ -978,7 +978,7 @@ task rollback:
 # === Utility ===
 
 task version:
-    @description "Show current image version"
+    @desc "Show current image version"
     @quiet
     docker images {{app_name}} --format "{{.Repository}}:{{.Tag}} - {{.Size}} ({{.CreatedSince}})"
 ```
@@ -1012,11 +1012,11 @@ Jake works seamlessly with GitHub Actions and other CI systems.
 
 @default
 task ci: [install, lint, typecheck, test, build]
-    @description "Run full CI pipeline locally"
+    @desc "Run full CI pipeline locally"
     echo "CI pipeline passed!"
 
 task install:
-    @description "Install dependencies"
+    @desc "Install dependencies"
     @needs npm
     @if env(CI)
         npm ci
@@ -1025,17 +1025,17 @@ task install:
     @end
 
 task lint:
-    @description "Run linters"
+    @desc "Run linters"
     @needs npm
     npm run lint
 
 task typecheck:
-    @description "Type checking"
+    @desc "Type checking"
     @needs npm
     npm run typecheck
 
 task test:
-    @description "Run tests"
+    @desc "Run tests"
     @needs npm
     @if env(CI)
         npm test -- --coverage --ci
@@ -1044,14 +1044,14 @@ task test:
     @end
 
 task build:
-    @description "Production build"
+    @desc "Production build"
     @needs npm
     npm run build
 
 # === Environment-Based Deployment ===
 
 task deploy:
-    @description "Deploy to appropriate environment"
+    @desc "Deploy to appropriate environment"
     @if env(GITHUB_REF_NAME)
         @if eq($GITHUB_REF_NAME, main)
             echo "Deploying to production..."
@@ -1068,14 +1068,14 @@ task deploy:
     @end
 
 task deploy-staging:
-    @description "Deploy to staging"
+    @desc "Deploy to staging"
     @require STAGING_URL
     @needs npx
     npx vercel deploy --prebuilt --token=$VERCEL_TOKEN
     echo "Deployed to staging: $STAGING_URL"
 
 task deploy-production:
-    @description "Deploy to production"
+    @desc "Deploy to production"
     @require PRODUCTION_URL
     @confirm Deploy to production?
     @needs npx
@@ -1083,7 +1083,7 @@ task deploy-production:
     @post echo "Deployed to production: $PRODUCTION_URL"
 
 task deploy-preview:
-    @description "Deploy preview environment"
+    @desc "Deploy preview environment"
     @needs npx
     npx vercel deploy --prebuilt --token=$VERCEL_TOKEN
     echo "Preview deployed"
@@ -1091,7 +1091,7 @@ task deploy-preview:
 # === GitHub Actions Helpers ===
 
 task gha-summary:
-    @description "Write summary for GitHub Actions"
+    @desc "Write summary for GitHub Actions"
     @if env(GITHUB_STEP_SUMMARY)
         echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
         echo "- Commit: $GITHUB_SHA" >> $GITHUB_STEP_SUMMARY
@@ -1100,14 +1100,14 @@ task gha-summary:
     @end
 
 task gha-cache-key:
-    @description "Generate cache key for GitHub Actions"
+    @desc "Generate cache key for GitHub Actions"
     @quiet
     echo "npm-$RUNNER_OS-$(shasum package-lock.json | cut -c1-8)"
 
 # === Rollback ===
 
 task rollback:
-    @description "Rollback production deployment"
+    @desc "Rollback production deployment"
     @require PREVIOUS_DEPLOY_ID
     @confirm Rollback production to $PREVIOUS_DEPLOY_ID?
     npx vercel rollback $PREVIOUS_DEPLOY_ID --token=$VERCEL_TOKEN
@@ -1116,21 +1116,21 @@ task rollback:
 # === Health Checks ===
 
 task health-check:
-    @description "Check deployment health"
+    @desc "Check deployment health"
     @require HEALTH_URL
     @pre echo "Checking health at $HEALTH_URL..."
     curl -sf "$HEALTH_URL/health" || (echo "Health check failed!" && exit 1)
     @post echo "Health check passed!"
 
 task smoke-test:
-    @description "Run smoke tests against deployment"
+    @desc "Run smoke tests against deployment"
     @require TEST_URL
     npm run test:e2e -- --url=$TEST_URL
 
 # === Notifications ===
 
 task notify-success:
-    @description "Send success notification"
+    @desc "Send success notification"
     @if env(SLACK_WEBHOOK)
         curl -X POST -H 'Content-type: application/json' \
             --data '{"text":"Deployment succeeded: '$GITHUB_REF_NAME'"}' \
@@ -1138,7 +1138,7 @@ task notify-success:
     @end
 
 task notify-failure:
-    @description "Send failure notification"
+    @desc "Send failure notification"
     @if env(SLACK_WEBHOOK)
         curl -X POST -H 'Content-type: application/json' \
             --data '{"text":"Deployment FAILED: '$GITHUB_REF_NAME'"}' \
@@ -1205,7 +1205,7 @@ Migrations, seeding, backups, and API testing.
 
 @group db
 task migrate:
-    @description "Run pending migrations"
+    @desc "Run pending migrations"
     @needs npx
     @pre echo "Running migrations..."
     npx prisma migrate deploy
@@ -1213,14 +1213,14 @@ task migrate:
 
 @group db
 task migrate-create name:
-    @description "Create a new migration"
+    @desc "Create a new migration"
     @needs npx
     npx prisma migrate dev --name {{name}}
     echo "Created migration: {{name}}"
 
 @group db
 task migrate-reset:
-    @description "Reset database and run all migrations"
+    @desc "Reset database and run all migrations"
     @confirm This will DELETE all data. Continue?
     @needs npx
     npx prisma migrate reset --force
@@ -1228,7 +1228,7 @@ task migrate-reset:
 
 @group db
 task migrate-status:
-    @description "Show migration status"
+    @desc "Show migration status"
     @needs npx
     npx prisma migrate status
 
@@ -1236,7 +1236,7 @@ task migrate-status:
 
 @group db
 task seed:
-    @description "Seed database with sample data"
+    @desc "Seed database with sample data"
     @needs npx
     @pre echo "Seeding database..."
     npx prisma db seed
@@ -1244,7 +1244,7 @@ task seed:
 
 @group db
 task seed-prod:
-    @description "Seed production essentials only"
+    @desc "Seed production essentials only"
     @confirm Seed production database?
     @needs npx
     NODE_ENV=production npx prisma db seed -- --production
@@ -1254,7 +1254,7 @@ task seed-prod:
 
 @group backup
 task backup:
-    @description "Create database backup"
+    @desc "Create database backup"
     @needs pg_dump
     backup_file="backups/db-$(date +%Y%m%d-%H%M%S).sql"
     mkdir -p backups
@@ -1264,13 +1264,13 @@ task backup:
 
 @group backup
 task backup-list:
-    @description "List available backups"
+    @desc "List available backups"
     @quiet
     ls -lah backups/*.sql.gz 2>/dev/null || echo "No backups found"
 
 @group backup
 task restore file:
-    @description "Restore from backup file"
+    @desc "Restore from backup file"
     @confirm Restore from {{file}}? This will overwrite current data.
     @needs psql gunzip
     gunzip -c {{file}} | psql $DATABASE_URL
@@ -1278,7 +1278,7 @@ task restore file:
 
 @group backup
 task backup-s3:
-    @description "Backup to S3"
+    @desc "Backup to S3"
     @require AWS_BUCKET
     @needs aws pg_dump
     backup_file="db-$(date +%Y%m%d-%H%M%S).sql.gz"
@@ -1289,28 +1289,28 @@ task backup-s3:
 
 @group schema
 task schema-push:
-    @description "Push schema changes (dev only)"
+    @desc "Push schema changes (dev only)"
     @needs npx
     npx prisma db push
     echo "Schema pushed"
 
 @group schema
 task schema-pull:
-    @description "Pull schema from database"
+    @desc "Pull schema from database"
     @needs npx
     npx prisma db pull
     echo "Schema pulled"
 
 @group schema
 task schema-generate:
-    @description "Generate Prisma client"
+    @desc "Generate Prisma client"
     @needs npx
     npx prisma generate
     echo "Client generated"
 
 @group schema
 task schema-studio:
-    @description "Open Prisma Studio"
+    @desc "Open Prisma Studio"
     @needs npx
     npx prisma studio
 
@@ -1318,13 +1318,13 @@ task schema-studio:
 
 @group api
 task api-test:
-    @description "Run API tests"
+    @desc "Run API tests"
     @needs npm
     npm run test:api
 
 @group api
 task api-health:
-    @description "Check API health"
+    @desc "Check API health"
     @require API_URL
     @pre echo "Checking $API_URL..."
     curl -sf "$API_URL/health" | jq .
@@ -1332,7 +1332,7 @@ task api-health:
 
 @group api
 task api-docs:
-    @description "Generate API documentation"
+    @desc "Generate API documentation"
     @needs npx
     npx swagger-jsdoc -d swaggerDef.js -o docs/api.json src/**/*.ts
     echo "API docs generated: docs/api.json"
@@ -1341,13 +1341,13 @@ task api-docs:
 
 @group perf
 task analyze-queries:
-    @description "Analyze slow queries"
+    @desc "Analyze slow queries"
     @needs psql
     psql $DATABASE_URL -c "SELECT query, calls, mean_time, total_time FROM pg_stat_statements ORDER BY mean_time DESC LIMIT 10;"
 
 @group perf
 task vacuum:
-    @description "Run VACUUM ANALYZE"
+    @desc "Run VACUUM ANALYZE"
     @needs psql
     @pre echo "Running VACUUM ANALYZE..."
     psql $DATABASE_URL -c "VACUUM ANALYZE;"
@@ -1356,11 +1356,11 @@ task vacuum:
 # === Setup ===
 
 task setup: [schema-generate, migrate, seed]
-    @description "Full database setup"
+    @desc "Full database setup"
     echo "Database setup complete!"
 
 task reset: [migrate-reset, seed]
-    @description "Reset and reseed database"
+    @desc "Reset and reseed database"
     echo "Database reset complete!"
 ```
 
@@ -1422,18 +1422,18 @@ monorepo/
 
 @default
 task all: [web.build, api.build, mobile.build]
-    @description "Build all packages"
+    @desc "Build all packages"
     echo "All packages built!"
 
 task all-parallel:
-    @description "Build all packages in parallel"
+    @desc "Build all packages in parallel"
     jake -j4 web.build api.build mobile.build
     echo "Parallel build complete!"
 
 # === Development ===
 
 task dev:
-    @description "Start all dev servers"
+    @desc "Start all dev servers"
     @pre echo "Starting development environment..."
     # Run in parallel using background processes
     jake web.dev &
@@ -1442,19 +1442,19 @@ task dev:
     echo "All dev servers running"
 
 task dev-web: [web.dev]
-    @description "Start web dev server only"
+    @desc "Start web dev server only"
 
 task dev-api: [api.dev]
-    @description "Start API dev server only"
+    @desc "Start API dev server only"
 
 # === Testing ===
 
 task test: [web.test, api.test, mobile.test]
-    @description "Run all tests"
+    @desc "Run all tests"
     echo "All tests passed!"
 
 task test-affected:
-    @description "Test only affected packages"
+    @desc "Test only affected packages"
     @pre echo "Determining affected packages..."
     # Check which packages have changes
     @if exists(packages/web)
@@ -1468,40 +1468,40 @@ task test-affected:
 # === Linting & Formatting ===
 
 task lint: [web.lint, api.lint, mobile.lint]
-    @description "Lint all packages"
+    @desc "Lint all packages"
     echo "All packages linted!"
 
 task format: [web.format, api.format, mobile.format]
-    @description "Format all packages"
+    @desc "Format all packages"
     echo "All packages formatted!"
 
 # === Deployment ===
 
 task deploy-staging: [web.deploy-staging, api.deploy-staging]
-    @description "Deploy all to staging"
+    @desc "Deploy all to staging"
     echo "Deployed to staging!"
 
 task deploy-production: [web.deploy-production, api.deploy-production]
-    @description "Deploy all to production"
+    @desc "Deploy all to production"
     @confirm Deploy ALL packages to production?
     echo "Deployed to production!"
 
 # === Infrastructure ===
 
 task infra-plan: [infra.plan]
-    @description "Plan infrastructure changes"
+    @desc "Plan infrastructure changes"
 
 task infra-apply: [infra.apply]
-    @description "Apply infrastructure changes"
+    @desc "Apply infrastructure changes"
 
 # === Utilities ===
 
 task clean: [web.clean, api.clean, mobile.clean]
-    @description "Clean all packages"
+    @desc "Clean all packages"
     echo "All packages cleaned!"
 
 task install:
-    @description "Install all dependencies"
+    @desc "Install all dependencies"
     @needs npm
     npm install
     @each packages/web packages/api packages/mobile packages/shared
@@ -1510,7 +1510,7 @@ task install:
     echo "All dependencies installed!"
 
 task deps-update:
-    @description "Update dependencies in all packages"
+    @desc "Update dependencies in all packages"
     @needs npx
     npx ncu -u
     @each packages/web packages/api packages/mobile packages/shared
@@ -1521,11 +1521,11 @@ task deps-update:
 # === CI/CD ===
 
 task ci: [install, lint, test, all]
-    @description "Full CI pipeline"
+    @desc "Full CI pipeline"
     echo "CI passed!"
 
 task ci-affected:
-    @description "CI for affected packages only"
+    @desc "CI for affected packages only"
     jake install
     jake test-affected
     echo "Affected CI passed!"
@@ -1539,28 +1539,28 @@ task ci-affected:
 root = "packages/web"
 
 task build:
-    @description "Build web app"
+    @desc "Build web app"
     @cd {{root}}
         npm run build
     echo "Web app built"
 
 task dev:
-    @description "Start web dev server"
+    @desc "Start web dev server"
     @cd {{root}}
         npm run dev
 
 task test:
-    @description "Run web tests"
+    @desc "Run web tests"
     @cd {{root}}
         npm test
 
 task lint:
-    @description "Lint web code"
+    @desc "Lint web code"
     @cd {{root}}
         npm run lint
 
 task format:
-    @description "Format web code"
+    @desc "Format web code"
     @cd {{root}}
         npm run format
 
@@ -1589,28 +1589,28 @@ task deploy-production:
 root = "packages/api"
 
 task build:
-    @description "Build API"
+    @desc "Build API"
     @cd {{root}}
         npm run build
     echo "API built"
 
 task dev:
-    @description "Start API dev server"
+    @desc "Start API dev server"
     @cd {{root}}
         npm run dev
 
 task test:
-    @description "Run API tests"
+    @desc "Run API tests"
     @cd {{root}}
         npm test
 
 task lint:
-    @description "Lint API code"
+    @desc "Lint API code"
     @cd {{root}}
         npm run lint
 
 task format:
-    @description "Format API code"
+    @desc "Format API code"
     @cd {{root}}
         npm run format
 
@@ -1619,7 +1619,7 @@ task clean:
     echo "API cleaned"
 
 task migrate:
-    @description "Run API migrations"
+    @desc "Run API migrations"
     @cd {{root}}
         npm run migrate
 
@@ -1654,11 +1654,11 @@ jake deploy-production      # Deploy everything
 ### Pattern 1: Conditional Platform Handling
 
 ```jake
-@only-os linux macos
+@platform linux macos
 task install-unix:
     ./install.sh
 
-@only-os windows
+@platform windows
 task install-windows:
     install.bat
 
@@ -1677,7 +1677,7 @@ Use `command()` to check if tools are installed before using them:
 
 ```jake
 task containerize:
-    @description "Build container image"
+    @desc "Build container image"
     @if command(docker)
         docker build -t myapp .
     @elif command(podman)
@@ -1688,7 +1688,7 @@ task containerize:
     @end
 
 task deploy:
-    @description "Deploy to Kubernetes"
+    @desc "Deploy to Kubernetes"
     @if command(kubectl)
         kubectl apply -f k8s/
     @else
@@ -1697,7 +1697,7 @@ task deploy:
     @end
 
 task format:
-    @description "Format code with available formatter"
+    @desc "Format code with available formatter"
     @if command(prettier)
         prettier --write "src/**/*.{js,ts,json}"
     @elif command(deno)
@@ -1711,13 +1711,13 @@ Skip expensive operations when inputs haven't changed:
 
 ```jake
 task typecheck:
-    @description "Type-check with caching"
+    @desc "Type-check with caching"
     @cache src/**/*.ts tsconfig.json
     npx tsc --noEmit
     echo "Type-check complete (or skipped - no changes)"
 
 task lint:
-    @description "Lint with caching"
+    @desc "Lint with caching"
     @cache src/**/*.ts .eslintrc.js
     npx eslint src/
 ```
@@ -1764,7 +1764,7 @@ task deploy: [build, test]
     @post ./scripts/health-check.sh || jake rollback
 
 task rollback:
-    @description "Emergency rollback"
+    @desc "Emergency rollback"
     ./scripts/rollback.sh
 ```
 
@@ -2041,7 +2041,7 @@ project/
 # Requires: AWS credentials configured, SSH key for bastion
 # Usage: VERSION=1.2.3 jake deploy
 task deploy:
-    @description "Deploy application to production cluster"
+    @desc "Deploy application to production cluster"
     @require VERSION AWS_ACCESS_KEY_ID
     @confirm Deploy v$VERSION to production?
     # ... deployment logic
@@ -2140,10 +2140,10 @@ file dist/bundle.js: src/**/*.ts
 @default                         # Set as default task
 @group groupname                 # Group in listings
 @quiet                           # Suppress command echo
-@only-os linux macos             # Platform-specific
+@platform linux macos             # Platform-specific
 task name | alias1 | alias2:     # Aliases
 task _private:                   # Hidden from --list
-    @description "Description"   # Task description
+    @desc "Description"   # Task description
 ```
 
 ### Command Directives
@@ -2257,11 +2257,11 @@ jake -w build
 @end
 
 # Platform-specific
-@only-os macos
+@platform macos
 task macos-setup:
     brew install dependencies
 
-@only-os linux
+@platform linux
 task linux-setup:
     apt-get install dependencies
 ```

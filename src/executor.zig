@@ -991,7 +991,7 @@ pub const Executor = struct {
 
         // Run on_error hooks if recipe failed
         if (!hook_context.success) {
-            self.hook_runner.runOnErrorHooks(&hook_context);
+            self.hook_runner.runOnErrorHooks(recipe.on_error_hooks, &hook_context);
         }
 
         // Return the original error if recipe execution failed
@@ -3585,6 +3585,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .commands = &.{},
             .pre_hooks = &.{},
             .post_hooks = &.{},
+            .on_error_hooks = &.{},
             .doc_comment = null,
             .is_default = false,
             .aliases = &.{},
@@ -3614,6 +3615,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .commands = &.{},
             .pre_hooks = &.{},
             .post_hooks = &.{},
+            .on_error_hooks = &.{},
             .doc_comment = null,
             .is_default = false,
             .aliases = &.{},
@@ -3643,6 +3645,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .commands = &.{},
             .pre_hooks = &.{},
             .post_hooks = &.{},
+            .on_error_hooks = &.{},
             .doc_comment = null,
             .is_default = false,
             .aliases = &.{},
@@ -3668,6 +3671,7 @@ test "countHiddenRecipes includes imported private recipes via origin" {
             .commands = &.{},
             .pre_hooks = &.{},
             .post_hooks = &.{},
+            .on_error_hooks = &.{},
             .doc_comment = null,
             .is_default = false,
             .aliases = &.{},
@@ -3713,6 +3717,7 @@ test "Recipe.isPrivate detects private via origin.original_name" {
         .commands = &.{},
         .pre_hooks = &.{},
         .post_hooks = &.{},
+        .on_error_hooks = &.{},
         .doc_comment = null,
         .is_default = false,
         .aliases = &.{},
@@ -3763,6 +3768,7 @@ test "Recipe.isPrivate edge cases" {
         .commands = &.{},
         .pre_hooks = &.{},
         .post_hooks = &.{},
+        .on_error_hooks = &.{},
         .doc_comment = null,
         .is_default = false,
         .aliases = &.{},
