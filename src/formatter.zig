@@ -333,6 +333,15 @@ fn renderRecipe(writer: anytype, recipe: *const Recipe) !void {
         try writer.writeByte('\n');
     }
 
+    // Recipe-level required env vars
+    if (recipe.requires.len > 0) {
+        try writer.writeAll("@require");
+        for (recipe.requires) |var_name| {
+            try writer.print(" {s}", .{var_name});
+        }
+        try writer.writeByte('\n');
+    }
+
     // Recipe header
     switch (recipe.kind) {
         .task => try writer.print("task {s}", .{recipe.name}),

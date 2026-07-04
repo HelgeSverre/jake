@@ -290,6 +290,23 @@ pub const Executor = struct {
         }
     }
 
+    /// Validate a recipe's @require environment variables (recipe-scoped
+    /// analogue of validateRequiredEnv). Skipped in dry-run.
+    pub fn checkRecipeRequires(self: *Executor, recipe: *const Recipe) ExecuteError!void {
+        if (self.ctx.dry_run) return;
+        for (recipe.requires) |var_name| {
+            if (self.environment.get(var_name)) |_| continue;
+            if (std.process.getEnvVarOwned(self.allocator, var_name)) |value| {
+                self.allocator.free(value);
+                continue;
+            } else |_| {
+                self.print("{s}Required environment variable '{s}' is not set\n", .{ self.color.errPrefix(), var_name });
+                self.print("  hint: recipe '{s}' needs it — set it in your shell or add it to .env\n", .{recipe.name});
+                return ExecuteError.MissingRequiredEnv;
+            }
+        }
+    }
+
     /// Check if a command exists in PATH or as an absolute path
     fn commandExists(self: *Executor, cmd: []const u8) bool {
         _ = self;
@@ -880,6 +897,12 @@ pub const Executor = struct {
         // Check recipe-level @needs requirements before running any commands
         if (recipe.needs.len > 0) {
             try self.checkRecipeLevelNeeds(recipe);
+        }
+
+        // Check recipe-level @require env vars — before deps run, so a missing
+        // key fails fast instead of after an expensive dependency build.
+        if (recipe.requires.len > 0) {
+            try self.checkRecipeRequires(recipe);
         }
 
         // Mark as in progress
@@ -4255,7 +4278,7 @@ test "@require validates single env var exists" {
     defer executor.deinit();
 
     // Should not return an error since PATH exists
-    try executor.validateRequiredEnv();
+    try executor.checkRecipeRequires(&jakefile.recipes[0]);
 }
 
 test "@require fails with clear error when env var missing" {
@@ -4273,7 +4296,7 @@ test "@require fails with clear error when env var missing" {
     defer executor.deinit();
 
     // Should return MissingRequiredEnv error
-    const err = executor.validateRequiredEnv();
+    const err = executor.checkRecipeRequires(&jakefile.recipes[0]);
     try std.testing.expectError(ExecuteError.MissingRequiredEnv, err);
 }
 
@@ -4296,7 +4319,7 @@ test "@require checks multiple variables in single directive" {
     var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
-    try executor.validateRequiredEnv();
+    try executor.checkRecipeRequires(&jakefile.recipes[0]);
 }
 
 test "@require checks multiple @require directives" {
@@ -4320,7 +4343,7 @@ test "@require checks multiple @require directives" {
     var executor = try Executor.init(std.testing.allocator, &jakefile);
     defer executor.deinit();
 
-    try executor.validateRequiredEnv();
+    try executor.checkRecipeRequires(&jakefile.recipes[0]);
 }
 
 test "@require skips validation in dry-run mode" {
@@ -4339,7 +4362,7 @@ test "@require skips validation in dry-run mode" {
     executor.ctx.dry_run = true;
 
     // In dry-run mode, should not fail
-    try executor.validateRequiredEnv();
+    try executor.checkRecipeRequires(&jakefile.recipes[0]);
 }
 
 test "@require with empty value still passes" {
@@ -4359,7 +4382,7 @@ test "@require with empty value still passes" {
     defer executor.deinit();
 
     // PATH exists (even if hypothetically empty), should pass
-    try executor.validateRequiredEnv();
+    try executor.checkRecipeRequires(&jakefile.recipes[0]);
 }
 
 test "@require fails on second missing var in list" {
@@ -4377,7 +4400,7 @@ test "@require fails on second missing var in list" {
     defer executor.deinit();
 
     // Should fail because JAKE_TEST_NONEXISTENT_VAR_12345 doesn't exist
-    const err = executor.validateRequiredEnv();
+    const err = executor.checkRecipeRequires(&jakefile.recipes[0]);
     try std.testing.expectError(ExecuteError.MissingRequiredEnv, err);
 }
 
@@ -4417,7 +4440,54 @@ test "@require works with env vars from dotenv" {
     defer executor.deinit();
 
     // Should pass because JAKE_TEST_FROM_DOTENV was loaded from .env
-    try executor.validateRequiredEnv();
+    try executor.checkRecipeRequires(&jakefile.recipes[0]);
+}
+
+test "@require is recipe-scoped: unrelated recipe is unaffected" {
+    // build has no @require; publish requires a missing var. Validating build's
+    // (empty) requires must pass even though publish would fail.
+    const source =
+        \\task build:
+        \\    echo "ok"
+        \\
+        \\@require JAKE_TEST_NONEXISTENT_VAR_12345
+        \\task publish:
+        \\    echo "ok"
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // recipes[0] = build (no requires) passes; recipes[1] = publish fails.
+    try std.testing.expectEqual(@as(usize, 0), jakefile.recipes[0].requires.len);
+    try executor.checkRecipeRequires(&jakefile.recipes[0]);
+    try std.testing.expectError(ExecuteError.MissingRequiredEnv, executor.checkRecipeRequires(&jakefile.recipes[1]));
+}
+
+test "@require with no following recipe stays global" {
+    // A @require not followed by a recipe is flushed as a global directive and
+    // validated for any execution via validateRequiredEnv.
+    const source =
+        \\task build:
+        \\    echo "ok"
+        \\
+        \\@require JAKE_TEST_NONEXISTENT_VAR_12345
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    // No recipe consumed it → it lives on as a global directive.
+    try std.testing.expectEqual(@as(usize, 0), jakefile.recipes[0].requires.len);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    try std.testing.expectError(ExecuteError.MissingRequiredEnv, executor.validateRequiredEnv());
 }
 
 // =============================================================================

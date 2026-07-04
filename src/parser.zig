@@ -32,6 +32,7 @@ pub const Recipe = struct {
     quiet: bool, // Suppress command echoing for this recipe
     hidden: bool, // Hide from recipe listings (alternative to _ prefix)
     needs: []const NeedsRequirement, // Recipe-level command requirements
+    requires: []const []const u8 = &.{}, // Recipe-level required env vars (@require before the recipe)
     timeout_seconds: ?u64, // Timeout in seconds, null = no timeout
 
     pub const Kind = enum {
@@ -158,6 +159,7 @@ pub const Jakefile = struct {
             allocator.free(recipe.aliases);
             allocator.free(recipe.only_os);
             allocator.free(recipe.needs);
+            allocator.free(recipe.requires);
         }
         allocator.free(self.recipes);
         for (self.directives) |directive| {
@@ -334,6 +336,7 @@ pub const Parser = struct {
     pending_default: bool,
     pending_doc_comment: ?[]const u8,
     pending_needs: std.ArrayListUnmanaged(NeedsRequirement),
+    pending_requires: std.ArrayListUnmanaged([]const u8),
     pending_timeout: ?u64,
 
     pub fn init(allocator: std.mem.Allocator, lex: *Lexer) Parser {
@@ -360,6 +363,7 @@ pub const Parser = struct {
             .pending_default = false,
             .pending_doc_comment = null,
             .pending_needs = .empty,
+            .pending_requires = .empty,
             .pending_timeout = null,
         };
     }
@@ -378,6 +382,7 @@ pub const Parser = struct {
             self.allocator.free(recipe.aliases);
             self.allocator.free(recipe.only_os);
             self.allocator.free(recipe.needs);
+            self.allocator.free(recipe.requires);
         }
         self.recipes.deinit(self.allocator);
         for (self.directives.items) |directive| {
@@ -392,6 +397,7 @@ pub const Parser = struct {
         self.pending_aliases.deinit(self.allocator);
         self.pending_only_os.deinit(self.allocator);
         self.pending_needs.deinit(self.allocator);
+        self.pending_requires.deinit(self.allocator);
     }
 
     fn advance(self: *Parser) void {
@@ -551,6 +557,30 @@ pub const Parser = struct {
         return self.pending_needs.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
     }
 
+    /// `@require FOO BAR` — required environment variables. Accumulated like
+    /// @needs and attached to the following recipe (recipe-scoped); a @require
+    /// with no following recipe is flushed as global (see parseJakefile).
+    fn parseRequireDirective(self: *Parser) ParseError!void {
+        self.advance(); // consume `require`
+        while (self.current.tag != .newline and self.current.tag != .eof) {
+            if (self.current.tag == .ident or self.current.tag == .string) {
+                const name = if (self.current.tag == .string)
+                    stripQuotes(self.slice(self.current))
+                else
+                    self.slice(self.current);
+                self.pending_requires.append(self.allocator, name) catch return ParseError.OutOfMemory;
+            }
+            self.advance();
+        }
+    }
+
+    fn consumePendingRequires(self: *Parser) ParseError![]const []const u8 {
+        if (self.pending_requires.items.len == 0) {
+            return &[_][]const u8{};
+        }
+        return self.pending_requires.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+    }
+
     /// Parse timeout value from string (e.g., "30s", "5m", "2h")
     /// Returns timeout in seconds
     fn parseTimeoutValue(self: *Parser, value_str: []const u8) ParseError!u64 {
@@ -636,6 +666,13 @@ pub const Parser = struct {
             return ParseError.UnexpectedToken;
         }
 
+        // A @require with no following recipe never got consumed by finalizeRecipe;
+        // flush it as a global directive (validated on any execution).
+        if (self.pending_requires.items.len > 0) {
+            const args = self.pending_requires.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+            self.directives.append(self.allocator, .{ .kind = .require, .args = args }) catch return ParseError.OutOfMemory;
+        }
+
         var result = Jakefile{
             .variables = &.{},
             .recipes = &.{},
@@ -688,7 +725,8 @@ pub const Parser = struct {
                 self.setError("expected directive name after '@'", null);
                 return ParseError.UnexpectedToken;
             },
-            .kw_dotenv, .kw_require, .kw_export => try self.parseGenericDirective(),
+            .kw_dotenv, .kw_export => try self.parseGenericDirective(),
+            .kw_require => try self.parseRequireDirective(),
             else => {
                 self.setError("unknown directive", null);
                 return ParseError.UnexpectedToken;
@@ -1045,6 +1083,8 @@ pub const Parser = struct {
         errdefer self.allocator.free(only_os);
         const needs = try self.consumePendingNeeds();
         errdefer self.allocator.free(needs);
+        const requires = try self.consumePendingRequires();
+        errdefer self.allocator.free(requires);
 
         const owned_deps: []const []const u8 = if (info.deps) |d|
             (d.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory)
@@ -1096,6 +1136,7 @@ pub const Parser = struct {
             .quiet = self.consumePendingQuiet(),
             .hidden = self.consumePendingHidden(),
             .needs = needs,
+            .requires = requires,
             .timeout_seconds = self.consumePendingTimeout(),
         }) catch return ParseError.OutOfMemory;
     }
@@ -2670,8 +2711,10 @@ test "parse complete jakefile" {
     defer jakefile.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 1), jakefile.variables.len);
-    try std.testing.expectEqual(@as(usize, 2), jakefile.directives.len);
+    // Only @dotenv is global; `@require node npm` is recipe-scoped to `build`.
+    try std.testing.expectEqual(@as(usize, 1), jakefile.directives.len);
     try std.testing.expectEqual(@as(usize, 3), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].requires.len);
     try std.testing.expect(jakefile.recipes[2].is_default);
 }
 

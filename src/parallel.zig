@@ -450,6 +450,19 @@ pub const ParallelExecutor = struct {
             }
         }
 
+        // Check recipe-level @require environment variables
+        if (recipe.requires.len > 0 and !self.dry_run) {
+            if (!self.checkRecipeRequires(recipe)) {
+                const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+                self.ctx.emitEvent(.{ .task_complete = .{
+                    .name = recipe.name,
+                    .success = false,
+                    .duration_ms = duration_ms,
+                } });
+                return false;
+            }
+        }
+
         // Check if file target needs rebuilding
         if (recipe.kind == .file) {
             const needs_run = self.checkFileTarget(recipe) catch true;
@@ -636,6 +649,22 @@ pub const ParallelExecutor = struct {
                     self.printSynchronized("  run: jake {s}\n", .{task});
                 }
 
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// Validate a recipe's @require environment variables (parallel analogue of
+    /// Executor.checkRecipeRequires). Uses the process environment, which is
+    /// where @dotenv/@export vars are visible to spawned recipes.
+    fn checkRecipeRequires(self: *ParallelExecutor, recipe: *const Recipe) bool {
+        for (recipe.requires) |var_name| {
+            if (std.process.getEnvVarOwned(self.allocator, var_name)) |value| {
+                self.allocator.free(value);
+            } else |_| {
+                self.printSynchronized("{s}Required environment variable '{s}' is not set\n", .{ self.color.errPrefix(), var_name });
+                self.printSynchronized("  hint: recipe '{s}' needs it — set it in your shell or add it to .env\n", .{recipe.name});
                 return false;
             }
         }

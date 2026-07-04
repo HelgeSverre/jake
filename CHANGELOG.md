@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-04
+
+### Changed
+
+- **`@require` is now recipe-scoped.** A `@require FOO` placed before a recipe applies to *that* recipe (validated before its dependencies run, so a missing var fails fast without a wasted build), instead of being validated globally for every execution. This matches how `@needs`/`@group`/`@desc` attach to the following recipe. Previously a single publish recipe's `@require VSCE_PAT` made *every* invocation — even `jake build` — demand that var. A `@require` with no following recipe is still treated as global. Listing/show remain unaffected (from 0.9.0). Adds unit + e2e coverage (recipe-scoping, global fallback, fail-fast-before-deps) and formatter round-trip support.
+
 ## [0.9.0] - 2026-07-04
 
 ### Changed

@@ -166,6 +166,10 @@ task test-directives:
     TEST_VAR=test_value {{jake}} -f fixtures/directives/require.jake use-env > {{out}} 2>&1
     grep -q "TEST_VAR is set" {{out}}
     echo "  @require passes when env var set ...................... PASS"
+    # @require is recipe-scoped: an unrelated recipe runs without the var
+    unset TEST_VAR 2>/dev/null; {{jake}} -f fixtures/directives/require.jake no-env > {{out}} 2>&1
+    grep -q "no env needed" {{out}} && ! grep -q "Required environment variable" {{out}}
+    echo "  @require is recipe-scoped (unrelated recipe runs) .... PASS"
     # @cd changes working directory
     {{jake}} -f fixtures/directives/cd.jake in-subdir > {{out}} 2>&1
     grep -q "subdir" {{out}}
