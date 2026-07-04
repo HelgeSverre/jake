@@ -59,6 +59,16 @@ jake -j4 all      # Parallel execution
 
 ## Installation
 
+### Homebrew (macOS / Linux)
+
+```shell
+brew install helgesverre/tap/jake
+```
+
+Upgrade later with `brew upgrade helgesverre/tap/jake`. Covers macOS and Linux on Intel and Apple Silicon / ARM64.
+
+### From source
+
 ```shell
 # Requires Zig 0.15.2+
 git clone https://github.com/HelgeSverre/jake.git

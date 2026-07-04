@@ -1,0 +1,37 @@
+class Jake < Formula
+  desc "Modern command runner with dependency tracking, built with Zig"
+  homepage "https://www.jakefile.dev/"
+  version "__VERSION_NUMBER__"
+  license "MIT"
+
+  if OS.mac?
+    if Hardware::CPU.arm?
+      url "https://github.com/helgesverre/jake/releases/download/__VERSION__/jake-macos-aarch64"
+      sha256 "__MACOS_AARCH64__"
+    end
+    if Hardware::CPU.intel?
+      url "https://github.com/helgesverre/jake/releases/download/__VERSION__/jake-macos-x86_64"
+      sha256 "__MACOS_X86_64__"
+    end
+  end
+  if OS.linux?
+    if Hardware::CPU.arm?
+      url "https://github.com/helgesverre/jake/releases/download/__VERSION__/jake-linux-aarch64"
+      sha256 "__LINUX_AARCH64__"
+    end
+    if Hardware::CPU.intel?
+      url "https://github.com/helgesverre/jake/releases/download/__VERSION__/jake-linux-x86_64"
+      sha256 "__LINUX_X86_64__"
+    end
+  end
+
+  def install
+    os = OS.mac? ? "macos" : "linux"
+    arch = Hardware::CPU.arm? ? "aarch64" : "x86_64"
+    bin.install "jake-#{os}-#{arch}" => "jake"
+  end
+
+  test do
+    assert_match "jake", shell_output("#{bin}/jake --version")
+  end
+end
