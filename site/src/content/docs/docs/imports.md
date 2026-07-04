@@ -105,6 +105,17 @@ task build: [api.build]
 
 `@rooted` takes no arguments and is backward-compatible — files without it keep the default root-relative behaviour. A `@cd <dir>` inside a rooted module is resolved relative to the module directory. Running a `@rooted` file directly as the root Jakefile is a no-op.
 
+### Forcing `rooted` at the import site
+
+When you don't own the sub-project's `Jakefile` — a vendored tool or a git submodule you'd rather not modify — force rooting from the importer's side with a trailing `rooted` modifier:
+
+```jake
+@import "vendored/tool/Jakefile" as tool rooted
+@import "sub/Jakefile" rooted            # also valid without `as`
+```
+
+Rooting is **additive**: a module is rooted if its file declares `@rooted` **or** an import directive says `rooted` (both present is fine). There is no `unrooted` — a module that declares `@rooted` itself can't be forced back to root-relative.
+
 ## @dotenv in Imported Files
 
 `@dotenv` paths in imported files are resolved relative to the **working directory** (where `jake` is invoked), not relative to the imported file's location.

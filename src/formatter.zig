@@ -199,10 +199,11 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
 }
 
 fn renderImport(writer: anytype, import_dir: *const ImportDirective) !void {
+    const rooted_suffix = if (import_dir.rooted) " rooted" else "";
     if (import_dir.prefix) |prefix| {
-        try writer.print("@import \"{s}\" as {s}\n", .{ import_dir.path, prefix });
+        try writer.print("@import \"{s}\" as {s}{s}\n", .{ import_dir.path, prefix, rooted_suffix });
     } else {
-        try writer.print("@import \"{s}\"\n", .{import_dir.path});
+        try writer.print("@import \"{s}\"{s}\n", .{ import_dir.path, rooted_suffix });
     }
 }
 
@@ -536,6 +537,23 @@ test "format with imports" {
 
     try std.testing.expect(std.mem.indexOf(u8, result.output, "@import \"other.jake\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "@import \"lib.jake\" as lib") != null);
+}
+
+test "format import with rooted modifier round-trips" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@import "sub/Jakefile" rooted
+        \\@import "vendored/tool/Jakefile" as tool rooted
+        \\
+        \\task build:
+        \\    echo "build"
+        \\
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@import \"sub/Jakefile\" rooted") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@import \"vendored/tool/Jakefile\" as tool rooted") != null);
 }
 
 test "round-trip unchanged source returns changed=false" {

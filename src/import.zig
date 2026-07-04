@@ -282,8 +282,10 @@ pub const ImportResolver = struct {
             return err;
         };
 
-        // Merge the imported content into target
-        self.mergeJakefile(target, imported, import_directive.prefix, resolved_path) catch |err| {
+        // Merge the imported content into target. The module is rooted if EITHER
+        // its file declared `@rooted` OR this import directive says `rooted`
+        // (monotonic — additive only).
+        self.mergeJakefile(target, imported, import_directive.prefix, resolved_path, import_directive.rooted) catch |err| {
             imported.deinit(self.allocator); // Free the imported jakefile on error
             if (self.import_stack.fetchRemove(resolved_path)) |entry| {
                 self.allocator.free(entry.key);
@@ -351,6 +353,7 @@ pub const ImportResolver = struct {
         imported: Jakefile,
         prefix: ?[]const u8,
         source_file: []const u8,
+        force_rooted: bool,
     ) ImportError!void {
         // Track old slices from target that will be replaced (only if they have content)
         // These will be freed when the resolver is deinitialized
@@ -418,11 +421,13 @@ pub const ImportResolver = struct {
         errdefer self.allocator.free(new_recipes);
         @memcpy(new_recipes[0..target.recipes.len], target.recipes);
 
-        // If this imported file declared `@rooted`, its recipes resolve relative
-        // paths against its own directory. Compute (and persist) that dir once.
-        // Recipes coming from a *nested* import already carry their own base_dir;
-        // we must preserve theirs rather than overwrite it with this file's dir.
-        const rooted_base_dir: ?[]const u8 = if (imported.rooted) blk: {
+        // The module is rooted if its own file declared `@rooted` OR the import
+        // directive forced it (`@import "x" rooted`). Either way its recipes
+        // resolve relative paths against its own directory. Compute (and persist)
+        // that dir once. Recipes coming from a *nested* import already carry
+        // their own base_dir; we must preserve theirs rather than overwrite it
+        // with this file's dir.
+        const rooted_base_dir: ?[]const u8 = if (imported.rooted or force_rooted) blk: {
             const dir = std.fs.path.dirname(source_file) orelse ".";
             // dirname() slices into source_file (a resolved path that is freed
             // after this import finishes); dupe it into a persistent allocation.
@@ -1089,6 +1094,72 @@ test "rooted import without prefix still sets base_dir" {
         }
     }
     try std.testing.expect(checked);
+}
+
+test "import-site rooted modifier roots a non-rooted module" {
+    // A module whose file does NOT declare `@rooted`, imported with a trailing
+    // `rooted` modifier, must still carry origin.base_dir (import-site forcing).
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Plain module (no @rooted in the file itself).
+    try tmp_dir.dir.makeDir("vendored");
+    const plain_content =
+        \\task build:
+        \\    echo "vendored build"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "vendored/Jakefile", .data = plain_content });
+
+    // Import it with the `rooted` modifier (with prefix) and without prefix.
+    try tmp_dir.dir.makeDir("other");
+    try tmp_dir.dir.writeFile(.{ .sub_path = "other/Jakefile", .data = plain_content });
+
+    const main_content =
+        \\@import "vendored/Jakefile" as tool rooted
+        \\@import "other/Jakefile" rooted
+        \\
+        \\task main:
+        \\    echo "main"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "Jakefile", .data = main_content });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("Jakefile", &path_buf);
+
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "Jakefile", 1024 * 1024);
+    defer allocator.free(main_source);
+
+    var lex = Lexer.init(main_source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var import_allocs = try resolveImports(allocator, &jakefile, main_path);
+    defer import_allocs.deinit();
+
+    var checked_prefixed = false;
+    var checked_unprefixed = false;
+    for (jakefile.recipes) |recipe| {
+        if (std.mem.eql(u8, recipe.name, "tool.build")) {
+            checked_prefixed = true;
+            try std.testing.expect(recipe.origin != null);
+            try std.testing.expect(recipe.origin.?.base_dir != null);
+            try std.testing.expectEqualStrings("vendored", std.fs.path.basename(recipe.origin.?.base_dir.?));
+            try std.testing.expect(std.fs.path.isAbsolute(recipe.origin.?.base_dir.?));
+        }
+        if (std.mem.eql(u8, recipe.name, "build")) {
+            checked_unprefixed = true;
+            try std.testing.expect(recipe.origin != null);
+            try std.testing.expect(recipe.origin.?.base_dir != null);
+            try std.testing.expectEqualStrings("other", std.fs.path.basename(recipe.origin.?.base_dir.?));
+        }
+    }
+    try std.testing.expect(checked_prefixed);
+    try std.testing.expect(checked_unprefixed);
 }
 
 test "multiple imports with different prefixes" {

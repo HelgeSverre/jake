@@ -136,6 +136,22 @@
           ]
         },
         {
+          "type": "FIELD",
+          "name": "rooted",
+          "content": {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "rooted"
+              },
+              {
+                "type": "BLANK"
+              }
+            ]
+          }
+        },
+        {
           "type": "SYMBOL",
           "name": "_newline"
         }
@@ -159,6 +175,10 @@
         {
           "type": "SYMBOL",
           "name": "default_directive"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "rooted_directive"
         },
         {
           "type": "SYMBOL",
@@ -280,6 +300,19 @@
         {
           "type": "STRING",
           "value": "@default"
+        },
+        {
+          "type": "PATTERN",
+          "value": "\\s*\\n"
+        }
+      ]
+    },
+    "rooted_directive": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "@rooted"
         },
         {
           "type": "PATTERN",
@@ -1056,17 +1089,8 @@
           "type": "SEQ",
           "members": [
             {
-              "type": "CHOICE",
-              "members": [
-                {
-                  "type": "STRING",
-                  "value": "@desc"
-                },
-                {
-                  "type": "STRING",
-                  "value": "@description"
-                }
-              ]
+              "type": "STRING",
+              "value": "@desc"
             },
             {
               "type": "FIELD",
@@ -1123,21 +1147,8 @@
           "type": "SEQ",
           "members": [
             {
-              "type": "CHOICE",
-              "members": [
-                {
-                  "type": "STRING",
-                  "value": "@only"
-                },
-                {
-                  "type": "STRING",
-                  "value": "@only-os"
-                },
-                {
-                  "type": "STRING",
-                  "value": "@platform"
-                }
-              ]
+              "type": "STRING",
+              "value": "@platform"
             },
             {
               "type": "REPEAT1",

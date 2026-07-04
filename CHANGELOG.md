@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Import-site `rooted` modifier.** An importer can now force a module to be rooted from its own side, without editing the imported file: `@import "vendored/tool/Jakefile" as tool rooted` (the `rooted` keyword is also valid without `as`, e.g. `@import "sub/Jakefile" rooted`). This is the primary internal-workspace case — vendored sub-projects or git submodules whose `Jakefile`s you don't own. Rooting is **monotonic / additive-only**: a module is rooted if *either* its file declares `@rooted` *or* an import directive says `rooted` (both present is fine, no conflict); there is no `unrooted`, so a `@rooted` module can never be forced back to root-relative. Adds parser/import support, formatter round-trip, and unit + e2e coverage (a non-`@rooted` module forced rooted at the import site resolves its relative paths under the module dir).
+- **Editor grammars now cover `@rooted` (0.9.2 catch-up).** The `@rooted` directive shipped in 0.9.2 with prose docs but was never added to the syntax-highlighting grammars. All editor grammars (TextMate/VS Code, Tree-sitter, Vim, Prism, highlight.js, and the derived Sublime/Shiki/IntelliJ/Zed/Helix/Lapce targets) now highlight both the `@rooted` directive and the `rooted` import modifier.
+
 ## [0.9.2] - 2026-07-04
 
 ### Added

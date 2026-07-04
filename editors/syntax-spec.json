@@ -93,6 +93,7 @@
         "@require",
         "@export",
         "@default",
+        "@rooted",
         "@pre",
         "@post",
         "@on_error",
@@ -149,7 +150,7 @@
       }
     },
     "all": [
-      "@import", "@dotenv", "@require", "@export", "@default",
+      "@import", "@dotenv", "@require", "@export", "@default", "@rooted",
       "@pre", "@post", "@on_error", "@before", "@after",
       "@group", "@desc", "@alias", "@quiet",
       "@platform", "@needs",
@@ -162,8 +163,8 @@
   "keywords": {
     "description": "Jake keywords",
     "recipeTypes": ["task", "file"],
-    "control": ["as", "if", "else"],
-    "all": ["task", "file", "as", "if", "else"]
+    "control": ["as", "if", "else", "rooted"],
+    "all": ["task", "file", "as", "if", "else", "rooted"]
   },
   
   "platforms": {

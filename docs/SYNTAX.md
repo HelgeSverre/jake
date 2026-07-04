@@ -301,6 +301,22 @@ task all: [sub.build]
 its directory *is* the working directory, so `@rooted` is a harmless no-op there —
 it only changes behaviour when the file is imported by a parent.
 
+##### Forcing `rooted` at the import site
+
+When you don't own the sub-project's Jakefile (a vendored tool, a git submodule)
+you can't add `@rooted` to it. Append the `rooted` modifier to the import
+directive instead to force the module to be rooted from the importer's side:
+
+```jake
+@import "vendored/tool/Jakefile" as tool rooted
+@import "sub/Jakefile" rooted            # also valid without `as`
+```
+
+The rule is **monotonic / additive-only**: a module is rooted if *either* its
+file declares `@rooted` *or* an import directive says `rooted`. Both present is
+fine (no conflict). There is no `unrooted` — you cannot force a `@rooted` module
+back to root-relative.
+
 ### 6.2 Recipe Metadata Directives
 
 Appear before a recipe definition to set metadata.

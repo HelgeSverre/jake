@@ -55,6 +55,10 @@
   path: (string) @string
   namespace: (identifier) @namespace)
 
+; Import rooted modifier
+(import_statement
+  "rooted" @keyword.control.import)
+
 ; Recipe metadata directives
 (recipe_attribute) @keyword.directive
 
@@ -140,6 +144,7 @@
 (require_directive) @keyword.directive
 (export_directive) @keyword.directive
 (default_directive) @keyword.directive
+(rooted_directive) @keyword.directive
 (global_hook) @keyword.directive
 
 ; Import statement

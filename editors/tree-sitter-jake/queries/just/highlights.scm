@@ -46,6 +46,10 @@
   path: (string) @string
   namespace: (identifier) @module)
 
+; Import rooted modifier
+(import_statement
+  "rooted" @keyword.import)
+
 ; Recipe attributes (directives above recipes)
 (recipe_attribute
   name: (identifier) @constant)
@@ -116,6 +120,7 @@
 (require_directive) @keyword.directive
 (export_directive) @keyword.directive
 (default_directive) @keyword.directive
+(rooted_directive) @keyword.directive
 (global_hook) @keyword.directive
 
 ; Import statement

@@ -662,6 +662,10 @@
         {
           "type": "require_directive",
           "named": true
+        },
+        {
+          "type": "rooted_directive",
+          "named": true
         }
       ]
     }
@@ -806,6 +810,16 @@
           {
             "type": "string",
             "named": true
+          }
+        ]
+      },
+      "rooted": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "rooted",
+            "named": false
           }
         ]
       }
@@ -1076,6 +1090,11 @@
         ]
       }
     }
+  },
+  {
+    "type": "rooted_directive",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "sequence",
@@ -1405,10 +1424,6 @@
     "named": false
   },
   {
-    "type": "@description",
-    "named": false
-  },
-  {
     "type": "@dotenv",
     "named": false
   },
@@ -1449,14 +1464,6 @@
     "named": false
   },
   {
-    "type": "@only",
-    "named": false
-  },
-  {
-    "type": "@only-os",
-    "named": false
-  },
-  {
     "type": "@platform",
     "named": false
   },
@@ -1474,6 +1481,10 @@
   },
   {
     "type": "@require",
+    "named": false
+  },
+  {
+    "type": "@rooted",
     "named": false
   },
   {
@@ -1619,6 +1630,10 @@
   {
     "type": "numeric_error",
     "named": true
+  },
+  {
+    "type": "rooted",
+    "named": false
   },
   {
     "type": "task",

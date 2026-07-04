@@ -118,6 +118,12 @@ pub const ImportDirective = struct {
     path: []const u8,
     /// Optional namespace prefix (e.g., "docker" in `@import "docker.jake" as docker`)
     prefix: ?[]const u8,
+    /// When true, the import directive itself carried a trailing `rooted`
+    /// keyword (`@import "x" rooted`), forcing the imported module to resolve
+    /// its recipes' relative paths against its own directory — even when the
+    /// module's own file did not declare `@rooted`. Monotonic: this OR the
+    /// file's `@rooted` roots the module; there is no way to un-root.
+    rooted: bool = false,
 };
 
 /// Represents a comment in the source file (for formatting preservation)
@@ -1035,6 +1041,15 @@ pub const Parser = struct {
             }
         }
 
+        // Check for optional trailing `rooted` modifier. The importer can force
+        // the module to be rooted without editing it. Additive-only: there is
+        // no `unrooted`.
+        var rooted = false;
+        if (self.current.tag == .kw_rooted) {
+            rooted = true;
+            self.advance();
+        }
+
         // Skip any remaining tokens on the line
         while (self.current.tag != .newline and self.current.tag != .eof) {
             self.advance();
@@ -1043,6 +1058,7 @@ pub const Parser = struct {
         self.imports.append(self.allocator, .{
             .path = path,
             .prefix = prefix,
+            .rooted = rooted,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -2512,6 +2528,43 @@ test "parse import directive with prefix" {
     try std.testing.expectEqual(@as(usize, 1), jakefile.imports.len);
     try std.testing.expectEqualStrings("docker.jake", jakefile.imports[0].path);
     try std.testing.expectEqualStrings("docker", jakefile.imports[0].prefix.?);
+    try std.testing.expect(!jakefile.imports[0].rooted);
+}
+
+test "parse import directive with rooted modifier" {
+    const source = "@import \"sub/Jakefile\" rooted";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.imports.len);
+    try std.testing.expectEqualStrings("sub/Jakefile", jakefile.imports[0].path);
+    try std.testing.expect(jakefile.imports[0].prefix == null);
+    try std.testing.expect(jakefile.imports[0].rooted);
+}
+
+test "parse import directive with prefix and rooted modifier" {
+    const source = "@import \"vendored/tool/Jakefile\" as tool rooted";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.imports.len);
+    try std.testing.expectEqualStrings("vendored/tool/Jakefile", jakefile.imports[0].path);
+    try std.testing.expectEqualStrings("tool", jakefile.imports[0].prefix.?);
+    try std.testing.expect(jakefile.imports[0].rooted);
+}
+
+test "plain import has rooted false" {
+    const source = "@import \"common.jake\"";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expect(!jakefile.imports[0].rooted);
 }
 
 test "parse default directive" {

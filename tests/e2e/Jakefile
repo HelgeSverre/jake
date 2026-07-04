@@ -399,6 +399,11 @@ task test-rooted:
     JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; (cd /tmp/jake-rooted && "$JAKE_ABS" sub.built.txt > {{out}} 2>&1); ! grep -q BUILT {{out}}
     echo "  Rooted file target skips when up to date .............. PASS"
     rm -rf /tmp/jake-rooted
+    # Import-site `rooted` modifier: a NON-@rooted module forced rooted at the
+    # import site resolves its relative paths under its own dir.
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm -rf /tmp/jake-rooted-forced; mkdir -p /tmp/jake-rooted-forced/vendored; printf '@import "vendored/Jakefile" as tool rooted\n\ntask noop:\n    echo root\n' > /tmp/jake-rooted-forced/Jakefile; printf 'task where:\n    pwd > out.txt\n' > /tmp/jake-rooted-forced/vendored/Jakefile; (cd /tmp/jake-rooted-forced && "$JAKE_ABS" tool.where > {{out}} 2>&1); test -f /tmp/jake-rooted-forced/vendored/out.txt && grep -q "/vendored$" /tmp/jake-rooted-forced/vendored/out.txt && ! test -f /tmp/jake-rooted-forced/out.txt
+    echo "  Import-site rooted modifier forces module rooting ..... PASS"
+    rm -rf /tmp/jake-rooted-forced
 
 # ============================================================================
 # External Integration Tests

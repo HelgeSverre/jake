@@ -48,6 +48,15 @@ task build: [api.build]
 
 `@rooted` takes no arguments and is backward-compatible — files without it keep the default root-relative behaviour (so `@import "jake/rust.jake"` can still reference repo-root paths like `crates/...`). Running a `@rooted` file directly as the root Jakefile is a no-op, since its directory is already the working directory.
 
+When you don't own the sub-project's Jakefile (a vendored tool or git submodule), force rooting from the import site with a trailing `rooted` modifier instead of editing the imported file:
+
+```jake
+@import "vendored/tool/Jakefile" as tool rooted
+@import "sub/Jakefile" rooted            # also valid without `as`
+```
+
+Rooting is additive: a module is rooted if its file declares `@rooted` **or** an import says `rooted` (both is fine). There is no `unrooted`.
+
 ## Recipe Modifiers
 
 Placed immediately before a recipe definition (no blank lines between).

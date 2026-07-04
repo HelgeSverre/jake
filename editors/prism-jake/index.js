@@ -113,7 +113,7 @@
     },
     operator: /[:=]|->|==|!=/,
     punctuation: /[[\](),{}:]/,
-    keyword: /\b(task|file|as|if|else)\b/,
+    keyword: /\b(task|file|as|if|else|rooted)\b/,
     builtin: /\b(linux|macos|darwin|windows|freebsd|openbsd|netbsd)\b/,
   };
 });

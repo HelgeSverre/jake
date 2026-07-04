@@ -535,6 +535,27 @@ task build: [api.build, web.build]
 the default root-relative behaviour. Running a `@rooted` file directly (not via
 import) is a no-op, since its directory is already the working directory.
 
+#### Forcing `rooted` for sub-Jakefiles you don't own
+
+In an internal workspace the sub-projects are often vendored or pulled in as git
+submodules — you don't want to (or can't) edit their `Jakefile`s to add
+`@rooted`. Append the `rooted` modifier to the import directive instead, and the
+root Jakefile roots the module for you:
+
+```jake
+# Workspace Jakefile — the sub-repos stay untouched
+@import "services/api/Jakefile" as api rooted
+@import "services/web/Jakefile" as web rooted
+@import "vendored/tool/Jakefile" rooted        # also valid without `as`
+
+task build: [api.build, web.build]
+    echo "Workspace build complete"
+```
+
+Rooting is **additive**: a module is rooted if its own file says `@rooted` *or*
+the import says `rooted` (both is fine). There is no way to un-root a module that
+declares `@rooted` itself.
+
 ---
 
 ## Environment Variables

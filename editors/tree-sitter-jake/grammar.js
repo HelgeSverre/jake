@@ -88,12 +88,13 @@ module.exports = grammar({
         $._newline,
       ),
 
-    // Jake import: @import "file.jake" as namespace
+    // Jake import: @import "file.jake" as namespace [rooted]
     import_statement: ($) =>
       seq(
         "@import",
         field("path", $.string),
         optional(seq("as", field("namespace", $.identifier))),
+        field("rooted", optional("rooted")),
         $._newline,
       ),
 
@@ -104,6 +105,7 @@ module.exports = grammar({
         $.require_directive,
         $.export_directive,
         $.default_directive,
+        $.rooted_directive,
         $.global_hook,
       ),
 
@@ -134,6 +136,9 @@ module.exports = grammar({
 
     // @default (marks next recipe as default)
     default_directive: (_) => seq("@default", /\s*\n/),
+
+    // @rooted (resolve recipe file paths relative to this jakefile)
+    rooted_directive: (_) => seq("@rooted", /\s*\n/),
 
     // @pre, @post, @on_error, @before, @after hooks
     global_hook: ($) =>

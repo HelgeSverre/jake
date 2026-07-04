@@ -19,12 +19,13 @@
       "patterns": [
         {
           "name": "meta.import.jake",
-          "match": "^(@import)\\s+(\"[^\"]*\"|'[^']*')(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?",
+          "match": "^(@import)\\s+(\"[^\"]*\"|'[^']*')(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?(?:\\s+(rooted))?",
           "captures": {
             "1": { "name": "keyword.control.import.jake" },
             "2": { "name": "string.quoted.jake" },
             "3": { "name": "keyword.control.as.jake" },
-            "4": { "name": "entity.name.namespace.jake" }
+            "4": { "name": "entity.name.namespace.jake" },
+            "5": { "name": "keyword.control.import.jake" }
           }
         }
       ]
@@ -77,6 +78,13 @@
         {
           "name": "meta.directive.default.jake",
           "match": "^(@default)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.directive.jake" }
+          }
+        },
+        {
+          "name": "meta.directive.rooted.jake",
+          "match": "^(@rooted)\\s*$",
           "captures": {
             "1": { "name": "keyword.control.directive.jake" }
           }

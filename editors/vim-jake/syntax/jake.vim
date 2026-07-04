@@ -31,13 +31,14 @@ syn match jakeDepName "\<[a-zA-Z_][a-zA-Z0-9_:-]*\>" contained
 
 " Import statements
 syn match jakeImport "^@import\s\+" nextgroup=jakeImportPath
-syn match jakeImportPath "\"[^\"]*\"" contained nextgroup=jakeImportAs skipwhite
-syn match jakeImportAs "\<as\>\s\+[a-zA-Z_][a-zA-Z0-9_]*" contained contains=jakeImportAsKeyword,jakeNamespace
+syn match jakeImportPath "\"[^\"]*\"" contained nextgroup=jakeImportAs,jakeImportRooted skipwhite
+syn match jakeImportAs "\<as\>\s\+[a-zA-Z_][a-zA-Z0-9_]*" contained contains=jakeImportAsKeyword,jakeNamespace nextgroup=jakeImportRooted skipwhite
 syn keyword jakeImportAsKeyword as contained
+syn keyword jakeImportRooted rooted contained
 syn match jakeNamespace "\<[a-zA-Z_][a-zA-Z0-9_]*\>" contained
 
 " Top-level directives
-syn match jakeGlobalDirective "^@\(dotenv\|require\|export\|default\)\>"
+syn match jakeGlobalDirective "^@\(dotenv\|require\|export\|default\|rooted\)\>"
 syn match jakeGlobalHook "^@\(pre\|post\|on_error\|before\|after\)\>"
 
 " Recipe-level directives (indented)
@@ -96,6 +97,7 @@ hi def link jakeTodo Todo
 hi def link jakeKeyword Keyword
 hi def link jakeImport Include
 hi def link jakeImportAsKeyword Keyword
+hi def link jakeImportRooted Keyword
 hi def link jakeGlobalDirective PreProc
 hi def link jakeGlobalHook PreProc
 hi def link jakeConditional Conditional

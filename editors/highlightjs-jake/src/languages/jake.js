@@ -125,7 +125,7 @@
       aliases: ["jakefile"],
       case_insensitive: false,
       keywords: {
-        keyword: "task file as if else",
+        keyword: "task file as if else rooted",
         built_in: PLATFORMS.join(" "),
       },
       contains: [
