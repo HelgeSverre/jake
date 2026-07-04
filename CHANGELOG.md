@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-04
+
+### Changed
+
+- **BREAKING — directive aliases resolved.** Duplicate directive spellings were removed in favour of one canonical name each:
+  - `@description` → use **`@desc`**
+  - `@only` and `@only-os` → use **`@platform`**
+
+  Jakefiles using a removed spelling now fail to parse with `unknown directive`. Lexer, parser, formatter, docs, examples, and every editor grammar were updated together.
+- **BREAKING — top-level targeted `@on_error` removed.** Recipe-specific error handlers must use body-level `@on_error` inside the recipe (mirroring `@pre`/`@post`); top-level `@on_error` is now always the global handler. This removes a brittle parsing heuristic (was POTENTIAL_ISSUES #3). `@before <recipe>` / `@after <recipe>` remain the cross-cutting form for attaching hooks to recipes defined elsewhere.
+
+### Internal
+
+- **Parser**: extracted 13 per-directive handlers from the 375-line `parseDirective` chain and unified recipe finalization into a single `finalizeRecipe` helper shared by the task, file, and simple recipe parsers. No behaviour change.
+
 ### Fixed
 
 - **`@require`**: no longer blocks read-only invocations. `jake -l` and `jake -s` validated global `@require` env vars even though they execute nothing, so a Jakefile that declared publish secrets (e.g. `@require VSCE_PAT`) couldn't even be listed without those vars set — breaking discovery, `--json`, and completions. Validation now runs only on the execution path (still enforced for real runs, still skipped in dry-run, still handled by watch mode). Adds an e2e assertion.
