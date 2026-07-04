@@ -299,13 +299,6 @@ pub fn main() !void {
     };
     defer executor.deinit();
 
-    // Validate required environment variables (@require directives)
-    executor.validateRequiredEnv() catch |err| {
-        if (err == error.MissingRequiredEnv) {
-            std.process.exit(1);
-        }
-    };
-
     const list_options = jake.ListOptions{
         .show_all = args.all,
         .external_filter = args.external,
@@ -477,6 +470,17 @@ pub fn main() !void {
         };
         return;
     }
+
+    // Validate required environment variables (@require directives) only when
+    // we are about to execute — never for read-only listing/show (which return
+    // above) so `jake -l` / `jake -s` work without publish secrets set.
+    // (Skipped in dry-run inside validateRequiredEnv; watch mode validates in
+    // watch.zig before each run.)
+    executor.validateRequiredEnv() catch |err| {
+        if (err == error.MissingRequiredEnv) {
+            std.process.exit(1);
+        }
+    };
 
     // Execute
     executor.execute(target) catch |err| {

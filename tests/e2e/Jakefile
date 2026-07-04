@@ -157,6 +157,11 @@ task test-directives:
     unset TEST_VAR 2>/dev/null; {{jake}} -f fixtures/directives/require.jake use-env > {{out}} 2>&1 || true
     grep -q "Required environment variable" {{out}}
     echo "  @require fails when env var missing ................... PASS"
+    # @require does NOT block read-only listing (jake: `-l` must work without the
+    # var set, otherwise you can't inspect a Jakefile that declares publish secrets)
+    unset TEST_VAR 2>/dev/null; {{jake}} -f fixtures/directives/require.jake -l > {{out}} 2>&1
+    grep -q "use-env" {{out}} && ! grep -q "Required environment variable" {{out}}
+    echo "  @require does not block listing ...................... PASS"
     # @require passes when env var set
     TEST_VAR=test_value {{jake}} -f fixtures/directives/require.jake use-env > {{out}} 2>&1
     grep -q "TEST_VAR is set" {{out}}
