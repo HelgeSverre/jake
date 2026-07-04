@@ -149,10 +149,16 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
             current_line += 1;
         }
 
-        // Write any standalone comments that appear before this recipe
-        // based on their line numbers
+        // Write standalone comments that appear before this recipe in the
+        // source (compared by source line), so each comment stays anchored to
+        // the recipe it documents instead of every comment hoisting onto the
+        // first recipe (jake#19). recipe.loc.line is the recipe-name line; a
+        // leading comment sits above the recipe's @group/@desc directives, so
+        // the bound is strictly-less-than. (loc.line == 0 means unset — e.g. a
+        // hand-built recipe in a test — so fall back to draining.)
         while (comment_index < jakefile.comments.len and
-            jakefile.comments[comment_index].kind == .standalone)
+            jakefile.comments[comment_index].kind == .standalone and
+            (recipe.loc.line == 0 or jakefile.comments[comment_index].line < recipe.loc.line))
         {
             try writer.print("{s}\n", .{jakefile.comments[comment_index].text});
             comment_index += 1;
@@ -162,6 +168,26 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
         try renderRecipe(writer, &recipe);
         // Estimate lines used by recipe
         current_line += 1 + recipe.commands.len;
+    }
+
+    // Emit any standalone comments trailing the last recipe so they aren't
+    // dropped now that the per-recipe drain is line-bounded (jake#19).
+    var has_trailing = false;
+    {
+        var ti = comment_index;
+        while (ti < jakefile.comments.len) : (ti += 1) {
+            if (jakefile.comments[ti].kind == .standalone) {
+                has_trailing = true;
+                break;
+            }
+        }
+    }
+    if (has_trailing) {
+        if (jakefile.recipes.len > 0) try writer.writeByte('\n');
+        while (comment_index < jakefile.comments.len) : (comment_index += 1) {
+            if (jakefile.comments[comment_index].kind != .standalone) continue;
+            try writer.print("{s}\n", .{jakefile.comments[comment_index].text});
+        }
     }
 
     // Ensure final newline
@@ -1328,6 +1354,36 @@ test "recipe-hook: @pre in recipe body" {
     defer allocator.free(result.output);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "@pre") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "@post") != null);
+}
+
+test "comment: stays anchored to its own directive-decorated recipe (jake#19)" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\# Deploy the app
+        \\@group ops
+        \\@desc "Deploy"
+        \\task deploy:
+        \\    echo deploy
+        \\
+        \\# Roll back
+        \\@group ops
+        \\@desc "Rollback"
+        \\task rollback:
+        \\    echo rollback
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    const deploy_comment = std.mem.indexOf(u8, result.output, "# Deploy the app").?;
+    const deploy_task = std.mem.indexOf(u8, result.output, "task deploy:").?;
+    const rollback_comment = std.mem.indexOf(u8, result.output, "# Roll back").?;
+    const rollback_task = std.mem.indexOf(u8, result.output, "task rollback:").?;
+
+    // Each comment precedes its own recipe...
+    try std.testing.expect(deploy_comment < deploy_task);
+    try std.testing.expect(rollback_comment < rollback_task);
+    // ...and the rollback comment is NOT hoisted above the deploy recipe.
+    try std.testing.expect(rollback_comment > deploy_task);
 }
 
 // ============================================================================
