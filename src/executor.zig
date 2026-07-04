@@ -991,7 +991,28 @@ pub const Executor = struct {
 
         // Set recipe-level shell and working directory
         self.current_shell = recipe.shell;
+        // For `@rooted` imported modules, relative paths (including any `@cd`)
+        // resolve against the module's own directory. With no `@cd`, the child
+        // cwd is the module dir; with `@cd <dir>`, it is join(base_dir, dir).
+        // `allocated_wd` tracks any join we own so we can free it after the recipe.
+        var allocated_wd: ?[]const u8 = null;
+        defer if (allocated_wd) |w| self.allocator.free(w);
         self.current_working_dir = recipe.working_dir;
+        if (recipe.origin) |origin| {
+            if (origin.base_dir) |base_dir| {
+                if (recipe.working_dir) |wd| {
+                    if (!std.fs.path.isAbsolute(wd)) {
+                        const joined = std.fs.path.join(self.allocator, &[_][]const u8{ base_dir, wd }) catch {
+                            return ExecuteError.OutOfMemory;
+                        };
+                        allocated_wd = joined;
+                        self.current_working_dir = joined;
+                    }
+                } else {
+                    self.current_working_dir = base_dir;
+                }
+            }
+        }
         self.current_quiet = recipe.quiet;
 
         // Bind recipe parameters to variables
@@ -1042,15 +1063,23 @@ pub const Executor = struct {
         // Update cache for file targets
         if (recipe.kind == .file) {
             if (recipe.output) |output| {
-                // Cache update is best-effort; failure doesn't affect recipe execution
-                self.cache.update(output) catch {};
+                // Cache update is best-effort; failure doesn't affect recipe execution.
+                // Resolve against a `@rooted` module's base_dir so the cached path
+                // matches the one checkFileTarget probes.
+                const resolved_output: ResolvedPath = self.resolveRootedPath(recipe, output) catch
+                    .{ .path = output, .owned = false };
+                defer if (resolved_output.owned) self.allocator.free(resolved_output.path);
+                self.cache.update(resolved_output.path) catch {};
             }
             // Record each dependency too. checkFileTarget decides staleness via
             // isGlobStale(dep); without recording the deps here they are never in
             // the cache, so isStale() always returns true and the target rebuilds
             // on every run (jake#17).
             for (recipe.file_deps) |dep| {
-                self.cache.updatePattern(dep) catch {};
+                const resolved_dep: ResolvedPath = self.resolveRootedPath(recipe, dep) catch
+                    .{ .path = dep, .owned = false };
+                defer if (resolved_dep.owned) self.allocator.free(resolved_dep.path);
+                self.cache.updatePattern(resolved_dep.path) catch {};
             }
         }
     }
@@ -1083,17 +1112,41 @@ pub const Executor = struct {
         }
     }
 
+    /// A path optionally rebased onto a `@rooted` module's base_dir. When
+    /// `owned` is true, `path` was freshly allocated and the caller must free it.
+    const ResolvedPath = struct { path: []const u8, owned: bool };
+
+    /// Resolve a recipe path against a `@rooted` module's base_dir.
+    /// Relative paths from a rooted module are joined with the module directory;
+    /// absolute paths and non-rooted recipes are returned unchanged.
+    fn resolveRootedPath(self: *Executor, recipe: *const Recipe, path: []const u8) !ResolvedPath {
+        if (recipe.origin) |origin| {
+            if (origin.base_dir) |base_dir| {
+                if (!std.fs.path.isAbsolute(path)) {
+                    const joined = try std.fs.path.join(self.allocator, &[_][]const u8{ base_dir, path });
+                    return .{ .path = joined, .owned = true };
+                }
+            }
+        }
+        return .{ .path = path, .owned = false };
+    }
+
     fn checkFileTarget(self: *Executor, recipe: *const Recipe) !bool {
         // Check if output exists
         const output = recipe.output orelse return true;
 
-        std.fs.cwd().access(output, .{}) catch {
+        const resolved_output = try self.resolveRootedPath(recipe, output);
+        defer if (resolved_output.owned) self.allocator.free(resolved_output.path);
+
+        std.fs.cwd().access(resolved_output.path, .{}) catch {
             return true; // Output doesn't exist, need to build
         };
 
         // Check if any file deps are stale
         for (recipe.file_deps) |dep| {
-            if (try self.cache.isGlobStale(dep)) {
+            const resolved_dep = try self.resolveRootedPath(recipe, dep);
+            defer if (resolved_dep.owned) self.allocator.free(resolved_dep.path);
+            if (try self.cache.isGlobStale(resolved_dep.path)) {
                 if (self.ctx.verbose) {
                     self.print("   {s}jake: dependency '{s}' changed, rebuilding '{s}'{s}\n", .{ self.color.muted(), dep, recipe.name, self.color.reset() });
                 }

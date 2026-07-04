@@ -89,6 +89,7 @@ pub const RecipeOrigin = struct {
     import_prefix: ?[]const u8, // Module prefix (e.g., "web"), null if main file
     source_file: ?[]const u8, // Path to source file, null if main file
     external_kind: ?ExternalKind = null, // null for Jake imports, set for Makefile/Justfile
+    base_dir: ?[]const u8 = null, // Directory to resolve this recipe's relative paths against (set for @rooted imports)
 
     pub const ExternalKind = enum { makefile, justfile };
 };
@@ -145,6 +146,10 @@ pub const Jakefile = struct {
     global_on_error_hooks: []const Hook, // Global @on_error hooks run when a recipe fails
     comments: []const CommentNode, // All comments for formatting preservation
     source: []const u8,
+    /// When true, this file declared a top-level `@rooted` directive: its
+    /// recipes' relative paths (`@cd`, `file` targets) resolve against this
+    /// file's own directory when imported from a parent. No-op when run directly.
+    rooted: bool = false,
 
     pub fn deinit(self: *Jakefile, allocator: std.mem.Allocator) void {
         allocator.free(self.variables);
@@ -339,6 +344,9 @@ pub const Parser = struct {
     pending_requires: std.ArrayListUnmanaged([]const u8),
     pending_timeout: ?u64,
 
+    // Set when a top-level `@rooted` directive is parsed
+    rooted: bool,
+
     pub fn init(allocator: std.mem.Allocator, lex: *Lexer) Parser {
         return .{
             .allocator = allocator,
@@ -365,6 +373,7 @@ pub const Parser = struct {
             .pending_needs = .empty,
             .pending_requires = .empty,
             .pending_timeout = null,
+            .rooted = false,
         };
     }
 
@@ -620,7 +629,7 @@ pub const Parser = struct {
             .ident => true,
             // Allow keywords as names in identifier position
             .kw_default, .kw_import, .kw_as, .kw_if, .kw_elif, .kw_else, .kw_end => true,
-            .kw_task, .kw_file, .kw_dotenv, .kw_require, .kw_watch, .kw_cache => true,
+            .kw_task, .kw_file, .kw_dotenv, .kw_rooted, .kw_require, .kw_watch, .kw_cache => true,
             .kw_needs, .kw_confirm, .kw_group, .kw_desc, .kw_platform, .kw_quiet => true,
             .kw_hidden, .kw_export, .kw_alias, .kw_shell, .kw_cd, .kw_pre, .kw_post => true,
             .kw_on_error, .kw_timeout, .kw_ignore, .kw_each => true,
@@ -683,6 +692,7 @@ pub const Parser = struct {
             .global_on_error_hooks = &.{},
             .comments = &.{},
             .source = self.source,
+            .rooted = self.rooted,
         };
         errdefer result.deinit(self.allocator);
 
@@ -726,6 +736,7 @@ pub const Parser = struct {
                 return ParseError.UnexpectedToken;
             },
             .kw_dotenv, .kw_export => try self.parseGenericDirective(),
+            .kw_rooted => try self.parseRootedDirective(),
             .kw_require => try self.parseRequireDirective(),
             else => {
                 self.setError("unknown directive", null);
@@ -985,6 +996,15 @@ pub const Parser = struct {
             .kind = kind,
             .args = owned_args,
         }) catch return ParseError.OutOfMemory;
+    }
+
+    /// `@rooted` — a module-level flag (no args). Marks this file so its
+    /// recipes' relative paths resolve against its own directory when imported.
+    fn parseRootedDirective(self: *Parser) ParseError!void {
+        self.advance(); // consume `rooted`
+        self.rooted = true;
+        // No arguments; skip anything trailing on the line (e.g. a comment).
+        self.skipToEndOfLine();
     }
 
     /// Parse @import directive: @import "path/to/file.jake" [as prefix]
@@ -2433,6 +2453,29 @@ test "parse dotenv directive" {
     try std.testing.expectEqual(@as(usize, 1), jakefile.directives.len);
     try std.testing.expectEqual(Directive.Kind.dotenv, jakefile.directives[0].kind);
     try std.testing.expectEqual(@as(usize, 1), jakefile.directives[0].args.len);
+}
+
+test "parse rooted directive sets flag" {
+    const source = "@rooted\n\ntask build:\n    echo hi\n";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expect(jakefile.rooted);
+    // `@rooted` is a flag, not a collected directive.
+    try std.testing.expectEqual(@as(usize, 0), jakefile.directives.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+}
+
+test "rooted flag defaults to false without directive" {
+    const source = "task build:\n    echo hi\n";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expect(!jakefile.rooted);
 }
 
 test "parse require directive" {

@@ -32,6 +32,7 @@ pub const Token = struct {
         kw_import,
         kw_as,
         kw_dotenv,
+        kw_rooted,
         kw_require,
         kw_watch,
         kw_cache,
@@ -369,6 +370,8 @@ pub const Lexer = struct {
             .kw_as
         else if (std.mem.eql(u8, text, "dotenv"))
             .kw_dotenv
+        else if (std.mem.eql(u8, text, "rooted"))
+            .kw_rooted
         else if (std.mem.eql(u8, text, "require"))
             .kw_require
         else if (std.mem.eql(u8, text, "watch"))

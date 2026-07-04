@@ -418,8 +418,31 @@ pub const ImportResolver = struct {
         errdefer self.allocator.free(new_recipes);
         @memcpy(new_recipes[0..target.recipes.len], target.recipes);
 
+        // If this imported file declared `@rooted`, its recipes resolve relative
+        // paths against its own directory. Compute (and persist) that dir once.
+        // Recipes coming from a *nested* import already carry their own base_dir;
+        // we must preserve theirs rather than overwrite it with this file's dir.
+        const rooted_base_dir: ?[]const u8 = if (imported.rooted) blk: {
+            const dir = std.fs.path.dirname(source_file) orelse ".";
+            // dirname() slices into source_file (a resolved path that is freed
+            // after this import finishes); dupe it into a persistent allocation.
+            const owned = self.allocator.dupe(u8, dir) catch return ImportError.OutOfMemory;
+            self.allocated_names.append(self.allocator, owned) catch {
+                self.allocator.free(owned);
+                return ImportError.OutOfMemory;
+            };
+            break :blk owned;
+        } else null;
+
         for (imported.recipes, 0..) |recipe, i| {
             var new_recipe = recipe;
+            // Preserve a base_dir set by a deeper (nested) rooted import; otherwise
+            // apply this file's rooted dir, if any.
+            const base_dir: ?[]const u8 = if (recipe.origin) |o|
+                (if (o.base_dir != null) o.base_dir else rooted_base_dir)
+            else
+                rooted_base_dir;
+
             if (prefix) |p| {
                 // Create prefixed name: "prefix.recipe_name"
                 const prefixed_name = self.createPrefixedName(p, recipe.name) catch return ImportError.OutOfMemory;
@@ -432,6 +455,7 @@ pub const ImportResolver = struct {
                     .original_name = recipe.name,
                     .import_prefix = p,
                     .source_file = source_file,
+                    .base_dir = base_dir,
                 };
 
                 // Also prefix dependencies that point to imported recipes
@@ -452,6 +476,16 @@ pub const ImportResolver = struct {
                     }
                     new_recipe.dependencies = new_deps;
                 }
+            } else if (base_dir != null) {
+                // No prefix, but this recipe needs a base_dir (rooted import).
+                // Attach/refresh an origin that carries it, preserving any
+                // original_name / import_prefix from a nested import.
+                new_recipe.origin = .{
+                    .original_name = if (recipe.origin) |o| o.original_name else recipe.name,
+                    .import_prefix = if (recipe.origin) |o| o.import_prefix else null,
+                    .source_file = source_file,
+                    .base_dir = base_dir,
+                };
             }
             // Don't carry over is_default from imported files
             new_recipe.is_default = false;
@@ -927,6 +961,134 @@ test "import without prefix merges recipes without prefixing" {
     try std.testing.expect(found_main);
     try std.testing.expect(found_helper);
     try std.testing.expect(found_private);
+}
+
+test "rooted import sets base_dir on merged recipes" {
+    // A `@rooted` imported module's recipes should carry origin.base_dir pointing
+    // at the module's own directory. A normal (non-rooted) import must not.
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Rooted module in subdir `sub/`
+    try tmp_dir.dir.makeDir("sub");
+    const rooted_content =
+        \\@rooted
+        \\
+        \\task build:
+        \\    echo "rooted build"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "sub/Jakefile", .data = rooted_content });
+
+    // Plain (non-rooted) module in subdir `plain/`
+    try tmp_dir.dir.makeDir("plain");
+    const plain_content =
+        \\task lint:
+        \\    echo "plain lint"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "plain/Jakefile", .data = plain_content });
+
+    const main_content =
+        \\@import "sub/Jakefile" as sub
+        \\@import "plain/Jakefile" as plain
+        \\
+        \\task main:
+        \\    echo "main"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "Jakefile", .data = main_content });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("Jakefile", &path_buf);
+
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "Jakefile", 1024 * 1024);
+    defer allocator.free(main_source);
+
+    var lex = Lexer.init(main_source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var import_allocs = try resolveImports(allocator, &jakefile, main_path);
+    defer import_allocs.deinit();
+
+    var checked_rooted = false;
+    var checked_plain = false;
+    for (jakefile.recipes) |recipe| {
+        if (std.mem.eql(u8, recipe.name, "sub.build")) {
+            checked_rooted = true;
+            try std.testing.expect(recipe.origin != null);
+            try std.testing.expect(recipe.origin.?.base_dir != null);
+            // base_dir must end with the module's directory name.
+            const bd = recipe.origin.?.base_dir.?;
+            try std.testing.expectEqualStrings("sub", std.fs.path.basename(bd));
+            // And it must be an absolute path (safe to use as a child cwd).
+            try std.testing.expect(std.fs.path.isAbsolute(bd));
+        }
+        if (std.mem.eql(u8, recipe.name, "plain.lint")) {
+            checked_plain = true;
+            try std.testing.expect(recipe.origin != null);
+            // Non-rooted import: base_dir stays null (root-relative behavior).
+            try std.testing.expect(recipe.origin.?.base_dir == null);
+        }
+    }
+    try std.testing.expect(checked_rooted);
+    try std.testing.expect(checked_plain);
+}
+
+test "rooted import without prefix still sets base_dir" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.makeDir("mod");
+    const rooted_content =
+        \\@rooted
+        \\
+        \\task build:
+        \\    echo "mod build"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "mod/Jakefile", .data = rooted_content });
+
+    // Import WITHOUT "as prefix"
+    const main_content =
+        \\@import "mod/Jakefile"
+        \\
+        \\task main:
+        \\    echo "main"
+        \\
+    ;
+    try tmp_dir.dir.writeFile(.{ .sub_path = "Jakefile", .data = main_content });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("Jakefile", &path_buf);
+
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "Jakefile", 1024 * 1024);
+    defer allocator.free(main_source);
+
+    var lex = Lexer.init(main_source);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var import_allocs = try resolveImports(allocator, &jakefile, main_path);
+    defer import_allocs.deinit();
+
+    var checked = false;
+    for (jakefile.recipes) |recipe| {
+        if (std.mem.eql(u8, recipe.name, "build")) {
+            checked = true;
+            try std.testing.expect(recipe.origin != null);
+            try std.testing.expect(recipe.origin.?.base_dir != null);
+            try std.testing.expectEqualStrings("mod", std.fs.path.basename(recipe.origin.?.base_dir.?));
+        }
+    }
+    try std.testing.expect(checked);
 }
 
 test "multiple imports with different prefixes" {

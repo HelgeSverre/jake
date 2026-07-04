@@ -252,6 +252,7 @@ Appear at the top level of a Jakefile (not indented).
 | Directive   | Purpose                        | Example                              |
 | ----------- | ------------------------------ | ------------------------------------ |
 | `@import`   | Import another Jakefile        | `@import "jake/ci.jake" as ci`       |
+| `@rooted`   | Resolve this file's relative paths against its own directory when imported | `@rooted` |
 | `@dotenv`   | Load environment file          | `@dotenv .env.local`                 |
 | `@require`  | Require environment variables  | `@require NODE_ENV API_KEY`          |
 | `@export`   | Export variable to environment | `@export PATH = $PATH:./bin`         |
@@ -263,6 +264,42 @@ Appear at the top level of a Jakefile (not indented).
 | `@default`  | Mark next recipe as default    | `@default`                           |
 
 **Scope Name:** `keyword.control.directive.jake`
+
+#### `@rooted` — module base-dir resolution
+
+By default, `@import "sub/Jakefile"` flattens the imported recipes into the root
+recipe set and their relative paths (`@cd`, `file` targets, relative paths in
+command bodies) resolve against the **importer's** directory. This is what you
+want for a helper module in `jake/` that deliberately references repo-root paths
+(`crates/...`).
+
+Declaring `@rooted` at the top of a file flips that for **that file only**: its
+recipes' relative paths resolve against **its own directory** when imported from
+a parent. This lets you compose independent sub-project Jakefiles (a `workspace`
+meta-repo whose sub-directories are self-contained projects):
+
+```jake
+# sub-project/Jakefile
+@rooted
+
+task build:
+    cargo build      # runs in sub-project/, not the workspace root
+
+file dist/app.js: src/*.ts
+    esbuild src/index.ts --outfile=dist/app.js   # dist/ under sub-project/
+```
+
+```jake
+# workspace root Jakefile
+@import "sub-project/Jakefile" as sub
+
+task all: [sub.build]
+    echo "workspace build done"
+```
+
+`@rooted` takes no arguments. When a file is run directly as the root Jakefile
+its directory *is* the working directory, so `@rooted` is a harmless no-op there —
+it only changes behaviour when the file is imported by a parent.
 
 ### 6.2 Recipe Metadata Directives
 
@@ -476,7 +513,7 @@ For implementers, here are the raw token tags from Jake's lexer:
 - `kw_task`, `kw_file`, `kw_default`
 - `kw_if`, `kw_elif`, `kw_else`, `kw_end`
 - `kw_import`, `kw_as`
-- `kw_dotenv`, `kw_require`, `kw_watch`, `kw_cache`, `kw_needs`, `kw_confirm`, `kw_each`
+- `kw_dotenv`, `kw_rooted`, `kw_require`, `kw_watch`, `kw_cache`, `kw_needs`, `kw_confirm`, `kw_each`
 - `kw_pre`, `kw_post`, `kw_before`, `kw_after`, `kw_on_error`
 - `kw_export`, `kw_cd`, `kw_shell`, `kw_ignore`
 - `kw_group`, `kw_desc`, `kw_description`

@@ -496,6 +496,45 @@ task release: [build, docker.build, docker.push]
     echo "Released!"
 ```
 
+### Composing Sub-Project Jakefiles (`@rooted`)
+
+By default, an imported file's relative paths (`@cd`, `file` targets, relative
+paths in command bodies) resolve against the **root** Jakefile's directory. That
+is intentional: a helper module in `jake/` can reference repo-root paths like
+`crates/...`.
+
+When you want to compose several **independent sub-projects** under one root —
+a `workspace` meta-repo whose sub-directories (or git submodules) each carry
+their own self-contained `Jakefile` — declare `@rooted` at the top of the
+sub-project file. Its recipes then resolve relative paths against **its own**
+directory when imported:
+
+**services/api/Jakefile:**
+
+```jake
+@rooted
+
+task build:
+    cargo build          # runs in services/api/
+
+file dist/bundle.js: src/*.ts
+    esbuild src/index.ts --bundle --outfile=dist/bundle.js   # dist/ under services/api/
+```
+
+**Workspace Jakefile:**
+
+```jake
+@import "services/api/Jakefile" as api
+@import "services/web/Jakefile" as web
+
+task build: [api.build, web.build]
+    echo "Workspace build complete"
+```
+
+`@rooted` takes no arguments and is backward-compatible: files without it keep
+the default root-relative behaviour. Running a `@rooted` file directly (not via
+import) is a no-op, since its directory is already the working directory.
+
 ---
 
 ## Environment Variables

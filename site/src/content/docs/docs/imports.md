@@ -78,6 +78,33 @@ If `Jakefile` imports `lib/build.jake`, and `lib/build.jake` imports `../shared/
 
 This means you can safely reorganize your module hierarchy without breaking relative paths inside each module.
 
+## Rooted Modules (`@rooted`)
+
+Import paths resolve relative to the importing file, but by default an imported recipe's **runtime** relative paths (`@cd`, `file` targets, relative paths in command bodies) resolve against the **root** Jakefile's directory. This is what you want for a helper module in `jake/` that references repo-root paths like `crates/...`.
+
+To compose independent sub-projects instead — a `workspace` meta-repo whose sub-directories each carry their own self-contained `Jakefile` — declare `@rooted` at the top of the sub-project file. Its recipes then resolve relative paths against **its own** directory:
+
+```jake
+# services/api/Jakefile
+@rooted
+
+task build:
+    cargo build          # runs in services/api/
+
+file dist/bundle.js: src/*.ts
+    esbuild src/index.ts --bundle --outfile=dist/bundle.js   # dist/ under services/api/
+```
+
+```jake
+# workspace Jakefile
+@import "services/api/Jakefile" as api
+
+task build: [api.build]
+    echo "Workspace build complete"
+```
+
+`@rooted` takes no arguments and is backward-compatible — files without it keep the default root-relative behaviour. A `@cd <dir>` inside a rooted module is resolved relative to the module directory. Running a `@rooted` file directly as the root Jakefile is a no-op.
+
 ## @dotenv in Imported Files
 
 `@dotenv` paths in imported files are resolved relative to the **working directory** (where `jake` is invoked), not relative to the imported file's location.

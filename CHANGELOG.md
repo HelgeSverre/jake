@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`@rooted` directive — module-level base-dir resolution for imported Jakefiles.** A file can declare `@rooted` at the top to opt into resolving *its own* recipes' relative paths (`@cd`, `file` targets, relative paths in command bodies) against *its own* directory when imported from a parent. This unblocks composing independent sub-project Jakefiles — a `workspace` meta-repo whose sub-directories (or git submodules) are self-contained projects, each with its own `Jakefile`, imported into one root Jakefile. Default behaviour is unchanged and backward-compatible: without `@rooted`, imported recipes still resolve relative to the importer's directory (so `@import "jake/rust.jake"` keeps referencing repo-root paths like `crates/...`). Running a `@rooted` file directly as the root Jakefile is a no-op. Adds parser/import/executor support with unit + e2e coverage (rooted `@cd`/relative-path resolution, rooted `file`-target existence/mtime under the module dir, and a non-rooted regression check).
+
 ## [0.9.1] - 2026-07-04
 
 ### Changed

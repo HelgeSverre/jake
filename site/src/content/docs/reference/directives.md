@@ -16,11 +16,37 @@ Placed at the top level of a Jakefile (outside any recipe).
 | `@require VAR...`        | Require environment variables to be set — Jake exits with an error if any are missing |
 | `@import "path"`         | Import all recipes from another Jakefile                                    |
 | `@import "path" as name` | Import with a namespace prefix (recipes become `name.recipe`)               |
+| `@rooted`                | Resolve this file's recipe relative paths (`@cd`, `file` targets) against its own directory when imported (see below) |
 | `@pre command`           | Global pre-hook — runs before every recipe                                  |
 | `@post command`          | Global post-hook — runs after every recipe                                  |
 | `@before recipe command` | Targeted pre-hook — runs before a specific recipe only                      |
 | `@after recipe command`  | Targeted post-hook — runs after a specific recipe only                      |
 | `@on_error command`      | Global error hook — runs if any recipe fails. For recipe-specific error hooks, use `@on_error` inside the recipe body. |
+
+### @rooted
+
+By default, an imported file's relative paths (`@cd`, `file` targets, relative paths in command bodies) resolve against the **root** Jakefile's directory. `@rooted` opts a file into resolving **its own** recipes' relative paths against **its own** directory when imported from a parent — so you can compose independent sub-project Jakefiles (a `workspace` meta-repo whose sub-directories are self-contained projects).
+
+```jake
+# services/api/Jakefile
+@rooted
+
+task build:
+    cargo build          # runs in services/api/
+
+file dist/bundle.js: src/*.ts
+    esbuild src/index.ts --bundle --outfile=dist/bundle.js   # dist/ under services/api/
+```
+
+```jake
+# workspace Jakefile
+@import "services/api/Jakefile" as api
+
+task build: [api.build]
+    echo "Workspace build complete"
+```
+
+`@rooted` takes no arguments and is backward-compatible — files without it keep the default root-relative behaviour (so `@import "jake/rust.jake"` can still reference repo-root paths like `crates/...`). Running a `@rooted` file directly as the root Jakefile is a no-op, since its directory is already the working directory.
 
 ## Recipe Modifiers
 

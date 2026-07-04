@@ -6,7 +6,7 @@ out = "/tmp/jake-e2e-output.txt"
 
 @default
 @desc "Run all e2e tests"
-task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-external, test-cli, test-web, test-integration, test-traverse]
+task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-rooted, test-external, test-cli, test-web, test-integration, test-traverse]
     echo ""
     echo "All e2e tests passed!"
 
@@ -376,6 +376,29 @@ task test-imports:
     grep -q "broken.jake" {{out}}
     echo "  Parse error in import names the file ................. PASS"
     rm -rf /tmp/jake-imp
+
+# ============================================================================
+# Rooted Import Tests (@rooted module base-dir resolution)
+# ============================================================================
+
+@quiet
+task test-rooted:
+    echo ""
+    echo "Rooted Import Tests"
+    # Setup: workspace with a @rooted sub-project and a plain (non-rooted) one.
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm -rf /tmp/jake-rooted; mkdir -p /tmp/jake-rooted/sub /tmp/jake-rooted/plain; printf '@import "sub/Jakefile" as sub\n@import "plain/Jakefile" as plain\n\ntask noop:\n    echo root\n' > /tmp/jake-rooted/Jakefile; printf '@rooted\n\ntask where:\n    pwd > out.txt\n\nfile built.txt:\n    echo built > built.txt\n    echo BUILT\n' > /tmp/jake-rooted/sub/Jakefile; printf 'task where:\n    pwd > out.txt\n' > /tmp/jake-rooted/plain/Jakefile; (cd /tmp/jake-rooted && "$JAKE_ABS" sub.where > {{out}} 2>&1); test -f /tmp/jake-rooted/sub/out.txt && grep -q "/sub$" /tmp/jake-rooted/sub/out.txt && ! test -f /tmp/jake-rooted/out.txt
+    echo "  Rooted module resolves relative paths under its dir ... PASS"
+    # Regression: a plain (non-rooted) import still resolves against the root cwd.
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm -f /tmp/jake-rooted/out.txt /tmp/jake-rooted/plain/out.txt; (cd /tmp/jake-rooted && "$JAKE_ABS" plain.where > {{out}} 2>&1); test -f /tmp/jake-rooted/out.txt && ! test -f /tmp/jake-rooted/plain/out.txt
+    echo "  Non-rooted import stays root-relative (regression) .... PASS"
+    # File target in a rooted module builds and its output lands under the module dir.
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; rm -f /tmp/jake-rooted/sub/built.txt; (cd /tmp/jake-rooted && "$JAKE_ABS" sub.built.txt > {{out}} 2>&1); grep -q BUILT {{out}} && test -f /tmp/jake-rooted/sub/built.txt
+    echo "  Rooted file target builds under module dir ............ PASS"
+    # Existence/mtime for the rooted file target resolves under the module dir:
+    # a second run finds the output and skips the rebuild.
+    JAKE_ABS="$(cd "$(dirname {{jake}})" && pwd)/jake"; (cd /tmp/jake-rooted && "$JAKE_ABS" sub.built.txt > {{out}} 2>&1); ! grep -q BUILT {{out}}
+    echo "  Rooted file target skips when up to date .............. PASS"
+    rm -rf /tmp/jake-rooted
 
 # ============================================================================
 # External Integration Tests
