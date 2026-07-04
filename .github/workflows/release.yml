@@ -24,12 +24,14 @@ jobs:
             os: ubuntu-latest
             artifact: jake-linux-aarch64
 
-          # macOS
+          # macOS — pinned to macos-15: macos-latest migrated to macOS 26, whose
+          # SDK Zig 0.15.2 cannot link natively, breaking the aarch64-macos
+          # (native) release build. Same pin as ci.yml.
           - target: x86_64-macos
-            os: macos-latest
+            os: macos-15
             artifact: jake-macos-x86_64
           - target: aarch64-macos
-            os: macos-latest
+            os: macos-15
             artifact: jake-macos-aarch64
 
           # Windows
