@@ -273,25 +273,37 @@ task test-files:
     {{jake}} -f fixtures/files/target.jake output.txt > {{out}} 2>&1
     grep -q "Built output.txt" {{out}}
     echo "  File target builds when output missing ................ PASS"
-    # File target skips when up-to-date
-    {{jake}} -f fixtures/files/target.jake output.txt > {{out}} 2>&1
-    echo "  File target skips when up-to-date ..................... PASS"
     # Cleanup
     rm -f fixtures/files/output.txt
-    # Incremental rebuild across process runs (regression: jake#17, where the
+    # Incremental behaviour across process runs (regression: jake#17, where the
     # incremental cache never persisted so file targets always rebuilt). Run in
-    # a self-contained temp dir so the tracked dependency and the cache resolve
-    # against one cwd, independent of where the suite is invoked from.
-    rm -rf /tmp/jake-inc && mkdir -p /tmp/jake-inc
-    printf 'file out.txt: in.txt\n    cat in.txt > out.txt\n    echo BUILT\n' > /tmp/jake-inc/Jakefile
-    echo one > /tmp/jake-inc/in.txt
+    # a self-contained temp dir so tracked deps and the cache resolve against one
+    # cwd, independent of where the suite is invoked from. JK below = the built
+    # binary by absolute path (survives `cd`).
+    rm -rf /tmp/jake-inc && mkdir -p /tmp/jake-inc/src
+    printf 'file out.txt: src/*.txt\n    cat src/*.txt > out.txt\n    echo BUILT\n' > /tmp/jake-inc/Jakefile
+    echo one > /tmp/jake-inc/src/a.txt
     cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && grep -q BUILT {{out}}
     echo "  File target builds first run (incremental) ............ PASS"
     cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && ! grep -q BUILT {{out}}
     echo "  File target skips when input unchanged (incremental) .. PASS"
-    sleep 1 && echo two > /tmp/jake-inc/in.txt
+    # Editing an existing glob member rebuilds
+    sleep 1 && echo two > /tmp/jake-inc/src/a.txt
     cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && grep -q BUILT {{out}}
-    echo "  File target rebuilds when input changes (incremental) . PASS"
+    echo "  File target rebuilds when a glob dep changes .......... PASS"
+    # Adding a NEW file matching the glob rebuilds
+    cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && ! grep -q BUILT {{out}}
+    sleep 1 && echo three > /tmp/jake-inc/src/b.txt
+    cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && grep -q BUILT {{out}}
+    echo "  File target rebuilds when a new glob member appears ... PASS"
+    # Deleting the output forces a rebuild even when inputs are unchanged
+    cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && ! grep -q BUILT {{out}}
+    rm -f /tmp/jake-inc/out.txt
+    cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} out.txt > {{out}} 2>&1 && grep -q BUILT {{out}}
+    echo "  File target rebuilds when output is deleted ........... PASS"
+    # Parallel (-j) execution honours the same incremental skip
+    cd /tmp/jake-inc && {{absolute_path("../../zig-out/bin/jake")}} -j2 out.txt > {{out}} 2>&1 && ! grep -q BUILT {{out}}
+    echo "  File target skips under parallel -j (incremental) ..... PASS"
     rm -rf /tmp/jake-inc
 
 # ============================================================================
@@ -339,6 +351,22 @@ task test-imports:
     grep -q "does-not-exist.jake" {{out}}
     echo "  Missing import names the file ........................ PASS"
     rm -f /tmp/jake-missing-import.jake
+    # Circular import names a file in the cycle (jake#18)
+    rm -rf /tmp/jake-imp && mkdir -p /tmp/jake-imp
+    printf '@import "b.jake"\ntask x:\n    echo x\n' > /tmp/jake-imp/a.jake
+    printf '@import "a.jake"\ntask y:\n    echo y\n' > /tmp/jake-imp/b.jake
+    @ignore
+    {{jake}} -f /tmp/jake-imp/a.jake > {{out}} 2>&1 || true
+    grep -q "Circular" {{out}} && grep -q ".jake" {{out}}
+    echo "  Circular import names the file ....................... PASS"
+    # Parse error in an imported file names that file (jake#18)
+    printf '@import "broken.jake"\n' > /tmp/jake-imp/main.jake
+    printf 'task :::garbage\n' > /tmp/jake-imp/broken.jake
+    @ignore
+    {{jake}} -f /tmp/jake-imp/main.jake > {{out}} 2>&1 || true
+    grep -q "broken.jake" {{out}}
+    echo "  Parse error in import names the file ................. PASS"
+    rm -rf /tmp/jake-imp
 
 # ============================================================================
 # External Integration Tests
