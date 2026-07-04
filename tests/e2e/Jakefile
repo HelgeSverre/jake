@@ -332,6 +332,13 @@ task test-imports:
     {{jake}} -f fixtures/imports/main.jake all > {{out}} 2>&1
     grep -q "Compiling project" {{out}} && grep -q "Deploying to production" {{out}} && grep -q "Build and deploy complete" {{out}}
     echo "  Import system works ................................... PASS"
+    # Missing import names the offending file (jake#18)
+    printf '@import "does-not-exist.jake"\n' > /tmp/jake-missing-import.jake
+    @ignore
+    {{jake}} -f /tmp/jake-missing-import.jake > {{out}} 2>&1 || true
+    grep -q "does-not-exist.jake" {{out}}
+    echo "  Missing import names the file ........................ PASS"
+    rm -f /tmp/jake-missing-import.jake
 
 # ============================================================================
 # External Integration Tests

@@ -340,7 +340,12 @@ fn printImportError(err: anyerror) void {
         error.ParseError => "Failed to parse imported file",
         else => @errorName(err),
     };
-    const err_msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Import failed: {s}\n", .{msg}) catch return;
+    // Name the offending import path when we captured it (ImportError values
+    // carry no payload); falls back to the bare message otherwise.
+    const err_msg = if (import_mod.lastFailedImport()) |path|
+        std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Import failed: {s}: \"{s}\"\n", .{ msg, path }) catch return
+    else
+        std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Import failed: {s}\n", .{msg}) catch return;
     stderr.writeAll(err_msg) catch {};
 }
 

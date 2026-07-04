@@ -32,6 +32,26 @@ pub const ImportError = error{
     Unexpected,
 };
 
+/// Path (as written in the `@import` directive) of the import that most
+/// recently failed. `ImportError` values carry no payload, so we stash the
+/// offending path here for the loader's error message. Single-threaded CLI, so
+/// a module-level buffer is fine; `resolveImports` clears it at the start of
+/// each run and the deepest failing import writes last.
+var failed_import_buf: [std.fs.max_path_bytes]u8 = undefined;
+var failed_import_len: usize = 0;
+
+fn recordFailedImport(path: []const u8) void {
+    const n = @min(path.len, failed_import_buf.len);
+    @memcpy(failed_import_buf[0..n], path[0..n]);
+    failed_import_len = n;
+}
+
+/// The import path that caused the most recent resolve failure, or null.
+pub fn lastFailedImport() ?[]const u8 {
+    if (failed_import_len == 0) return null;
+    return failed_import_buf[0..failed_import_len];
+}
+
 /// Allocations that persist after import resolution.
 /// The caller must call deinit() when the Jakefile is no longer needed.
 pub const ImportAllocations = struct {
@@ -220,11 +240,15 @@ pub const ImportResolver = struct {
         base_path: []const u8,
     ) ImportError!void {
         // Resolve the import path relative to base_path
-        const resolved_path = try self.resolvePath(import_directive.path, base_path);
+        const resolved_path = self.resolvePath(import_directive.path, base_path) catch |err| {
+            recordFailedImport(import_directive.path);
+            return err;
+        };
         defer self.allocator.free(resolved_path);
 
         // Check for circular imports
         if (self.import_stack.contains(resolved_path)) {
+            recordFailedImport(import_directive.path);
             return ImportError.CircularImport;
         }
 
@@ -238,6 +262,7 @@ pub const ImportResolver = struct {
 
         // Load and parse the imported file
         var imported = self.loadAndParse(resolved_path) catch |err| {
+            recordFailedImport(import_directive.path);
             // Clean up the import stack entry on error (free the duplicated key)
             if (self.import_stack.fetchRemove(resolved_path)) |entry| {
                 self.allocator.free(entry.key);
@@ -496,6 +521,7 @@ pub fn resolveImports(
     jakefile: *Jakefile,
     jakefile_path: []const u8,
 ) ImportError!ImportAllocations {
+    failed_import_len = 0;
     var resolver = ImportResolver.init(allocator);
     errdefer resolver.deinit();
 
