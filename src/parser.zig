@@ -1379,8 +1379,10 @@ pub const Parser = struct {
         errdefer params.deinit(self.allocator);
         errdefer deps.deinit(self.allocator);
 
-        // Parse parameters (name=default)
-        while (self.current.tag == .ident and self.current.tag != .colon) {
+        // Parse parameters (name=default). Accept reserved keywords as param
+        // names (issue #23): a param name is an unambiguous position where a
+        // directive keyword can never appear, so treat them as identifiers.
+        while (self.isNameToken()) {
             const param_name = self.slice(self.current);
             self.advance();
             var default: ?[]const u8 = null;
@@ -2191,6 +2193,41 @@ test "parse task recipe with multiple parameters" {
     try std.testing.expect(jakefile.recipes[0].params[0].default == null);
     try std.testing.expectEqualStrings("target", jakefile.recipes[0].params[1].name);
     try std.testing.expectEqualStrings("production", jakefile.recipes[0].params[1].default.?);
+}
+
+test "parse task recipe with reserved keyword parameter name" {
+    // Regression: issue #23 — reserved keywords rejected as task parameter names.
+    const source =
+        \\task trace file="traces.jsonl":
+        \\    echo {{file}}
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].params.len);
+    try std.testing.expectEqualStrings("file", jakefile.recipes[0].params[0].name);
+    try std.testing.expectEqualStrings("traces.jsonl", jakefile.recipes[0].params[0].default.?);
+}
+
+test "parse task recipe with multiple reserved keyword parameter names" {
+    // Regression: issue #23 — several reserved keywords must work as param names.
+    const source =
+        \\task probe cd needs confirm="yes":
+        \\    echo {{cd}} {{needs}} {{confirm}}
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes[0].params.len);
+    try std.testing.expectEqualStrings("cd", jakefile.recipes[0].params[0].name);
+    try std.testing.expectEqualStrings("needs", jakefile.recipes[0].params[1].name);
+    try std.testing.expectEqualStrings("confirm", jakefile.recipes[0].params[2].name);
+    try std.testing.expectEqualStrings("yes", jakefile.recipes[0].params[2].default.?);
 }
 
 test "parse task recipe with dependencies" {

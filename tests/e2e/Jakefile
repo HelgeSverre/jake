@@ -30,6 +30,12 @@ task test-basic:
     {{jake}} -f fixtures/basic/hello.jake greet name=Alice > {{out}} 2>&1
     grep -q "Hello, Alice" {{out}}
     echo "  Task with custom parameter ............................ PASS"
+    # Reserved keyword as parameter name (jake#23)
+    {{jake}} -f fixtures/basic/hello.jake trace > {{out}} 2>&1
+    grep -q "Tracing to traces.jsonl" {{out}}
+    {{jake}} -f fixtures/basic/hello.jake trace file=custom.log > {{out}} 2>&1
+    grep -q "Tracing to custom.log" {{out}}
+    echo "  Reserved keyword as parameter name .................... PASS"
     # Dry run mode
     {{jake}} -f fixtures/basic/hello.jake -n hello > {{out}} 2>&1
     grep -q "would run" {{out}}
