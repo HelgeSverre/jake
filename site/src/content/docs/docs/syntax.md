@@ -128,6 +128,11 @@ file dist/app.js: src/**/*.ts
     esbuild src/index.ts --bundle --outfile=dist/app.js
 ```
 
+File recipes are build artifacts, not user-facing commands, so they are hidden
+from `jake --list` / `-l` by default. Show them with `jake --list --all` (listed
+under `(hidden)`) or `jake --type file`. They still run by name (`jake dist/app.js`)
+and work as dependencies of other recipes.
+
 ### Simple Recipes
 
 No keyword, Make-like syntax:

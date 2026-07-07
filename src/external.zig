@@ -29,6 +29,9 @@ pub const ExternalRecipes = struct {
             if (recipe.description) |desc| {
                 self.allocator.free(desc);
             }
+            if (recipe.group) |g| {
+                self.allocator.free(g);
+            }
             // Free the duplicated origin strings
             if (recipe.origin) |origin| {
                 self.allocator.free(origin.original_name);
@@ -127,6 +130,13 @@ fn parseMakefileContent(allocator: std.mem.Allocator, content: []const u8, sourc
 
     var lines = std.mem.splitScalar(u8, content, '\n');
     while (lines.next()) |line| {
+        // Indented lines are recipe commands or continuations, never target
+        // definitions — in a Makefile every target starts at column 0. Skipping
+        // them prevents a shell command that happens to contain a colon (e.g.
+        // `curl -fsSL https://…` or `cd web && npm run og:check`) from being
+        // mis-parsed into bogus targets like `make.curl` / `make.https` (jake#22).
+        if (line.len > 0 and (line[0] == ' ' or line[0] == '\t')) continue;
+
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
         // Skip empty lines and comments
@@ -237,19 +247,6 @@ pub fn parseJustfile(allocator: std.mem.Allocator, path: []const u8) !ExternalRe
 
 /// Run `just --list` to get recipe list
 fn runJustList(allocator: std.mem.Allocator, path_param: []const u8) !ExternalRecipes {
-    var recipes: std.ArrayListUnmanaged(Recipe) = .empty;
-    errdefer {
-        for (recipes.items) |recipe| {
-            allocator.free(recipe.name);
-            if (recipe.description) |desc| allocator.free(desc);
-            if (recipe.origin) |origin| {
-                allocator.free(origin.original_name);
-                if (origin.source_file) |sf| allocator.free(sf);
-            }
-        }
-        recipes.deinit(allocator);
-    }
-
     // Run: just --justfile <path> --list --unsorted --list-heading '' --list-prefix ''
     const justfile_arg = std.fs.path.basename(path_param);
     const justfile_dir = std.fs.path.dirname(path_param) orelse ".";
@@ -287,27 +284,62 @@ fn runJustList(allocator: std.mem.Allocator, path_param: []const u8) !ExternalRe
         return ownedEmptyExternalRecipes(allocator);
     };
 
-    // Parse output: each line is "recipe_name  # description" or just "recipe_name"
+    return parseJustListOutput(allocator, stdout, path_param);
+}
+
+/// Parse the output of `just --list --list-heading '' --list-prefix ''` into
+/// recipes. Split out from `runJustList` so the (bug-prone) line parsing can be
+/// unit-tested without spawning `just`.
+fn parseJustListOutput(allocator: std.mem.Allocator, stdout: []const u8, path_param: []const u8) !ExternalRecipes {
+    var recipes: std.ArrayListUnmanaged(Recipe) = .empty;
+    errdefer {
+        for (recipes.items) |recipe| {
+            allocator.free(recipe.name);
+            if (recipe.description) |desc| allocator.free(desc);
+            if (recipe.origin) |origin| {
+                allocator.free(origin.original_name);
+                if (origin.source_file) |sf| allocator.free(sf);
+            }
+        }
+        recipes.deinit(allocator);
+    }
+
+    // Each line is "recipe_name [params] [# description]" or a "[group]" header.
     var lines = std.mem.splitScalar(u8, stdout, '\n');
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len == 0) continue;
 
-        // Skip lines starting with [ (like [info], [private], etc.)
-        if (trimmed.len > 0 and trimmed[0] == '[') continue;
+        // Skip lines starting with [ (like [group], [private], etc.)
+        if (trimmed[0] == '[') continue;
 
-        var name: []const u8 = undefined;
         var description: ?[]const u8 = null;
 
-        // Check for description separator " # "
-        if (std.mem.indexOf(u8, trimmed, " # ")) |desc_pos| {
-            name = std.mem.trim(u8, trimmed[0..desc_pos], " \t");
+        // Split off an optional " # description" suffix, then take the first
+        // whitespace token of what remains as the recipe name. `just --list`
+        // prints parameters and defaults inline (`dev path="."`, `web port="3333"`),
+        // so the name is only the leading token — taking the whole pre-`#` span
+        // leaked params into the name (`just.dev path="."`), breaking listing and
+        // invocation for the majority of real justfiles.
+        const name_part = if (std.mem.indexOf(u8, trimmed, " # ")) |desc_pos| blk: {
             description = try allocator.dupe(u8, std.mem.trim(u8, trimmed[desc_pos + 3 ..], " \t"));
-        } else {
-            // No description, just the name (might have parameters)
-            // Handle "recipe arg1 arg2" format
-            var parts = std.mem.tokenizeAny(u8, trimmed, " \t");
-            name = parts.next() orelse continue;
+            break :blk std.mem.trim(u8, trimmed[0..desc_pos], " \t");
+        } else trimmed;
+        errdefer if (description) |d| allocator.free(d);
+
+        var name_parts = std.mem.tokenizeAny(u8, name_part, " \t");
+        const name = name_parts.next() orelse {
+            if (description) |d| allocator.free(d);
+            continue;
+        };
+
+        // Skip submodule markers (`just --list` prints `mymod ...` for a `mod`),
+        // which are not directly-runnable recipes.
+        if (name_parts.next()) |second| {
+            if (std.mem.eql(u8, second, "...")) {
+                if (description) |d| allocator.free(d);
+                continue;
+            }
         }
 
         // Create prefixed name: "just.target"
@@ -361,7 +393,75 @@ fn runJustList(allocator: std.mem.Allocator, path_param: []const u8) !ExternalRe
     };
 }
 
-/// Parse Justfile directly (fallback when `just` is not installed)
+/// Attributes accumulated from `[...]` lines preceding a recipe. `doc`/`group`
+/// arg slices borrow from the source buffer (valid for the parse's lifetime).
+const JustAttributes = struct {
+    private: bool = false,
+    doc: ?[]const u8 = null,
+    group: ?[]const u8 = null,
+
+    fn clear(self: *JustAttributes) void {
+        self.* = .{};
+    }
+};
+
+/// Parse a `[...]` attribute line into `attrs`, respecting quoted payloads so a
+/// comma or keyword inside `[doc('a, private')]` is not misread. Handles
+/// comma-separated attributes (`[macos, linux]`) and parenthesized string args
+/// (`[group('build')]`, `[doc("text")]`). Unknown attributes are ignored.
+fn parseJustAttributeLine(line: []const u8, attrs: *JustAttributes) void {
+    // Strip the surrounding brackets: `[a, b('c')]` -> `a, b('c')`.
+    const close = std.mem.lastIndexOfScalar(u8, line, ']') orelse return;
+    if (close == 0) return;
+    const inner = line[1..close];
+
+    var i: usize = 0;
+    while (i < inner.len) {
+        // Skip separators/whitespace between attributes.
+        while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t' or inner[i] == ',')) i += 1;
+        const name_start = i;
+        while (i < inner.len and (std.ascii.isAlphanumeric(inner[i]) or inner[i] == '-' or inner[i] == '_')) i += 1;
+        const attr_name = inner[name_start..i];
+
+        // Optional parenthesized argument, e.g. group('name') / doc("text").
+        var arg: ?[]const u8 = null;
+        while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t')) i += 1;
+        if (i < inner.len and inner[i] == '(') {
+            i += 1;
+            const arg_start = i;
+            var quote: ?u8 = null;
+            while (i < inner.len) : (i += 1) {
+                const c = inner[i];
+                if (quote) |q| {
+                    if (c == q) quote = null;
+                } else if (c == '\'' or c == '"') {
+                    quote = c;
+                } else if (c == ')') break;
+            }
+            arg = std.mem.trim(u8, inner[arg_start..i], " \t'\"");
+            if (i < inner.len) i += 1; // consume ')'
+        }
+
+        if (attr_name.len == 0) {
+            i += 1; // guard against no progress on stray punctuation
+            continue;
+        }
+        if (std.mem.eql(u8, attr_name, "private")) {
+            attrs.private = true;
+        } else if (std.mem.eql(u8, attr_name, "doc")) {
+            attrs.doc = arg; // `[doc]` with no arg leaves it null (suppresses comment)
+        } else if (std.mem.eql(u8, attr_name, "group")) {
+            attrs.group = arg;
+        }
+    }
+}
+
+/// Parse a Justfile directly, without invoking `just`. Used as a fallback when
+/// `just` is not installed or `just --list` fails. Mirrors `just`'s own
+/// listing: recipe names only (parameters/dependencies stripped), `@` quiet
+/// markers removed, `[private]`/`_`-prefixed recipes hidden, `[doc(...)]` and
+/// leading `#` comments as descriptions, `[group(...)]` captured, platform
+/// variants deduped, and comment/attribute association broken by a blank line.
 fn parseJustfileDirect(allocator: std.mem.Allocator, path_param: []const u8) !ExternalRecipes {
     const file = std.fs.cwd().openFile(path_param, .{}) catch {
         return ownedEmptyExternalRecipes(allocator);
@@ -378,6 +478,7 @@ fn parseJustfileDirect(allocator: std.mem.Allocator, path_param: []const u8) !Ex
         for (recipes.items) |recipe| {
             allocator.free(recipe.name);
             if (recipe.description) |desc| allocator.free(desc);
+            if (recipe.group) |g| allocator.free(g);
             if (recipe.origin) |origin| {
                 allocator.free(origin.original_name);
                 if (origin.source_file) |sf| allocator.free(sf);
@@ -386,103 +487,135 @@ fn parseJustfileDirect(allocator: std.mem.Allocator, path_param: []const u8) !Ex
         recipes.deinit(allocator);
     }
 
+    // Track names already emitted so platform-guarded duplicate definitions
+    // (`[windows] install …` + `[unix] install …`) list once, matching `just`.
+    // Keys borrow from `content`, which outlives this map (defers run LIFO).
+    var seen = std.StringHashMap(void).init(allocator);
+    defer seen.deinit();
+
     var lines = std.mem.splitScalar(u8, content, '\n');
+    // Pending doc/attribute state attached to the *next* recipe. All slices
+    // borrow from `content`; a blank line clears them (just breaks association).
     var prev_comment: ?[]const u8 = null;
+    var attrs: JustAttributes = .{};
 
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
-        // Track comments for descriptions
-        if (trimmed.len > 0 and trimmed[0] == '#') {
+        // Blank line: breaks comment/attribute association with the next recipe.
+        if (trimmed.len == 0) {
+            prev_comment = null;
+            attrs.clear();
+            continue;
+        }
+
+        // Comment line becomes the description of the following recipe.
+        if (trimmed[0] == '#') {
             prev_comment = std.mem.trim(u8, trimmed[1..], " \t");
             continue;
         }
 
-        // Skip empty lines (but preserve comment for next recipe)
-        if (trimmed.len == 0) continue;
-
-        // Skip attributes like [private], [group('name')]
+        // Attribute line(s) — accumulate, preserving any preceding comment.
         if (trimmed[0] == '[') {
+            parseJustAttributeLine(trimmed, &attrs);
             continue;
         }
 
-        // Look for recipe definitions: "recipe:" or "recipe arg:"
-        // Must start at beginning of line (not indented)
-        if (line.len > 0 and line[0] != ' ' and line[0] != '\t') {
-            if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
-                // Skip if it looks like a variable assignment
-                if (colon_pos + 1 < trimmed.len and trimmed[colon_pos + 1] == '=') {
-                    prev_comment = null;
-                    continue;
-                }
+        // Recipe definitions start at column 0 (indented lines are recipe bodies).
+        if (line[0] == ' ' or line[0] == '\t') continue;
 
-                const recipe_part = trimmed[0..colon_pos];
+        const colon_pos = std.mem.indexOfScalar(u8, trimmed, ':') orelse {
+            // Non-recipe statement (`mod foo`, `import "x"`, bare `set …`).
+            prev_comment = null;
+            attrs.clear();
+            continue;
+        };
 
-                // Extract just the recipe name (before any parameters)
-                var parts = std.mem.tokenizeAny(u8, recipe_part, " \t");
-                const name = parts.next() orelse {
-                    prev_comment = null;
-                    continue;
-                };
-
-                // Skip invalid names
-                if (name.len == 0 or name[0] == '@') {
-                    prev_comment = null;
-                    continue;
-                }
-
-                // Create prefixed name: "just.target"
-                const prefixed_name = try std.fmt.allocPrint(allocator, "just.{s}", .{name});
-                errdefer allocator.free(prefixed_name);
-
-                // Duplicate the original name and source file since content will be freed
-                const original_name = try allocator.dupe(u8, name);
-                errdefer allocator.free(original_name);
-
-                const source_file = try allocator.dupe(u8, path_param);
-                errdefer allocator.free(source_file);
-
-                var description: ?[]const u8 = null;
-                if (prev_comment) |comment| {
-                    description = try allocator.dupe(u8, comment);
-                }
-
-                const recipe = Recipe{
-                    .name = prefixed_name,
-                    .kind = .simple,
-                    .dependencies = &.{},
-                    .file_deps = &.{},
-                    .output = null,
-                    .params = &.{},
-                    .commands = &.{},
-                    .pre_hooks = &.{},
-                    .post_hooks = &.{},
-                    .on_error_hooks = &.{},
-                    .doc_comment = null,
-                    .is_default = false,
-                    .aliases = &.{},
-                    .group = null,
-                    .description = description,
-                    .shell = null,
-                    .working_dir = null,
-                    .only_os = &.{},
-                    .quiet = false,
-                    .hidden = name[0] == '_',
-                    .needs = &.{},
-                    .timeout_seconds = null,
-                    .origin = RecipeOrigin{
-                        .original_name = original_name,
-                        .import_prefix = "just",
-                        .source_file = source_file,
-                        .external_kind = .justfile,
-                    },
-                };
-
-                try recipes.append(allocator, recipe);
-            }
+        // Assignment (`x := …`, `export x := …`, `alias b := …`), not a recipe.
+        if (colon_pos + 1 < trimmed.len and trimmed[colon_pos + 1] == '=') {
+            prev_comment = null;
+            attrs.clear();
+            continue;
         }
 
+        const recipe_part = trimmed[0..colon_pos];
+        var parts = std.mem.tokenizeAny(u8, recipe_part, " \t");
+        var name = parts.next() orelse {
+            prev_comment = null;
+            attrs.clear();
+            continue;
+        };
+
+        // A leading '@' marks a quiet recipe (`@build:` defines `build`).
+        if (name.len > 0 and name[0] == '@') name = name[1..];
+
+        // Skip invalid names and duplicates (platform-guarded variants).
+        if (name.len == 0 or seen.contains(name)) {
+            prev_comment = null;
+            attrs.clear();
+            continue;
+        }
+
+        const prefixed_name = try std.fmt.allocPrint(allocator, "just.{s}", .{name});
+        errdefer allocator.free(prefixed_name);
+
+        const original_name = try allocator.dupe(u8, name);
+        errdefer allocator.free(original_name);
+
+        const source_file = try allocator.dupe(u8, path_param);
+        errdefer allocator.free(source_file);
+
+        // Description: `[doc('…')]` takes precedence over a leading `#` comment.
+        var description: ?[]const u8 = null;
+        if (attrs.doc) |d| {
+            description = try allocator.dupe(u8, d);
+        } else if (prev_comment) |comment| {
+            description = try allocator.dupe(u8, comment);
+        }
+        errdefer if (description) |d| allocator.free(d);
+
+        const group: ?[]const u8 = if (attrs.group) |g| try allocator.dupe(u8, g) else null;
+        errdefer if (group) |g| allocator.free(g);
+
+        const recipe = Recipe{
+            .name = prefixed_name,
+            .kind = .simple,
+            .dependencies = &.{},
+            .file_deps = &.{},
+            .output = null,
+            .params = &.{},
+            .commands = &.{},
+            .pre_hooks = &.{},
+            .post_hooks = &.{},
+            .on_error_hooks = &.{},
+            .doc_comment = null,
+            .is_default = false,
+            .aliases = &.{},
+            .group = group,
+            .description = description,
+            .shell = null,
+            .working_dir = null,
+            .only_os = &.{},
+            .quiet = false,
+            .hidden = attrs.private or name[0] == '_',
+            .needs = &.{},
+            .timeout_seconds = null,
+            .origin = RecipeOrigin{
+                .original_name = original_name,
+                .import_prefix = "just",
+                .source_file = source_file,
+                .external_kind = .justfile,
+            },
+        };
+
+        // Record the name before appending so `append` is the last fallible op:
+        // if it fails, the recipe is not in the list and the per-iteration
+        // errdefers (not the outer one) free its strings — no double free.
+        try seen.put(name, {});
+        try recipes.append(allocator, recipe);
+
         prev_comment = null;
+        attrs.clear();
     }
 
     return ExternalRecipes{
@@ -620,6 +753,48 @@ test "parseMakefileContent - basic targets" {
     try std.testing.expect(result.recipes[3].hidden);
 }
 
+test "parseJustListOutput - strips params, keeps only the recipe name" {
+    const allocator = std.testing.allocator;
+
+    // Mirrors real `just --list --list-heading '' --list-prefix ''` output:
+    // recipes print their parameters and defaults inline, optionally followed by
+    // a " # description". The recipe name is only the leading token. Group
+    // headers ("[bench]") and submodule markers ("website ...") are not recipes.
+    const output =
+        "website ...                        # Marketing site (Astro + bun)\n" ++
+        "build                              # Build the solution.\n" ++
+        "[bench]\n" ++
+        "bench filter=\"*\"                   # Run benchmarks.\n" ++
+        "dev path=\".\"\n" ++
+        "aot rid=\"osx-arm64\" out=\"dist-aot\" # NativeAOT.\n" ++
+        "_helper\n";
+
+    var result = try parseJustListOutput(allocator, output, "justfile");
+    defer result.deinit();
+
+    // website (submodule) and [bench] (group header) are excluded.
+    try std.testing.expectEqual(@as(usize, 5), result.recipes.len);
+    try std.testing.expectEqualStrings("just.build", result.recipes[0].name);
+    try std.testing.expectEqualStrings("just.bench", result.recipes[1].name);
+    try std.testing.expectEqualStrings("just.dev", result.recipes[2].name);
+    try std.testing.expectEqualStrings("just.aot", result.recipes[3].name);
+    try std.testing.expectEqualStrings("just._helper", result.recipes[4].name);
+
+    // Original (unprefixed) name and description round-trip correctly.
+    try std.testing.expectEqualStrings("bench", result.recipes[1].origin.?.original_name);
+    try std.testing.expectEqualStrings("Run benchmarks.", result.recipes[1].description.?);
+    // dev has params but no description.
+    try std.testing.expect(result.recipes[2].description == null);
+    // Leading-underscore recipes are hidden.
+    try std.testing.expect(result.recipes[4].hidden);
+}
+
+test "parseJustListOutput - empty output yields no recipes" {
+    var result = try parseJustListOutput(std.testing.allocator, "", "justfile");
+    defer result.deinit();
+    try std.testing.expectEqual(@as(usize, 0), result.recipes.len);
+}
+
 test "parseMakefileContent - skip pattern rules" {
     const allocator = std.testing.allocator;
 
@@ -657,11 +832,191 @@ test "parseMakefileContent - skip variable assignments" {
     try std.testing.expectEqualStrings("make.build", result.recipes[0].name);
 }
 
+test "parseMakefileContent - tab-indented recipe lines with colons are not targets" {
+    const allocator = std.testing.allocator;
+
+    // Real Makefiles indent recipe bodies with tabs. Lines like the `curl`
+    // URL and `npm run og:check` contain colons but must NOT be parsed as
+    // target definitions (jake#22). Continuation lines are indented too.
+    const content =
+        "site-og:\n" ++
+        "\tcd website && npm run og:check\n" ++
+        "\tcd website && npm run og\n" ++
+        "\n" ++
+        "notebook-ui-vendor:\n" ++
+        "\tmkdir -p vendor\n" ++
+        "\tcurl -fsSL https://unpkg.com/@sema-lang/ui/dist/sema-ui.js \\\n" ++
+        "\t  -o vendor/sema-ui.js\n" ++
+        "\t@echo \"done: vendored\"\n";
+
+    var result = try parseMakefileContent(allocator, content, "Makefile");
+    defer result.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), result.recipes.len);
+    try std.testing.expectEqualStrings("make.site-og", result.recipes[0].name);
+    try std.testing.expectEqualStrings("make.notebook-ui-vendor", result.recipes[1].name);
+}
+
 test "parseMakefile missing file returns deinit-safe empty allocation" {
     var result = try parseMakefile(std.testing.allocator, "definitely-missing-makefile");
     defer result.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), result.recipes.len);
+}
+
+test "parseJustAttributeLine parses names, args, and quoted payloads" {
+    {
+        var a: JustAttributes = .{};
+        parseJustAttributeLine("[private]", &a);
+        try std.testing.expect(a.private);
+        try std.testing.expect(a.doc == null and a.group == null);
+    }
+    {
+        var a: JustAttributes = .{};
+        parseJustAttributeLine("[group('deploy')]", &a);
+        try std.testing.expectEqualStrings("deploy", a.group.?);
+    }
+    {
+        var a: JustAttributes = .{};
+        parseJustAttributeLine("[doc(\"explicit doc\")]", &a);
+        try std.testing.expectEqualStrings("explicit doc", a.doc.?);
+    }
+    {
+        // Comma-separated attributes on one line; `private` must be detected.
+        var a: JustAttributes = .{};
+        parseJustAttributeLine("[macos, private]", &a);
+        try std.testing.expect(a.private);
+    }
+    {
+        // A keyword inside a quoted arg must NOT be misread as an attribute.
+        var a: JustAttributes = .{};
+        parseJustAttributeLine("[doc('this is private, really')]", &a);
+        try std.testing.expect(!a.private);
+        try std.testing.expectEqualStrings("this is private, really", a.doc.?);
+    }
+    {
+        // A closing paren *inside* the quoted arg must not end the arg early,
+        // and a keyword after it must not leak in as a separate attribute.
+        var a: JustAttributes = .{};
+        parseJustAttributeLine("[doc('run (private) mode')]", &a);
+        try std.testing.expect(!a.private);
+        try std.testing.expectEqualStrings("run (private) mode", a.doc.?);
+    }
+}
+
+test "parseJustfileDirect matches just's listing semantics" {
+    if (@import("builtin").os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // This justfile and the expected result were validated against real
+    // `just --list` / `just --summary` output (just 1.50.0). The direct parser
+    // is the fallback used when `just` is unavailable, so it must reproduce the
+    // same visible-recipe set, hidden flags, and descriptions.
+    const justfile =
+        "# top comment for build\n" ++
+        "build:\n" ++
+        "    echo build\n" ++
+        "\n" ++
+        "# comment then blank\n" ++
+        "\n" ++
+        "after-blank:\n" ++
+        "    echo x\n" ++
+        "\n" ++
+        "[private]\n" ++
+        "secret:\n" ++
+        "    echo s\n" ++
+        "\n" ++
+        "# doc for grouped\n" ++
+        "[group('deploy')]\n" ++
+        "[confirm]\n" ++
+        "deploy:\n" ++
+        "    echo d\n" ++
+        "\n" ++
+        "[doc('explicit doc')]\n" ++
+        "documented:\n" ++
+        "    echo doc\n" ++
+        "\n" ++
+        "_under:\n" ++
+        "    echo u\n" ++
+        "\n" ++
+        "@quietrec:\n" ++
+        "    echo q\n" ++
+        "\n" ++
+        "export FOO := \"bar\"\n" ++
+        "alias b := build\n" ++
+        "set shell := [\"bash\", \"-c\"]\n" ++
+        "mod submod\n" ++
+        "import \"other.just\"\n" ++
+        "\n" ++
+        "[unix]\n" ++
+        "plat:\n" ++
+        "    echo unix\n" ++
+        "[windows]\n" ++
+        "plat:\n" ++
+        "    echo win\n" ++
+        "\n" ++
+        "variadic +args:\n" ++
+        "    echo {{args}}\n" ++
+        "\n" ++
+        "with-colon-default host=\"0.0.0.0:8080\":\n" ++
+        "    echo {{host}}\n";
+    {
+        const file = try tmp_dir.dir.createFile("justfile", .{});
+        defer file.close();
+        try file.writeAll(justfile);
+    }
+
+    const cwd = std.fs.cwd();
+    const old_cwd = try cwd.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    var result = try parseJustfileDirect(std.testing.allocator, "justfile");
+    defer result.deinit();
+
+    // Build a name -> recipe map for order-independent assertions.
+    var by_name = std.StringHashMap(*const Recipe).init(std.testing.allocator);
+    defer by_name.deinit();
+    for (result.recipes) |*r| try by_name.put(r.origin.?.original_name, r);
+
+    // Every real recipe is present (assignments/set/mod/import are not recipes).
+    const expected = [_][]const u8{
+        "build",  "after-blank", "secret", "deploy",   "documented",
+        "_under", "quietrec",    "plat",   "variadic", "with-colon-default",
+    };
+    for (expected) |n| try std.testing.expect(by_name.contains(n));
+    try std.testing.expectEqual(@as(usize, expected.len), result.recipes.len);
+
+    // Non-recipes must not leak in.
+    try std.testing.expect(!by_name.contains("FOO"));
+    try std.testing.expect(!by_name.contains("b"));
+    try std.testing.expect(!by_name.contains("shell"));
+    try std.testing.expect(!by_name.contains("submod"));
+
+    // `[private]` and `_`-prefixed recipes are hidden; others visible.
+    try std.testing.expect(by_name.get("secret").?.hidden);
+    try std.testing.expect(by_name.get("_under").?.hidden);
+    try std.testing.expect(!by_name.get("build").?.hidden);
+    try std.testing.expect(!by_name.get("deploy").?.hidden);
+
+    // Description from a leading comment.
+    try std.testing.expectEqualStrings("top comment for build", by_name.get("build").?.description.?);
+    // Blank line breaks the comment association.
+    try std.testing.expect(by_name.get("after-blank").?.description == null);
+    // `[doc('…')]` provides the description.
+    try std.testing.expectEqualStrings("explicit doc", by_name.get("documented").?.description.?);
+    // Comment survives intervening attribute lines.
+    try std.testing.expectEqualStrings("doc for grouped", by_name.get("deploy").?.description.?);
+    // `[group('…')]` is captured.
+    try std.testing.expectEqualStrings("deploy", by_name.get("deploy").?.group.?);
+    // `@` quiet marker stripped; colon inside a default doesn't corrupt the name.
+    try std.testing.expectEqualStrings("just.quietrec", by_name.get("quietrec").?.name);
+    try std.testing.expectEqualStrings("just.with-colon-default", by_name.get("with-colon-default").?.name);
 }
 
 test "loadAndMergeExternalRecipes resolves external files relative to base_dir" {

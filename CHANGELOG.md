@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-07-07
+
+### Fixed
+
+- **Directives now work inside `file` and simple recipes (jake#21).** `@`-directives (`@needs`, `@cache`, `@if`, `@each`, `@ignore`, …) inside a `file` recipe body were passed to the shell verbatim, so `@needs echo` became a literal `needs` command and failed with `command not found`. Only `task` recipes parsed the full directive set; the command-body parser is now shared across all three recipe kinds, so directives behave identically everywhere. A plain `@cmd` (e.g. `@echo`) still means "silent command".
+- **Makefile parser no longer invents targets from recipe command lines (jake#22).** Tab-indented recipe body/continuation lines that happen to contain a colon (e.g. `curl -fsSL https://…` or `cd web && npm run og:check`) were mis-parsed as target definitions, producing bogus external recipes like `make.curl`, `make.https`, `make.cd`, and `make.@echo`. Indented lines are now correctly skipped — only column-0 target definitions are parsed.
+- **Justfile recipe names no longer include parameters.** `just --list` prints parameters and defaults inline (`dev path="."`, `web port="3333"`), and jake was capturing the whole line up to the `#` as the recipe name — producing unusable names like `just.dev path="."` for the majority of real justfiles (56% of a 124-file sample). Only the leading token is now taken as the name; submodule markers (`mymod ...`) are skipped. The `just --list` output parser was extracted into a unit-tested helper (`parseJustListOutput`).
+- **Direct Justfile parser rewritten to match `just`'s listing semantics.** The fallback used when `just` is not installed (or `just --list` fails) was a rough approximation that leaked parameters, dropped `@`-quiet recipes, showed `[private]` recipes, and mis-attributed descriptions. It now faithfully reproduces `just`'s visible recipe set: strips `@` quiet markers, hides `[private]` and `_`-prefixed recipes, reads descriptions from both leading `#` comments and `[doc('…')]`, captures `[group('…')]`, dedups platform-guarded variants (`[unix]`/`[windows]`), respects blank-line comment/attribute association, and excludes non-recipes (`:=` assignments, `set`, `mod`, `import`, `alias`). Attribute parsing respects quoted payloads so a keyword inside `[doc('… private …')]` isn't misread. Validated against a 124-file real-world corpus — the direct parser now produces an exact match with `just`'s own output on every file (zero malformed names, zero spurious or missing recipes).
+
+### Changed
+
+- **`file` recipes are hidden from `jake --list` / `-l` by default.** File targets are build artifacts rather than user-facing commands, so they no longer clutter the default listing (matching how private `_`/`@hidden` recipes are treated). Reveal them with `jake --list --all` (shown under `(hidden)`) or `jake --type file`. They remain runnable by name and usable as dependencies. `--short`, `--summary`, `--groups`, and `--json` listings follow the same default.
+
 ## [0.9.3] - 2026-07-04
 
 ### Added

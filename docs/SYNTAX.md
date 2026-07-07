@@ -113,6 +113,11 @@ file dist/app.js: src/**/*.ts
     tsc --outDir dist
 ```
 
+File recipes are build artifacts rather than user-facing commands, so they are
+**hidden from `jake --list` / `-l` by default**. Reveal them with `jake --list --all`
+(they appear under `(hidden)`) or filter to them explicitly with `jake --type file`.
+They remain runnable by name (`jake dist/app.js`) and usable as dependencies.
+
 **Scope Names:**
 
 - Keyword `file`: `keyword.control.recipe.jake`

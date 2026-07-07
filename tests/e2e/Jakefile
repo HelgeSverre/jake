@@ -453,28 +453,36 @@ task test-cli:
     {{jake}} -f fixtures/cli/filtering.jake --filter "b*" --list --short > {{out}} 2>/dev/null
     grep -qx "build" {{out}} && ! grep -q "test" {{out}} && ! grep -q "deploy" {{out}}
     echo "  --filter narrows recipes by glob ...................... PASS"
-    # --type filters by recipe kind
+    # file recipes are hidden from the default listing (build artifacts, not commands)
+    {{jake}} -f fixtures/cli/filtering.jake --short > {{out}} 2>/dev/null
+    ! grep -q "dist/app.js" {{out}}
+    echo "  file recipes hidden from default list ................. PASS"
+    # --all reveals hidden file recipes
+    {{jake}} -f fixtures/cli/filtering.jake --all --short > {{out}} 2>/dev/null
+    grep -qx "dist/app.js" {{out}}
+    echo "  --all reveals hidden file recipes .................... PASS"
+    # --type filters by recipe kind (explicit type=file reveals file recipes)
     {{jake}} -f fixtures/cli/filtering.jake --type file --summary > {{out}} 2>/dev/null
     grep -qx "dist/app.js" {{out}}
     echo "  --type filters file recipes ........................... PASS"
     {{jake}} -f fixtures/cli/filtering.jake --type simple --summary > {{out}} 2>/dev/null
     grep -qx "deploy" {{out}}
     echo "  --type filters simple recipes ......................... PASS"
-    # --groups lists sorted group names
+    # --groups lists sorted group names (assets group holds only a hidden file recipe)
     {{jake}} -f fixtures/cli/filtering.jake --groups > {{out}} 2>/dev/null
-    printf "assets\ndev\nprod\n" | diff -u - {{out}}
+    printf "dev\nprod\n" | diff -u - {{out}}
     echo "  --groups lists available groups ........................ PASS"
-    # --json emits recipe metadata for filtered listings
+    # --json emits recipe metadata for filtered listings (file recipe hidden by default)
     {{jake}} -f fixtures/cli/filtering.jake --json > {{out}} 2>/dev/null
-    python3 -c 'import json, pathlib; data=json.loads(pathlib.Path("{{out}}").read_text()); assert [r["name"] for r in data] == ["build", "test", "deploy", "dist/app.js"]; assert data[0]["kind"] == "task"; assert data[2]["kind"] == "simple"; assert data[3]["kind"] == "file"; assert data[0]["group"] == "dev"; assert data[0]["hidden"] is False'
+    python3 -c 'import json, pathlib; data=json.loads(pathlib.Path("{{out}}").read_text()); assert [r["name"] for r in data] == ["build", "test", "deploy"]; assert data[0]["kind"] == "task"; assert data[2]["kind"] == "simple"; assert data[0]["group"] == "dev"; assert data[0]["hidden"] is False'
     echo "  --json emits recipe metadata .......................... PASS"
     # --summary --json emits recipe names as a JSON array
     {{jake}} -f fixtures/cli/filtering.jake --summary --json > {{out}} 2>/dev/null
-    python3 -c 'import json, pathlib; data=json.loads(pathlib.Path("{{out}}").read_text()); assert data == ["build", "test", "deploy", "dist/app.js"]'
+    python3 -c 'import json, pathlib; data=json.loads(pathlib.Path("{{out}}").read_text()); assert data == ["build", "test", "deploy"]'
     echo "  --summary --json emits names array .................... PASS"
     # --groups --json emits group names as a JSON array
     {{jake}} -f fixtures/cli/filtering.jake --groups --json > {{out}} 2>/dev/null
-    python3 -c 'import json, pathlib; data=json.loads(pathlib.Path("{{out}}").read_text()); assert data == ["assets", "dev", "prod"]'
+    python3 -c 'import json, pathlib; data=json.loads(pathlib.Path("{{out}}").read_text()); assert data == ["dev", "prod"]'
     echo "  --groups --json emits group array ..................... PASS"
     # --type external works with JSON list output
     {{jake}} -f fixtures/external/nested/Jakefile --type external --json > {{out}} 2>/dev/null

@@ -1177,6 +1177,134 @@ pub const Parser = struct {
         }) catch return ParseError.OutOfMemory;
     }
 
+    /// Parse the indented command body shared by simple/task/file recipes.
+    /// Handles @pre/@post/@on_error hooks, @cd, @shell, command-level directives
+    /// (@needs, @cache, @if, @each, …), and plain commands (including `@cmd`
+    /// silent form). Consolidating this here means every recipe kind understands
+    /// the full directive set — previously only `task` recipes did, so a
+    /// `@needs` inside a `file` or simple recipe leaked to the shell (jake#21).
+    fn parseRecipeBody(
+        self: *Parser,
+        recipe_name: []const u8,
+        commands: *std.ArrayListUnmanaged(Recipe.Command),
+        pre_hooks: *std.ArrayListUnmanaged(Hook),
+        post_hooks: *std.ArrayListUnmanaged(Hook),
+        on_error_hooks: *std.ArrayListUnmanaged(Hook),
+        working_dir: *?[]const u8,
+        shell: *?[]const u8,
+    ) ParseError!void {
+        while (true) {
+            // Skip blank lines that appear between commands so recipe bodies
+            // can use vertical whitespace for grouping. Without this, a blank
+            // line silently terminated the recipe body (parser landed back at
+            // top level and the next indented line failed with "unexpected token").
+            while (self.current.tag == .newline) self.advance();
+            if (self.current.tag != .indent) break;
+            self.advance();
+
+            // Check for directive
+            var directive: ?Recipe.CommandDirective = null;
+            var at_pos: ?usize = null; // Track @ position for commands like @echo
+            if (self.current.tag == .at) {
+                at_pos = self.current.loc.start;
+                self.advance();
+
+                // Check for @pre / @post / @on_error hook
+                if (self.current.tag == .kw_pre or self.current.tag == .kw_post or self.current.tag == .kw_on_error) {
+                    const hook_kind: Hook.Kind = switch (self.current.tag) {
+                        .kw_pre => .pre,
+                        .kw_post => .post,
+                        .kw_on_error => .on_error,
+                        else => unreachable,
+                    };
+                    self.advance();
+
+                    const cmd_start = self.current.loc.start;
+                    while (self.current.tag != .newline and self.current.tag != .eof) {
+                        self.advance();
+                    }
+                    const cmd_end = self.current.loc.start;
+                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
+
+                    const hook = Hook{
+                        .command = command,
+                        .kind = hook_kind,
+                        .recipe_name = recipe_name,
+                    };
+
+                    switch (hook_kind) {
+                        .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+                        .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+                        .on_error => on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
+                    }
+
+                    if (self.current.tag == .newline) self.advance();
+                    continue;
+                }
+
+                // Check for @cd directive
+                if (self.current.tag == .kw_cd) {
+                    self.advance();
+                    const path_start = self.current.loc.start;
+                    while (self.current.tag != .newline and self.current.tag != .eof) {
+                        self.advance();
+                    }
+                    const path_end = self.current.loc.start;
+                    working_dir.* = stripQuotes(std.mem.trim(u8, self.source[path_start..path_end], " \t"));
+                    if (self.current.tag == .newline) self.advance();
+                    continue;
+                }
+
+                // Check for @shell directive
+                if (self.current.tag == .kw_shell) {
+                    self.advance();
+                    const shell_start = self.current.loc.start;
+                    while (self.current.tag != .newline and self.current.tag != .eof) {
+                        self.advance();
+                    }
+                    const shell_end = self.current.loc.start;
+                    shell.* = stripQuotes(std.mem.trim(u8, self.source[shell_start..shell_end], " \t"));
+                    if (self.current.tag == .newline) self.advance();
+                    continue;
+                }
+
+                // Other directives
+                directive = switch (self.current.tag) {
+                    .kw_cache => .cache,
+                    .kw_needs => .needs,
+                    .kw_confirm => .confirm,
+                    .kw_watch => .watch,
+                    .kw_if => .@"if",
+                    .kw_elif => .elif,
+                    .kw_else => .@"else",
+                    .kw_end => .end,
+                    .kw_each => .each,
+                    .kw_ignore => .ignore,
+                    .kw_launch => .launch,
+                    else => null, // Unknown directive
+                };
+            }
+
+            // For commands with @ prefix but no recognized directive (like @echo),
+            // include the @ in the command line
+            const cmd_start = if (directive == null and at_pos != null)
+                at_pos.?
+            else
+                self.current.loc.start;
+            while (self.current.tag != .newline and self.current.tag != .eof) {
+                self.advance();
+            }
+            const cmd_end = self.current.loc.start;
+
+            commands.append(self.allocator, .{
+                .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
+                .directive = directive,
+            }) catch return ParseError.OutOfMemory;
+
+            if (self.current.tag == .newline) self.advance();
+        }
+    }
+
     fn parseSimpleRecipe(self: *Parser, name: []const u8, name_loc: Token.Loc) ParseError!void {
         _ = try self.expectWithMessage(.colon, "expected ':' after recipe name");
 
@@ -1218,100 +1346,7 @@ pub const Parser = struct {
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
-        while (true) {
-            // Skip blank lines that appear between commands so recipe bodies
-            // can use vertical whitespace for grouping. Without this, a blank
-            // line silently terminated the recipe body (parser landed back at
-            // top level and the next indented line failed with "unexpected token").
-            while (self.current.tag == .newline) self.advance();
-            if (self.current.tag != .indent) break;
-            self.advance();
-
-            // Check for @pre / @post / @on_error hook directive
-            if (self.current.tag == .at) {
-                const at_pos = self.current.loc.start;
-                self.advance();
-
-                if (self.current.tag == .kw_pre or self.current.tag == .kw_post or self.current.tag == .kw_on_error) {
-                    const hook_kind: Hook.Kind = switch (self.current.tag) {
-                        .kw_pre => .pre,
-                        .kw_post => .post,
-                        .kw_on_error => .on_error,
-                        else => unreachable,
-                    };
-                    self.advance();
-
-                    const cmd_start = self.current.loc.start;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const cmd_end = self.current.loc.start;
-                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
-
-                    const hook = Hook{
-                        .command = command,
-                        .kind = hook_kind,
-                        .recipe_name = name,
-                    };
-
-                    switch (hook_kind) {
-                        .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                        .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                        .on_error => on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                    }
-
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                } else if (self.current.tag == .kw_cd) {
-                    // @cd directive - set working directory for recipe
-                    self.advance();
-                    const path_start = self.current.loc.start;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const path_end = self.current.loc.start;
-                    working_dir = stripQuotes(std.mem.trim(u8, self.source[path_start..path_end], " \t"));
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                } else if (self.current.tag == .kw_shell) {
-                    // @shell directive - set shell for recipe
-                    self.advance();
-                    const shell_start = self.current.loc.start;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const shell_end = self.current.loc.start;
-                    shell = stripQuotes(std.mem.trim(u8, self.source[shell_start..shell_end], " \t"));
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                } else {
-                    // Not a hook, treat as regular command starting with @
-                    const cmd_start = at_pos;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const cmd_end = self.current.loc.start;
-                    commands.append(self.allocator, .{
-                        .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
-                        .directive = null,
-                    }) catch return ParseError.OutOfMemory;
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                }
-            }
-
-            const cmd_start = self.current.loc.start;
-            // Consume until newline
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            const cmd_end = self.current.loc.start;
-            commands.append(self.allocator, .{
-                .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
-                .directive = null,
-            }) catch return ParseError.OutOfMemory;
-            if (self.current.tag == .newline) self.advance();
-        }
+        try self.parseRecipeBody(name, &commands, &pre_hooks, &post_hooks, &on_error_hooks, &working_dir, &shell);
 
         try self.finalizeRecipe(.{
             .name = name,
@@ -1396,116 +1431,7 @@ pub const Parser = struct {
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
-        while (true) {
-            // Skip blank lines that appear between commands so recipe bodies
-            // can use vertical whitespace for grouping. Without this, a blank
-            // line silently terminated the recipe body (parser landed back at
-            // top level and the next indented line failed with "unexpected token").
-            while (self.current.tag == .newline) self.advance();
-            if (self.current.tag != .indent) break;
-            self.advance();
-
-            // Check for directive
-            var directive: ?Recipe.CommandDirective = null;
-            var at_pos: ?usize = null; // Track @ position for commands like @echo
-            if (self.current.tag == .at) {
-                at_pos = self.current.loc.start;
-                self.advance();
-
-                // Check for @pre / @post / @on_error hook
-                if (self.current.tag == .kw_pre or self.current.tag == .kw_post or self.current.tag == .kw_on_error) {
-                    const hook_kind: Hook.Kind = switch (self.current.tag) {
-                        .kw_pre => .pre,
-                        .kw_post => .post,
-                        .kw_on_error => .on_error,
-                        else => unreachable,
-                    };
-                    self.advance();
-
-                    const cmd_start = self.current.loc.start;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const cmd_end = self.current.loc.start;
-                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
-
-                    const hook = Hook{
-                        .command = command,
-                        .kind = hook_kind,
-                        .recipe_name = name,
-                    };
-
-                    switch (hook_kind) {
-                        .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                        .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                        .on_error => on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                    }
-
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                }
-
-                // Check for @cd directive
-                if (self.current.tag == .kw_cd) {
-                    self.advance();
-                    const path_start = self.current.loc.start;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const path_end = self.current.loc.start;
-                    working_dir = stripQuotes(std.mem.trim(u8, self.source[path_start..path_end], " \t"));
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                }
-
-                // Check for @shell directive
-                if (self.current.tag == .kw_shell) {
-                    self.advance();
-                    const shell_start = self.current.loc.start;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const shell_end = self.current.loc.start;
-                    shell = stripQuotes(std.mem.trim(u8, self.source[shell_start..shell_end], " \t"));
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                }
-
-                // Other directives
-                directive = switch (self.current.tag) {
-                    .kw_cache => .cache,
-                    .kw_needs => .needs,
-                    .kw_confirm => .confirm,
-                    .kw_watch => .watch,
-                    .kw_if => .@"if",
-                    .kw_elif => .elif,
-                    .kw_else => .@"else",
-                    .kw_end => .end,
-                    .kw_each => .each,
-                    .kw_ignore => .ignore,
-                    .kw_launch => .launch,
-                    else => null, // Unknown directive
-                };
-            }
-
-            // For commands with @ prefix but no recognized directive (like @echo),
-            // include the @ in the command line
-            const cmd_start = if (directive == null and at_pos != null)
-                at_pos.?
-            else
-                self.current.loc.start;
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            const cmd_end = self.current.loc.start;
-
-            commands.append(self.allocator, .{
-                .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
-                .directive = directive,
-            }) catch return ParseError.OutOfMemory;
-
-            if (self.current.tag == .newline) self.advance();
-        }
+        try self.parseRecipeBody(name, &commands, &pre_hooks, &post_hooks, &on_error_hooks, &working_dir, &shell);
 
         try self.finalizeRecipe(.{
             .name = name,
@@ -1562,99 +1488,7 @@ pub const Parser = struct {
         var working_dir: ?[]const u8 = null;
         var shell: ?[]const u8 = null;
 
-        while (true) {
-            // Skip blank lines that appear between commands so recipe bodies
-            // can use vertical whitespace for grouping. Without this, a blank
-            // line silently terminated the recipe body (parser landed back at
-            // top level and the next indented line failed with "unexpected token").
-            while (self.current.tag == .newline) self.advance();
-            if (self.current.tag != .indent) break;
-            self.advance();
-
-            // Check for @pre / @post / @on_error hook directive
-            if (self.current.tag == .at) {
-                const at_pos = self.current.loc.start;
-                self.advance();
-
-                if (self.current.tag == .kw_pre or self.current.tag == .kw_post or self.current.tag == .kw_on_error) {
-                    const hook_kind: Hook.Kind = switch (self.current.tag) {
-                        .kw_pre => .pre,
-                        .kw_post => .post,
-                        .kw_on_error => .on_error,
-                        else => unreachable,
-                    };
-                    self.advance();
-
-                    const cmd_start = self.current.loc.start;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const cmd_end = self.current.loc.start;
-                    const command = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r");
-
-                    const hook = Hook{
-                        .command = command,
-                        .kind = hook_kind,
-                        .recipe_name = output,
-                    };
-
-                    switch (hook_kind) {
-                        .pre => pre_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                        .post => post_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                        .on_error => on_error_hooks.append(self.allocator, hook) catch return ParseError.OutOfMemory,
-                    }
-
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                } else if (self.current.tag == .kw_cd) {
-                    // @cd directive - set working directory for recipe
-                    self.advance();
-                    const path_start = self.current.loc.start;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const path_end = self.current.loc.start;
-                    working_dir = stripQuotes(std.mem.trim(u8, self.source[path_start..path_end], " \t"));
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                } else if (self.current.tag == .kw_shell) {
-                    // @shell directive - set shell for recipe
-                    self.advance();
-                    const shell_start = self.current.loc.start;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const shell_end = self.current.loc.start;
-                    shell = stripQuotes(std.mem.trim(u8, self.source[shell_start..shell_end], " \t"));
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                } else {
-                    // Not a hook, treat as regular command starting with @
-                    const cmd_start = at_pos;
-                    while (self.current.tag != .newline and self.current.tag != .eof) {
-                        self.advance();
-                    }
-                    const cmd_end = self.current.loc.start;
-                    commands.append(self.allocator, .{
-                        .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
-                        .directive = null,
-                    }) catch return ParseError.OutOfMemory;
-                    if (self.current.tag == .newline) self.advance();
-                    continue;
-                }
-            }
-
-            const cmd_start = self.current.loc.start;
-            while (self.current.tag != .newline and self.current.tag != .eof) {
-                self.advance();
-            }
-            const cmd_end = self.current.loc.start;
-            commands.append(self.allocator, .{
-                .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
-                .directive = null,
-            }) catch return ParseError.OutOfMemory;
-            if (self.current.tag == .newline) self.advance();
-        }
+        try self.parseRecipeBody(output, &commands, &pre_hooks, &post_hooks, &on_error_hooks, &working_dir, &shell);
 
         // Use output as both recipe name and output path.
         try self.finalizeRecipe(.{
@@ -2406,6 +2240,62 @@ test "parse file recipe with multiple deps" {
     try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].file_deps.len);
     try std.testing.expectEqualStrings("src/**/*.ts", jakefile.recipes[0].file_deps[0]);
     try std.testing.expectEqualStrings("lib/*.ts", jakefile.recipes[0].file_deps[1]);
+}
+
+test "file recipe body parses command-level directives (jake#21)" {
+    // @needs (and other directives) inside a file recipe body must be parsed
+    // as directives, not leaked to the shell as a literal `needs` command.
+    const source =
+        \\file out.txt: in.txt
+        \\    @needs echo
+        \\    @ignore rm -f stale
+        \\    echo hi > out.txt
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(Recipe.Kind.file, recipe.kind);
+    try std.testing.expectEqual(@as(usize, 3), recipe.commands.len);
+    try std.testing.expectEqual(Recipe.CommandDirective.needs, recipe.commands[0].directive.?);
+    try std.testing.expectEqualStrings("needs echo", recipe.commands[0].line);
+    try std.testing.expectEqual(Recipe.CommandDirective.ignore, recipe.commands[1].directive.?);
+    try std.testing.expectEqual(@as(?Recipe.CommandDirective, null), recipe.commands[2].directive);
+}
+
+test "simple recipe body parses command-level directives (jake#21)" {
+    const source =
+        \\build:
+        \\    @needs cc
+        \\    cc -o app main.c
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(Recipe.Kind.simple, recipe.kind);
+    try std.testing.expectEqual(Recipe.CommandDirective.needs, recipe.commands[0].directive.?);
+}
+
+test "file recipe still treats unknown @cmd as silent command" {
+    // `@echo` is not a directive keyword — the @ means "silent" and the whole
+    // line (including the @) is preserved as the command.
+    const source =
+        \\file out.txt: in.txt
+        \\    @echo building
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(@as(?Recipe.CommandDirective, null), recipe.commands[0].directive);
+    try std.testing.expectEqualStrings("@echo building", recipe.commands[0].line);
 }
 
 // --- Variable Tests ---

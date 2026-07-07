@@ -2366,10 +2366,24 @@ pub const Executor = struct {
         };
     }
 
+    /// Whether a recipe is hidden from the default listing. Private recipes
+    /// (`@hidden` or leading underscore) are always hidden; `file` recipes are
+    /// build artifacts rather than user-facing commands, so they're hidden too
+    /// unless the user explicitly asks for them via a `type=file` filter.
+    /// `--show-all` reveals both, surfacing them in the "(hidden)" section.
+    fn hiddenFromList(recipe: *const Recipe, options: ListOptions) bool {
+        if (recipe.isPrivate()) return true;
+        if (recipe.kind == .file) {
+            const wants_file = if (options.recipe_type) |t| std.mem.eql(u8, t, "file") else false;
+            return !wants_file;
+        }
+        return false;
+    }
+
     fn matchesListOptions(_: *Executor, recipe: *const Recipe, options: ListOptions) bool {
         const external_kind = getExternalKind(recipe);
 
-        if (!options.show_all and recipe.isPrivate()) return false;
+        if (!options.show_all and hiddenFromList(recipe, options)) return false;
 
         if (external_kind) |kind| {
             if (options.hide_externals) return false;
@@ -2535,7 +2549,7 @@ pub const Executor = struct {
                 continue;
             }
 
-            if (recipe.isPrivate()) {
+            if (hiddenFromList(recipe, options)) {
                 try hidden.append(self.allocator, recipe);
                 continue;
             }
@@ -3615,6 +3629,46 @@ test "private recipes are hidden from list but still executable" {
     try std.testing.expect(executor.executed.contains("deploy"));
 }
 
+test "file recipes are hidden from default listing but revealed by --all / --type file" {
+    const source =
+        \\task build:
+        \\    echo build
+        \\
+        \\file dist/app.js: src/app.ts
+        \\    echo bundle
+    ;
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    // Default listing: the file recipe is hidden, only the task shows.
+    {
+        var listed = try executor.collectListedRecipes(.{});
+        defer listed.deinit(std.testing.allocator);
+        try std.testing.expectEqual(@as(usize, 1), listed.items.len);
+        try std.testing.expectEqualStrings("build", listed.items[0].name);
+    }
+
+    // --all reveals the file recipe alongside the task.
+    {
+        var listed = try executor.collectListedRecipes(.{ .show_all = true });
+        defer listed.deinit(std.testing.allocator);
+        try std.testing.expectEqual(@as(usize, 2), listed.items.len);
+    }
+
+    // --type file surfaces the file recipe explicitly (and only it).
+    {
+        var listed = try executor.collectListedRecipes(.{ .recipe_type = "file" });
+        defer listed.deinit(std.testing.allocator);
+        try std.testing.expectEqual(@as(usize, 1), listed.items.len);
+        try std.testing.expectEqualStrings("dist/app.js", listed.items[0].name);
+    }
+}
+
 test "countHiddenRecipes counts private recipes" {
     const source =
         \\task build:
@@ -3797,6 +3851,72 @@ test "countHiddenRecipes includes imported private recipes via origin" {
 
     // Should count 2 private recipes: lib._helper and _local_private
     try std.testing.expectEqual(@as(usize, 2), hidden_count);
+}
+
+test "resolveRootedPath rebases relative paths onto a rooted module's base_dir" {
+    // Path joining below uses the host separator; pin to POSIX to keep the
+    // expected strings stable (the e2e suite covers the real filesystem).
+    if (@import("builtin").os.tag == .windows) return;
+
+    const source = "task noop:\n    echo hi\n";
+    var lex = @import("lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+
+    var recipe = Recipe{
+        .name = "sub.built.txt",
+        .loc = .{ .start = 0, .end = 0, .line = 1, .column = 1 },
+        .kind = .file,
+        .dependencies = &.{},
+        .file_deps = &.{},
+        .output = "built.txt",
+        .params = &.{},
+        .commands = &.{},
+        .pre_hooks = &.{},
+        .post_hooks = &.{},
+        .on_error_hooks = &.{},
+        .doc_comment = null,
+        .is_default = false,
+        .aliases = &.{},
+        .group = null,
+        .description = null,
+        .shell = null,
+        .working_dir = null,
+        .only_os = &.{},
+        .quiet = false,
+        .hidden = false,
+        .needs = &.{},
+        .timeout_seconds = null,
+        .origin = .{
+            .original_name = "built.txt",
+            .import_prefix = "sub",
+            .source_file = "sub/Jakefile",
+            .base_dir = "sub",
+        },
+    };
+
+    // Relative path from a rooted module is joined under base_dir (owned).
+    const rel = try executor.resolveRootedPath(&recipe, "built.txt");
+    defer if (rel.owned) std.testing.allocator.free(rel.path);
+    try std.testing.expect(rel.owned);
+    try std.testing.expectEqualStrings("sub/built.txt", rel.path);
+
+    // Absolute paths are never rebased.
+    const abs = try executor.resolveRootedPath(&recipe, "/etc/hosts");
+    defer if (abs.owned) std.testing.allocator.free(abs.path);
+    try std.testing.expect(!abs.owned);
+    try std.testing.expectEqualStrings("/etc/hosts", abs.path);
+
+    // A non-rooted recipe (no base_dir) is returned unchanged.
+    recipe.origin = null;
+    const plain = try executor.resolveRootedPath(&recipe, "built.txt");
+    defer if (plain.owned) std.testing.allocator.free(plain.path);
+    try std.testing.expect(!plain.owned);
+    try std.testing.expectEqualStrings("built.txt", plain.path);
 }
 
 test "Recipe.isPrivate detects private via origin.original_name" {
