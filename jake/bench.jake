@@ -11,7 +11,7 @@ task bench:
     @needs zig
     @needs hyperfine "brew install hyperfine"
     @pre echo "Building release binary..."
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
     @post echo "Benchmark complete!"
     hyperfine --warmup {{BENCH_WARMUP}} \
         './zig-out/bin/jake -l' \
@@ -24,7 +24,7 @@ task bench:
 task bench-startup:
     @needs zig
     @needs hyperfine "brew install hyperfine"
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
     hyperfine --warmup 10 --runs {{BENCH_RUNS}} './zig-out/bin/jake --version'
 
 @desc "Benchmark parsing with different file sizes"
@@ -34,7 +34,7 @@ task bench-parse:
     @needs zig python3
     @needs hyperfine "brew install hyperfine"
     @pre echo "Generating test files..."
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
     @each 10 50 100 500
         python3 -c "for i in range({{item}}): print(f'task t{i}:\n    echo {i}\n')" > /tmp/jake-{{item}}.jake
     @end
@@ -50,7 +50,7 @@ task bench-parse:
 task bench-parallel:
     @needs zig
     @needs hyperfine "brew install hyperfine"
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
     hyperfine --warmup 2 \
         './zig-out/bin/jake -j1 -n all' \
         './zig-out/bin/jake -j2 -n all' \
@@ -63,7 +63,7 @@ task profile:
     @needs zig
     @needs samply "brew install samply"
     @pre echo "Building with debug symbols..."
-    zig build -Doptimize=ReleaseSafe
+    ./scripts/zig build -Doptimize=ReleaseSafe
     @post echo "Close the browser tab to exit samply"
     samply record ./zig-out/bin/jake -l
 
@@ -73,7 +73,7 @@ task profile:
 task leaks:
     @needs zig
     @pre echo "Building release-safe binary..."
-    zig build -Doptimize=ReleaseSafe
+    ./scripts/zig build -Doptimize=ReleaseSafe
     @post echo "Leak check complete!"
     leaks --atExit -- ./zig-out/bin/jake -l
 
@@ -84,28 +84,28 @@ task leaks:
 @timeout 3m
 task _size-debug:
     @needs zig
-    zig build -Doptimize=Debug
+    ./scripts/zig build -Doptimize=Debug
     cp zig-out/bin/jake /tmp/jake-debug
 
 @group bench
 @timeout 3m
 task _size-releasesafe:
     @needs zig
-    zig build -Doptimize=ReleaseSafe
+    ./scripts/zig build -Doptimize=ReleaseSafe
     cp zig-out/bin/jake /tmp/jake-releasesafe
 
 @group bench
 @timeout 3m
 task _size-releasefast:
     @needs zig
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
     cp zig-out/bin/jake /tmp/jake-releasefast
 
 @group bench
 @timeout 3m
 task _size-releasesmall:
     @needs zig
-    zig build -Doptimize=ReleaseSmall
+    ./scripts/zig build -Doptimize=ReleaseSmall
     cp zig-out/bin/jake /tmp/jake-releasesmall
 
 @desc "Show binary sizes for all optimization levels (use -j4 for parallel)"
@@ -121,7 +121,7 @@ task sizes: [_size-debug, _size-releasesafe, _size-releasefast, _size-releasesma
 @platform macos
 task memory:
     @needs zig
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
     /usr/bin/time -l ./zig-out/bin/jake -l 2>&1 | grep -E "maximum resident|real"
 
 @desc "Run all benchmarks"

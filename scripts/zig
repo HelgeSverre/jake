@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Resolve a Jake-compatible Zig toolchain and exec it with the given args.
+#
+# Jake's build.zig and sources target Zig 0.15.x (>= 0.15.2). Zig 0.16 renamed
+# large parts of std (the process-args and Writer/Reader I/O layers), so a 0.16
+# `zig` on PATH breaks `zig build`. This shim lets the project's own recipes
+# (build, test, install, e2e, …) "just work" regardless of what `zig` points at:
+# it picks the first compatible toolchain it can find and execs it transparently.
+#
+# Resolution order:
+#   1. $ZIG               — explicit override always wins
+#   2. `zig` on PATH      — used only if it reports 0.15.x
+#   3. `zig-0.15` on PATH
+#   4. Homebrew zig@0.15  — `brew --prefix` or the standard opt/ locations
+# Exits with an actionable message if nothing compatible is found.
+set -euo pipefail
+
+# Accept 0.15.x (the range build.zig + sources are written against).
+is_compatible() {
+    local bin="$1"
+    [ -x "$bin" ] || command -v "$bin" >/dev/null 2>&1 || return 1
+    local v
+    v="$("$bin" version 2>/dev/null)" || return 1
+    case "$v" in
+        0.15.*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+resolve_zig() {
+    # 1. Explicit override.
+    if [ -n "${ZIG:-}" ]; then
+        printf '%s\n' "$ZIG"
+        return 0
+    fi
+
+    # 2. Default `zig`, only if it's a compatible version.
+    if command -v zig >/dev/null 2>&1 && is_compatible zig; then
+        command -v zig
+        return 0
+    fi
+
+    # 3. Versioned binary on PATH.
+    if command -v zig-0.15 >/dev/null 2>&1 && is_compatible zig-0.15; then
+        command -v zig-0.15
+        return 0
+    fi
+
+    # 4. Homebrew keg (macOS/Linux): `zig@0.15`.
+    local candidate
+    if command -v brew >/dev/null 2>&1; then
+        local prefix
+        if prefix="$(brew --prefix zig@0.15 2>/dev/null)" && [ -n "$prefix" ]; then
+            candidate="$prefix/bin/zig"
+            if is_compatible "$candidate"; then
+                printf '%s\n' "$candidate"
+                return 0
+            fi
+        fi
+    fi
+    for candidate in \
+        /opt/homebrew/opt/zig@0.15/bin/zig \
+        /usr/local/opt/zig@0.15/bin/zig \
+        /home/linuxbrew/.linuxbrew/opt/zig@0.15/bin/zig; do
+        if is_compatible "$candidate"; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+if ! ZIG_BIN="$(resolve_zig)"; then
+    cat >&2 <<'EOF'
+error: no Jake-compatible Zig toolchain (0.15.x) found.
+
+Jake targets Zig 0.15.x; a newer `zig` on your PATH (e.g. 0.16) can't build it.
+Fix by installing a 0.15 toolchain, then re-run:
+
+  # Homebrew (macOS/Linux)
+  brew install zig@0.15
+
+  # or point Jake at any 0.15 binary
+  ZIG=/path/to/zig-0.15 jake build
+
+EOF
+    exit 1
+fi
+
+exec "$ZIG_BIN" "$@"

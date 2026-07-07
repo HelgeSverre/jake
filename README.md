@@ -70,11 +70,16 @@ Upgrade later with `brew upgrade helgesverre/tap/jake`. Covers macOS and Linux o
 ### From source
 
 ```shell
-# Requires Zig 0.15.2+
+# Requires Zig 0.15.x (0.15.2+). Zig 0.16 is not yet supported.
 git clone https://github.com/HelgeSverre/jake.git
 cd jake
 zig build -Doptimize=ReleaseFast --prefix ~/.local
 ```
+
+If you build Jake with its own Jakefile (`jake build`, `jake install`, …), the
+recipes call a `scripts/zig` shim that auto-selects a compatible 0.15.x
+toolchain even when a newer `zig` is first on your `PATH`. Point it at a
+specific binary with `ZIG=/path/to/zig-0.15 jake build` if needed.
 
 Or find prebuilt binaries on the [Releases](https://github.com/HelgeSverre/jake/releases) page.
 

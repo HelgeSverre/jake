@@ -7,34 +7,34 @@ task build:
     @needs zig
     @cache src/*.zig build.zig build.zig.zon
     @pre echo "Building jake..."
-    zig build
+    ./scripts/zig build
     @post echo "Build successful: zig-out/bin/jake"
 
 @group build
 @desc "Optimized release build"
 task build-release:
     @needs zig
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
 
 @group test
 @desc "Run all tests"
 task test:
     @needs zig
     @pre echo "Running tests..."
-    zig build test --summary all
+    ./scripts/zig build test --summary all
     @post echo "All tests passed!"
 
 @group test
 @desc "Check code formatting"
 task lint:
     @needs zig
-    zig fmt --check src/
+    ./scripts/zig fmt --check src/
 
 @group test
 @desc "Auto-format source code"
 task format:
     @needs zig bunx
-    zig fmt src/
+    ./scripts/zig fmt src/
     bunx prettier --write "**/*.md"
 
 @group build
@@ -60,7 +60,7 @@ task dev:
     @needs zig
     @watch src/*.zig build.zig Jakefile jake/*.jake
     echo "Use 'jake dev -w' to auto-rebuild on source changes"
-    zig build
+    ./scripts/zig build
 
 @group test
 @desc "Run end-to-end tests"
@@ -75,7 +75,7 @@ task coverage:
     @pre echo "Running tests with coverage..."
     # Build tests first, then find and run the test binary with kcov
     # (Zig 0.15+ removed --test-cmd flag, so we run kcov directly)
-    zig build test 2>/dev/null || true
+    ./scripts/zig build test 2>/dev/null || true
     rm -rf coverage-out
     kcov --include-pattern={{absolute_path("src")}}/ coverage-out $(find .zig-cache/o -name "test" -type f -perm +111 -size +2M 2>/dev/null | xargs ls -t | head -1)
     @post echo "Coverage report: coverage-out/index.html"
@@ -101,7 +101,7 @@ task coverage-clean:
 @desc "Generate and serve library documentation"
 task docs:
     @needs zig, npx
-    zig build docs
+    ./scripts/zig build docs
     echo "Docs generated at zig-out/docs/index.html"
     echo "Starting local server..."
     npx serve zig-out/docs

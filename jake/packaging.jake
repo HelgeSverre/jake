@@ -9,7 +9,7 @@ task binary:
     @needs zig
     @cache src/*.zig build.zig build.zig.zon
     @pre echo "Building release binary..."
-    zig build -Doptimize=ReleaseSafe
+    ./scripts/zig build -Doptimize=ReleaseSafe
     @post echo "Binary: zig-out/bin/jake"
 
 # Individual platform build tasks for parallel execution
@@ -20,7 +20,7 @@ task binary:
 task _pkg-x86_64-linux:
     @needs zig
     mkdir -p dist
-    zig build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux
+    ./scripts/zig build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux
     cp zig-out/bin/jake dist/jake-x86_64-linux
 
 @group packaging
@@ -28,7 +28,7 @@ task _pkg-x86_64-linux:
 task _pkg-aarch64-linux:
     @needs zig
     mkdir -p dist
-    zig build -Doptimize=ReleaseSafe -Dtarget=aarch64-linux
+    ./scripts/zig build -Doptimize=ReleaseSafe -Dtarget=aarch64-linux
     cp zig-out/bin/jake dist/jake-aarch64-linux
 
 @group packaging
@@ -36,7 +36,7 @@ task _pkg-aarch64-linux:
 task _pkg-x86_64-macos:
     @needs zig
     mkdir -p dist
-    zig build -Doptimize=ReleaseSafe -Dtarget=x86_64-macos
+    ./scripts/zig build -Doptimize=ReleaseSafe -Dtarget=x86_64-macos
     cp zig-out/bin/jake dist/jake-x86_64-macos
 
 @group packaging
@@ -44,7 +44,7 @@ task _pkg-x86_64-macos:
 task _pkg-aarch64-macos:
     @needs zig
     mkdir -p dist
-    zig build -Doptimize=ReleaseSafe -Dtarget=aarch64-macos
+    ./scripts/zig build -Doptimize=ReleaseSafe -Dtarget=aarch64-macos
     cp zig-out/bin/jake dist/jake-aarch64-macos
 
 @desc "Build release binaries for all platforms (use -j4 for parallel)"

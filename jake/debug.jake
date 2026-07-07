@@ -6,7 +6,7 @@ version = "0.3.0"
 @desc "Run jake with verbose tracing"
 task trace:
     @needs zig
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
     ./zig-out/bin/jake -v {{$1}}
 
 @group debug

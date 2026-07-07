@@ -8,7 +8,7 @@ targets = "x86_64-linux aarch64-linux x86_64-macos aarch64-macos x86_64-windows"
 task build:
     @needs zig
     @cache src/*.zig build.zig build.zig.zon
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
     echo "Release build complete"
 
 # Individual platform build tasks for parallel execution
@@ -20,7 +20,7 @@ task build:
 task _build-x86_64-linux:
     @needs zig
     mkdir -p dist
-    zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
+    ./scripts/zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
     cp zig-out/bin/jake dist/jake-x86_64-linux
 
 @group release
@@ -29,7 +29,7 @@ task _build-x86_64-linux:
 task _build-aarch64-linux:
     @needs zig
     mkdir -p dist
-    zig build -Doptimize=ReleaseFast -Dtarget=aarch64-linux
+    ./scripts/zig build -Doptimize=ReleaseFast -Dtarget=aarch64-linux
     cp zig-out/bin/jake dist/jake-aarch64-linux
 
 @group release
@@ -38,7 +38,7 @@ task _build-aarch64-linux:
 task _build-x86_64-macos:
     @needs zig
     mkdir -p dist
-    zig build -Doptimize=ReleaseFast -Dtarget=x86_64-macos
+    ./scripts/zig build -Doptimize=ReleaseFast -Dtarget=x86_64-macos
     cp zig-out/bin/jake dist/jake-x86_64-macos
 
 @group release
@@ -47,7 +47,7 @@ task _build-x86_64-macos:
 task _build-aarch64-macos:
     @needs zig
     mkdir -p dist
-    zig build -Doptimize=ReleaseFast -Dtarget=aarch64-macos
+    ./scripts/zig build -Doptimize=ReleaseFast -Dtarget=aarch64-macos
     cp zig-out/bin/jake dist/jake-aarch64-macos
 
 @group release
@@ -56,7 +56,7 @@ task _build-aarch64-macos:
 task _build-x86_64-windows:
     @needs zig
     mkdir -p dist
-    zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
+    ./scripts/zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
     cp zig-out/bin/jake.exe dist/jake-x86_64-windows.exe
 
 @group release
@@ -72,7 +72,7 @@ task all: [_build-x86_64-linux, _build-aarch64-linux, _build-x86_64-macos, _buil
 task linux:
     @needs zig
     echo "Building native Linux release..."
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
 
 @group release
 @platform macos
@@ -80,7 +80,7 @@ task linux:
 task macos:
     @needs zig
     echo "Building native macOS release..."
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
 
 @group release
 @desc "Generate SHA256 checksums for all builds"

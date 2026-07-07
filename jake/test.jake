@@ -8,7 +8,7 @@ task fuzz:
     @needs zig
     @pre echo "Running fuzz tests with coverage guidance..."
     @pre echo "Web UI: http://127.0.0.1:{{JAKE_FUZZ_PORT}}"
-    zig build fuzz --fuzz --webui=127.0.0.1:{{JAKE_FUZZ_PORT}} -Doptimize=ReleaseSafe -j4
+    ./scripts/zig build fuzz --fuzz --webui=127.0.0.1:{{JAKE_FUZZ_PORT}} -Doptimize=ReleaseSafe -j4
 
 @group test
 @desc "Test shell completions (bash, zsh, fish)"

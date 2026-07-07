@@ -4,7 +4,7 @@ Thank you for your interest in contributing to Jake!
 
 ## Development Setup
 
-1. Install [Zig](https://ziglang.org/) v0.15.2 or later
+1. Install [Zig](https://ziglang.org/) v0.15.x (v0.15.2 or later; Zig 0.16 is not yet supported)
 2. Clone the repository:
    ```bash
    git clone https://github.com/HelgeSverre/jake.git
@@ -21,6 +21,11 @@ Thank you for your interest in contributing to Jake!
    ```bash
    zig build && zig build test
    ```
+
+   `jake ci` (and the other build recipes) call the `scripts/zig` shim, which
+   auto-selects a compatible 0.15.x toolchain even if a newer `zig` is first on
+   your `PATH`. When invoking `zig` directly, make sure it's 0.15.x, or set
+   `ZIG=/path/to/zig-0.15`.
 
 ## Project Structure
 

@@ -13,7 +13,7 @@
 task bench-internal:
     @needs zig
     @pre echo "Running internal benchmarks..."
-    zig build bench -Doptimize=ReleaseFast
+    ./scripts/zig build bench -Doptimize=ReleaseFast
     @post echo "Benchmarks complete!"
 
 @desc "Build benchmark binary without running"
@@ -21,7 +21,7 @@ task bench-internal:
 task bench-build:
     @needs zig
     @cache src/*.zig src/bench/*.zig build.zig
-    zig build bench-build -Doptimize=ReleaseFast
+    ./scripts/zig build bench-build -Doptimize=ReleaseFast
     echo "Benchmark binary: zig-out/bin/jake-bench"
 
 @desc "Run benchmarks with JSON output for CI"
@@ -29,7 +29,7 @@ task bench-build:
 @timeout 5m
 task bench-json:
     @needs zig
-    zig build bench-build -Doptimize=ReleaseFast
+    ./scripts/zig build bench-build -Doptimize=ReleaseFast
     ./zig-out/bin/jake-bench 2>&1 | tee benchmark-results.txt
 
 # ============================================================================
@@ -40,7 +40,7 @@ task bench-json:
 @group perf
 task tracy-build:
     @needs zig
-    zig build -Doptimize=ReleaseFast -Dtracy=true
+    ./scripts/zig build -Doptimize=ReleaseFast -Dtracy=true
 
 @desc "Run jake with Tracy profiling"
 @group perf
@@ -70,7 +70,7 @@ task _install-tracy:
 task fuzz:
     @needs zig
     @pre echo "Running coverage-guided fuzz tests..."
-    zig build fuzz --fuzz
+    ./scripts/zig build fuzz --fuzz
     @post echo "Fuzzing complete!"
 
 # ============================================================================
@@ -82,7 +82,7 @@ task fuzz:
 task profile:
     @needs samply "Install samply: brew install samply (macOS) or cargo install samply"
     @needs zig
-    zig build -Doptimize=ReleaseFast
+    ./scripts/zig build -Doptimize=ReleaseFast
     @pre echo "Starting samply profiler..."
     samply record ./zig-out/bin/jake -l
 
@@ -92,7 +92,7 @@ task profile:
 task leaks:
     @needs leaks
     @needs zig
-    zig build -Doptimize=ReleaseSafe
+    ./scripts/zig build -Doptimize=ReleaseSafe
     @pre echo "Running leak check..."
     leaks --atExit -- ./zig-out/bin/jake -l
 
@@ -100,7 +100,7 @@ task leaks:
 @group perf
 task memory:
     @needs zig
-    zig build -Doptimize=ReleaseSafe
+    ./scripts/zig build -Doptimize=ReleaseSafe
     @pre echo "Measuring peak memory usage..."
     /usr/bin/time -l ./zig-out/bin/jake -l 2>&1 | grep -E "(maximum resident|peak memory)"
 
@@ -110,7 +110,7 @@ task memory:
 task instruments:
     @needs xctrace "Install Xcode Command Line Tools"
     @needs zig
-    zig build -Doptimize=ReleaseSafe
+    ./scripts/zig build -Doptimize=ReleaseSafe
     @pre echo "Recording with Instruments..."
     xctrace record --template 'Time Profiler' --launch -- ./zig-out/bin/jake -l
     @post echo "Open the .trace file with Instruments to view results"

@@ -1,11 +1,20 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
+// Zig 0.16 renamed several std/build APIs this script relies on: the
+// `Child.StdIo` enum tags went lowercase (`.Ignore` -> `.ignore`) and library
+// linking moved from the Compile step onto its root module. Detect the running
+// toolchain once and branch on it so `zig build` (and therefore `jake install`)
+// works cleanly on both 0.15.x and 0.16.x without the caller pinning a Zig.
+const zig_0_16_plus = builtin.zig_version.order(.{ .major = 0, .minor = 16, .patch = 0 }) != .lt;
+const ignore_stderr = if (zig_0_16_plus) .ignore else .Ignore;
 
 /// Get version from git tags using `git describe`
 /// Returns semver like "0.4.0" at a tag, "0.4.0-5-g1234abc" after a tag,
 /// or "0.0.0-dev-1234abc" when no tag is reachable (e.g. shallow CI checkouts).
 fn getGitVersion(b: *std.Build) []const u8 {
     var code: u8 = 0;
-    const result = b.runAllowFail(&.{ "git", "describe", "--tags", "--always" }, &code, .Ignore) catch {
+    const result = b.runAllowFail(&.{ "git", "describe", "--tags", "--always" }, &code, ignore_stderr) catch {
         return "0.0.0-unknown";
     };
     const trimmed = std.mem.trim(u8, result, "\n\r ");
@@ -24,7 +33,7 @@ fn getGitVersion(b: *std.Build) []const u8 {
 /// Get git commit hash (short, 7 chars)
 fn getGitHash(b: *std.Build) []const u8 {
     var code: u8 = 0;
-    const result = b.runAllowFail(&.{ "git", "rev-parse", "--short", "HEAD" }, &code, .Ignore) catch {
+    const result = b.runAllowFail(&.{ "git", "rev-parse", "--short", "HEAD" }, &code, ignore_stderr) catch {
         return "unknown";
     };
     return std.mem.trim(u8, result, "\n\r ");
@@ -33,7 +42,7 @@ fn getGitHash(b: *std.Build) []const u8 {
 /// Check if working tree has uncommitted changes
 fn getGitDirty(b: *std.Build) []const u8 {
     var code: u8 = 0;
-    const result = b.runAllowFail(&.{ "git", "status", "--porcelain" }, &code, .Ignore) catch {
+    const result = b.runAllowFail(&.{ "git", "status", "--porcelain" }, &code, ignore_stderr) catch {
         return "";
     };
     return if (result.len > 0) "-dirty" else "";
@@ -43,7 +52,7 @@ fn getGitDirty(b: *std.Build) []const u8 {
 fn getBuildDate(b: *std.Build) []const u8 {
     // Run date command to get current date and time
     var code: u8 = 0;
-    const result = b.runAllowFail(&.{ "date", "+%Y-%m-%d %H:%M:%S" }, &code, .Ignore) catch {
+    const result = b.runAllowFail(&.{ "date", "+%Y-%m-%d %H:%M:%S" }, &code, ignore_stderr) catch {
         return "unknown";
     };
     return std.mem.trim(u8, result, "\n\r ");
@@ -263,7 +272,12 @@ pub fn build(b: *std.Build) void {
             const ztracy_mod = ztracy_dep.module("root");
             mod.addImport("ztracy", ztracy_mod);
             exe.root_module.addImport("ztracy", ztracy_mod);
-            exe.linkLibrary(ztracy_dep.artifact("tracy"));
+            // 0.16 moved library linking onto the module (see version note at top).
+            if (zig_0_16_plus) {
+                exe.root_module.linkLibrary(ztracy_dep.artifact("tracy"));
+            } else {
+                exe.linkLibrary(ztracy_dep.artifact("tracy"));
+            }
         }
     }
 
