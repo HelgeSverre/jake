@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] - 2026-07-07
+
+### Fixed
+
+- **Reserved keywords are now accepted as task parameter names (jake#23).** Param names that collide with a directive keyword (`file`, `cd`, `needs`, `confirm`, `import`, `group`, `desc`, `task`, …) aborted parsing with `expected ':' after task name (… found 'kw_file')`, breaking common headers like `task trace file="traces.jsonl":`. A parameter name is an unambiguous position where a directive keyword can never appear, so the task-header parser now treats keywords as ordinary identifiers there (the same soft-keyword handling already used for recipe and dependency names). Their `{{…}}` interpolation works unchanged.
+- **`jake install` (and the other build recipes) no longer break when the default `zig` is 0.16.** Jake targets Zig 0.15.x, but Zig 0.16 renamed large parts of `std` (the process-args and Writer/Reader I/O layers), so a 0.16 `zig` on `PATH` failed the build. The project's own recipes now invoke a small resolver shim (`scripts/zig`) that transparently selects a compatible 0.15.x toolchain — honoring a `ZIG=…` override, then a compatible `zig`/`zig-0.15` on `PATH`, then a Homebrew `zig@0.15` keg — and prints an actionable install hint if none is found. This only affects building Jake itself; it does not change Jakefile behavior. (Building Jake on Zig 0.16 is not yet supported; that requires a full source port.)
+
 ## [0.9.4] - 2026-07-07
 
 ### Fixed
