@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] - 2026-07-07
+
+### Fixed
+
+- **Global flags now work in any position — `jake pkg.dev --show` shows the recipe instead of running it.** The CLI parser had two divergent code paths (one before the recipe name, a weaker one after it). Any value-taking flag placed after the recipe — `--show`/`-s`, `-f`, `--group`, `--filter`, `--type`, `--port` — was silently swallowed as a recipe argument, so `jake pkg.dev --show` *ran* `pkg.dev` rather than showing it. The parser was rewritten as a single clap-style pass: jake's flags are recognized **anywhere** on the line, before or after the recipe, interspersed with recipe args. The first bare token is the recipe; later bare tokens are its arguments; `--` forwards everything after it to the recipe literally; unknown flags after the recipe are forwarded to the recipe (unknown flags before it remain an error with a suggestion). An allocation-failure path that could silently drop positional arguments was also fixed. See the new `docs/CLI-ARGS.md` for the full grammar.
+- **Parse errors now name the offending argument, not the first one.** `jake --list --frobnicate` reported *"Unknown option: --list"*; it now correctly names `--frobnicate`. The same fix applies to invalid-value and missing-value errors that follow the recipe name.
+- **A memory leak on the constraint-error path was fixed** — a mutual-exclusivity or requires-together violation with non-empty positional arguments (e.g. `jake --list deploy prod --show`) leaked the positional buffer.
+
+### Changed
+
+- **`-s`/`--show` is now recipe-derived.** `jake --show RECIPE`, `jake -s RECIPE`, and `jake RECIPE --show` are all equivalent; an explicit value still works via `--show=RECIPE`. `jake --show` with no recipe now reports a clear error instead of demanding a value inline. Invalid values for choice-restricted flags (`--type`, `--external`, `--completions`) now report `InvalidChoice` (listing the valid options) rather than a generic `InvalidValue`.
+- **A value-less flag given an inline value is now an error.** `--yes=false` and `--verbose=3` previously ignored the `=value` silently (so `--yes=false` meant `yes=true`); they now report *"Option … does not take a value"*. Use `--no-yes` / `--no-verbose` to negate and `-vvv` for verbosity levels.
+- **Invalid-value errors now list the valid options and expected type.** `jake --completions elvish` now prints *"Must be one of: bash, zsh, fish"*, and `jake --jobs 0` prints *"Expected: a positive integer"*, instead of a bare message.
+
 ## [0.9.5] - 2026-07-07
 
 ### Fixed
