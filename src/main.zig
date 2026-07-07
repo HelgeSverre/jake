@@ -53,13 +53,21 @@ pub fn main() !void {
     }
 
     // Parse arguments using args module
-    var args = args_mod.Args.parse(allocator, raw_args) catch |err| {
+    var failing_arg: []const u8 = "";
+    var args = args_mod.Args.parseTracked(allocator, raw_args, &failing_arg) catch |err| {
         // Constraint errors (MutuallyExclusive, RequiredTogether) print their own messages
         // with full context in parse(). Only print for other errors.
         if (err != error.MutuallyExclusive and err != error.RequiredTogether) {
-            const err_arg = if (raw_args.len > 1) raw_args[1] else "";
+            // Prefer the exact token that triggered the error; fall back to the
+            // first argument if the tracker didn't capture one.
+            const err_arg = if (failing_arg.len > 0)
+                failing_arg
+            else if (raw_args.len > 1) raw_args[1] else "";
             const stderr_writer = FileWriter{ .file = getStderr() };
-            args_mod.printError(stderr_writer, err, err_arg);
+            // Recover the flag's choices/expected-type from the failing token so
+            // value errors can list valid options instead of a bare message.
+            const err_ctx = args_mod.buildErrorContext(err_arg);
+            args_mod.printErrorWithContext(stderr_writer, err, err_arg, err_ctx);
         }
         std.process.exit(1);
     };
@@ -311,12 +319,20 @@ pub fn main() !void {
 
     // Read-only flows do not mutate cache; suppress teardown save noise if the
     // on-disk cache is currently unwritable.
-    if (args.show != null) {
+    if (args.show_enabled) {
         jakefile_data.runtime.save_cache_on_deinit = false;
     }
 
-    // Show detailed recipe information
-    if (args.show) |recipe_name| {
+    // Show detailed recipe information. The target is the explicit --show=RECIPE
+    // value if given, otherwise the recipe positional (so `jake pkg.dev --show`
+    // and `jake --show pkg.dev` both work).
+    if (args.show_enabled) {
+        const recipe_name = args.show orelse args.recipe orelse {
+            const stderr = getStderr();
+            stderr.writeAll(args_mod.ansi.err_prefix ++ "--show requires a recipe name\n") catch {};
+            stderr.writeAll("Usage: jake --show RECIPE  (or: jake RECIPE --show)\n") catch {};
+            std.process.exit(1);
+        };
         if (!executor.showRecipe(recipe_name)) {
             const stderr = getStderr();
             stderr.writeAll(args_mod.ansi.err_prefix) catch {};

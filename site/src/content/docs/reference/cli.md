@@ -16,6 +16,20 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 | `RECIPE` | Recipe to run (default: first recipe or `@default`) |
 | `ARGS`   | Recipe parameters (`name=value`) and positional args |
 
+## Argument ordering
+
+Flags may appear **anywhere** on the command line — before or after the recipe
+name, interspersed with recipe arguments (clap-style). `jake build -v`,
+`jake -v build`, and `jake build arg -v` are all equivalent.
+
+- The first bare token is the recipe; later bare tokens are its arguments.
+- `--` stops flag parsing: everything after it is forwarded to the recipe
+  literally (`jake run -- --port 8080`).
+- An unknown flag **before** the recipe is an error; an unknown flag **after**
+  the recipe is forwarded to the recipe as an argument.
+- `-s`/`--show` is recipe-derived: `jake --show build`, `jake -s build`, and
+  `jake build --show` all show `build`.
+
 ## Options
 
 | Option              | Short | Description                         |
@@ -30,7 +44,7 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 | `--jakefile PATH`   | `-f`  | Use specified Jakefile              |
 | `--watch [PATTERN]` | `-w`  | Watch and re-run on changes         |
 | `--jobs [N]`        | `-j`  | Parallel jobs (default: CPU count)  |
-| `--show RECIPE`     | `-s`  | Show recipe details                 |
+| `--show [RECIPE]`   | `-s`  | Show recipe details (defaults to the recipe on the line) |
 | `--summary`         |       | Print recipe names for scripts      |
 | `--short`           |       | Output one recipe name per line     |
 | `--json`            |       | Emit JSON for listing-style output  |

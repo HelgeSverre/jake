@@ -2208,11 +2208,18 @@ neq(a, b)                        # True if a not equals b
 
 ### CLI Options
 
+Flags may appear **anywhere** on the command line — before or after the task
+name (clap-style). `jake task -v`, `jake -v task`, and `jake task arg -v` are all
+equivalent. Use `--` to pass a flag-like argument through to the task:
+`jake run -- --port 8080`. See [CLI-ARGS.md](CLI-ARGS.md) for the full grammar.
+
 ```bash
 jake                             # Run default task
 jake task                        # Run specific task
 jake task name=value             # With parameter
 jake task arg1 arg2              # Positional arguments ({{$1}}, {{$2}})
+jake task -v                     # Flags work after the task name too
+jake task -- --raw-arg           # Forward flag-like args to the task
 
 jake -l, --list                  # List available tasks
 jake --summary                   # Space-separated recipe names

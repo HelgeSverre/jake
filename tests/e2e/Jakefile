@@ -551,6 +551,14 @@ task test-cli:
     {{jake}} -f fixtures/basic/hello.jake greet name=Bob --verbose > {{out}} 2>&1
     grep -q "Hello, Bob" {{out}}
     echo "  Positional args with flags after recipe work .......... PASS"
+    # `jake RECIPE --show` shows the recipe (flag position must not matter)
+    {{jake}} -f fixtures/cli/show.jake build --show > {{out}} 2>&1
+    grep -q "Recipe:" {{out}} && grep -q "Type:" {{out}} && grep -q "Dependencies:" {{out}}
+    echo "  --show after recipe name shows recipe ................. PASS"
+    # `--` forwards flag-like tokens to the recipe as positional args
+    {{jake}} -f fixtures/basic/hello.jake echoargs -- --verbose -n one > {{out}} 2>&1
+    grep -q "args=\[--verbose -n one\]" {{out}}
+    echo "  -- forwards flag-like tokens to the recipe ............ PASS"
 
 # ============================================================================
 # Web UI Tests

@@ -55,6 +55,40 @@ pub const Validator = enum {
     shell_name, // Must be bash, zsh, or fish
 };
 
+/// How a flag's parsed value maps onto an Args field. Every flag declares a
+/// `bind` so parse/negate/env-fallback can all be driven from data instead of
+/// hand-written per-flag branches (see applyFlag/applyNegate/applyEnvFallbacks).
+pub const BindKind = enum {
+    bool_set, // Set a bool field to true
+    counter, // Set a bool field true and increment a level field (-vvv)
+    req_string, // Required value assigned to a string field
+    req_int, // Required value parsed into an integer field
+    opt_string, // Optional value assigned to a string field (+ enabled flag)
+    opt_int, // Optional value parsed into an integer field (lenient)
+};
+
+/// Integer width for req_int/opt_int bindings.
+pub const IntWidth = enum { none, usize, u16 };
+
+/// Decides whether an optional-value flag consumes the following token.
+pub const OptPredicate = enum {
+    none, // No lookahead (value only via inline/attached form)
+    choices, // Consume next iff it matches `choices` (strict: else error)
+    validator, // Consume next iff it passes `validator` (lenient: else leave)
+    glob, // Consume next iff it looks like a glob pattern (lenient)
+    inline_only, // Never consume a separate token (value only via =/attached)
+};
+
+pub const Bind = struct {
+    kind: BindKind = .bool_set,
+    field: []const u8 = "", // Primary Args field name (comptime)
+    level_field: ?[]const u8 = null, // counter → level field, e.g. "verbose_level"
+    enabled_field: ?[]const u8 = null, // opt_* → "*_enabled" bool field
+    negate_field: ?[]const u8 = null, // --no-X sets this field true (e.g. "hide_externals")
+    int_width: IntWidth = .none, // req_int/opt_int target width
+    predicate: OptPredicate = .none, // opt_* next-token decision
+};
+
 pub const Flag = struct {
     short: ?u8, // Single character, e.g., 'h'
     long: []const u8, // Long name, e.g., "help"
@@ -74,6 +108,7 @@ pub const Flag = struct {
     mutually_exclusive: ?[]const u8 = null, // Flag that cannot be used with this one (e.g., "show")
     requires: ?[]const u8 = null, // Flag that must also be specified (e.g., "password")
     validator: Validator = .none, // Value validator type
+    bind: Bind = .{}, // Data-driven binding to an Args field (see Bind)
 };
 
 // Category names for help output grouping
@@ -83,38 +118,38 @@ pub const categories = [_][]const u8{ "General", "Output", "Execution", "File", 
 // Order doesn't matter - setFlag uses name-based matching
 pub const flags = [_]Flag{
     // General
-    .{ .short = 'h', .long = "help", .desc = "Show this help message", .category = "General" },
-    .{ .short = 'V', .long = "version", .desc = "Show version", .category = "General" },
+    .{ .short = 'h', .long = "help", .desc = "Show this help message", .category = "General", .bind = .{ .field = "help" } },
+    .{ .short = 'V', .long = "version", .desc = "Show version", .category = "General", .bind = .{ .field = "version" } },
     // Output
-    .{ .short = 'l', .long = "list", .desc = "List available recipes", .category = "Output", .mutually_exclusive = "show" },
-    .{ .short = 'a', .long = "all", .desc = "Show all recipes including hidden (use with -l)", .category = "Output" },
-    .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)", .category = "Output" },
-    .{ .short = null, .long = "summary", .desc = "Print recipe names (space-separated, for scripts)", .category = "Output" },
-    .{ .short = null, .long = "json", .desc = "Emit JSON for listing-style output", .category = "Output" },
-    .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .required, .value_name = "RECIPE", .category = "Output", .mutually_exclusive = "list" },
-    .{ .short = null, .long = "group", .desc = "Filter recipes to a specific group", .takes_value = .required, .value_name = "GROUP", .category = "Output" },
-    .{ .short = null, .long = "filter", .desc = "Filter recipe names by glob pattern", .takes_value = .required, .value_name = "PATTERN", .category = "Output" },
-    .{ .short = null, .long = "type", .desc = "Filter recipes by type", .takes_value = .required, .value_name = "TYPE", .choices = &.{ "task", "file", "simple", "external" }, .category = "Output" },
-    .{ .short = null, .long = "groups", .desc = "List available group names", .category = "Output" },
-    .{ .short = null, .long = "external", .desc = "Show only external recipes (optionally: make, just)", .takes_value = .optional, .value_name = "TYPE", .choices = &.{ "make", "just" }, .category = "Output", .negatable = true },
+    .{ .short = 'l', .long = "list", .desc = "List available recipes", .category = "Output", .mutually_exclusive = "show", .bind = .{ .field = "list" } },
+    .{ .short = 'a', .long = "all", .desc = "Show all recipes including hidden (use with -l)", .category = "Output", .bind = .{ .field = "all" } },
+    .{ .short = null, .long = "short", .desc = "Output one recipe name per line (for scripting)", .category = "Output", .bind = .{ .field = "short" } },
+    .{ .short = null, .long = "summary", .desc = "Print recipe names (space-separated, for scripts)", .category = "Output", .bind = .{ .field = "summary" } },
+    .{ .short = null, .long = "json", .desc = "Emit JSON for listing-style output", .category = "Output", .bind = .{ .field = "json" } },
+    .{ .short = 's', .long = "show", .desc = "Show detailed recipe information", .takes_value = .optional, .value_name = "RECIPE", .category = "Output", .mutually_exclusive = "list", .bind = .{ .kind = .opt_string, .field = "show", .enabled_field = "show_enabled", .predicate = .inline_only } },
+    .{ .short = null, .long = "group", .desc = "Filter recipes to a specific group", .takes_value = .required, .value_name = "GROUP", .category = "Output", .bind = .{ .kind = .req_string, .field = "group" } },
+    .{ .short = null, .long = "filter", .desc = "Filter recipe names by glob pattern", .takes_value = .required, .value_name = "PATTERN", .category = "Output", .bind = .{ .kind = .req_string, .field = "filter" } },
+    .{ .short = null, .long = "type", .desc = "Filter recipes by type", .takes_value = .required, .value_name = "TYPE", .choices = &.{ "task", "file", "simple", "external" }, .category = "Output", .bind = .{ .kind = .req_string, .field = "recipe_type" } },
+    .{ .short = null, .long = "groups", .desc = "List available group names", .category = "Output", .bind = .{ .field = "groups" } },
+    .{ .short = null, .long = "external", .desc = "Show only external recipes (optionally: make, just)", .takes_value = .optional, .value_name = "TYPE", .choices = &.{ "make", "just" }, .category = "Output", .negatable = true, .bind = .{ .kind = .opt_string, .field = "external", .enabled_field = "external_enabled", .negate_field = "hide_externals", .predicate = .choices } },
     // Execution
-    .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing", .category = "Execution", .env = "JAKE_DRY_RUN", .aliases = &.{"dryrun"} },
-    .{ .short = 'v', .long = "verbose", .desc = "Show verbose output (use -vv or -vvv for more)", .category = "Execution", .countable = true, .negatable = true, .env = "JAKE_VERBOSE" },
-    .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts", .category = "Execution", .negatable = true, .show_negatable = false, .env = "JAKE_YES" },
-    .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN", .category = "Execution" },
-    .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel", .takes_value = .optional, .value_name = "N", .default_display = "CPU count", .category = "Execution", .env = "JAKE_JOBS", .validator = .positive_integer },
+    .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing", .category = "Execution", .env = "JAKE_DRY_RUN", .aliases = &.{"dryrun"}, .bind = .{ .field = "dry_run" } },
+    .{ .short = 'v', .long = "verbose", .desc = "Show verbose output (use -vv or -vvv for more)", .category = "Execution", .countable = true, .negatable = true, .env = "JAKE_VERBOSE", .bind = .{ .kind = .counter, .field = "verbose", .level_field = "verbose_level" } },
+    .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts", .category = "Execution", .negatable = true, .show_negatable = false, .env = "JAKE_YES", .bind = .{ .field = "yes" } },
+    .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN", .category = "Execution", .bind = .{ .kind = .opt_string, .field = "watch", .enabled_field = "watch_enabled", .predicate = .glob } },
+    .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel", .takes_value = .optional, .value_name = "N", .default_display = "CPU count", .category = "Execution", .env = "JAKE_JOBS", .validator = .positive_integer, .bind = .{ .kind = .opt_int, .field = "jobs", .int_width = .usize } },
     // File
-    .{ .short = 'f', .long = "jakefile", .desc = "Use specified Jakefile", .takes_value = .required, .value_name = "FILE", .default_display = "Jakefile", .category = "File", .env = "JAKEFILE", .validator = .file_path },
-    .{ .short = null, .long = "fmt", .desc = "Format Jakefile", .category = "File" },
-    .{ .short = null, .long = "check", .desc = "Check formatting (exit 1 if changes needed)", .category = "File", .requires = "fmt" },
-    .{ .short = null, .long = "dump", .desc = "Output formatted Jakefile to stdout", .category = "File", .requires = "fmt" },
+    .{ .short = 'f', .long = "jakefile", .desc = "Use specified Jakefile", .takes_value = .required, .value_name = "FILE", .default_display = "Jakefile", .category = "File", .env = "JAKEFILE", .validator = .file_path, .bind = .{ .kind = .req_string, .field = "jakefile" } },
+    .{ .short = null, .long = "fmt", .desc = "Format Jakefile", .category = "File", .bind = .{ .field = "fmt" } },
+    .{ .short = null, .long = "check", .desc = "Check formatting (exit 1 if changes needed)", .category = "File", .requires = "fmt", .bind = .{ .field = "check" } },
+    .{ .short = null, .long = "dump", .desc = "Output formatted Jakefile to stdout", .category = "File", .requires = "fmt", .bind = .{ .field = "dump" } },
     // Shell
-    .{ .short = null, .long = "completions", .desc = "Print shell completion script", .takes_value = .optional, .value_name = "SHELL", .category = "Shell", .choices = &.{ "bash", "zsh", "fish" } },
-    .{ .short = null, .long = "install", .desc = "Install completions to user directory", .category = "Shell" },
-    .{ .short = null, .long = "uninstall", .desc = "Remove completions and config", .category = "Shell" },
+    .{ .short = null, .long = "completions", .desc = "Print shell completion script", .takes_value = .optional, .value_name = "SHELL", .category = "Shell", .choices = &.{ "bash", "zsh", "fish" }, .bind = .{ .kind = .opt_string, .field = "completions", .enabled_field = "completions_enabled", .predicate = .choices } },
+    .{ .short = null, .long = "install", .desc = "Install completions to user directory", .category = "Shell", .bind = .{ .field = "install_completions" } },
+    .{ .short = null, .long = "uninstall", .desc = "Remove completions and config", .category = "Shell", .bind = .{ .field = "uninstall_completions" } },
     // Web UI
-    .{ .short = null, .long = "web", .desc = "Start web UI server", .category = "Web" },
-    .{ .short = null, .long = "port", .desc = "Port for web UI server", .takes_value = .required, .value_name = "PORT", .default_display = "8420", .validator = .positive_integer, .requires = "web", .category = "Web" },
+    .{ .short = null, .long = "web", .desc = "Start web UI server", .category = "Web", .bind = .{ .field = "web" } },
+    .{ .short = null, .long = "port", .desc = "Port for web UI server", .takes_value = .required, .value_name = "PORT", .default_display = "8420", .validator = .positive_integer, .requires = "web", .category = "Web", .bind = .{ .kind = .req_int, .field = "web_port", .int_width = .u16 } },
 };
 
 // ============================================================================
@@ -213,7 +248,8 @@ pub const Args = struct {
     verbose_level: u8 = 0, // Counts -v occurrences: -vvv = 3
     yes: bool = false,
     short: bool = false,
-    show: ?[]const u8 = null,
+    show: ?[]const u8 = null, // Explicit --show=RECIPE target (else derived from recipe)
+    show_enabled: bool = false, // True if -s/--show was passed
     jakefile: []const u8 = "Jakefile",
     watch: ?[]const u8 = null, // Pattern if provided
     watch_enabled: bool = false, // True if -w was passed
@@ -253,147 +289,74 @@ pub const Args = struct {
 
     /// Parse command-line arguments into Args struct.
     /// raw_args should include the program name as first element.
+    ///
+    /// Single clap-style pass: jake flags are recognized ANYWHERE on the line
+    /// (before or after the recipe name, interspersed with recipe args). The
+    /// first bare token becomes the recipe; every later bare token is a recipe
+    /// positional arg. `--` hard-stops flag parsing. Unknown flag-like tokens
+    /// AFTER the recipe are forwarded to the recipe as positional args; before
+    /// the recipe they are an error. See docs/CLI-ARGS.md for the full grammar.
     pub fn parse(allocator: std.mem.Allocator, raw_args: []const []const u8) ParseError!Args {
+        var sink: []const u8 = "";
+        return parseTracked(allocator, raw_args, &sink);
+    }
+
+    /// Like `parse`, but records the specific argument that triggered a flag
+    /// error into `failing_arg` so callers can report the right token (rather
+    /// than guessing `raw_args[1]`).
+    pub fn parseTracked(allocator: std.mem.Allocator, raw_args: []const []const u8, failing_arg: *[]const u8) ParseError!Args {
         var result = Args{};
         var positional_list: std.ArrayListUnmanaged([]const u8) = .empty;
+        errdefer positional_list.deinit(allocator);
+
+        var after_recipe = false; // true once the recipe name has been seen
+        var hard_stop = false; // true after a `--` separator
 
         // Skip program name (index 0)
         var i: usize = 1;
         while (i < raw_args.len) : (i += 1) {
             const arg = raw_args[i];
 
-            // Double-dash separator: stop flag parsing, treat rest as positional
-            if (std.mem.eql(u8, arg, "--")) {
-                i += 1;
-                while (i < raw_args.len) : (i += 1) {
-                    if (result.recipe == null) {
-                        result.recipe = raw_args[i];
-                    } else {
-                        positional_list.append(allocator, raw_args[i]) catch {};
-                    }
-                }
-                break;
-            }
-
-            // Once we have a recipe, check if this is a global flag before treating as positional
-            if (result.recipe != null) {
-                // Allow global flags (boolean or optional without value) after recipe
-                if (arg.len > 0 and arg[0] == '-') {
-                    if (arg.len > 1 and arg[1] == '-') {
-                        const long_name = arg[2..];
-                        if (matchLongFlag(long_name)) |flag_idx| {
-                            if (flags[flag_idx].takes_value != .required) {
-                                try result.setFlag(flag_idx, null, raw_args, &i);
-                                continue;
-                            }
-                        }
-                    } else {
-                        const short_chars = arg[1..];
-                        var all_non_required = true;
-                        for (short_chars) |c| {
-                            if (matchShortFlag(c)) |flag_idx| {
-                                if (flags[flag_idx].takes_value == .required) {
-                                    all_non_required = false;
-                                    break;
-                                }
-                            } else {
-                                all_non_required = false;
-                                break;
-                            }
-                        }
-                        if (all_non_required and short_chars.len > 0) {
-                            for (short_chars) |c| {
-                                if (matchShortFlag(c)) |flag_idx| {
-                                    try result.setFlag(flag_idx, null, raw_args, &i);
-                                }
-                            }
-                            continue;
-                        }
-                    }
-                }
-                // Not a global flag, treat as positional
-                positional_list.append(allocator, arg) catch {};
+            // Double-dash separator: stop flag parsing for the rest of the line.
+            if (!hard_stop and std.mem.eql(u8, arg, "--")) {
+                hard_stop = true;
                 continue;
             }
 
-            // Check if it's a flag
-            if (arg.len > 0 and arg[0] == '-') {
-                // Long flag
-                if (arg.len > 1 and arg[1] == '-') {
-                    const long_name = arg[2..];
-
-                    // Handle --no-X negatable flags first
-                    if (std.mem.startsWith(u8, long_name, "no-")) {
-                        const negated_name = long_name[3..];
-                        if (matchLongFlag(negated_name)) |flag_idx| {
-                            const flag = flags[flag_idx];
-                            if (flag.negatable) {
-                                result.setFlagNegated(flag_idx);
-                                printDeprecationWarning(flag);
-                                continue;
-                            }
-                        }
-                        return error.UnknownFlag;
-                    }
-
-                    // Handle --flag=value format
-                    var flag_name = long_name;
-                    var inline_value: ?[]const u8 = null;
-                    if (std.mem.indexOf(u8, long_name, "=")) |eq_pos| {
-                        flag_name = long_name[0..eq_pos];
-                        inline_value = long_name[eq_pos + 1 ..];
-                    }
-
-                    if (matchLongFlag(flag_name)) |flag_idx| {
-                        try result.setFlag(flag_idx, inline_value, raw_args, &i);
-                        printDeprecationWarning(flags[flag_idx]);
-                    } else {
-                        return error.UnknownFlag;
-                    }
+            // Bare token (or anything after `--`): recipe, then recipe args.
+            if (hard_stop or !isFlagLike(arg)) {
+                if (result.recipe == null) {
+                    result.recipe = arg;
+                    after_recipe = true;
                 } else {
-                    // Short flag(s)
-                    const short_chars = arg[1..];
-
-                    // Check if first char is a flag that takes a value with attached value (-fVAL, -j4)
-                    if (short_chars.len > 1) {
-                        if (matchShortFlag(short_chars[0])) |flag_idx| {
-                            const flag = flags[flag_idx];
-                            if (flag.takes_value != .none) {
-                                const attached_value = short_chars[1..];
-                                try result.setFlag(flag_idx, attached_value, raw_args, &i);
-                                printDeprecationWarning(flag);
-                                continue;
-                            }
-                        }
-                    }
-
-                    // Handle short flag(s) - supports combined like -vn
-                    for (short_chars) |c| {
-                        if (matchShortFlag(c)) |flag_idx| {
-                            if (flags[flag_idx].takes_value != .none) {
-                                if (short_chars.len > 1) {
-                                    return error.UnknownFlag;
-                                }
-                            }
-                            try result.setFlag(flag_idx, null, raw_args, &i);
-                            printDeprecationWarning(flags[flag_idx]);
-                        } else {
-                            return error.UnknownFlag;
-                        }
-                    }
+                    try positional_list.append(allocator, arg);
                 }
+                continue;
+            }
+
+            // Flag-like token: arg[0] == '-' and arg.len >= 2. Record the token
+            // as the failing arg if handling it errors, so the caller can name
+            // the right flag in the error message.
+            if (arg[1] == '-') {
+                result.handleLong(arg, raw_args, &i, after_recipe, &positional_list, allocator) catch |e| {
+                    failing_arg.* = arg;
+                    return e;
+                };
             } else {
-                // Positional argument - first one is recipe
-                result.recipe = arg;
+                result.handleShort(arg, raw_args, &i, after_recipe, &positional_list, allocator) catch |e| {
+                    failing_arg.* = arg;
+                    return e;
+                };
             }
         }
-
-        result.positional = positional_list.toOwnedSlice(allocator) catch &.{};
 
         // Apply environment variable fallbacks for flags not set via CLI
         result.applyEnvFallbacks();
 
-        // Validate mutual exclusivity and required-together constraints
+        // Validate mutual exclusivity and required-together constraints. Do this
+        // BEFORE handing the positional buffer to `result`, so a violation
+        // returns with `positional_list` still owning the buffer — the errdefer
+        // then reclaims it (otherwise a non-empty positional list would leak).
         if (result.validateConstraints()) |violation| {
             const stderr = compat.getStdErr();
             var buf: [256]u8 = undefined;
@@ -406,214 +369,299 @@ pub const Args = struct {
             return violation.err;
         }
 
+        result.positional = try positional_list.toOwnedSlice(allocator);
         return result;
     }
 
     // --- Private methods ---
 
-    fn setFlag(self: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: []const []const u8, i: *usize) ParseError!void {
-        const flag = flags[flag_idx];
-        const name = flag.long;
+    /// Handle a long-form token (`--flag`, `--flag=value`, `--no-flag`).
+    fn handleLong(
+        self: *Args,
+        arg: []const u8,
+        raw_args: []const []const u8,
+        i: *usize,
+        after_recipe: bool,
+        positional_list: *std.ArrayListUnmanaged([]const u8),
+        allocator: std.mem.Allocator,
+    ) ParseError!void {
+        const long_name = arg[2..];
 
-        switch (flag.takes_value) {
-            .none => {
-                if (std.mem.eql(u8, name, "help")) {
-                    self.help = true;
-                } else if (std.mem.eql(u8, name, "version")) {
-                    self.version = true;
-                } else if (std.mem.eql(u8, name, "list")) {
-                    self.list = true;
-                } else if (std.mem.eql(u8, name, "all")) {
-                    self.all = true;
-                } else if (std.mem.eql(u8, name, "dry-run")) {
-                    self.dry_run = true;
-                } else if (std.mem.eql(u8, name, "verbose")) {
-                    self.verbose = true;
-                    if (flag.countable) {
-                        self.verbose_level +|= 1;
-                    }
-                } else if (std.mem.eql(u8, name, "yes")) {
-                    self.yes = true;
-                } else if (std.mem.eql(u8, name, "short")) {
-                    self.short = true;
-                } else if (std.mem.eql(u8, name, "summary")) {
-                    self.summary = true;
-                } else if (std.mem.eql(u8, name, "json")) {
-                    self.json = true;
-                } else if (std.mem.eql(u8, name, "groups")) {
-                    self.groups = true;
-                } else if (std.mem.eql(u8, name, "install")) {
-                    self.install_completions = true;
-                } else if (std.mem.eql(u8, name, "uninstall")) {
-                    self.uninstall_completions = true;
-                } else if (std.mem.eql(u8, name, "fmt")) {
-                    self.fmt = true;
-                } else if (std.mem.eql(u8, name, "check")) {
-                    self.check = true;
-                } else if (std.mem.eql(u8, name, "dump")) {
-                    self.dump = true;
-                } else if (std.mem.eql(u8, name, "web")) {
-                    self.web = true;
+        // Split on '=' first so --no-X=value can be rejected consistently.
+        var flag_name = long_name;
+        var inline_value: ?[]const u8 = null;
+        if (std.mem.indexOfScalar(u8, long_name, '=')) |eq_pos| {
+            flag_name = long_name[0..eq_pos];
+            inline_value = long_name[eq_pos + 1 ..];
+        }
+
+        // --no-X negatable flags.
+        if (std.mem.startsWith(u8, flag_name, "no-")) {
+            const negated_name = flag_name[3..];
+            if (matchLongFlag(negated_name)) |flag_idx| {
+                if (flags[flag_idx].negatable) {
+                    // Negations are value-less; --no-X=value is a mistake.
+                    if (inline_value != null) return error.UnexpectedValue;
+                    self.applyNegate(flag_idx);
+                    printDeprecationWarning(flags[flag_idx]);
+                    return;
                 }
-            },
-            .required => {
-                const value = inline_value orelse blk: {
-                    if (i.* + 1 >= raw_args.len) {
-                        return error.MissingValue;
-                    }
+            }
+            return self.unknownLong(arg, after_recipe, positional_list, allocator);
+        }
+
+        if (matchLongFlag(flag_name)) |flag_idx| {
+            // A value-less flag given an inline value (e.g. `--yes=false`,
+            // `--verbose=3`) is a mistake — reject it rather than silently
+            // ignoring the value (which would make `--yes=false` mean yes=true).
+            if (inline_value != null and flags[flag_idx].takes_value == .none) {
+                return error.UnexpectedValue;
+            }
+            try self.applyFlag(flag_idx, inline_value, raw_args, i);
+            printDeprecationWarning(flags[flag_idx]);
+        } else {
+            return self.unknownLong(arg, after_recipe, positional_list, allocator);
+        }
+    }
+
+    fn unknownLong(
+        self: *Args,
+        arg: []const u8,
+        after_recipe: bool,
+        positional_list: *std.ArrayListUnmanaged([]const u8),
+        allocator: std.mem.Allocator,
+    ) ParseError!void {
+        _ = self;
+        // After the recipe, an unrecognized flag is forwarded to the recipe.
+        // Before it, an unrecognized flag is an error (with a suggestion).
+        if (after_recipe) {
+            try positional_list.append(allocator, arg);
+            return;
+        }
+        return error.UnknownFlag;
+    }
+
+    /// Handle a short-form token (`-v`, `-vn`, `-j4`, `-fFILE`).
+    fn handleShort(
+        self: *Args,
+        arg: []const u8,
+        raw_args: []const []const u8,
+        i: *usize,
+        after_recipe: bool,
+        positional_list: *std.ArrayListUnmanaged([]const u8),
+        allocator: std.mem.Allocator,
+    ) ParseError!void {
+        const short_chars = arg[1..]; // arg.len >= 2, so at least one char
+
+        // Attached value: first char takes a value and there are trailing chars
+        // (-fFILE, -j4, -sRECIPE).
+        if (short_chars.len > 1) {
+            if (matchShortFlag(short_chars[0])) |flag_idx| {
+                if (flags[flag_idx].takes_value != .none) {
+                    try self.applyFlag(flag_idx, short_chars[1..], raw_args, i);
+                    printDeprecationWarning(flags[flag_idx]);
+                    return;
+                }
+            }
+        }
+
+        // Otherwise it's a single flag or a combined group of value-less flags
+        // (-vn, -vvv). Pre-validate the whole token so we never half-apply a
+        // combined token before discovering it's invalid (matters when the
+        // unknown-after-recipe token must be forwarded verbatim).
+        var all_ok = short_chars.len > 0;
+        for (short_chars) |c| {
+            const flag_idx = matchShortFlag(c) orelse {
+                all_ok = false;
+                break;
+            };
+            // A value-taking flag cannot be part of a multi-char combo.
+            if (flags[flag_idx].takes_value != .none and short_chars.len > 1) {
+                all_ok = false;
+                break;
+            }
+        }
+
+        if (!all_ok) {
+            if (after_recipe) {
+                try positional_list.append(allocator, arg);
+                return;
+            }
+            return error.UnknownFlag;
+        }
+
+        for (short_chars) |c| {
+            const flag_idx = matchShortFlag(c).?;
+            try self.applyFlag(flag_idx, null, raw_args, i);
+            printDeprecationWarning(flags[flag_idx]);
+        }
+    }
+
+    /// Consume the next raw token as a required flag value (or error).
+    fn nextValue(raw_args: []const []const u8, i: *usize) ParseError![]const u8 {
+        if (i.* + 1 >= raw_args.len) return error.MissingValue;
+        i.* += 1;
+        return raw_args[i.*];
+    }
+
+    /// Data-driven assignment of a matched flag onto its Args field(s). The
+    /// `inline for` unrolls at comptime, so inside the selected body `flag`
+    /// (and `flag.bind`) are comptime-known — which is what lets `@field` take
+    /// the comptime field name from the binding descriptor.
+    fn applyFlag(self: *Args, flag_idx: usize, inline_value: ?[]const u8, raw_args: []const []const u8, i: *usize) ParseError!void {
+        inline for (flags, 0..) |flag, idx| {
+            if (idx == flag_idx) {
+                const b = flag.bind;
+                switch (b.kind) {
+                    .bool_set => @field(self, b.field) = true,
+                    .counter => {
+                        @field(self, b.field) = true;
+                        if (comptime b.level_field != null) @field(self, b.level_field.?) +|= 1;
+                    },
+                    .req_string => {
+                        const value = inline_value orelse try nextValue(raw_args, i);
+                        try validateFlagValue(flag, value);
+                        @field(self, b.field) = value;
+                    },
+                    .req_int => {
+                        const value = inline_value orelse try nextValue(raw_args, i);
+                        try validateFlagValue(flag, value);
+                        switch (comptime b.int_width) {
+                            .u16 => @field(self, b.field) = std.fmt.parseInt(u16, value, 10) catch return error.InvalidValue,
+                            .usize => @field(self, b.field) = std.fmt.parseInt(usize, value, 10) catch return error.InvalidValue,
+                            .none => unreachable,
+                        }
+                    },
+                    .opt_string => try self.applyOptString(flag, inline_value, raw_args, i),
+                    .opt_int => try self.applyOptInt(flag, inline_value, raw_args, i),
+                }
+                return;
+            }
+        }
+    }
+
+    /// Optional-value string flag (show/watch/completions/external). The
+    /// predicate decides whether a following bare token is consumed as the
+    /// value or left for the recipe.
+    fn applyOptString(self: *Args, comptime flag: Flag, inline_value: ?[]const u8, raw_args: []const []const u8, i: *usize) ParseError!void {
+        const b = flag.bind;
+        if (comptime b.enabled_field != null) @field(self, b.enabled_field.?) = true;
+
+        if (inline_value) |v| {
+            try validateFlagValue(flag, v);
+            @field(self, b.field) = v;
+            return;
+        }
+
+        // No inline value: consult the predicate about the next token.
+        switch (comptime b.predicate) {
+            .inline_only, .none => {}, // value only via inline/attached form
+            .choices, .validator, .glob => {
+                if (i.* + 1 >= raw_args.len) return;
+                const next = raw_args[i.* + 1];
+                if (next.len > 0 and next[0] == '-') return; // never consume a flag
+                if (predicateAccepts(b.predicate, flag, next)) {
                     i.* += 1;
-                    break :blk raw_args[i.*];
-                };
-
-                if (std.mem.eql(u8, name, "jakefile")) {
-                    self.jakefile = value;
-                } else if (std.mem.eql(u8, name, "show")) {
-                    self.show = value;
-                } else if (std.mem.eql(u8, name, "group")) {
-                    self.group = value;
-                } else if (std.mem.eql(u8, name, "filter")) {
-                    self.filter = value;
-                } else if (std.mem.eql(u8, name, "type")) {
-                    if (!isValidListType(value)) return error.InvalidValue;
-                    self.recipe_type = value;
-                } else if (std.mem.eql(u8, name, "port")) {
-                    self.web_port = std.fmt.parseInt(u16, value, 10) catch {
-                        return error.InvalidValue;
-                    };
+                    @field(self, b.field) = next;
+                } else if (comptime b.predicate == .choices) {
+                    // Strict: a provided value that isn't a valid choice is an error.
+                    return error.InvalidChoice;
                 }
-            },
-            .optional => {
-                if (std.mem.eql(u8, name, "watch")) {
-                    self.watch_enabled = true;
-                    if (inline_value) |v| {
-                        self.watch = v;
-                    } else if (i.* + 1 < raw_args.len) {
-                        const next = raw_args[i.* + 1];
-                        if (next.len > 0 and next[0] != '-' and !isLikelyRecipeName(next)) {
-                            if (std.mem.indexOf(u8, next, "*") != null or
-                                std.mem.indexOf(u8, next, "?") != null)
-                            {
-                                i.* += 1;
-                                self.watch = next;
-                            }
-                        }
-                    }
-                } else if (std.mem.eql(u8, name, "jobs")) {
-                    if (inline_value) |v| {
-                        self.jobs = std.fmt.parseInt(usize, v, 10) catch {
-                            return error.InvalidValue;
-                        };
-                    } else if (i.* + 1 < raw_args.len) {
-                        const next = raw_args[i.* + 1];
-                        if (std.fmt.parseInt(usize, next, 10)) |n| {
-                            i.* += 1;
-                            self.jobs = n;
-                        } else |_| {
-                            self.jobs = std.Thread.getCpuCount() catch 4;
-                        }
-                    } else {
-                        self.jobs = std.Thread.getCpuCount() catch 4;
-                    }
-                } else if (std.mem.eql(u8, name, "completions")) {
-                    self.completions_enabled = true;
-                    if (inline_value) |v| {
-                        if (!isValidShell(v)) return error.InvalidValue;
-                        self.completions = v;
-                    } else if (i.* + 1 < raw_args.len) {
-                        const next = raw_args[i.* + 1];
-                        if (isValidShell(next)) {
-                            i.* += 1;
-                            self.completions = next;
-                        } else if (next.len > 0 and next[0] != '-') {
-                            return error.InvalidValue;
-                        }
-                    }
-                } else if (std.mem.eql(u8, name, "external")) {
-                    self.external_enabled = true;
-                    if (inline_value) |v| {
-                        if (!isValidExternalType(v)) return error.InvalidValue;
-                        self.external = v;
-                    } else if (i.* + 1 < raw_args.len) {
-                        const next = raw_args[i.* + 1];
-                        if (isValidExternalType(next)) {
-                            i.* += 1;
-                            self.external = next;
-                        } else if (next.len > 0 and next[0] != '-') {
-                            return error.InvalidValue;
-                        }
-                    }
-                }
+                // validator/glob are lenient: leave the token for the recipe.
             },
         }
     }
 
-    fn setFlagNegated(self: *Args, flag_idx: usize) void {
-        const flag = flags[flag_idx];
-        const name = flag.long;
+    /// Optional-value integer flag (jobs). An inline/attached value is always
+    /// validated. A separate next token is consumed only if it parses as a
+    /// valid integer and passes the flag's validator; a non-numeric token is
+    /// left for the recipe, while a numeric-but-invalid value (e.g. 0 for a
+    /// positive_integer validator) is reported as an error.
+    fn applyOptInt(self: *Args, comptime flag: Flag, inline_value: ?[]const u8, raw_args: []const []const u8, i: *usize) ParseError!void {
+        const b = flag.bind;
+        if (inline_value) |v| {
+            try validateFlagValue(flag, v);
+            @field(self, b.field) = std.fmt.parseInt(usize, v, 10) catch return error.InvalidValue;
+            return;
+        }
+        if (i.* + 1 < raw_args.len) {
+            const next = raw_args[i.* + 1];
+            if (std.fmt.parseInt(usize, next, 10)) |_| {
+                // Token looks numeric: validate it strictly. If it fails the
+                // flag's validator, that's a real error (not a recipe arg).
+                try validateFlagValue(flag, next);
+                i.* += 1;
+                @field(self, b.field) = std.fmt.parseInt(usize, next, 10) catch return error.InvalidValue;
+                return;
+            } else |_| {
+                // Non-numeric token: leave it for the recipe, use CPU default.
+            }
+        }
+        @field(self, b.field) = std.Thread.getCpuCount() catch 4;
+    }
 
-        if (!flag.negatable) return;
-
-        if (std.mem.eql(u8, name, "verbose")) {
-            self.verbose = false;
-            self.verbose_level = 0;
-        } else if (std.mem.eql(u8, name, "yes")) {
-            self.yes = false;
-        } else if (std.mem.eql(u8, name, "external")) {
-            self.hide_externals = true;
+    /// Apply the negated (`--no-X`) form of a flag.
+    fn applyNegate(self: *Args, flag_idx: usize) void {
+        inline for (flags, 0..) |flag, idx| {
+            if (idx == flag_idx) {
+                if (!flag.negatable) return;
+                const b = flag.bind;
+                if (comptime b.negate_field != null) {
+                    @field(self, b.negate_field.?) = true;
+                } else if (comptime b.kind == .counter) {
+                    @field(self, b.field) = false;
+                    if (comptime b.level_field != null) @field(self, b.level_field.?) = 0;
+                } else {
+                    @field(self, b.field) = false;
+                }
+                return;
+            }
         }
     }
 
     /// Apply environment variable fallbacks for flags not set via CLI.
     /// Precedence: CLI arg (already set) → env var → default
     fn applyEnvFallbacks(self: *Args) void {
-        for (flags) |flag| {
-            if (flag.env) |env_name| {
+        inline for (flags) |flag| {
+            if (comptime flag.env) |env_name| {
                 if (compat.getenv(env_name)) |env_value| {
-                    self.applyEnvValue(flag, env_value);
-                }
-            }
-        }
-    }
-
-    fn applyEnvValue(self: *Args, flag: Flag, env_value: []const u8) void {
-        const name = flag.long;
-
-        if (flag.takes_value == .none) {
-            const is_truthy = isTruthyEnvValue(env_value);
-            if (std.mem.eql(u8, name, "dry-run")) {
-                if (!self.dry_run) self.dry_run = is_truthy;
-            } else if (std.mem.eql(u8, name, "verbose")) {
-                if (!self.verbose and is_truthy) {
-                    self.verbose = true;
-                    if (std.fmt.parseInt(u8, env_value, 10)) |level| {
-                        if (self.verbose_level == 0) self.verbose_level = level;
-                    } else |_| {
-                        if (self.verbose_level == 0) self.verbose_level = 1;
+                    const b = flag.bind;
+                    switch (b.kind) {
+                        .bool_set => {
+                            if (!@field(self, b.field)) @field(self, b.field) = isTruthyEnvValue(env_value);
+                        },
+                        .counter => {
+                            if (!@field(self, b.field) and isTruthyEnvValue(env_value)) {
+                                @field(self, b.field) = true;
+                                if (comptime b.level_field != null) {
+                                    if (@field(self, b.level_field.?) == 0) {
+                                        @field(self, b.level_field.?) = std.fmt.parseInt(u8, env_value, 10) catch 1;
+                                    }
+                                }
+                            }
+                        },
+                        .req_string => {
+                            // Only --jakefile has an env fallback among req_string flags;
+                            // honor it only while the field still holds its default.
+                            if (std.mem.eql(u8, @field(self, b.field), "Jakefile")) @field(self, b.field) = env_value;
+                        },
+                        .opt_int => {
+                            if (@field(self, b.field) == null) {
+                                if (std.fmt.parseInt(usize, env_value, 10)) |n| @field(self, b.field) = n else |_| {}
+                            }
+                        },
+                        else => {},
                     }
-                }
-            } else if (std.mem.eql(u8, name, "yes")) {
-                if (!self.yes) self.yes = is_truthy;
-            }
-        } else {
-            if (std.mem.eql(u8, name, "jakefile")) {
-                if (std.mem.eql(u8, self.jakefile, "Jakefile")) {
-                    self.jakefile = env_value;
-                }
-            } else if (std.mem.eql(u8, name, "jobs")) {
-                if (self.jobs == null) {
-                    if (std.fmt.parseInt(usize, env_value, 10)) |n| {
-                        self.jobs = n;
-                    } else |_| {}
                 }
             }
         }
     }
 
     fn validateConstraints(self: *const Args) ?ConstraintViolation {
-        if (self.list and self.show != null) {
+        if (self.list and self.show_enabled) {
             return .{ .err = error.MutuallyExclusive, .flag1 = "--list", .flag2 = "--show" };
         }
-        if (self.show != null) {
+        if (self.show_enabled) {
             if (self.short) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--short" };
             if (self.summary) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--summary" };
             if (self.groups) return .{ .err = error.MutuallyExclusive, .flag1 = "--show", .flag2 = "--groups" };
@@ -639,6 +687,8 @@ pub const ParseError = error{
     InvalidChoice,
     MutuallyExclusive,
     RequiredTogether,
+    UnexpectedValue,
+    OutOfMemory,
 };
 
 /// Context for enhanced error messages
@@ -689,31 +739,29 @@ fn matchShortFlag(char: u8) ?usize {
     return null;
 }
 
-fn isLikelyRecipeName(s: []const u8) bool {
-    // Heuristic: recipe names are typically alphanumeric with hyphens/underscores
-    // and don't contain glob characters
-    if (s.len == 0) return false;
-    for (s) |c| {
-        if (c == '*' or c == '?' or c == '[' or c == ']') return false;
-    }
-    return true;
+/// A token is "flag-like" when it starts with '-' and has at least one more
+/// character. Bare "-" is treated as a positional (stdin convention).
+fn isFlagLike(s: []const u8) bool {
+    return s.len >= 2 and s[0] == '-';
 }
 
-fn isValidShell(s: []const u8) bool {
-    return std.mem.eql(u8, s, "bash") or
-        std.mem.eql(u8, s, "zsh") or
-        std.mem.eql(u8, s, "fish");
+/// Validate a required flag value against the flag's declared `choices` and
+/// `validator` metadata. Single source of value validation.
+fn validateFlagValue(flag: Flag, value: []const u8) ParseError!void {
+    if (flag.choices != null and !isValidChoice(flag, value)) return error.InvalidChoice;
+    if (flag.validator != .none and !runValidator(flag.validator, value)) return error.InvalidValue;
 }
 
-fn isValidExternalType(s: []const u8) bool {
-    return std.mem.eql(u8, s, "make") or std.mem.eql(u8, s, "just");
-}
-
-fn isValidListType(s: []const u8) bool {
-    return std.mem.eql(u8, s, "task") or
-        std.mem.eql(u8, s, "file") or
-        std.mem.eql(u8, s, "simple") or
-        std.mem.eql(u8, s, "external");
+/// Decide whether an optional-value flag should consume the next token as its
+/// value, based on its predicate and declared metadata.
+fn predicateAccepts(predicate: OptPredicate, flag: Flag, value: []const u8) bool {
+    return switch (predicate) {
+        .choices => isValidChoice(flag, value),
+        .validator => runValidator(flag.validator, value),
+        .glob => std.mem.indexOfScalar(u8, value, '*') != null or
+            std.mem.indexOfScalar(u8, value, '?') != null,
+        .none, .inline_only => false,
+    };
 }
 
 /// Check if a value is valid for a flag with choices
@@ -942,6 +990,43 @@ pub fn printError(writer: anytype, err: ParseError, arg: []const u8) void {
     printErrorWithContext(writer, err, arg, .{});
 }
 
+/// Reconstruct an ErrorContext from the token that triggered a parse error, so
+/// value/choice/missing-value errors can name the flag's valid options and
+/// expected type. The parser reports only the offending token (see
+/// parseTracked); this re-matches it to its Flag to recover that metadata.
+/// Any inline `=value` (e.g. `--type=bogus`) is surfaced as the provided value.
+pub fn buildErrorContext(arg: []const u8) ErrorContext {
+    if (!isFlagLike(arg)) return .{};
+
+    const flag_idx: usize = blk: {
+        if (arg[1] == '-') {
+            // Long form: strip "--", split on '=', match the name.
+            var name = arg[2..];
+            if (std.mem.indexOfScalar(u8, name, '=')) |eq| name = name[0..eq];
+            break :blk matchLongFlag(name) orelse return .{};
+        } else {
+            // Short form: the value-taking flag can only be the first char
+            // (attached-value form like -jf or a lone -j).
+            break :blk matchShortFlag(arg[1]) orelse return .{};
+        }
+    };
+
+    const flag = flags[flag_idx];
+    var ctx = ErrorContext{
+        .flag_name = flag.long,
+        .choices = flag.choices,
+        .expected_type = getValidatorDescription(flag.validator),
+    };
+    // Surface an inline `--flag=value` value; the separate-token form's value
+    // isn't part of this token, so it stays empty (message falls back cleanly).
+    if (arg[1] == '-') {
+        if (std.mem.indexOfScalar(u8, arg[2..], '=')) |eq| {
+            ctx.provided_value = arg[2 + eq + 1 ..];
+        }
+    }
+    return ctx;
+}
+
 /// Print error message with rich context
 pub fn printErrorWithContext(writer: anytype, err: ParseError, arg: []const u8, ctx: ErrorContext) void {
     switch (err) {
@@ -979,7 +1064,11 @@ pub fn printErrorWithContext(writer: anytype, err: ParseError, arg: []const u8, 
             printUsageHint(writer, arg);
         },
         error.InvalidChoice => {
-            writer.print(ansi.err_prefix ++ "Invalid value for {s}: \"{s}\"\n", .{ arg, ctx.provided_value }) catch {};
+            if (ctx.provided_value.len > 0) {
+                writer.print(ansi.err_prefix ++ "Invalid value for {s}: \"{s}\"\n", .{ arg, ctx.provided_value }) catch {};
+            } else {
+                writer.print(ansi.err_prefix ++ "Invalid value for option: {s}\n", .{arg}) catch {};
+            }
             if (ctx.choices) |choices| {
                 writer.writeAll("       Must be one of: ") catch {};
                 for (choices, 0..) |choice, i| {
@@ -994,6 +1083,12 @@ pub fn printErrorWithContext(writer: anytype, err: ParseError, arg: []const u8, 
         },
         error.RequiredTogether => {
             writer.print(ansi.err_prefix ++ "Option {s} requires {s} to also be specified\n", .{ arg, ctx.required_flag }) catch {};
+        },
+        error.UnexpectedValue => {
+            writer.print(ansi.err_prefix ++ "Option {s} does not take a value\n", .{arg}) catch {};
+        },
+        error.OutOfMemory => {
+            writer.writeAll(ansi.err_prefix ++ "Out of memory\n") catch {};
         },
     }
 }
@@ -1177,14 +1272,14 @@ test "unknown flags after recipe are positional" {
     try expectEqualStrings("--unknown-flag", args.positional[0]);
 }
 
-test "value flags after recipe are positional" {
-    // -f takes a value, so it should be treated as positional after recipe
+test "value flags after recipe are consumed by jake" {
+    // Single-pass parser: jake flags are recognized anywhere. -f is a known
+    // jake flag and consumes its value even after the recipe name.
     var args = try Args.parse(testing.allocator, &.{ "jake", "build", "-f", "file.jake" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
-    try expectEqual(@as(usize, 2), args.positional.len);
-    try expectEqualStrings("-f", args.positional[0]);
-    try expectEqualStrings("file.jake", args.positional[1]);
+    try expectEqualStrings("file.jake", args.jakefile);
+    try expectEqual(@as(usize, 0), args.positional.len);
 }
 
 test "all boolean flags" {
@@ -1287,29 +1382,57 @@ test "parse -la combined flags" {
     try expect(args.all == true);
 }
 
-test "parse -s (show) with recipe name" {
-    const args = try Args.parse(testing.allocator, &.{ "jake", "-s", "build" });
-    try expectEqualStrings("build", args.show.?);
+test "parse -s (show) with recipe name is recipe-derived" {
+    // -s is recipe-derived: the following token becomes the recipe, and show
+    // resolves to it (via show orelse recipe) in main.zig.
+    var args = try Args.parse(testing.allocator, &.{ "jake", "-s", "build" });
+    defer args.deinit(testing.allocator);
+    try expect(args.show_enabled);
+    try expect(args.show == null);
+    try expectEqualStrings("build", args.recipe.?);
 }
 
-test "parse --show with recipe name" {
-    const args = try Args.parse(testing.allocator, &.{ "jake", "--show", "deploy" });
-    try expectEqualStrings("deploy", args.show.?);
+test "parse --show with recipe name is recipe-derived" {
+    var args = try Args.parse(testing.allocator, &.{ "jake", "--show", "deploy" });
+    defer args.deinit(testing.allocator);
+    try expect(args.show_enabled);
+    try expect(args.show == null);
+    try expectEqualStrings("deploy", args.recipe.?);
+}
+
+test "parse recipe then --show shows the recipe" {
+    // The original bug: `jake pkg.dev --show` must set show_enabled with the
+    // recipe already captured, not swallow --show as a recipe arg.
+    var args = try Args.parse(testing.allocator, &.{ "jake", "pkg.dev", "--show" });
+    defer args.deinit(testing.allocator);
+    try expect(args.show_enabled);
+    try expect(args.show == null);
+    try expectEqualStrings("pkg.dev", args.recipe.?);
+    try expectEqual(@as(usize, 0), args.positional.len);
 }
 
 test "parse --show=value format" {
     const args = try Args.parse(testing.allocator, &.{ "jake", "--show=test" });
+    try expect(args.show_enabled);
     try expectEqualStrings("test", args.show.?);
 }
 
-test "missing required value for --show" {
-    const result = Args.parse(testing.allocator, &.{ "jake", "--show" });
-    try expectError(error.MissingValue, result);
+test "bare --show sets show_enabled without a recipe" {
+    // No explicit value and no recipe: parse succeeds; main.zig reports the
+    // "requires a recipe" error at runtime.
+    var args = try Args.parse(testing.allocator, &.{ "jake", "--show" });
+    defer args.deinit(testing.allocator);
+    try expect(args.show_enabled);
+    try expect(args.show == null);
+    try expect(args.recipe == null);
 }
 
-test "missing required value for -s" {
-    const result = Args.parse(testing.allocator, &.{ "jake", "-s" });
-    try expectError(error.MissingValue, result);
+test "bare -s sets show_enabled without a recipe" {
+    var args = try Args.parse(testing.allocator, &.{ "jake", "-s" });
+    defer args.deinit(testing.allocator);
+    try expect(args.show_enabled);
+    try expect(args.show == null);
+    try expect(args.recipe == null);
 }
 
 test "parse --summary flag" {
@@ -1388,22 +1511,22 @@ test "parse --completions bash --install" {
 
 test "parse --completions rejects invalid shell value" {
     const result = Args.parse(testing.allocator, &.{ "jake", "--completions", "invalid_shell" });
-    try expectError(error.InvalidValue, result);
+    try expectError(error.InvalidChoice, result);
 }
 
 test "parse --completions=invalid rejects inline invalid shell value" {
     const result = Args.parse(testing.allocator, &.{ "jake", "--completions=invalid_shell" });
-    try expectError(error.InvalidValue, result);
+    try expectError(error.InvalidChoice, result);
 }
 
 test "parse --external rejects invalid type value" {
     const result = Args.parse(testing.allocator, &.{ "jake", "--external", "ninja" });
-    try expectError(error.InvalidValue, result);
+    try expectError(error.InvalidChoice, result);
 }
 
 test "parse --type rejects invalid list type value" {
     const result = Args.parse(testing.allocator, &.{ "jake", "--type", "make" });
-    try expectError(error.InvalidValue, result);
+    try expectError(error.InvalidChoice, result);
 }
 
 test "parse --install alone" {
@@ -1510,23 +1633,86 @@ test "flags after recipe with equals sign in positional" {
     try expectEqualStrings("name=value", args.positional[0]);
 }
 
-test "long flag with value after recipe is positional" {
-    // --jakefile takes a value, so it's treated as positional after recipe
+test "long flag with value after recipe is consumed by jake" {
+    // Single-pass parser: --jakefile is a known flag and consumes its value
+    // even after the recipe name.
     var args = try Args.parse(testing.allocator, &.{ "jake", "build", "--jakefile", "other.jake" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
-    try expectEqual(@as(usize, 2), args.positional.len);
-    try expectEqualStrings("--jakefile", args.positional[0]);
-    try expectEqualStrings("other.jake", args.positional[1]);
+    try expectEqualStrings("other.jake", args.jakefile);
+    try expectEqual(@as(usize, 0), args.positional.len);
 }
 
-test "inline value flag after recipe is positional" {
-    // Even --jakefile=value is positional after recipe since it takes a value
+test "other required value flags work after recipe" {
+    // --group, --filter, --type, --port now consume their values after the recipe.
+    var args1 = try Args.parse(testing.allocator, &.{ "jake", "build", "--group", "dev" });
+    defer args1.deinit(testing.allocator);
+    try expectEqualStrings("build", args1.recipe.?);
+    try expectEqualStrings("dev", args1.group.?);
+    try expectEqual(@as(usize, 0), args1.positional.len);
+
+    var args2 = try Args.parse(testing.allocator, &.{ "jake", "build", "--filter", "build*" });
+    defer args2.deinit(testing.allocator);
+    try expectEqualStrings("build*", args2.filter.?);
+
+    var args3 = try Args.parse(testing.allocator, &.{ "jake", "build", "--type", "task" });
+    defer args3.deinit(testing.allocator);
+    try expectEqualStrings("task", args3.recipe_type.?);
+
+    var args4 = try Args.parse(testing.allocator, &.{ "jake", "serve", "--port", "9000" });
+    defer args4.deinit(testing.allocator);
+    try expectEqual(@as(u16, 9000), args4.web_port);
+}
+
+test "show flag derives recipe from positional when no explicit value" {
+    // `jake build --show` and `jake --show build` both target `build`.
+    var args1 = try Args.parse(testing.allocator, &.{ "jake", "build", "--show" });
+    defer args1.deinit(testing.allocator);
+    try expect(args1.show_enabled);
+    try expectEqualStrings("build", args1.recipe.?);
+    // The parser intentionally leaves show as null when no explicit value is
+    // provided; main.zig resolves show orelse recipe at execution time.
+    try expect(args1.show == null);
+
+    var args2 = try Args.parse(testing.allocator, &.{ "jake", "--show", "build" });
+    defer args2.deinit(testing.allocator);
+    try expect(args2.show_enabled);
+    try expectEqualStrings("build", args2.recipe.?);
+    try expect(args2.show == null);
+}
+
+test "show flag explicit value overrides recipe positional" {
+    // `jake build --show=other` shows `other`, not `build`.
+    var args1 = try Args.parse(testing.allocator, &.{ "jake", "build", "--show=other" });
+    defer args1.deinit(testing.allocator);
+    try expect(args1.show_enabled);
+    try expectEqualStrings("build", args1.recipe.?);
+    try expectEqualStrings("other", args1.show.?);
+
+    var args2 = try Args.parse(testing.allocator, &.{ "jake", "build", "-sother" });
+    defer args2.deinit(testing.allocator);
+    try expectEqualStrings("other", args2.show.?);
+}
+
+test "inline value flag after recipe is consumed by jake" {
     var args = try Args.parse(testing.allocator, &.{ "jake", "build", "--jakefile=other.jake" });
     defer args.deinit(testing.allocator);
     try expectEqualStrings("build", args.recipe.?);
+    try expectEqualStrings("other.jake", args.jakefile);
+    try expectEqual(@as(usize, 0), args.positional.len);
+}
+
+test "unknown flag before recipe still errors" {
+    const result = Args.parse(testing.allocator, &.{ "jake", "--nonsense", "build" });
+    try expectError(error.UnknownFlag, result);
+}
+
+test "bare dash is treated as a positional, not a flag" {
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "-" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
     try expectEqual(@as(usize, 1), args.positional.len);
-    try expectEqualStrings("--jakefile=other.jake", args.positional[0]);
+    try expectEqualStrings("-", args.positional[0]);
 }
 
 test "empty args after program name" {
@@ -1979,6 +2165,40 @@ test "printErrorWithContext shows rich error for InvalidChoice" {
     try expect(std.mem.indexOf(u8, output, "Must be one of: json, yaml, toml") != null);
 }
 
+test "buildErrorContext recovers choices from the failing flag token" {
+    // Separate-token form: value isn't in the token, but choices/type are
+    // recovered so the message can list valid options.
+    const ctx1 = buildErrorContext("--type");
+    try expectEqualStrings("type", ctx1.flag_name);
+    try expect(ctx1.choices != null);
+    try expectEqual(@as(usize, 0), ctx1.provided_value.len);
+
+    // Inline form: the provided value is surfaced too.
+    const ctx2 = buildErrorContext("--completions=elvish");
+    try expectEqualStrings("completions", ctx2.flag_name);
+    try expect(ctx2.choices != null);
+    try expectEqualStrings("elvish", ctx2.provided_value);
+
+    // Short form maps to the first char's flag; --jobs carries a validator.
+    const ctx3 = buildErrorContext("-j");
+    try expectEqualStrings("jobs", ctx3.flag_name);
+    try expectEqualStrings("a positive integer", ctx3.expected_type);
+
+    // Unknown / non-flag tokens yield an empty context.
+    try expect(buildErrorContext("--frobnicate").flag_name.len == 0);
+    try expect(buildErrorContext("build").flag_name.len == 0);
+}
+
+test "buildErrorContext feeds InvalidChoice message with the flag's options" {
+    var buf: [512]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    printErrorWithContext(stream.writer(), error.InvalidChoice, "--completions", buildErrorContext("--completions"));
+    const output = stream.getWritten();
+    try expect(std.mem.indexOf(u8, output, "Must be one of: bash, zsh, fish") != null);
+    // No inline value → clean "for option:" phrasing, not a bare `""`.
+    try expect(std.mem.indexOf(u8, output, "\"\"") == null);
+}
+
 test "printErrorWithContext shows MutuallyExclusive error" {
     var buf: [512]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf);
@@ -2092,9 +2312,11 @@ test "--list alone works" {
 }
 
 test "--show alone works" {
-    const args = try Args.parse(testing.allocator, &.{ "jake", "--show", "build" });
+    var args = try Args.parse(testing.allocator, &.{ "jake", "--show", "build" });
+    defer args.deinit(testing.allocator);
     try expect(!args.list);
-    try expectEqualStrings("build", args.show.?);
+    try expect(args.show_enabled);
+    try expectEqualStrings("build", args.recipe.?);
 }
 
 // ============================================================================
@@ -2196,6 +2418,154 @@ test "getValidatorDescription returns descriptions" {
     try expectEqualStrings("a positive integer", getValidatorDescription(.positive_integer));
     try expectEqualStrings("a file path", getValidatorDescription(.file_path));
     try expectEqualStrings("bash, zsh, or fish", getValidatorDescription(.shell_name));
+}
+
+// ============================================================================
+// Edge Cases & Ambiguity Resolution
+// ============================================================================
+
+test "constraint violation with non-empty positional does not leak" {
+    // Regression: positional buffer must be freed on the error path. Uses
+    // testing.allocator, which fails the test on any leak. `deploy` is the
+    // recipe, `prod` a positional arg, and --list + --show conflict.
+    const result = Args.parse(testing.allocator, &.{ "jake", "--list", "deploy", "prod", "--show" });
+    try expectError(error.MutuallyExclusive, result);
+}
+
+test "inline value on a value-less flag is rejected" {
+    // `--yes=false` must not silently mean yes=true.
+    try expectError(error.UnexpectedValue, Args.parse(testing.allocator, &.{ "jake", "--yes=false" }));
+    try expectError(error.UnexpectedValue, Args.parse(testing.allocator, &.{ "jake", "--verbose=3" }));
+    try expectError(error.UnexpectedValue, Args.parse(testing.allocator, &.{ "jake", "--help=1" }));
+    // Negations are value-less too.
+    try expectError(error.UnexpectedValue, Args.parse(testing.allocator, &.{ "jake", "--no-verbose=3" }));
+    try expectError(error.UnexpectedValue, Args.parse(testing.allocator, &.{ "jake", "--no-yes=false" }));
+}
+
+test "positive_integer validator is enforced for --jobs" {
+    try expectError(error.InvalidValue, Args.parse(testing.allocator, &.{ "jake", "--jobs", "0" }));
+    try expectError(error.InvalidValue, Args.parse(testing.allocator, &.{ "jake", "-j0" }));
+    try expectError(error.InvalidValue, Args.parse(testing.allocator, &.{ "jake", "build", "--jobs", "0" }));
+}
+
+test "short value flag consumes the rest of the token as its value (-sv)" {
+    // -sv is `-s` with attached value "v" (getopt convention), not `-s -v`.
+    const args = try Args.parse(testing.allocator, &.{ "jake", "-sv" });
+    try expect(args.show_enabled);
+    try expectEqualStrings("v", args.show.?);
+    try expect(!args.verbose);
+}
+
+test "value flag not first in a short combo is rejected before recipe" {
+    // -vs would be ambiguous (is 's' a flag or does 'v' end a value?); reject it.
+    try expectError(error.UnknownFlag, Args.parse(testing.allocator, &.{ "jake", "-vs" }));
+    try expectError(error.UnknownFlag, Args.parse(testing.allocator, &.{ "jake", "-vf" }));
+}
+
+test "unknown char in a short combo after recipe forwards whole token, no half-apply" {
+    // `-vx`: 'v' is known but 'x' is not — the whole token is forwarded to the
+    // recipe verbatim and verbose is NOT applied (edge-case rule: no half-apply).
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "-vx" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expect(!args.verbose);
+    try expectEqual(@as(usize, 1), args.positional.len);
+    try expectEqualStrings("-vx", args.positional[0]);
+}
+
+test "optional-int flag leaves a non-numeric next token for the recipe (after recipe)" {
+    // `jake build -j deploy`: -j takes CPU default, `deploy` is a positional arg.
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "-j", "deploy" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expect(args.jobs != null); // CPU count
+    try expectEqual(@as(usize, 1), args.positional.len);
+    try expectEqualStrings("deploy", args.positional[0]);
+}
+
+test "known value flag consumes its value even after the recipe" {
+    // `--external make` after the recipe: jake consumes both; `make` is not a
+    // recipe positional arg.
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "--external", "make" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expect(args.external_enabled);
+    try expectEqualStrings("make", args.external.?);
+    try expectEqual(@as(usize, 0), args.positional.len);
+}
+
+test "strict-choice flag errors on invalid value even after the recipe" {
+    try expectError(error.InvalidChoice, Args.parse(testing.allocator, &.{ "jake", "build", "--completions", "elvish" }));
+}
+
+test "only the first -- is a separator; a later -- is literal" {
+    var args = try Args.parse(testing.allocator, &.{ "jake", "--", "--", "foo" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("--", args.recipe.?);
+    try expectEqual(@as(usize, 1), args.positional.len);
+    try expectEqualStrings("foo", args.positional[0]);
+}
+
+test "-- forwards flag-like tokens to the recipe verbatim" {
+    var args = try Args.parse(testing.allocator, &.{ "jake", "run", "--", "-x", "--flag", "val" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("run", args.recipe.?);
+    try expect(!args.verbose);
+    try expectEqual(@as(usize, 3), args.positional.len);
+    try expectEqualStrings("-x", args.positional[0]);
+    try expectEqualStrings("--flag", args.positional[1]);
+    try expectEqualStrings("val", args.positional[2]);
+}
+
+test "no-value negatable flag after recipe is still consumed by jake" {
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "--no-verbose" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expect(!args.verbose);
+    try expectEqual(@as(usize, 0), args.positional.len);
+}
+
+test "--no-external after recipe sets hide_externals" {
+    var args = try Args.parse(testing.allocator, &.{ "jake", "build", "--no-external" });
+    defer args.deinit(testing.allocator);
+    try expect(args.hide_externals);
+    try expect(!args.external_enabled);
+}
+
+test "verbose accumulates across tokens on both sides of the recipe" {
+    var args = try Args.parse(testing.allocator, &.{ "jake", "-v", "build", "-v", "-v" });
+    defer args.deinit(testing.allocator);
+    try expectEqualStrings("build", args.recipe.?);
+    try expect(args.verbose);
+    try expectEqual(@as(u8, 3), args.verbose_level);
+}
+
+test "--port validates range and positivity" {
+    try expectError(error.InvalidValue, Args.parse(testing.allocator, &.{ "jake", "--port", "0" }));
+    try expectError(error.InvalidValue, Args.parse(testing.allocator, &.{ "jake", "--port", "99999" }));
+    try expectError(error.InvalidValue, Args.parse(testing.allocator, &.{ "jake", "--port", "abc" }));
+    const ok = try Args.parse(testing.allocator, &.{ "jake", "--web", "--port", "8080" });
+    try expectEqual(@as(u16, 8080), ok.web_port.?);
+}
+
+test "empty long flag name is treated as unknown" {
+    try expectError(error.UnknownFlag, Args.parse(testing.allocator, &.{ "jake", "--=x" }));
+}
+
+test "parseTracked reports the exact failing token, not the first arg" {
+    // `--list` parses fine; the error is on `--frobnicate`, which must be the
+    // reported token (regression: main used to always report raw_args[1]).
+    var failing: []const u8 = "";
+    const result = Args.parseTracked(testing.allocator, &.{ "jake", "--list", "--frobnicate" }, &failing);
+    try expectError(error.UnknownFlag, result);
+    try expectEqualStrings("--frobnicate", failing);
+}
+
+test "parseTracked reports the flag token for a value-less-flag value error" {
+    var failing: []const u8 = "";
+    const result = Args.parseTracked(testing.allocator, &.{ "jake", "build", "--yes=false" }, &failing);
+    try expectError(error.UnexpectedValue, result);
+    try expectEqualStrings("--yes=false", failing);
 }
 
 // ============================================================================

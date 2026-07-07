@@ -98,6 +98,10 @@ Or find prebuilt binaries on the [Releases](https://github.com/HelgeSverre/jake/
 ```
 jake [OPTIONS] [RECIPE] [ARGS...]
 
+Flags may appear anywhere on the command line — before or after the recipe
+name, interspersed with recipe arguments. Use `--` to forward flag-like
+arguments to the recipe literally (e.g. `jake run -- --port 8080`).
+
 OPTIONS:
   -h, --help              Show help
   -V, --version           Show version
@@ -106,7 +110,7 @@ OPTIONS:
       --short             One recipe per line
   --summary           Space-separated recipe names
       --json              JSON output for listing modes
-  -s, --show RECIPE       Show detailed recipe info
+  -s, --show [RECIPE]     Show detailed recipe info (defaults to recipe on the line)
       --group GROUP       Filter recipes by group
       --filter PATTERN    Filter recipes by glob
       --type TYPE         Filter recipes by type (task/file/simple/external)

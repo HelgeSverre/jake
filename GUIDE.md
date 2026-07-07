@@ -1430,7 +1430,11 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 
 ARGUMENTS:
     RECIPE          Recipe to run (default: first recipe or @default)
-    ARGS            Recipe arguments (name=value)
+    ARGS            Recipe arguments (name=value or positional)
+
+Flags may appear anywhere on the command line — before or after the recipe
+name, interspersed with recipe arguments. Use `--` to forward flag-like
+arguments to the recipe literally (e.g. `jake run -- --port 8080`).
 
 OPTIONS:
     -h, --help              Show help message
@@ -1445,7 +1449,7 @@ OPTIONS:
     -j, --jobs [N]          Parallel jobs (default: CPU count)
         --summary           Print recipe names (for scripting/completions)
         --json              Emit JSON for listing-style output
-    -s, --show RECIPE       Show detailed recipe information
+    -s, --show [RECIPE]     Show detailed recipe information (defaults to recipe on the line)
         --group GROUP       Filter recipes to a specific group
         --filter PATTERN    Filter recipe names by glob pattern
         --type TYPE         Filter recipes by type (task/file/simple/external)
@@ -1467,6 +1471,8 @@ EXAMPLES:
     jake test --verbose     Run 'test' with verbose output
     jake deploy env=prod    Run 'deploy' with parameter
     jake -j4 all            Run 'all' with 4 parallel jobs
+    jake build --show       Show 'build' recipe details
+    jake run -- --raw       Forward '--raw' to the 'run' recipe
     jake -w build           Watch and rebuild
     jake -n deploy          Show what 'deploy' would do
     jake -l --short         List recipes for piping/scripting

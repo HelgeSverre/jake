@@ -244,6 +244,16 @@ With `.env` containing `PORT=8080`, the task outputs: `Running on port 8080`
 
 Without `.env` or if `PORT` is not set, it uses the default: `Running on port 3000`
 
+#### 5.6 Command-line argument grammar
+
+Jake's global flags may appear **anywhere** on the command line — before or after
+the recipe name, interspersed with recipe arguments (clap-style). The first bare
+token is the recipe; later bare tokens are its arguments; `--` forwards everything
+after it to the recipe literally. For example, `jake pkg.dev --show`,
+`jake --show pkg.dev`, and `jake -s pkg.dev` are all equivalent.
+
+See **[CLI-ARGS.md](CLI-ARGS.md)** for the complete argument grammar and rules.
+
 ---
 
 ### 6. Directives
