@@ -1113,6 +1113,7 @@ pub const Executor = struct {
         }
     }
 
+    /// Return the next bare argument and advance `index`, skipping named arguments.
     fn nextPositionalArg(args: []const []const u8, index: *usize) ?[]const u8 {
         while (index.* < args.len) {
             const arg = args[index.*];
