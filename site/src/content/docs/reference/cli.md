@@ -11,10 +11,10 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 
 ## Arguments
 
-| Argument | Description                                          |
-| -------- | ---------------------------------------------------- |
-| `RECIPE` | Recipe to run (default: first recipe or `@default`)  |
-| `ARGS`   | Recipe parameters (`name=value`) and positional args |
+| Argument | Description                                             |
+| -------- | ------------------------------------------------------- |
+| `RECIPE` | Recipe to run (default: first recipe or `@default`)     |
+| `ARGS`   | Recipe parameters (`name=value` or positional) and args |
 
 ## Argument ordering
 

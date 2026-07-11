@@ -42,8 +42,10 @@ A `<token>` is classified in a single left-to-right pass:
 ### Recipe arguments
 
 Everything that reaches the recipe is carried in `positional`, addressable inside
-recipe bodies as `{{$1}}`, `{{$2}}`, `{{$@}}`, and — for `name=value` tokens — as
-named parameters. See `docs/SYNTAX.md` §5.4 and §5.5.
+recipe bodies as `{{$1}}`, `{{$2}}`, and `{{$@}}`. Bare arguments also bind to
+declared recipe parameters in declaration order; `name=value` binds a parameter
+by name and takes precedence over positional binding. See `docs/SYNTAX.md` §5.4
+and §5.5.
 
 ## Rules
 

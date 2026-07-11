@@ -3,7 +3,25 @@ title: Positional Arguments
 description: Pass arguments directly to recipes using positional syntax.
 ---
 
-Positional arguments let you pass values to recipes without named parameters.
+Positional arguments let you pass values to recipes without named parameters, or
+bind declared recipe parameters without using `name=value`.
+
+## Binding Recipe Parameters
+
+Bare arguments fill declared parameters from left to right:
+
+```jake
+task greet name:
+    echo "Hello, {{name}}!"
+```
+
+```bash
+$ jake greet World
+Hello, World!
+```
+
+Use `name=value` to bind a specific parameter; named values take precedence over
+positional arguments. An unfilled parameter expands to an empty string.
 
 ## Basic Usage
 
