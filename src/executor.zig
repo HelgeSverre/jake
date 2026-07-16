@@ -2354,6 +2354,20 @@ pub const Executor = struct {
         return false;
     }
 
+    /// Whether a `--filter` pattern still carries glob metacharacters. A pattern
+    /// that reaches Jake with no `*`/`?`/`[` is the fingerprint of a shell having
+    /// already expanded (and consumed) the glob before exec — see the empty-match
+    /// hint in `listRecipes`.
+    fn hasGlobMeta(pattern: []const u8) bool {
+        for (pattern) |c| {
+            switch (c) {
+                '*', '?', '[' => return true,
+                else => {},
+            }
+        }
+        return false;
+    }
+
     fn matchesTypeFilter(recipe: *const Recipe, external_kind: ?parser.RecipeOrigin.ExternalKind, recipe_type: []const u8) bool {
         if (std.mem.eql(u8, recipe_type, "external")) {
             return external_kind != null;
@@ -2631,6 +2645,23 @@ pub const Executor = struct {
             stdout.writeAll("\n") catch {};
             for (just_recipes.items) |recipe| {
                 self.printExternalRecipe(stdout, recipe, .justfile);
+            }
+        }
+
+        // When `--filter` matches nothing and the pattern arrives with no glob
+        // metacharacters, the shell most likely expanded an unquoted glob before
+        // Jake ran (e.g. `opencode*` → `opencode-sema`). Nudge toward quoting.
+        if (options.name_filter) |pattern| {
+            if (filtered.items.len == 0 and !hasGlobMeta(pattern)) {
+                stdout.writeAll("\n") catch {};
+                stdout.writeAll(self.color.muted()) catch {};
+                stdout.writeAll("No recipe matched --filter '") catch {};
+                stdout.writeAll(pattern) catch {};
+                stdout.writeAll("'.\n") catch {};
+                stdout.writeAll("  If you passed an unquoted glob (e.g. 'name*'), your shell may have\n") catch {};
+                stdout.writeAll("  expanded it before Jake ran. Quote the pattern to prevent that:\n") catch {};
+                stdout.writeAll("      jake --filter 'name*'\n") catch {};
+                stdout.writeAll(self.color.reset()) catch {};
             }
         }
     }
@@ -7593,4 +7624,17 @@ test "external recipe delegation preserves positional args and runs in source di
     const pwd_output = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "nested/pwd.txt", 1024);
     defer std.testing.allocator.free(pwd_output);
     try std.testing.expect(std.mem.endsWith(u8, std.mem.trimRight(u8, pwd_output, "\n"), "nested"));
+}
+
+test "hasGlobMeta distinguishes shell-expanded patterns from literal globs" {
+    // Patterns that still carry glob metacharacters — the shell left them alone.
+    try std.testing.expect(Executor.hasGlobMeta("opencode*"));
+    try std.testing.expect(Executor.hasGlobMeta("build?"));
+    try std.testing.expect(Executor.hasGlobMeta("test[0-9]"));
+
+    // Patterns with no metacharacters — the fingerprint of an already-expanded
+    // (or plain literal) argument, which triggers the quoting hint on 0 matches.
+    try std.testing.expect(!Executor.hasGlobMeta("opencode-sema"));
+    try std.testing.expect(!Executor.hasGlobMeta("build"));
+    try std.testing.expect(!Executor.hasGlobMeta(""));
 }

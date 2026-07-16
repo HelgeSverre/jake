@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`--filter` now hints when a glob was eaten by the shell.** `jake --filter opencode*` could silently print `0 recipes` when the shell expanded the unquoted glob before jake ran (e.g. `opencode*` → a matching `opencode-sema/` directory, so jake filtered on `opencode-sema` and matched nothing). When `--filter` matches no recipes **and** the pattern arrives without any glob metacharacters (`*`, `?`, `[`) — the fingerprint of an already-expanded argument — jake now prints a reminder to quote the pattern. The hint appears only on the human-readable `--list` path; `--short`, `--summary`, and `--json` stay clean for scripting. A new "`--filter` Matches Nothing" troubleshooting entry documents the gotcha.
+
 ## [0.9.6] - 2026-07-07
 
 ### Fixed

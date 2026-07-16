@@ -23,6 +23,34 @@ Run 'jake --list' to see available recipes.
 - Use `jake --all` to see hidden recipes too
 - Use `-f` to specify Jakefile path: `jake -f path/to/Jakefile`
 
+## `--filter` Matches Nothing
+
+```
+jake --filter opencode*
+{j} jake 0 recipes
+```
+
+**Cause:** Your shell expands the glob **before** Jake runs, so Jake never
+sees the `*`. Two things can happen:
+
+- If a file or directory in the current folder matches (e.g. `opencode-sema/`),
+  the shell rewrites `opencode*` into that name, and Jake filters on
+  `opencode-sema` — which matches no recipe.
+- With no matching files, zsh and fish error with `no matches found`, while
+  bash passes the literal `opencode*` through unchanged.
+
+This applies to any glob argument, including `--group` and recipe arguments.
+
+**Solution:** Quote the pattern so the shell leaves it alone and Jake does the
+matching:
+
+```bash
+jake --filter 'opencode*'    # single or double quotes both work
+```
+
+When a `--filter` matches nothing and the pattern arrives without any glob
+characters, Jake prints a reminder to quote it.
+
 ## Cyclic Dependency
 
 ```

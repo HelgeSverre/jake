@@ -459,6 +459,14 @@ task test-cli:
     {{jake}} -f fixtures/cli/filtering.jake --filter "b*" --list --short > {{out}} 2>/dev/null
     grep -qx "build" {{out}} && ! grep -q "test" {{out}} && ! grep -q "deploy" {{out}}
     echo "  --filter narrows recipes by glob ...................... PASS"
+    # --filter with no glob metachars and 0 matches hints about shell expansion
+    {{jake}} -f fixtures/cli/filtering.jake --filter "nope" --list > {{out}} 2>/dev/null
+    grep -q "0 recipes" {{out}} && grep -q "Quote the pattern" {{out}}
+    echo "  --filter 0-match hints to quote globs ................. PASS"
+    # a quoted glob that matches nothing does NOT hint (metachar present = already quoted)
+    {{jake}} -f fixtures/cli/filtering.jake --filter "zzz*" --list > {{out}} 2>/dev/null
+    grep -q "0 recipes" {{out}} && ! grep -q "Quote the pattern" {{out}}
+    echo "  --filter glob 0-match stays quiet .................... PASS"
     # file recipes are hidden from the default listing (build artifacts, not commands)
     {{jake}} -f fixtures/cli/filtering.jake --short > {{out}} 2>/dev/null
     ! grep -q "dist/app.js" {{out}}
