@@ -8,15 +8,15 @@
 // 5. Align '=' in consecutive variable definitions
 
 const std = @import("std");
-const parser = @import("parser.zig");
-const lexer = @import("lexer.zig");
+const parser = @import("../frontend/parser.zig");
+const lexer = @import("../frontend/lexer.zig");
 const Jakefile = parser.Jakefile;
 const Recipe = parser.Recipe;
 const Variable = parser.Variable;
 const Directive = parser.Directive;
 const ImportDirective = parser.ImportDirective;
 const CommentNode = parser.CommentNode;
-const Hook = @import("hooks.zig").Hook;
+const Hook = @import("../runtime/hooks.zig").Hook;
 
 pub const FormatResult = struct {
     changed: bool,

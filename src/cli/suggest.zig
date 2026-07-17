@@ -4,7 +4,7 @@
 // and suggests them in the error message.
 
 const std = @import("std");
-const Recipe = @import("parser.zig").Recipe;
+const Recipe = @import("../frontend/parser.zig").Recipe;
 
 /// Compute Levenshtein distance between two strings.
 /// Uses Wagner-Fischer algorithm with O(min(m,n)) space optimization.

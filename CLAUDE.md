@@ -61,29 +61,52 @@ The codebase follows a compiler pipeline: Lexer → Parser → Executor
 
 ```
 src/
-├── main.zig          # CLI entry point, argument handling
-├── args.zig          # CLI argument parser (flags: -h, -V, -l, -n, -v, -f, -w, -j, -s, -y, etc.)
-├── lexer.zig         # Tokenizer with location tracking
-├── parser.zig        # Builds AST (Jakefile struct with variables, recipes, directives)
-├── executor.zig      # Recipe execution, dependency resolution, variable expansion
-├── parallel.zig      # Thread pool for parallel execution (-j N)
-├── cache.zig         # File modification tracking for file targets
-├── glob.zig          # Glob pattern matching (*, **, ?, [abc])
-├── watch.zig         # File watcher (FSEvents/inotify)
-├── import.zig        # @import resolution with namespacing
-├── env.zig           # Environment variable handling, .env loading
-├── conditions.zig    # @if/@elif/@else evaluation
-├── hooks.zig         # Pre/post hook execution
-├── functions.zig     # Built-in functions (see list below)
-├── suggest.zig       # Typo suggestions using Levenshtein distance
-├── completions.zig   # Shell completion generation (bash/zsh/fish)
-├── prompt.zig        # User confirmation prompts (@confirm handling)
-├── compat.zig        # Zig version compatibility layer (0.14 vs 0.15+)
-├── tracy.zig         # Tracy profiler integration (zero-cost when disabled)
-├── jake.zig          # Library exports (module root)
-├── fuzz_*.zig        # Fuzz testing entry points
-└── bench/            # Benchmark utilities
+├── main.zig                  # CLI entry point
+├── jake.zig                  # Library exports (module root)
+├── compat.zig                # Zig version compatibility layer (0.14 vs 0.15+)
+├── cli/                      # The jake command itself
+│   ├── args.zig              # CLI argument parser (flags: -h, -V, -l, -n, -v, -f, -w, -j, -s, -y, etc.)
+│   ├── completions.zig       # Shell completion generation (bash/zsh/fish)
+│   ├── suggest.zig           # Typo suggestions using Levenshtein distance
+│   ├── init.zig              # jake --init scaffolding
+│   ├── upgrade.zig           # Self-upgrade
+│   └── templates/            # Jakefile templates for init
+├── frontend/                 # Text → AST
+│   ├── lexer.zig             # Tokenizer with location tracking
+│   ├── parser.zig            # Builds AST (Jakefile struct with variables, recipes, directives)
+│   ├── import.zig            # @import resolution with namespacing
+│   ├── jakefile_loader.zig   # Locate + load Jakefiles
+│   ├── jakefile_index.zig    # Jakefile discovery index
+│   └── external.zig          # Makefile/Justfile ingestion
+├── runtime/                  # AST → processes
+│   ├── executor.zig          # Recipe execution, dependency resolution, variable expansion
+│   ├── parallel.zig          # Thread pool for parallel execution (-j N)
+│   ├── cache.zig             # File modification tracking for file targets
+│   ├── hooks.zig             # Pre/post hook execution
+│   ├── conditions.zig        # @if/@elif/@else evaluation
+│   ├── functions.zig         # Built-in functions (see list below)
+│   ├── env.zig               # Environment variable handling, .env loading
+│   ├── context.zig           # Shared execution context
+│   └── watch.zig             # File watcher (FSEvents/inotify)
+├── output/                   # How results reach the user
+│   ├── color.zig             # Terminal colors (NO_COLOR etc.)
+│   ├── formatter.zig         # Jakefile formatter (jake fmt)
+│   ├── progress.zig          # Progress display
+│   ├── prompt.zig            # User confirmation prompts (@confirm handling)
+│   └── event_emitter.zig     # Executor → UI event bus
+├── webui/                    # jake --web
+│   ├── server.zig            # HTTP + WebSocket server
+│   ├── index.html            # Web UI markup
+│   ├── style.css             # Web UI styles
+│   └── app.js                # Web UI client logic
+├── util/
+│   ├── glob.zig              # Glob pattern matching (*, **, ?, [abc])
+│   ├── system.zig            # Process/shell helpers
+│   └── tracy.zig             # Tracy profiler integration (zero-cost when disabled)
+└── bench/                    # Benchmark utilities
 ```
+
+Fuzz tests live inline in the modules they exercise (run via `zig build fuzz --fuzz`).
 
 ### Jake Modules
 

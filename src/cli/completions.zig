@@ -5,9 +5,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const args_mod = @import("args.zig");
-const color_mod = @import("color.zig");
-const compat = @import("compat.zig");
-const system = @import("system.zig");
+const color_mod = @import("../output/color.zig");
+const compat = @import("../compat.zig");
+const system = @import("../util/system.zig");
 
 /// Shell types supported for completion generation
 pub const Shell = enum {

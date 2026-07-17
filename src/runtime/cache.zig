@@ -1,7 +1,7 @@
 //! File modification tracking for file-target recipes.
 
 const std = @import("std");
-const glob_mod = @import("glob.zig");
+const glob_mod = @import("../util/glob.zig");
 
 pub const Cache = struct {
     allocator: std.mem.Allocator,

@@ -31,15 +31,15 @@ Fuzz tests are embedded in the source files using `std.testing.fuzz`:
 
 | Component  | File                 | What it tests                                  |
 | ---------- | -------------------- | ---------------------------------------------- |
-| Lexer      | `src/lexer.zig`      | Token parsing from arbitrary input             |
-| Parser     | `src/parser.zig`     | AST construction from fuzzed source            |
-| Glob       | `src/glob.zig`       | Pattern matching and parsing                   |
-| Functions  | `src/functions.zig`  | Built-in function evaluation                   |
-| Conditions | `src/conditions.zig` | @if/@elif condition evaluation                 |
-| Formatter  | `src/formatter.zig`  | Round-trip formatting (parse → format → parse) |
-| Args       | `src/args.zig`       | CLI argument parsing, flag suggestion          |
-| Suggest    | `src/suggest.zig`    | Levenshtein distance, typo suggestions         |
-| Env        | `src/env.zig`        | .env file parsing                              |
+| Lexer      | `src/frontend/lexer.zig`      | Token parsing from arbitrary input             |
+| Parser     | `src/frontend/parser.zig`     | AST construction from fuzzed source            |
+| Glob       | `src/util/glob.zig`       | Pattern matching and parsing                   |
+| Functions  | `src/runtime/functions.zig`  | Built-in function evaluation                   |
+| Conditions | `src/runtime/conditions.zig` | @if/@elif condition evaluation                 |
+| Formatter  | `src/output/formatter.zig`  | Round-trip formatting (parse → format → parse) |
+| Args       | `src/cli/args.zig`       | CLI argument parsing, flag suggestion          |
+| Suggest    | `src/cli/suggest.zig`    | Levenshtein distance, typo suggestions         |
+| Env        | `src/runtime/env.zig`        | .env file parsing                              |
 
 ## Web Interface
 

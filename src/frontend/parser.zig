@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const lexer = @import("lexer.zig");
-const hooks_mod = @import("hooks.zig");
+const hooks_mod = @import("../runtime/hooks.zig");
 const Token = lexer.Token;
 const Lexer = lexer.Lexer;
 const Hook = hooks_mod.Hook;

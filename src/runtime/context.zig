@@ -3,15 +3,15 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const color_mod = @import("color.zig");
+const color_mod = @import("../output/color.zig");
 const cache_mod = @import("cache.zig");
 const env_mod = @import("env.zig");
 const hooks_mod = @import("hooks.zig");
-const prompt_mod = @import("prompt.zig");
-const parser = @import("parser.zig");
-const jakefile_index = @import("jakefile_index.zig");
-const event_emitter_mod = @import("event_emitter.zig");
-const compat = @import("compat.zig");
+const prompt_mod = @import("../output/prompt.zig");
+const parser = @import("../frontend/parser.zig");
+const jakefile_index = @import("../frontend/jakefile_index.zig");
+const event_emitter_mod = @import("../output/event_emitter.zig");
+const compat = @import("../compat.zig");
 
 /// Output callback function type for streaming command output (web UI)
 pub const OutputCallback = *const fn (ctx: *anyopaque, line: []const u8, is_stderr: bool) void;
@@ -484,7 +484,7 @@ test "RuntimeContext.configure propagates dotenv load errors" {
         \\task build:
         \\    echo "build"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);

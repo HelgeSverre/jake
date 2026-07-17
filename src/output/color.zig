@@ -2,7 +2,7 @@
 //! Implements: https://no-color.org/ and CLICOLOR standard.
 
 const std = @import("std");
-const compat = @import("compat.zig");
+const compat = @import("../compat.zig");
 
 // ============================================================================
 // ANSI Escape Codes

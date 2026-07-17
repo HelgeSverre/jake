@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const compat = @import("compat.zig");
+const compat = @import("../compat.zig");
 
 pub const ShellKind = enum {
     bash,

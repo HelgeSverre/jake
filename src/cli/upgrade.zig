@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const color_mod = @import("color.zig");
+const color_mod = @import("../output/color.zig");
 
 // ============================================================================
 // Error Types

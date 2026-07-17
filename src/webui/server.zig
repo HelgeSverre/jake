@@ -3,20 +3,22 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const event_emitter = @import("event_emitter.zig");
-const parser = @import("parser.zig");
-const executor_mod = @import("executor.zig");
-const context_mod = @import("context.zig");
-const jakefile_index = @import("jakefile_index.zig");
-const color_mod = @import("color.zig");
-const compat = @import("compat.zig");
-const prompt_mod = @import("prompt.zig");
+const event_emitter = @import("../output/event_emitter.zig");
+const parser = @import("../frontend/parser.zig");
+const executor_mod = @import("../runtime/executor.zig");
+const context_mod = @import("../runtime/context.zig");
+const jakefile_index = @import("../frontend/jakefile_index.zig");
+const color_mod = @import("../output/color.zig");
+const compat = @import("../compat.zig");
+const prompt_mod = @import("../output/prompt.zig");
 
 // WebSocket magic GUID for handshake (RFC 6455)
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-// Embedded HTML content
-const html_content = @embedFile("webui.html");
+// Embedded static assets
+const html_content = @embedFile("index.html");
+const css_content = @embedFile("style.css");
+const js_content = @embedFile("app.js");
 
 /// Recipe info for web UI display
 pub const WebRecipe = struct {
@@ -398,6 +400,10 @@ pub const WebUIServer = struct {
 
         if (std.mem.eql(u8, path, "/") or std.mem.eql(u8, path, "/index.html")) {
             try serveHTML(conn.stream);
+        } else if (std.mem.eql(u8, path, "/style.css")) {
+            try serveStatic(conn.stream, "text/css; charset=utf-8", css_content);
+        } else if (std.mem.eql(u8, path, "/app.js")) {
+            try serveStatic(conn.stream, "application/javascript; charset=utf-8", js_content);
         } else if (std.mem.eql(u8, path, "/favicon.ico")) {
             try serveFavicon(conn.stream);
         } else if (std.mem.startsWith(u8, path, "/api/")) {
@@ -1113,6 +1119,18 @@ fn serveHTML(stream: std.net.Stream) !void {
         "\r\n";
     try stream.writeAll(response);
     try stream.writeAll(html_content);
+}
+
+fn serveStatic(stream: std.net.Stream, content_type: []const u8, body: []const u8) !void {
+    var buf: [256]u8 = undefined;
+    const header = std.fmt.bufPrint(&buf, "HTTP/1.1 200 OK\r\n" ++
+        "Content-Type: {s}\r\n" ++
+        "Content-Length: {d}\r\n" ++
+        "Connection: close\r\n" ++
+        "Cache-Control: no-cache\r\n" ++
+        "\r\n", .{ content_type, body.len }) catch return;
+    try stream.writeAll(header);
+    try stream.writeAll(body);
 }
 
 fn serveFavicon(stream: std.net.Stream) !void {

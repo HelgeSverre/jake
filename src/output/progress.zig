@@ -4,7 +4,7 @@
 // Used by executor.zig for sequential execution and parallel.zig for parallel.
 
 const std = @import("std");
-const compat = @import("compat.zig");
+const compat = @import("../compat.zig");
 const color_mod = @import("color.zig");
 
 /// Animated spinner for a single task (sequential execution)

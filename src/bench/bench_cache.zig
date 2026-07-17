@@ -15,7 +15,7 @@ fn benchCacheIsStale(allocator: std.mem.Allocator) void {
 
     const test_files = [_][]const u8{
         "src/main.zig",
-        "src/lexer.zig",
+        "src/frontend/lexer.zig",
         "build.zig",
     };
 

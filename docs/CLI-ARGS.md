@@ -2,7 +2,7 @@
 
 This document specifies how `jake` parses its command line: how it decides what
 is a flag, what is the recipe, and what is a recipe argument. The parser lives in
-`src/args.zig` (`Args.parse` / `Args.parseTracked`; `main.zig` uses `parseTracked`
+`src/cli/args.zig` (`Args.parse` / `Args.parseTracked`; `main.zig` uses `parseTracked`
 so parse errors can name the offending argument).
 
 The guiding principle is that **flag position does not matter** — jake's global
@@ -96,7 +96,7 @@ value. Whether they consume the following token depends on the flag:
 
 ## Divergences fixed by the 2026 rewrite
 
-Before the single-pass rewrite, `src/args.zig` had **two separate parsing paths**
+Before the single-pass rewrite, `src/cli/args.zig` had **two separate parsing paths**
 — one before the recipe name and a weaker one after it — which produced several
 surprising, position-dependent bugs:
 
@@ -117,4 +117,4 @@ surprising, position-dependent bugs:
 
 The rewrite collapses the two paths into one clap-style pass and drives all
 flag→field assignment, negation, and env-var fallback from a single declarative
-`Bind` descriptor on each flag (`src/args.zig`).
+`Bind` descriptor on each flag (`src/cli/args.zig`).

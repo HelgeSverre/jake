@@ -2,20 +2,20 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const compat = @import("compat.zig");
-const parser = @import("parser.zig");
+const compat = @import("../compat.zig");
+const parser = @import("../frontend/parser.zig");
 const cache_mod = @import("cache.zig");
 const conditions = @import("conditions.zig");
-const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
+const JakefileIndex = @import("../frontend/jakefile_index.zig").JakefileIndex;
 const parallel_mod = @import("parallel.zig");
 const env_mod = @import("env.zig");
 const hooks_mod = @import("hooks.zig");
-const system = @import("system.zig");
-const prompt_mod = @import("prompt.zig");
+const system = @import("../util/system.zig");
+const prompt_mod = @import("../output/prompt.zig");
 const functions = @import("functions.zig");
-const glob_mod = @import("glob.zig");
-const color_mod = @import("color.zig");
-const progress_mod = @import("progress.zig");
+const glob_mod = @import("../util/glob.zig");
+const color_mod = @import("../output/color.zig");
+const progress_mod = @import("../output/progress.zig");
 const context_mod = @import("context.zig");
 const RuntimeContext = context_mod.RuntimeContext;
 const Context = context_mod.Context;
@@ -3156,7 +3156,7 @@ test "executor basic" {
         \\task hello:
         \\    echo "Hello"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3183,7 +3183,7 @@ test "executor executes dependencies first" {
         \\third: [second]
         \\    echo "third"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3212,7 +3212,7 @@ test "executor executes each dependency once" {
         \\top: [left, right]
         \\    echo "top"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3239,7 +3239,7 @@ test "executor detects direct cycle" {
         \\b: [a]
         \\    echo "b"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3257,7 +3257,7 @@ test "executor detects self cycle" {
         \\a: [a]
         \\    echo "a"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3279,7 +3279,7 @@ test "executor detects indirect cycle" {
         \\c: [a]
         \\    echo "c"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3300,7 +3300,7 @@ test "executor expands jake variables" {
         \\task hello:
         \\    echo "{{greeting}} World"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3320,7 +3320,7 @@ test "executor preserves undefined variables" {
         \\task hello:
         \\    echo "{{undefined}} World"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3341,7 +3341,7 @@ test "executor expands multiple variables" {
         \\task hello:
         \\    echo "{{first}} {{second}}!"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3362,7 +3362,7 @@ test "executor dry run does not execute commands" {
         \\task test:
         \\    exit 1
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3382,7 +3382,7 @@ test "executor returns error for non-existent recipe" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3400,7 +3400,7 @@ test "executor returns error for missing dependency" {
         \\task build: [missing]
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3420,7 +3420,7 @@ test "executor handles simple recipe" {
         \\build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3438,7 +3438,7 @@ test "executor handles task recipe" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3460,7 +3460,7 @@ test "executor runs multiple commands in recipe" {
         \\    echo "step 2"
         \\    echo "step 3"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3481,7 +3481,7 @@ test "executor tracks executed recipes" {
         \\b:
         \\    echo "b"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3504,7 +3504,7 @@ test "executor skips already executed recipe" {
         \\base:
         \\    echo "base"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3527,7 +3527,7 @@ test "executor loads jakefile variables" {
         \\task info:
         \\    echo "{{name}} {{version}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3545,7 +3545,7 @@ test "executor handles empty recipe" {
     const source =
         \\empty:
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3589,7 +3589,7 @@ test "executor @ prefix suppresses echo but still executes" {
         \\    @echo "quiet"
         \\    echo "loud"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3609,7 +3609,7 @@ test "executor @ prefix strips @ before execution" {
         \\task test:
         \\    @echo "hello"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3638,7 +3638,7 @@ test "private recipes are hidden from list but still executable" {
         \\task deploy: [_internal-helper]
         \\    echo "Deploying..."
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3668,7 +3668,7 @@ test "file recipes are hidden from default listing but revealed by --all / --typ
         \\file dist/app.js: src/app.ts
         \\    echo bundle
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3714,7 +3714,7 @@ test "countHiddenRecipes counts private recipes" {
         \\task deploy:
         \\    echo "Deploying..."
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3738,7 +3738,7 @@ test "no hidden recipes when none start with underscore" {
         \\task deploy:
         \\    echo "Deploying..."
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -3890,7 +3890,7 @@ test "resolveRootedPath rebases relative paths onto a rooted module's base_dir" 
     if (@import("builtin").os.tag == .windows) return;
 
     const source = "task noop:\n    echo hi\n";
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4077,7 +4077,7 @@ test "executor @ignore continues after failed command" {
         \\    exit 1
         \\    echo "still running"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4097,7 +4097,7 @@ test "executor @ignore only affects next command" {
         \\    exit 1
         \\    echo "third"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4121,7 +4121,7 @@ test "executor @ignore in dry run mode" {
         \\    exit 1
         \\    echo "done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4144,7 +4144,7 @@ test "executor multiple @ignore directives" {
         \\    exit 2
         \\    echo "all tests complete"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4162,7 +4162,7 @@ test "executor expands single positional arg $1" {
         \\task deploy:
         \\    echo "Deploying to {{$1}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4185,7 +4185,7 @@ test "executor expands multiple positional args $1 and $2" {
         \\task deploy:
         \\    echo "{{$1}} {{$2}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4208,7 +4208,7 @@ test "executor expands $@ to all positional args" {
         \\task deploy:
         \\    echo "All: {{$@}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4231,7 +4231,7 @@ test "executor expands out of range positional arg to empty string" {
         \\task test:
         \\    echo "{{$1}} {{$2}} {{$3}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4255,7 +4255,7 @@ test "executor expands $0 to empty string" {
         \\task test:
         \\    echo "{{$0}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4278,7 +4278,7 @@ test "executor expands empty $@ to empty string" {
         \\task test:
         \\    echo "[{{$@}}]"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4299,7 +4299,7 @@ test "executor mixes positional args and named variables" {
         \\task deploy:
         \\    echo "Deploy {{env}} to {{$1}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4321,7 +4321,7 @@ test "executor preserves invalid positional arg syntax" {
         \\task test:
         \\    echo "{{$abc}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4345,7 +4345,7 @@ test "variable expansion does not trim whitespace - leading space" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4369,7 +4369,7 @@ test "variable expansion does not trim whitespace - trailing space" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4391,7 +4391,7 @@ test "variable expansion does not trim whitespace - both sides" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4413,7 +4413,7 @@ test "positional arg expansion does not trim whitespace" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4438,7 +4438,7 @@ test "function calls tolerate whitespace in arguments" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4473,7 +4473,7 @@ test "@require validates single env var exists" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4491,7 +4491,7 @@ test "@require fails with clear error when env var missing" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4515,7 +4515,7 @@ test "@require checks multiple variables in single directive" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4539,7 +4539,7 @@ test "@require checks multiple @require directives" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4556,7 +4556,7 @@ test "@require skips validation in dry-run mode" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4577,7 +4577,7 @@ test "@require with empty value still passes" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4595,7 +4595,7 @@ test "@require fails on second missing var in list" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4635,7 +4635,7 @@ test "@require works with env vars from dotenv" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4658,7 +4658,7 @@ test "@require is recipe-scoped: unrelated recipe is unaffected" {
         \\task publish:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4681,7 +4681,7 @@ test "@require with no following recipe stays global" {
         \\
         \\@require JAKE_TEST_NONEXISTENT_VAR_12345
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4721,7 +4721,7 @@ test "@needs verifies command exists in PATH" {
         \\    echo "ok"
     , .{testNeedsPrimaryCommand()});
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4740,7 +4740,7 @@ test "@needs fails with helpful error when command missing" {
         \\    @needs jake_nonexistent_command_xyz123
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4761,7 +4761,7 @@ test "@needs checks multiple space-separated commands" {
         \\    echo "ok"
     , .{ testNeedsPrimaryCommand(), testNeedsSecondaryCommand(), testNeedsTertiaryCommand() });
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4782,7 +4782,7 @@ test "@needs works with full path to binary" {
         \\    echo "ok"
     , .{absolute_command});
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4802,7 +4802,7 @@ test "command-level @needs accepts quoted command paths" {
         \\    echo "ok"
     , .{absolute_command});
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4824,7 +4824,7 @@ test "@needs with non-existent command in middle of list fails" {
         \\    echo "ok"
     , .{ testNeedsPrimaryCommand(), testNeedsSecondaryCommand() });
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4845,7 +4845,7 @@ test "@needs with comma-separated commands" {
         \\    echo "ok"
     , .{ testNeedsPrimaryCommand(), testNeedsSecondaryCommand(), testNeedsTertiaryCommand() });
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4867,7 +4867,7 @@ test "@needs only checks once per command" {
         \\    echo "second"
     , .{ testNeedsPrimaryCommand(), testNeedsPrimaryCommand() });
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4886,7 +4886,7 @@ test "@needs with custom hint shows hint on failure" {
         \\    @needs jake_nonexistent_xyz123 "Install from https://example.com"
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4906,7 +4906,7 @@ test "@needs with task reference shows run suggestion" {
         \\    @needs jake_nonexistent_xyz123 -> install-it
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4926,7 +4926,7 @@ test "@needs with hint and task reference" {
         \\    @needs jake_nonexistent_xyz123 "Google fuzzer" -> toolchain.install-fuzz
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4947,7 +4947,7 @@ test "@needs with hint still works when command exists" {
         \\    echo "ok"
     , .{testNeedsPrimaryCommand()});
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4967,7 +4967,7 @@ test "@needs with task reference still works when command exists" {
         \\    echo "ok"
     , .{testNeedsPrimaryCommand()});
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -4989,7 +4989,7 @@ test "recipe-level @needs verifies command exists before execution" {
         \\    echo "ok"
     , .{testNeedsPrimaryCommand()});
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5008,7 +5008,7 @@ test "recipe-level @needs fails with helpful error when command missing" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5028,7 +5028,7 @@ test "recipe-level @needs with hint and task reference" {
         \\task test:
         \\    echo "ok"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5051,7 +5051,7 @@ test "recipe-level @needs fails before any command executes" {
         \\    echo "this should never run"
         \\    exit 0
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5073,7 +5073,7 @@ test "recipe-level @needs checks multiple commands on same line" {
         \\    echo "ok"
     , .{ testNeedsPrimaryCommand(), testNeedsSecondaryCommand() });
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5095,7 +5095,7 @@ test "@confirm with --yes flag auto-confirms" {
         \\    @confirm Deploy to production?
         \\    echo "deployed"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5115,7 +5115,7 @@ test "@confirm in dry-run mode shows message but doesn't prompt" {
         \\    @confirm Are you sure?
         \\    echo "done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5134,7 +5134,7 @@ test "@confirm with default message" {
         \\    @confirm
         \\    echo "done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5156,7 +5156,7 @@ test "@each iterates over space-separated items" {
         \\        echo "item: {{item}}"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5176,7 +5176,7 @@ test "@each expands {{item}} variable in command" {
         \\        echo "processing: {{item}}"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5197,7 +5197,7 @@ test "@each expands variable to multiple items" {
         \\        echo "building {{item}}"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5221,7 +5221,7 @@ test "@each with empty list executes zero times" {
         \\    @end
         \\    echo "done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5244,7 +5244,7 @@ test "@each nested in conditional block respects condition" {
         \\    @end
         \\    echo "done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5264,7 +5264,7 @@ test "@each with comma-separated items" {
         \\        echo "{{item}}"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5283,7 +5283,7 @@ test "@each with single item" {
         \\        echo "{{item}}"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5303,7 +5303,7 @@ test "@each with multiple commands" {
         \\        echo "end {{item}}"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5324,7 +5324,7 @@ test "@each with glob pattern expands matching files" {
         \\        echo "processing: {{item}}"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5366,7 +5366,7 @@ test "@each with non-matching glob returns empty" {
         \\    @end
         \\    echo "done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5386,7 +5386,7 @@ test "@each with mixed literal and glob items" {
         \\        echo "item: {{item}}"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5409,7 +5409,7 @@ test "@cache first run always executes" {
         \\    @cache nonexistent_file.txt
         \\    echo "running"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5448,7 +5448,7 @@ test "@cache with existing file updates cache" {
         \\    @cache test.txt
         \\    echo "running"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5487,7 +5487,7 @@ test "@cache skips command when inputs unchanged" {
         \\    @cache test.txt
         \\    echo "running"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5512,7 +5512,7 @@ test "@cache with multiple files" {
         \\    @cache file1.txt file2.txt
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5530,7 +5530,7 @@ test "@cache with comma-separated files" {
         \\    @cache file1.txt, file2.txt
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5572,7 +5572,7 @@ test "@cache with glob pattern updates matched files" {
         \\    @cache *.txt
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5592,7 +5592,7 @@ test "@cache with empty deps always runs" {
         \\    @cache
         \\    echo "always runs"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5638,7 +5638,7 @@ test "@watch in dry-run mode shows what would be watched" {
         \\    @watch src/*.zig
         \\    echo "watching"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5656,7 +5656,7 @@ test "@watch is informational in normal mode" {
         \\    @watch nonexistent/*.zig
         \\    echo "running"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5674,7 +5674,7 @@ test "@watch with multiple patterns" {
         \\    @watch src/*.zig, tests/*.zig
         \\    echo "watching"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5693,7 +5693,7 @@ test "@watch continues to next command" {
         \\    echo "command 1"
         \\    echo "command 2"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5734,7 +5734,7 @@ test "@watch with empty pattern is no-op" {
         \\    @watch
         \\    echo "running"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5765,7 +5765,7 @@ test "deeply nested @if blocks (5 levels)" {
         \\        @end
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5794,7 +5794,7 @@ test "nested @if with @else does not execute outer else" {
         \\    @end
         \\    echo "after-outer"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5821,7 +5821,7 @@ test "nested @if with false outer does not execute inner" {
         \\        echo "outer-else-runs"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5840,7 +5840,7 @@ test "@ignore with command that doesn't exist still continues" {
         \\    totally_nonexistent_command_12345
         \\    echo "continued"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5858,7 +5858,7 @@ test "empty recipe with only directives executes without error" {
         \\    @if false
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5879,7 +5879,7 @@ test "@each inside @if only runs when condition true" {
         \\        @end
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5901,7 +5901,7 @@ test "@each inside @if false is skipped" {
         \\    @end
         \\    echo "done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5928,7 +5928,7 @@ test "recipe with all directives combined" {
         \\    @watch src/*.zig
         \\    echo "watching"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5951,7 +5951,7 @@ test "multiple @if/@else chains" {
         \\        echo "third"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5968,7 +5968,7 @@ test "executor returns RecipeNotFound for missing recipe" {
         \\task existing:
         \\    echo "exists"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -5985,7 +5985,7 @@ test "executor returns CyclicDependency for self-referencing recipe" {
         \\task loop: [loop]
         \\    echo "never runs"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6008,7 +6008,7 @@ test "executor returns CyclicDependency for indirect cycle" {
         \\task c: [a]
         \\    echo "c"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6027,7 +6027,7 @@ test "@needs continues checking after first found command" {
         \\    echo "all commands found"
     , .{ testNeedsPrimaryCommand(), testNeedsTertiaryCommand(), testNeedsSecondaryCommand() });
     defer std.testing.allocator.free(source);
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6046,7 +6046,7 @@ test "variable expansion in commands works with special chars" {
         \\task test:
         \\    echo "v{{version}}-release"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6063,7 +6063,7 @@ test "environment variable expansion with default fallback" {
         \\task test:
         \\    echo "${DEFINITELY_UNSET_VAR_12345:-default_value}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6082,7 +6082,7 @@ test "recipe with only comments parses correctly" {
         \\    # More comments
         \\    echo "hello"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6099,7 +6099,7 @@ test "executor handles recipe with spaces in command" {
         \\task test:
         \\    echo "hello   world   spaces"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6117,7 +6117,7 @@ test "@quiet suppresses verbose output for recipe" {
         \\task test:
         \\    echo "silent command"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6143,7 +6143,7 @@ test "@quiet only applies to next recipe" {
         \\task normal_task:
         \\    echo "normal"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6162,7 +6162,7 @@ test "recipe parameter with default value binds to variable" {
         \\task greet name="World":
         \\    echo "Hello, {{name}}!"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6182,7 +6182,7 @@ test "recipe parameter CLI arg overrides default" {
         \\task greet name="World":
         \\    echo "Hello, {{name}}!"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6206,7 +6206,7 @@ test "recipe parameter without default stays unset if no CLI arg" {
         \\task greet name:
         \\    echo "Hello, {{name}}!"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6226,7 +6226,7 @@ test "recipe multiple parameters bind correctly" {
         \\task deploy env="dev" region="us-east-1":
         \\    echo "Deploying to {{env}} in {{region}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6250,7 +6250,7 @@ test "recipe parameter with quoted value in CLI" {
         \\task greet name="World":
         \\    echo "Hello, {{name}}!"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6273,7 +6273,7 @@ test "recipe parameter value with equals sign" {
         \\task test expr="1+1":
         \\    echo "{{expr}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6297,7 +6297,7 @@ test "function call uppercase in variable expansion" {
         \\task test:
         \\    echo "Hello"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6315,7 +6315,7 @@ test "function call lowercase in variable expansion" {
         \\task test:
         \\    echo "Hello"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6333,7 +6333,7 @@ test "function call dirname in variable expansion" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6351,7 +6351,7 @@ test "function call basename in variable expansion" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6370,7 +6370,7 @@ test "function call with variable argument" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6388,7 +6388,7 @@ test "function call extension" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6406,7 +6406,7 @@ test "unknown function keeps original" {
         \\task test:
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6450,7 +6450,7 @@ test "stress: deeply nested conditionals with mixed branches" {
         \\    @end
         \\    echo "after-all"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6481,7 +6481,7 @@ test "stress: complex dependency chain" {
         \\task h: [g, a]
         \\    echo "h"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6504,7 +6504,7 @@ test "stress: @each inside conditional" {
         \\        echo "skip-each"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6527,7 +6527,7 @@ test "stress: conditional inside @each" {
         \\        @end
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6552,7 +6552,7 @@ test "stress: multiple directives in single recipe" {
         \\    nonexistent_cmd
         \\    echo "after ignore"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6584,7 +6584,7 @@ test "stress: hooks with dependencies" {
         \\    echo "test"
         \\    @post echo "test-post"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6607,7 +6607,7 @@ test "stress: recipe with parameters and conditionals" {
         \\        echo "unknown env: {{env}}"
         \\    @end
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6635,7 +6635,7 @@ test "stress: targeted hooks with multiple recipes" {
         \\task deploy: [test]
         \\    echo "deploying"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6655,7 +6655,7 @@ test "stress: file target with multiple deps" {
         \\task build: [output.txt]
         \\    echo "build done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6675,7 +6675,7 @@ test "stress: empty @each list produces no iterations" {
         \\    @end
         \\    echo "done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6695,7 +6695,7 @@ test "@export KEY=value sets environment variable" {
         \\task test:
         \\    echo "testing"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6714,7 +6714,7 @@ test "@export KEY exports Jake variable to environment" {
         \\task test:
         \\    echo "testing"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6732,7 +6732,7 @@ test "@export KEY value sets environment variable" {
         \\task test:
         \\    echo "testing"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6751,7 +6751,7 @@ test "@export builds correct env map for child process" {
         \\task test:
         \\    echo "testing"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6774,7 +6774,7 @@ test "@export KEY=\"value with spaces\" handles quoted values" {
         \\task test:
         \\    echo "testing"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6792,7 +6792,7 @@ test "@export nonexistent variable is silently ignored" {
         \\task test:
         \\    echo "testing"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6810,7 +6810,7 @@ test "@export with quoted value using separate arg" {
         \\task test:
         \\    echo "testing"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6835,7 +6835,7 @@ test "stress: diamond dependency pattern" {
         \\task a: [b, c]
         \\    echo "a"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6895,7 +6895,7 @@ test "stress: 20+ recipes large project" {
         \\task all: [publish]
         \\    echo "all done"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6917,7 +6917,7 @@ test "@cd directive is parsed and stored" {
         \\    @cd /tmp
         \\    echo "in tmp"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6933,7 +6933,7 @@ test "@cd directive works in dry run" {
         \\    @cd /tmp
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6956,7 +6956,7 @@ test "@shell directive is parsed and stored" {
         \\    @shell /bin/bash
         \\    echo "using bash"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6972,7 +6972,7 @@ test "@shell directive works in dry run" {
         \\    @shell /bin/sh
         \\    echo "test"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6991,7 +6991,7 @@ test "@cd and @shell combined" {
         \\    @shell /bin/sh
         \\    echo "in tmp with sh"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7015,7 +7015,7 @@ test "@timeout parsing seconds" {
         \\task test:
         \\    echo "with timeout"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7030,7 +7030,7 @@ test "@timeout parsing minutes" {
         \\task test:
         \\    echo "with timeout"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7045,7 +7045,7 @@ test "@timeout parsing hours" {
         \\task test:
         \\    echo "with timeout"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7060,7 +7060,7 @@ test "@timeout with dry run does not hang" {
         \\task test:
         \\    echo "quick"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7078,7 +7078,7 @@ test "@timeout default is null" {
         \\task test:
         \\    echo "no timeout"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7096,7 +7096,7 @@ test "@timeout kills long-running command" {
         \\task slow:
         \\    sleep 10
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7124,7 +7124,7 @@ test "captured command cancellation does not hang" {
         \\task slow:
         \\    sleep 10
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7216,7 +7216,7 @@ test "@timeout allows fast commands to complete" {
         \\task quick:
         \\    echo "fast"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7257,7 +7257,7 @@ test "parallel execution honors @confirm with --yes" {
         \\    @confirm Deploy?
         \\    echo ok > confirmed.txt
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7299,7 +7299,7 @@ test "parallel execution honors @cd" {
         \\    @cd subdir
         \\    pwd > ../cwd.txt
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7359,7 +7359,7 @@ test "parallel execution honors @shell" {
     try std.posix.chdir(tmp_path);
     defer std.posix.chdir(old_cwd) catch {};
 
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7403,7 +7403,7 @@ test "parallel execution runs recipe and global hooks" {
         \\    echo body > body.txt
         \\    @post echo recipe-post > recipe-post.txt
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7462,7 +7462,7 @@ test "parallel execution honors @cache" {
         \\    @cache input.txt
         \\    echo run >> runs.txt
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7494,7 +7494,7 @@ test "parallel execution honors @timeout" {
         \\task slow:
         \\    sleep 10
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7541,7 +7541,7 @@ test "parallel execution delegates external recipes" {
     const source =
         \\task external:
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -7598,7 +7598,7 @@ test "external recipe delegation preserves positional args and runs in source di
     const source =
         \\task args:
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);

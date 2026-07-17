@@ -24,7 +24,7 @@
 
 const std = @import("std");
 const suggest = @import("suggest.zig");
-const compat = @import("compat.zig");
+const compat = @import("../compat.zig");
 
 // ANSI escape codes for colored output (matches brand.astro)
 pub const ansi = struct {

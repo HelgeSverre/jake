@@ -40,7 +40,7 @@ That architectural split is the highest-risk issue in the repository.
 
 ### 1. Parallel execution is a different runtime, not just a scheduler
 
-Files: `src/executor.zig`, `src/parallel.zig`
+Files: `src/runtime/executor.zig`, `src/runtime/parallel.zig`
 
 Observed problems:
 
@@ -64,11 +64,11 @@ Recommended fix:
 
 - Collapse execution semantics into one shared per-recipe runner.
 - Keep `ParallelExecutor` responsible only for dependency scheduling and worker orchestration.
-- Remove directive parsing and shell launching from `src/parallel.zig`.
+- Remove directive parsing and shell launching from `src/runtime/parallel.zig`.
 
 ### 2. Parallel execution has a real shared-state race
 
-Files: `src/parallel.zig`
+Files: `src/runtime/parallel.zig`
 
 Observed problems:
 
@@ -88,7 +88,7 @@ Recommended fix:
 
 ### 3. Watch mode reruns stale configuration and loses CLI/runtime semantics
 
-Files: `src/main.zig`, `src/watch.zig`
+Files: `src/main.zig`, `src/runtime/watch.zig`
 
 Observed problems:
 
@@ -109,7 +109,7 @@ Recommended fix:
 
 ### 4. Watch mode dependency collection is not robust
 
-Files: `src/watch.zig`
+Files: `src/runtime/watch.zig`
 
 Observed problems:
 
@@ -128,7 +128,7 @@ Recommended fix:
 
 ### 5. `@cache` glob support is broken after the command runs
 
-Files: `src/executor.zig`, `src/cache.zig`
+Files: `src/runtime/executor.zig`, `src/runtime/cache.zig`
 
 Observed problems:
 
@@ -149,7 +149,7 @@ Recommended fix:
 
 ### 6. `jake init` is documented as more complete than the CLI actually is
 
-Files: `src/main.zig`, `src/init.zig`, `TODO.md`
+Files: `src/main.zig`, `src/cli/init.zig`, `TODO.md`
 
 Observed problems:
 
@@ -169,7 +169,7 @@ Recommended fix:
 
 ### 7. External build integration has correctness gaps
 
-Files: `src/executor.zig`, `src/external.zig`
+Files: `src/runtime/executor.zig`, `src/frontend/external.zig`
 
 Observed problems:
 
@@ -191,7 +191,7 @@ Recommended fix:
 
 ### 8. The parser is too forgiving for a build tool
 
-Files: `src/parser.zig`
+Files: `src/frontend/parser.zig`
 
 Observed problems:
 
@@ -213,7 +213,7 @@ Recommended fix:
 
 ### 9. Cross-platform support is weaker than the docs and changelog imply
 
-Files: `src/conditions.zig`, `src/executor.zig`, `src/hooks.zig`, `src/parallel.zig`
+Files: `src/runtime/conditions.zig`, `src/runtime/executor.zig`, `src/runtime/hooks.zig`, `src/runtime/parallel.zig`
 
 Observed problems:
 
@@ -236,7 +236,7 @@ Recommended fix:
 
 ### 10. Memory and error handling are weaker than they should be for Zig
 
-Files: `src/parser.zig`, `src/executor.zig`, `src/external.zig`, `src/args.zig`
+Files: `src/frontend/parser.zig`, `src/runtime/executor.zig`, `src/frontend/external.zig`, `src/cli/args.zig`
 
 Observed problems:
 
@@ -257,7 +257,7 @@ Recommended fix:
 
 ### 11. Timeout reporting is incorrect for ordinary failures
 
-Files: `src/executor.zig`
+Files: `src/runtime/executor.zig`
 
 Observed problems:
 
@@ -273,7 +273,7 @@ Recommended fix:
 
 ### 12. CLI/help behavior is internally inconsistent
 
-Files: `src/main.zig`, `src/args.zig`, `tests/completions_test.sh`
+Files: `src/main.zig`, `src/cli/args.zig`, `tests/completions_test.sh`
 
 Observed problems:
 
@@ -295,7 +295,7 @@ Recommended fix:
 
 ### 13. The test suite is broad, but it is not yet protecting the riskiest behavior
 
-Files: `tests/e2e/Jakefile`, `.github/workflows/ci.yml`, module tests in `src/parallel.zig`
+Files: `tests/e2e/Jakefile`, `.github/workflows/ci.yml`, module tests in `src/runtime/parallel.zig`
 
 Observed problems:
 
@@ -317,7 +317,7 @@ Recommended fix:
 
 ### 14. Web UI execution still looks brittle
 
-Files: `src/webui.zig`, `src/executor.zig`
+Files: `src/webui/server.zig`, `src/runtime/executor.zig`
 
 Observed problems:
 
@@ -463,8 +463,8 @@ Exit criteria:
 
 Status update (2026-03-11):
 
-- Completed. Sequential vs parallel semantic equivalence now has focused regression coverage in `src/executor.zig` and `src/parallel.zig`.
-- Completed. Watch-mode reload, cycle-handling, and deleted-file behavior now have focused regression coverage in `src/watch.zig`.
+- Completed. Sequential vs parallel semantic equivalence now has focused regression coverage in `src/runtime/executor.zig` and `src/runtime/parallel.zig`.
+- Completed. Watch-mode reload, cycle-handling, and deleted-file behavior now have focused regression coverage in `src/runtime/watch.zig`.
 - Completed. External integration now has unit and E2E coverage for nested Jakefile paths and positional-argument forwarding.
 - Completed. CI now runs the shell completion harness on Ubuntu with `bash`, `zsh`, and `fish` available.
 - Completed. The repository now uses Zig `0.15.2` consistently in active CI jobs and documentation.
@@ -512,7 +512,7 @@ This section captures work completed after the initial review so the next agent 
   - timeout handling
   - external Make/Just delegation
   - command-level `@cache`
-- The old duplicate interpreter code in `src/parallel.zig` has been removed to reduce future semantic drift.
+- The old duplicate interpreter code in `src/runtime/parallel.zig` has been removed to reduce future semantic drift.
 - Parallel graph construction now includes recipes that produce file dependencies of file targets.
 - Parallel command-level `@needs` validation is fixed.
 - Parallel `@if/@elif` handling was fixed before the duplicate interpreter was removed.
@@ -534,8 +534,8 @@ This section captures work completed after the initial review so the next agent 
 
 The following passed after the parallel cleanup:
 
-- `zig test src/executor.zig`
-- `zig test src/parallel.zig`
+- `zig test src/runtime/executor.zig`
+- `zig test src/runtime/parallel.zig`
 
 Additional regression coverage was added for parallel execution of:
 
@@ -553,7 +553,7 @@ Start with watch mode. That is still the highest-value open area after the paral
 
 Files to inspect first:
 
-- `src/watch.zig`
+- `src/runtime/watch.zig`
 - `src/main.zig`
 
 Concrete watch-mode goals:
@@ -575,8 +575,8 @@ Concrete watch-mode goals:
 
 There were unrelated in-progress edits already present in the worktree while this work was being done. They were left untouched:
 
-- `src/external.zig`
-- `src/import.zig`
+- `src/frontend/external.zig`
+- `src/frontend/import.zig`
 - `src/main.zig`
 - `tests/e2e/Jakefile`
 
@@ -586,7 +586,7 @@ Watch mode has now been repaired enough to move it out of the top open slot from
 
 Completed:
 
-- Jakefile loading was extracted into `src/jakefile_loader.zig` so normal CLI execution and watch-mode reloads use the same parse/import/external/runtime setup path.
+- Jakefile loading was extracted into `src/frontend/jakefile_loader.zig` so normal CLI execution and watch-mode reloads use the same parse/import/external/runtime setup path.
 - `Watcher` now owns the loaded Jakefile state for watch runs and reuses `Executor.initWithIndexAndContext(...)` instead of rebuilding a partial executor context.
 - Automatic watch mode now tracks the main Jakefile, imported Jakefiles, and detected external build files in addition to recipe file dependencies and `@watch` patterns.
 - Editing watched configuration files now reloads the Jakefile before rerunning the recipe, so watch mode no longer executes against a stale AST.
@@ -595,7 +595,7 @@ Completed:
 
 Verification now includes:
 
-- `zig test src/watch.zig`
+- `zig test src/runtime/watch.zig`
 - `zig build test`
 
 Recommended next step:
@@ -612,17 +612,17 @@ Completed:
 - Delegated external execution now forwards CLI positional arguments to the underlying `make` or `just` process.
 - Delegated external execution now runs from the external file's directory, which restores relative-path behavior for nested `-f` Jakefiles.
 - Empty external parse results are now allocator-owned, so cleanup no longer depends on freeing static empty slices.
-- Added focused unit coverage in `src/external.zig` and `src/executor.zig` for nested external loading, delegated args, and delegated cwd behavior.
+- Added focused unit coverage in `src/frontend/external.zig` and `src/runtime/executor.zig` for nested external loading, delegated args, and delegated cwd behavior.
 - Added E2E coverage in `tests/e2e/Jakefile` for nested external discovery via `-f` and delegated argument forwarding.
 
 Verification now includes:
 
-- `zig test src/external.zig`
-- `zig test src/executor.zig`
+- `zig test src/frontend/external.zig`
+- `zig test src/runtime/executor.zig`
 
 Recommended next step:
 
-- Move to the remaining frontend/runtime parity items, starting with `src/webui.zig`, output/cancellation behavior, and Web UI execution-context drift.
+- Move to the remaining frontend/runtime parity items, starting with `src/webui/server.zig`, output/cancellation behavior, and Web UI execution-context drift.
 
 ## Handoff Update (2026-03-11, Web UI)
 
@@ -635,7 +635,7 @@ Completed:
 - Web UI runs now validate `@require` directives before execution, matching the normal CLI path.
 - WebSocket frame-handler threads are now explicitly detached, which removes an obvious background-thread ownership bug.
 - Web UI execution threads are now joined cleanly between runs instead of losing the thread handle from inside the worker thread.
-- Added focused unit coverage in `src/webui.zig` for command parsing and execution-context construction.
+- Added focused unit coverage in `src/webui/server.zig` for command parsing and execution-context construction.
 - Web-triggered execution now emits task, command, output, and summary events through the shared executor/event-emitter path instead of a separate partial reporting path.
 - Browser-side `@confirm` transport is now implemented, so Web UI runs no longer auto-approve confirmation prompts.
 - Stop/cancel now terminates running captured commands cleanly and reports cancellation back through the normal task/output/summary event flow.
@@ -647,8 +647,8 @@ Still open:
 
 Verification now includes:
 
-- `zig test src/webui.zig`
-- `zig test src/executor.zig`
+- `zig test src/webui/server.zig`
+- `zig test src/runtime/executor.zig`
 - `../../zig-out/bin/jake test-web` (from `tests/e2e`)
 - `zig build test`
 
@@ -669,7 +669,7 @@ Completed:
 - Executor initialization now propagates variable-map, dotenv, export, hook, and cache setup failures instead of continuing with a partially initialized runtime.
 - Parallel executor setup now treats worker-init failures explicitly, and the earlier ready-queue OOM fix remains in place.
 - Formatter round-trips were updated to keep the stricter parser contract stable by serializing canonical quoted variable values and directive lines without duplicated keywords.
-- Added focused regression coverage in `src/parser.zig`, `src/context.zig`, and `src/formatter.zig` for the new diagnostics and failure propagation paths.
+- Added focused regression coverage in `src/frontend/parser.zig`, `src/runtime/context.zig`, and `src/output/formatter.zig` for the new diagnostics and failure propagation paths.
 
 Still open:
 
@@ -677,10 +677,10 @@ Still open:
 
 Verification now includes:
 
-- `zig test src/parser.zig`
-- `zig test src/context.zig`
-- `zig test src/executor.zig`
-- `zig test src/formatter.zig`
+- `zig test src/frontend/parser.zig`
+- `zig test src/runtime/context.zig`
+- `zig test src/runtime/executor.zig`
+- `zig test src/output/formatter.zig`
 - `zig build test`
 
 Recommended next step:
@@ -702,7 +702,7 @@ Completed:
   - `@default` now composes with intervening metadata as intended
   - repo tasks no longer rely on top-level `@cache` placement that the parser does not support
   - outdated shorthand/embedded heredoc constructs that no longer parse were rewritten into supported forms
-- Added focused regression tests in `src/args.zig` and `src/parser.zig` to keep the new argument-validation and `@default` behavior stable.
+- Added focused regression tests in `src/cli/args.zig` and `src/frontend/parser.zig` to keep the new argument-validation and `@default` behavior stable.
 
 Still open:
 
@@ -710,9 +710,9 @@ Still open:
 
 Verification now includes:
 
-- `zig test src/args.zig`
-- `zig test src/completions.zig`
-- `zig test src/parser.zig`
+- `zig test src/cli/args.zig`
+- `zig test src/cli/completions.zig`
+- `zig test src/frontend/parser.zig`
 - `zig build -Doptimize=ReleaseFast`
 - `./tests/completions_test.sh`
 - `zig build test`
@@ -741,7 +741,7 @@ Completed:
 
 Verification now includes:
 
-- `zig test src/executor.zig --test-filter "@timeout"`
+- `zig test src/runtime/executor.zig --test-filter "@timeout"`
 - `zig build`
 - `cd tests/e2e && ../../zig-out/bin/jake test-directives`
 - `cd tests/e2e && ../../zig-out/bin/jake test-traverse`

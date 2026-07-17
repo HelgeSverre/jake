@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Web UI: results from a previous run no longer linger.** Finished-run state used to stick around indefinitely — old ✓/✗ icons stayed next to recipes after starting a different recipe, and the status pill kept reporting "1 completed" forever. Starting a new run now resets every other recipe's result to idle, and after ~15 seconds of inactivity the whole UI (icons, status pill, elapsed timer) drifts back to "Ready". Output history is preserved per recipe.
+- **Web UI: a dropped WebSocket connection no longer locks the UI.** If the connection died mid-run, the Run button stayed disabled and the elapsed timer ticked forever, because the completion message that would clear them never arrived. Disconnects now reset local run state (with a "run state unknown" note in the output) while the auto-reconnect keeps retrying. A run started from another connected browser tab is now also reflected in this tab's status pill, timer, and Stop button.
+- **Web UI: recipe names containing quotes no longer break the page.** Recipe/group names were interpolated into inline `onclick="…"` handler strings, where an apostrophe (already HTML-entity-decoded by the browser before JS parsing) corrupted the handler. All inline handlers were replaced with delegated event listeners keyed off `data-*` attributes.
+
 ### Changed
+
+- **Web UI output pane is now incremental.** Each output line is appended as its own DOM node instead of rebuilding the entire pane's HTML on every message (previously O(n²) for chatty recipes). Auto-scroll only follows the tail when you're already at the bottom — scrolling up to read an error is no longer yanked away — and the buffer is capped at 5,000 lines per recipe.
+- **Web UI remembers your state across reloads.** The filter text, collapsed groups, selected recipe, and entered parameter values persist in `localStorage`.
+- **Web UI accessibility pass.** The recipe list is a proper `listbox`/`option` tree with `aria-selected`, the output pane is a live `log` region, and the `@confirm` dialog traps keyboard focus (initial focus on Cancel; Escape declines; Enter no longer globally approves).
+- **Web UI assets split out of the binary-embedded single file.** `webui.html` (1,360 lines of HTML+CSS+JS) is now `src/webui/index.html`, `style.css`, and `app.js`, each embedded at compile time and served as separate routes — no runtime dependencies added.
+
+### Internal
+
+- **`src/` reorganized into pipeline-stage folders.** The flat 30-file directory is now grouped as `cli/` (args, completions, suggest, init, upgrade, templates), `frontend/` (lexer, parser, import, loaders, external), `runtime/` (executor, parallel, cache, hooks, conditions, functions, env, context, watch), `output/` (color, formatter, progress, prompt, event_emitter), `webui/`, and `util/` (glob, system, tracy); `main.zig`, `jake.zig`, and `compat.zig` stay at the root. Moves were done with `git mv` so blame history follows. Docs (`CLAUDE.md`, `AGENTS.md`, `docs/`) were updated to match.
 
 - **`--filter` now hints when a glob was eaten by the shell.** `jake --filter opencode*` could silently print `0 recipes` when the shell expanded the unquoted glob before jake ran (e.g. `opencode*` → a matching `opencode-sema/` directory, so jake filtered on `opencode-sema` and matched nothing). When `--filter` matches no recipes **and** the pattern arrives without any glob metacharacters (`*`, `?`, `[`) — the fingerprint of an already-expanded argument — jake now prints a reminder to quote the pattern. The hint appears only on the human-readable `--list` path; `--short`, `--summary`, and `--json` stay clean for scripting. A new "`--filter` Matches Nothing" troubleshooting entry documents the gotcha.
 

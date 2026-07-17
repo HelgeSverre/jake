@@ -245,7 +245,7 @@ perf: performance
 
 - Optional, zero-cost when disabled
 - Lazy dependency loaded only when `-Dtracy=true`
-- Import via `src/tracy.zig`
+- Import via `src/util/tracy.zig`
 
 ---
 
@@ -253,7 +253,7 @@ perf: performance
 
 ### Adding a New Built-in Function
 
-1. **Add function to `src/functions.zig`:**
+1. **Add function to `src/runtime/functions.zig`:**
 
    ```zig
    pub fn myFunction(allocator: std.mem.Allocator, arg: []const u8) ![]const u8 {
@@ -273,7 +273,7 @@ perf: performance
    - `site/src/content/docs/reference/functions.md` - Function reference
    - `GUIDE.md` - Add example
 
-4. **Add tests in `src/functions.zig`:**
+4. **Add tests in `src/runtime/functions.zig`:**
    ```zig
    test "myFunction" {
        const result = try myFunction(std.testing.allocator, "input");
@@ -284,7 +284,7 @@ perf: performance
 
 ### Adding a New Directive
 
-1. **Add directive type to `src/parser.zig`:**
+1. **Add directive type to `src/frontend/parser.zig`:**
 
    ```zig
    pub const DirectiveType = enum {
@@ -293,9 +293,9 @@ perf: performance
    };
    ```
 
-2. **Update parser to recognize directive in `src/parser.zig`**
+2. **Update parser to recognize directive in `src/frontend/parser.zig`**
 
-3. **Handle directive in `src/executor.zig`:**
+3. **Handle directive in `src/runtime/executor.zig`:**
 
    ```zig
    // In appropriate execution phase
@@ -312,17 +312,17 @@ perf: performance
 
 ### Modifying CLI Arguments
 
-1. **Update `src/args.zig`:**
+1. **Update `src/cli/args.zig`:**
    - Add flag to `Flag` enum
    - Add field to `Args` struct
    - Update `flags` array with flag definition
    - Handle flag in parsing logic
 
-2. **Update help text in `src/args.zig`**
+2. **Update help text in `src/cli/args.zig`**
 
 3. **Use flag in `src/main.zig` or pass via Context**
 
-4. **Add tests in `src/args.zig`**
+4. **Add tests in `src/cli/args.zig`**
 
 5. **Update documentation:**
    - `README.md` - CLI reference
@@ -348,14 +348,14 @@ perf: performance
 
 ### Modifying the Pipeline (Lexer/Parser/Executor)
 
-- **Lexer changes:** Update token types in `src/lexer.zig`, add comprehensive tests
-- **Parser changes:** Update AST structures in `src/parser.zig`, ensure formatter compatibility
+- **Lexer changes:** Update token types in `src/frontend/lexer.zig`, add comprehensive tests
+- **Parser changes:** Update AST structures in `src/frontend/parser.zig`, ensure formatter compatibility
 - **Executor changes:** Consider impact on parallel execution, hooks, and caching
-- [inferred] After parser changes, verify `src/formatter.zig` can round-trip the AST
+- [inferred] After parser changes, verify `src/output/formatter.zig` can round-trip the AST
 
 ### Working with Formatter
 
-- **Entry point:** `src/formatter.zig`
+- **Entry point:** `src/output/formatter.zig`
 - **Purpose:** AST → formatted Jakefile source
 - **CLI:** `jake --fmt [--check] [--dump]`
 - **Testing:** Round-trip tests verify `parse(format(parse(source))) == parse(source)`
@@ -395,7 +395,7 @@ perf: performance
 - **File watching:** Platform-specific (FSEvents on macOS, inotify on Linux)
 - **Path handling:** Use `std.fs.path` for cross-platform paths
 - **Shell execution:** Default shell detection per platform
-- **Color output:** Respect `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE` (see `src/color.zig`)
+- **Color output:** Respect `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE` (see `src/output/color.zig`)
 
 ### Working with Modules (jake/\*.jake)
 

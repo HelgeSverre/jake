@@ -6,9 +6,9 @@
 // 2. Recipe-specific hooks - run only for a specific recipe
 
 const std = @import("std");
-const compat = @import("compat.zig");
-const color_mod = @import("color.zig");
-const system = @import("system.zig");
+const compat = @import("../compat.zig");
+const color_mod = @import("../output/color.zig");
+const system = @import("../util/system.zig");
 
 /// Represents a single hook (pre, post, or on_error execution)
 pub const Hook = struct {

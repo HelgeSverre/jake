@@ -2,8 +2,8 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const compat = @import("compat.zig");
-const system = @import("system.zig");
+const compat = @import("../compat.zig");
+const system = @import("../util/system.zig");
 
 pub const ConditionError = error{
     InvalidSyntax,

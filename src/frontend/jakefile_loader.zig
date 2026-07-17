@@ -6,9 +6,9 @@ const parser_mod = @import("parser.zig");
 const import_mod = @import("import.zig");
 const external_mod = @import("external.zig");
 const jakefile_index_mod = @import("jakefile_index.zig");
-const context_mod = @import("context.zig");
-const compat = @import("compat.zig");
-const args_mod = @import("args.zig");
+const context_mod = @import("../runtime/context.zig");
+const compat = @import("../compat.zig");
+const args_mod = @import("../cli/args.zig");
 
 const Lexer = lexer_mod.Lexer;
 const Parser = parser_mod.Parser;

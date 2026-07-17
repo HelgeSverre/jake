@@ -6,8 +6,8 @@ const main = @import("main.zig");
 
 const test_paths = [_][]const u8{
     "src/main.zig",
-    "src/lexer.zig",
-    "src/parser.zig",
+    "src/frontend/lexer.zig",
+    "src/frontend/parser.zig",
     "src/bench/main.zig",
     "tests/e2e/Jakefile",
     "build.zig",

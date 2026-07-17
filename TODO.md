@@ -4,7 +4,7 @@
 
 ## NOW
 
-### Args Library Improvements (`src/args.zig`)
+### Args Library Improvements (`src/cli/args.zig`)
 
 Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yargs, Picocli, zig-clap.
 
@@ -39,8 +39,8 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 - [x] **#3 Double-dash separator** - `--` stops flag parsing (POSIX standard)
 - [x] **#7 Hidden flags** - `.hidden = true` excludes from help
 - [x] **#15 NO_COLOR support** - Respect `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE` env vars
-  - Created `src/color.zig` with runtime Color struct and writer methods
-  - Created `src/context.zig` for shared execution context
+  - Created `src/output/color.zig` with runtime Color struct and writer methods
+  - Created `src/runtime/context.zig` for shared execution context
   - Replaced hardcoded ANSI codes in executor.zig, parallel.zig, hooks.zig, watch.zig
   - **Remaining:** Early error messages in `args.zig` and `main.zig` use comptime `ansi.err_prefix` - would need
     refactoring to use runtime color detection

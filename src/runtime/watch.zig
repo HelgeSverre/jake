@@ -4,13 +4,13 @@
 // Polls every 500ms for changes, with 100ms debounce after last change.
 
 const std = @import("std");
-const compat = @import("compat.zig");
-const parser = @import("parser.zig");
+const compat = @import("../compat.zig");
+const parser = @import("../frontend/parser.zig");
 const executor_mod = @import("executor.zig");
-const JakefileIndex = @import("jakefile_index.zig").JakefileIndex;
-const jakefile_loader = @import("jakefile_loader.zig");
-const glob_mod = @import("glob.zig");
-const color_mod = @import("color.zig");
+const JakefileIndex = @import("../frontend/jakefile_index.zig").JakefileIndex;
+const jakefile_loader = @import("../frontend/jakefile_loader.zig");
+const glob_mod = @import("../util/glob.zig");
+const color_mod = @import("../output/color.zig");
 const context_mod = @import("context.zig");
 const RuntimeContext = context_mod.RuntimeContext;
 const Context = context_mod.Context;
@@ -657,7 +657,7 @@ test "watcher init" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -676,7 +676,7 @@ test "watcher add multiple patterns" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -697,7 +697,7 @@ test "watcher add recipe deps" {
         \\file dist/bundle.js: src/*.js
         \\    cat src/*.js > dist/bundle.js
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -724,7 +724,7 @@ test "watcher add recipe deps handles cycles" {
         \\file dep: src/*.txt
         \\    echo "dep"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -742,7 +742,7 @@ test "watcher settings" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -768,7 +768,7 @@ test "watcher deinit cleans up patterns" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -791,7 +791,7 @@ test "watcher poll interval defaults" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -813,7 +813,7 @@ test "watcher extracts @watch patterns from recipe" {
         \\    @watch src/*.zig
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -836,7 +836,7 @@ test "watcher extracts multiple @watch patterns" {
         \\    @watch src/*.zig test/*.zig
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -859,7 +859,7 @@ test "watcher handles non-existent recipe gracefully" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -882,7 +882,7 @@ test "watcher handles empty @watch pattern" {
         \\    @watch
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -902,7 +902,7 @@ test "watcher handles recipe with no commands" {
     const source =
         \\task empty:
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -1055,7 +1055,7 @@ test "watcher detects deleted files and reappearance once" {
         \\task build:
         \\    echo "build"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -1115,7 +1115,7 @@ test "pattern feedback - empty patterns list" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -1134,7 +1134,7 @@ test "pattern feedback - single pattern" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -1156,7 +1156,7 @@ test "pattern feedback - multiple patterns comma-separated format" {
         \\task build:
         \\    echo "building"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);
@@ -1182,7 +1182,7 @@ test "pattern feedback - patterns from file recipe deps" {
         \\file dist/bundle.js: src/*.js lib/*.js
         \\    cat src/*.js lib/*.js > dist/bundle.js
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(allocator);

@@ -6,7 +6,7 @@
 // - Manage environment for child processes
 
 const std = @import("std");
-const compat = @import("compat.zig");
+const compat = @import("../compat.zig");
 
 /// Environment variable storage and expansion
 pub const Environment = struct {

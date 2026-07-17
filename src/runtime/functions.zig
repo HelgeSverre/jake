@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const system = @import("system.zig");
+const system = @import("../util/system.zig");
 
 pub const FunctionError = error{
     UnknownFunction,

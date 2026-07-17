@@ -9,7 +9,7 @@
 const std = @import("std");
 const parser_mod = @import("parser.zig");
 const lexer_mod = @import("lexer.zig");
-const hooks_mod = @import("hooks.zig");
+const hooks_mod = @import("../runtime/hooks.zig");
 
 const Jakefile = parser_mod.Jakefile;
 const ImportDirective = parser_mod.ImportDirective;

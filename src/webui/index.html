@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jake - Web UI</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <header class="header">
+    <div class="logo"><span class="logo-icon">{j}</span><span>Jake</span></div>
+    <span class="header-path" id="headerPath">~/projects/jake</span>
+    <div class="header-right">
+      <span id="elapsed" class="elapsed">0.00s</span>
+      <div class="status-pill">
+        <div id="statusDot" class="status-dot"></div>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title" id="recipeListLabel">Recipes</span>
+        <span class="sidebar-count" id="recipeCount">0</span>
+      </div>
+      <div class="search-box">
+        <input type="text" class="search-input" placeholder="Filter... (Ctrl+K)" id="searchInput"
+               aria-label="Filter recipes">
+      </div>
+      <div id="recipeList" class="recipe-list" role="listbox" aria-labelledby="recipeListLabel"></div>
+    </aside>
+
+    <div class="content">
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon">{j}</div>
+        <div>Select a recipe to view details</div>
+        <div class="empty-hint">Use <kbd>j</kbd> <kbd>k</kbd> to navigate, <kbd>Enter</kbd> to run</div>
+      </div>
+
+      <div id="detailPanel" class="detail-panel">
+        <div class="detail-header">
+          <span id="detailName" class="detail-name"></span>
+          <span id="detailStatus" class="detail-status"></span>
+          <span id="detailTime" class="detail-time"></span>
+        </div>
+        <div class="detail-body">
+          <div id="detailDesc" class="detail-desc"></div>
+          <div class="detail-row">
+            <div class="detail-section">
+              <div class="detail-label">Dependencies</div>
+              <div id="detailDeps" class="detail-value"></div>
+            </div>
+            <div class="detail-section">
+              <div class="detail-label">Group</div>
+              <div id="detailGroup" class="detail-value"></div>
+            </div>
+          </div>
+          <div id="paramsSection" style="display:none;">
+            <div class="detail-label">Parameters</div>
+            <div id="paramsList" class="params-list"></div>
+          </div>
+          <div id="cmdBlock" class="cmd-block"></div>
+        </div>
+        <div class="action-bar">
+          <button id="runBtn" class="btn btn-primary">
+            Run <span class="btn-kbd">Enter</span>
+          </button>
+          <button id="dryRunBtn" class="btn btn-secondary">
+            Dry Run <span class="btn-kbd">Shift+Enter</span>
+          </button>
+          <button id="stopBtn" class="btn btn-stop" style="display:none;">
+            Stop <span class="btn-kbd">Esc</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="outputSection" class="output-section" style="display:none;">
+        <div class="output-header">
+          <span class="output-title">Output</span>
+          <div class="output-actions">
+            <button class="output-btn" id="copyBtn">Copy</button>
+            <button class="output-btn" id="clearBtn">Clear</button>
+          </div>
+        </div>
+        <div id="output" class="output" role="log" aria-label="Recipe output"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-left">
+      <div class="footer-hint"><kbd>j</kbd><kbd>k</kbd> Navigate</div>
+      <div class="footer-hint"><kbd>Enter</kbd> Run</div>
+      <div class="footer-hint"><kbd>Ctrl+K</kbd> Search</div>
+    </div>
+    <span>Jake Web UI</span>
+  </footer>
+</div>
+
+<div id="confirmOverlay" class="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmTask" aria-describedby="confirmMessage">
+  <div class="confirm-modal">
+    <div class="confirm-label">Confirmation Required</div>
+    <div id="confirmTask" class="confirm-task"></div>
+    <div id="confirmMessage" class="confirm-message"></div>
+    <div class="confirm-actions">
+      <button type="button" class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
+      <button type="button" class="btn btn-primary" id="confirmOkBtn">Continue</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
