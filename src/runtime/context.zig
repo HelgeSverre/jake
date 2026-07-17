@@ -79,20 +79,6 @@ pub const Context = struct {
         return false;
     }
 
-    /// Kill the current child process (for cancellation)
-    pub fn killCurrentChild(self: *const Context) void {
-        if (self.current_child_pid) |pid_atomic| {
-            const pid = pid_atomic.load(.acquire);
-            if (pid > 0) {
-                // Negative pid kills the entire process group, ensuring child processes
-                // spawned by the command are also terminated.
-                std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
-                // Also kill the process directly in case it isn't in a process group.
-                std.posix.kill(pid, std.posix.SIG.KILL) catch {};
-            }
-        }
-    }
-
     /// Emit output line via callback (for web UI streaming)
     pub fn emitOutput(self: *const Context, line: []const u8, is_stderr: bool) void {
         if (self.output_callback) |callback| {

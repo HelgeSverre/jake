@@ -19,7 +19,6 @@ pub const codes = struct {
     pub const green = "\x1b[32m";
     pub const yellow = "\x1b[33m";
     pub const blue = "\x1b[34m";
-    pub const magenta = "\x1b[35m";
     pub const cyan = "\x1b[36m";
 
     // Bold variants
@@ -27,7 +26,6 @@ pub const codes = struct {
     pub const bold_green = "\x1b[1;32m";
     pub const bold_yellow = "\x1b[1;33m";
     pub const bold_blue = "\x1b[1;34m";
-    pub const bold_magenta = "\x1b[1;35m";
     pub const bold_cyan = "\x1b[1;36m";
 
     // Dim/muted
@@ -137,18 +135,6 @@ pub const Color = struct {
     }
 
     // Regular colors (non-bold)
-    pub fn cyanRegular(self: Color) []const u8 {
-        return if (self.enabled) "\x1b[36m" else "";
-    }
-
-    pub fn yellowRegular(self: Color) []const u8 {
-        return if (self.enabled) "\x1b[33m" else "";
-    }
-
-    pub fn greenRegular(self: Color) []const u8 {
-        return if (self.enabled) "\x1b[32m" else "";
-    }
-
     pub fn dim(self: Color) []const u8 {
         return if (self.enabled) "\x1b[90m" else "";
     }
@@ -221,22 +207,6 @@ pub const Color = struct {
         return self.writeStyled(writer, text, .bold);
     }
 
-    pub fn writeRed(self: Color, writer: anytype, text: []const u8) !void {
-        return self.writeStyled(writer, text, .red);
-    }
-
-    pub fn writeCyan(self: Color, writer: anytype, text: []const u8) !void {
-        return self.writeStyled(writer, text, .cyan);
-    }
-
-    pub fn writeGreen(self: Color, writer: anytype, text: []const u8) !void {
-        return self.writeStyled(writer, text, .green);
-    }
-
-    pub fn writeYellow(self: Color, writer: anytype, text: []const u8) !void {
-        return self.writeStyled(writer, text, .yellow);
-    }
-
     // =========================================================================
     // ColoredText methods - return formattable wrappers for std.fmt {}
     // =========================================================================
@@ -253,36 +223,6 @@ pub const Color = struct {
     /// Styled text in red (bold) - for errors
     pub fn styledRed(self: Color, text: []const u8) ColoredText {
         return self.styled(text, codes.bold_red);
-    }
-
-    /// Styled text in green (bold) - for success
-    pub fn styledGreen(self: Color, text: []const u8) ColoredText {
-        return self.styled(text, codes.bold_green);
-    }
-
-    /// Styled text in yellow (bold) - for warnings
-    pub fn styledYellow(self: Color, text: []const u8) ColoredText {
-        return self.styled(text, codes.bold_yellow);
-    }
-
-    /// Styled text in cyan (bold) - for highlights
-    pub fn styledCyan(self: Color, text: []const u8) ColoredText {
-        return self.styled(text, codes.bold_cyan);
-    }
-
-    /// Styled text in blue (bold) - for info
-    pub fn styledBlue(self: Color, text: []const u8) ColoredText {
-        return self.styled(text, codes.bold_blue);
-    }
-
-    /// Styled text in bold
-    pub fn styledBold(self: Color, text: []const u8) ColoredText {
-        return self.styled(text, codes.bold);
-    }
-
-    /// Styled text in dim/muted
-    pub fn styledDim(self: Color, text: []const u8) ColoredText {
-        return self.styled(text, codes.dim_white);
     }
 };
 
@@ -356,19 +296,9 @@ pub const Theme = struct {
         return self.color.styled(text, codes.error_red);
     }
 
-    /// Warning text - for warnings and skipped items (brand: #eab308)
-    pub fn warning(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.warning_yellow);
-    }
-
     /// Success text - for completion and checkmarks (brand: #22c55e)
     pub fn success(self: Theme, text: []const u8) ColoredText {
         return self.color.styled(text, codes.success_green);
-    }
-
-    /// Info text - for informational messages (brand: #60a5fa)
-    pub fn info(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.info_blue);
     }
 
     /// Recipe name in headers - for "→ recipe_name" (brand: #f43f5e Jake Rose)
@@ -376,39 +306,9 @@ pub const Theme = struct {
         return self.color.styled(text, codes.jake_rose);
     }
 
-    /// Recipe name in listings - for recipe lists (brand: #f43f5e Jake Rose)
-    pub fn recipeName(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.jake_rose);
-    }
-
-    /// Section header (bold) - for "Available recipes:"
-    pub fn section(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.bold);
-    }
-
-    /// Group header - for group names in listings (brand: #f43f5e Jake Rose)
-    pub fn group(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.jake_rose);
-    }
-
     /// Hidden marker (dim) - for "(hidden)" labels
     pub fn hidden(self: Theme, text: []const u8) ColoredText {
         return self.color.styled(text, codes.dim_white);
-    }
-
-    /// Muted text - for comments, descriptions, secondary text (brand: #71717a)
-    pub fn muted(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.muted_gray);
-    }
-
-    /// Directive keyword - for @needs, @confirm, etc. (brand: #eab308)
-    pub fn directive(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.warning_yellow);
-    }
-
-    /// Hook label - for @pre, @post labels (brand: #22c55e)
-    pub fn hook(self: Theme, text: []const u8) ColoredText {
-        return self.color.styled(text, codes.success_green);
     }
 
     // =========================================================================
@@ -425,16 +325,6 @@ pub const Theme = struct {
         return self.color.warnPrefix();
     }
 
-    /// Watch mode prefix: "[watch] " (brand: #60a5fa Info Blue)
-    pub fn watchPrefix(self: Theme) []const u8 {
-        return if (self.color.enabled) codes.info_blue ++ "[watch]" ++ codes.reset ++ " " else "[watch] ";
-    }
-
-    /// Dry-run prefix: "[dry-run] " (brand: #60a5fa Info Blue)
-    pub fn dryRunPrefix(self: Theme) []const u8 {
-        return if (self.color.enabled) codes.info_blue ++ "[dry-run]" ++ codes.reset ++ " " else "[dry-run] ";
-    }
-
     // =========================================================================
     // Symbol helpers
     // =========================================================================
@@ -442,11 +332,6 @@ pub const Theme = struct {
     /// Success symbol with color: "✓" (brand: #22c55e)
     pub fn successSymbol(self: Theme) []const u8 {
         return if (self.color.enabled) codes.success_green ++ symbols.success ++ codes.reset else symbols.success;
-    }
-
-    /// Failure symbol with color: "✗" (brand: #ef4444)
-    pub fn failureSymbol(self: Theme) []const u8 {
-        return if (self.color.enabled) codes.error_red ++ symbols.failure ++ codes.reset else symbols.failure;
     }
 
     /// Arrow symbol with color: "→" (brand: #60a5fa Info Blue)

@@ -4,13 +4,6 @@
 
 const std = @import("std");
 
-pub const InitError = error{
-    TemplateNotFound,
-    InvalidTemplate,
-    FileSystemError,
-    FileExists,
-};
-
 pub const ProjectType = enum {
     node,
     rust,

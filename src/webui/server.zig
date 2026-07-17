@@ -20,16 +20,6 @@ const html_content = @embedFile("index.html");
 const css_content = @embedFile("style.css");
 const js_content = @embedFile("app.js");
 
-/// Recipe info for web UI display
-pub const WebRecipe = struct {
-    name: []const u8,
-    description: ?[]const u8,
-    group: ?[]const u8,
-    is_default: bool,
-    deps: []const []const u8,
-    params: []const []const u8,
-};
-
 const ExecutionRequest = struct {
     task_name: []u8,
     positional_args: []const []const u8,
@@ -477,7 +467,7 @@ pub const WebUIServer = struct {
             switch (frame.opcode) {
                 .text => {
                     // Parse JSON command from client
-                    self.handleClientCommand(frame.payload);
+                    self.handleClientCommand(client, frame.payload);
                 },
                 .ping => client.sendPong(frame.payload) catch break,
                 .close => break,
@@ -486,10 +476,12 @@ pub const WebUIServer = struct {
         }
     }
 
-    /// Handle a JSON command from a WebSocket client
-    fn handleClientCommand(self: *WebUIServer, payload: []const u8) void {
+    /// Handle a JSON command from a WebSocket client.
+    /// Request rejections go only to the requesting client — broadcasting them
+    /// would make other clients mark their own healthy runs as failed.
+    fn handleClientCommand(self: *WebUIServer, client: *WebSocketClient, payload: []const u8) void {
         const command = parseClientCommand(self.allocator, payload) catch {
-            self.broadcastJson("{\"type\":\"error\",\"message\":\"Invalid command payload\"}");
+            client.sendText("{\"type\":\"error\",\"message\":\"Invalid command payload\"}") catch {};
             return;
         };
 
@@ -502,19 +494,19 @@ pub const WebUIServer = struct {
                 self.joinExecutionThreadIfPresent();
 
                 if (self.execution_running.cmpxchgStrong(false, true, .acq_rel, .acquire)) |_| {
-                    self.broadcastJson("{\"type\":\"error\",\"message\":\"A task is already running\"}");
+                    client.sendText("{\"type\":\"error\",\"message\":\"A task is already running\"}") catch {};
                     return;
                 }
                 errdefer self.execution_running.store(false, .release);
 
                 if (self.jakefile == null or self.index == null or self.runtime == null) {
-                    self.broadcastJson("{\"type\":\"error\",\"message\":\"No Jakefile loaded\"}");
+                    client.sendText("{\"type\":\"error\",\"message\":\"No Jakefile loaded\"}") catch {};
                     return;
                 }
 
                 self.execution_thread = std.Thread.spawn(.{}, executeRecipeThread, .{ self, request }) catch {
                     self.execution_running.store(false, .release);
-                    self.broadcastJson("{\"type\":\"error\",\"message\":\"Failed to start execution thread\"}");
+                    client.sendText("{\"type\":\"error\",\"message\":\"Failed to start execution thread\"}") catch {};
                     return;
                 };
                 request_owned = false;
@@ -676,8 +668,14 @@ pub const WebUIServer = struct {
             };
 
             executor.execute(task_name) catch |err| {
-                // Check if this was a cancellation
+                // Cancellation: the executor bails without emitting task_complete
+                // or a summary, so emit them here or clients stay locked in
+                // "running" forever.
                 if (ctx.isCancelled()) {
+                    const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
+                    self.emitCommandOutput(task_name, "Execution cancelled by user", true);
+                    self.emitTaskComplete(task_name, false, duration_ms);
+                    self.emitSummary(0, 1, duration_ms);
                     break :blk false;
                 }
 
@@ -690,11 +688,14 @@ pub const WebUIServer = struct {
                     break :blk false;
                 }
 
-                // Emit error
+                // Emit error; the executor propagated before printing its own
+                // summary, so emit one here to unlock clients.
+                const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
                 var buf: [256]u8 = undefined;
                 const err_name = @errorName(err);
                 const msg = std.fmt.bufPrint(&buf, "Execution failed: {s}", .{err_name}) catch "Execution failed";
                 self.emitCommandOutput(task_name, msg, true);
+                self.emitSummary(0, 1, duration_ms);
                 break :blk false;
             };
             break :blk true;
@@ -1014,47 +1015,6 @@ fn serializeEvent(allocator: std.mem.Allocator, event: event_emitter.Event) ![]u
     errdefer json.deinit(allocator);
 
     switch (event) {
-        .jakefile_loaded => |e| {
-            try json.appendSlice(allocator, "{\"type\":\"init\",\"recipes\":[");
-            for (e.recipes, 0..) |recipe, i| {
-                if (i > 0) try json.append(allocator, ',');
-                try json.appendSlice(allocator, "{\"name\":\"");
-                try appendJsonEscaped(allocator, &json, recipe.name);
-                try json.appendSlice(allocator, "\",\"desc\":\"");
-                try appendJsonEscaped(allocator, &json, recipe.desc);
-                try json.appendSlice(allocator, "\",\"group\":\"");
-                try appendJsonEscaped(allocator, &json, recipe.group);
-                try json.appendSlice(allocator, "\",\"deps\":[");
-                for (recipe.deps, 0..) |dep, j| {
-                    if (j > 0) try json.append(allocator, ',');
-                    try json.append(allocator, '"');
-                    try appendJsonEscaped(allocator, &json, dep);
-                    try json.append(allocator, '"');
-                }
-                try json.appendSlice(allocator, "],\"params\":[");
-                for (recipe.params, 0..) |param, j| {
-                    if (j > 0) try json.append(allocator, ',');
-                    try json.append(allocator, '"');
-                    try appendJsonEscaped(allocator, &json, param);
-                    try json.append(allocator, '"');
-                }
-                try json.appendSlice(allocator, "],\"is_default\":");
-                try json.appendSlice(allocator, if (recipe.is_default) "true" else "false");
-                try json.appendSlice(allocator, ",\"is_hidden\":");
-                try json.appendSlice(allocator, if (recipe.is_hidden) "true" else "false");
-                try json.append(allocator, '}');
-            }
-            try json.appendSlice(allocator, "],\"variables\":{");
-            for (e.variables, 0..) |variable, i| {
-                if (i > 0) try json.append(allocator, ',');
-                try json.append(allocator, '"');
-                try appendJsonEscaped(allocator, &json, variable.name);
-                try json.appendSlice(allocator, "\":\"");
-                try appendJsonEscaped(allocator, &json, variable.value);
-                try json.append(allocator, '"');
-            }
-            try json.appendSlice(allocator, "}}");
-        },
         .task_start => |e| {
             try json.appendSlice(allocator, "{\"type\":\"task_start\",\"name\":\"");
             try appendJsonEscaped(allocator, &json, e.name);
@@ -1352,7 +1312,6 @@ test "serializeEvent returns valid JSON for all event types" {
     const allocator = std.testing.allocator;
     // Test that all event types produce valid JSON strings
     const events = [_]event_emitter.Event{
-        .{ .jakefile_loaded = .{ .recipes = &.{}, .variables = &.{} } },
         .{ .task_start = .{ .name = "test", .deps = &.{} } },
         .{ .command_start = .{ .task = "test", .command = "echo hello" } },
         .{ .command_output = .{ .task = "test", .line = "output", .is_stderr = false } },

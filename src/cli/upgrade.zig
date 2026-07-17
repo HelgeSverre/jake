@@ -10,25 +10,6 @@ const color_mod = @import("../output/color.zig");
 // Error Types
 // ============================================================================
 
-pub const UpgradeError = error{
-    NetworkError,
-    HttpError,
-    InvalidResponse,
-    JsonParseError,
-    ChecksumMismatch,
-    NoReleaseFound,
-    UnsupportedPlatform,
-    PermissionDenied,
-    FileSystemError,
-    VersionParseError,
-    AlreadyLatest,
-    OutOfMemory,
-    InvalidUri,
-    TlsError,
-    ConnectionRefused,
-    EndOfStream,
-};
-
 // ============================================================================
 // Version Parsing and Comparison
 // ============================================================================

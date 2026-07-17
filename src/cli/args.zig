@@ -10,7 +10,7 @@
 //!     const args_mod = @import("args.zig");
 //!
 //!     var args = args_mod.Args.parse(allocator, raw_args) catch |err| {
-//!         args_mod.printError(stderr, err, failing_arg);
+//!         args_mod.printErrorWithContext(stderr, err, failing_arg, args_mod.buildErrorContext(failing_arg));
 //!         std.process.exit(1);
 //!     };
 //!     defer args.deinit(allocator);
@@ -983,11 +983,6 @@ fn formatFlagSuggestion(buf: []u8, suggestion: []const u8) []const u8 {
     const writer = fbs.writer();
     writer.print("Did you mean '--{s}'?\n", .{suggestion}) catch return "";
     return fbs.getWritten();
-}
-
-/// Print error message for parse failure (simple version for backward compatibility)
-pub fn printError(writer: anytype, err: ParseError, arg: []const u8) void {
-    printErrorWithContext(writer, err, arg, .{});
 }
 
 /// Reconstruct an ErrorContext from the token that triggered a parse error, so

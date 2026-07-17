@@ -106,8 +106,7 @@ function handleServerMessage(msg) {
         deps: r.deps || [],
         params: r.params || [],
         default: r.default || false,
-        cmd: r.cmd || [],
-        external: r.external || null
+        cmd: r.cmd || []
       }));
       initTaskState();
       renderRecipes();
@@ -344,6 +343,14 @@ function setupEvents() {
   $('#confirmCancelBtn').addEventListener('click', () => respondConfirm(false));
   $('#confirmOkBtn').addEventListener('click', () => respondConfirm(true));
 
+  // Clicking the dimmed backdrop must not drop focus behind the modal.
+  $('#confirmOverlay').addEventListener('mousedown', e => {
+    if (e.target === e.currentTarget) {
+      e.preventDefault();
+      $('#confirmCancelBtn').focus();
+    }
+  });
+
   // Keep keyboard focus inside the confirm dialog while it is open.
   $('#confirmOverlay').addEventListener('keydown', e => {
     if (e.key !== 'Tab') return;
@@ -380,18 +387,20 @@ function setupKeyboard() {
       return;
     }
 
-    // Escape: Stop or blur
+    const isInput = document.activeElement.tagName === 'INPUT' ||
+                    document.activeElement.tagName === 'TEXTAREA';
+
+    // Escape: blur inputs, else stop the running task
     if (e.key === 'Escape') {
-      if (running) {
+      if (isInput) {
+        document.activeElement.blur();
+      } else if (running) {
         stopRunning();
       } else {
         document.activeElement.blur();
       }
       return;
     }
-
-    const isInput = document.activeElement.tagName === 'INPUT' ||
-                    document.activeElement.tagName === 'TEXTAREA';
 
     // If search focused, arrow down goes to first recipe
     if (document.activeElement === $('#searchInput')) {
@@ -428,7 +437,7 @@ function setupKeyboard() {
       }
     } else if (e.key === 'Enter' && selected) {
       const isOnRecipe = current.classList && current.classList.contains('recipe');
-      const isOnButton = current.classList && current.classList.contains('btn');
+      const isOnButton = current.tagName === 'BUTTON';
       if (isOnRecipe || (!isOnButton && selected)) {
         e.preventDefault();
         runSelected(e.shiftKey);
@@ -584,7 +593,7 @@ function renderDetail() {
                      s.status === 'success' ? 'Completed' : 'Failed';
   $('#detailStatus').className = 'detail-status ' + statusClass;
   $('#detailStatus').textContent = statusText;
-  $('#detailTime').textContent = s.duration ? fmt(s.duration) : '';
+  $('#detailTime').textContent = s.duration != null ? fmt(s.duration) : '';
 
   // Body
   $('#detailDesc').textContent = r.desc || 'No description';

@@ -5,8 +5,6 @@ const std = @import("std");
 
 /// Events emitted during Jake execution lifecycle
 pub const Event = union(enum) {
-    /// Jakefile has been loaded and parsed
-    jakefile_loaded: JakefileLoadedEvent,
     /// A task is about to start executing
     task_start: TaskStartEvent,
     /// A command within a task is starting
@@ -17,26 +15,6 @@ pub const Event = union(enum) {
     task_complete: TaskCompleteEvent,
     /// Execution summary after all tasks
     execution_summary: ExecutionSummaryEvent,
-};
-
-pub const RecipeInfo = struct {
-    name: []const u8,
-    desc: []const u8,
-    group: []const u8,
-    deps: []const []const u8,
-    params: []const []const u8,
-    is_default: bool,
-    is_hidden: bool,
-};
-
-pub const VariableInfo = struct {
-    name: []const u8,
-    value: []const u8,
-};
-
-pub const JakefileLoadedEvent = struct {
-    recipes: []const RecipeInfo,
-    variables: []const VariableInfo,
 };
 
 pub const TaskStartEvent = struct {
@@ -144,7 +122,6 @@ test "Event union can hold different event types" {
 
     for (events) |event| {
         switch (event) {
-            .jakefile_loaded => {},
             .task_start => |e| try std.testing.expect(e.name.len > 0),
             .command_start => |e| try std.testing.expect(e.command.len > 0),
             .command_output => |e| try std.testing.expect(e.line.len > 0),
@@ -249,23 +226,4 @@ test "execution_summary tracks totals" {
     try std.testing.expectEqual(@as(u64, 5000), summary.total_ms);
     // Calculate success count
     try std.testing.expectEqual(@as(usize, 8), summary.tasks_run - summary.tasks_failed);
-}
-
-test "jakefile_loaded event contains recipe info" {
-    const recipe_info = RecipeInfo{
-        .name = "build",
-        .desc = "Build the project",
-        .group = "dev",
-        .deps = &.{ "clean", "prepare" },
-        .params = &.{"mode"},
-        .is_default = true,
-        .is_hidden = false,
-    };
-
-    try std.testing.expectEqualStrings("build", recipe_info.name);
-    try std.testing.expectEqualStrings("Build the project", recipe_info.desc);
-    try std.testing.expect(recipe_info.is_default);
-    try std.testing.expect(!recipe_info.is_hidden);
-    try std.testing.expectEqual(@as(usize, 2), recipe_info.deps.len);
-    try std.testing.expectEqual(@as(usize, 1), recipe_info.params.len);
 }

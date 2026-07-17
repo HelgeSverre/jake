@@ -7,7 +7,6 @@ const std = @import("std");
 const parser = @import("parser.zig");
 const Recipe = parser.Recipe;
 const RecipeOrigin = parser.RecipeOrigin;
-const ExternalKind = RecipeOrigin.ExternalKind;
 
 pub const ExternalFiles = struct {
     makefile: ?[]const u8,

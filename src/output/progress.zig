@@ -29,23 +29,6 @@ pub const Spinner = struct {
         };
     }
 
-    /// Pause the spinner animation and clear its line.
-    /// Call this before any command/hook output to prevent interleaving.
-    pub fn pause(self: *Spinner) void {
-        if (!self.is_tty) return;
-        self.paused.store(true, .seq_cst);
-        // Clear the spinner line so command output starts fresh
-        const stderr = compat.getStdErr();
-        stderr.writeAll("\r\x1b[K") catch {};
-    }
-
-    /// Unpause the spinner animation.
-    /// Call this after command/hook output completes.
-    pub fn unpause(self: *Spinner) void {
-        if (!self.is_tty) return;
-        self.paused.store(false, .seq_cst);
-    }
-
     /// Start the spinner animation (non-blocking)
     /// For TTY: spawns a background thread to animate
     /// For non-TTY: prints static header line

@@ -27,7 +27,6 @@ const ParallelExecutor = parallel_mod.ParallelExecutor;
 const Environment = env_mod.Environment;
 const HookRunner = hooks_mod.HookRunner;
 const HookContext = hooks_mod.HookContext;
-const Hook = hooks_mod.Hook;
 const Prompt = prompt_mod.Prompt;
 
 /// Errors that can occur during recipe execution.
@@ -2254,47 +2253,6 @@ pub const Executor = struct {
         }
     }
 
-    /// Print completion status with timing (per brand guide Style A)
-    /// Success: ✓ recipe_name (duration)
-    /// Failure: ✗ recipe_name (duration)
-    fn printCompletionStatus(self: *Executor, name: []const u8, success: bool, start_time: i128) void {
-        const end_time = std.time.nanoTimestamp();
-        const duration_ns = end_time - start_time;
-        const duration_ms = @divFloor(duration_ns, 1_000_000);
-        const duration_s = @as(f64, @floatFromInt(duration_ms)) / 1000.0;
-
-        // v4 format: "   ✓ name     1.82s" with 3-space indent and spacing before duration
-        const stderr = compat.getStdErr();
-        var buf: [32]u8 = undefined;
-        const duration_str = std.fmt.bufPrint(&buf, "{d:.2}s", .{duration_s}) catch "?s";
-
-        if (success) {
-            stderr.writeAll("   ") catch {};
-            stderr.writeAll(self.color.successGreen()) catch {};
-            stderr.writeAll(color_mod.symbols.success) catch {};
-            stderr.writeAll(self.color.reset()) catch {};
-            stderr.writeAll(" ") catch {};
-            stderr.writeAll(name) catch {};
-            stderr.writeAll("     ") catch {};
-            stderr.writeAll(self.color.muted()) catch {};
-            stderr.writeAll(duration_str) catch {};
-            stderr.writeAll(self.color.reset()) catch {};
-            stderr.writeAll("\n") catch {};
-        } else {
-            stderr.writeAll("   ") catch {};
-            stderr.writeAll(self.color.errorRed()) catch {};
-            stderr.writeAll(color_mod.symbols.failure) catch {};
-            stderr.writeAll(self.color.reset()) catch {};
-            stderr.writeAll(" ") catch {};
-            stderr.writeAll(name) catch {};
-            stderr.writeAll("     ") catch {};
-            stderr.writeAll(self.color.muted()) catch {};
-            stderr.writeAll(duration_str) catch {};
-            stderr.writeAll(self.color.reset()) catch {};
-            stderr.writeAll("\n") catch {};
-        }
-    }
-
     /// Print completion status with pre-computed duration (for use with spinner)
     fn printCompletionStatusWithDuration(self: *Executor, name: []const u8, success: bool, duration_ns: i128) void {
         const duration_ms = @divFloor(duration_ns, 1_000_000);
@@ -3141,14 +3099,7 @@ fn extractCondition(line: []const u8, prefix: []const u8) []const u8 {
 
 /// Strip surrounding quotes from a string
 fn stripQuotes(s: []const u8) []const u8 {
-    if (s.len >= 2) {
-        if ((s[0] == '"' and s[s.len - 1] == '"') or
-            (s[0] == '\'' and s[s.len - 1] == '\''))
-        {
-            return s[1 .. s.len - 1];
-        }
-    }
-    return s;
+    return parser.stripQuotes(s);
 }
 
 test "executor basic" {

@@ -15,7 +15,6 @@ const Recipe = parser.Recipe;
 const Variable = parser.Variable;
 const Directive = parser.Directive;
 const ImportDirective = parser.ImportDirective;
-const CommentNode = parser.CommentNode;
 const Hook = @import("../runtime/hooks.zig").Hook;
 
 pub const FormatResult = struct {

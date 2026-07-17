@@ -38,14 +38,6 @@ pub const ZshEnv = enum {
     vanilla, // Plain zsh, needs .zshrc modification
 };
 
-/// Installation result with path and status
-pub const InstallResult = struct {
-    path: []const u8,
-    config_modified: bool,
-    needs_instructions: bool,
-    instructions: ?[]const u8,
-};
-
 /// Markers for config file blocks
 const CONFIG_BLOCK_START = "# >>> jake completion >>>";
 const CONFIG_BLOCK_END = "# <<< jake completion <<<";

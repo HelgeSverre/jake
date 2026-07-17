@@ -19,15 +19,6 @@ const Jakefile = parser.Jakefile;
 const Executor = executor_mod.Executor;
 const LoadedJakefile = jakefile_loader.LoadedJakefile;
 
-pub const WatchError = error{
-    InvalidPattern,
-    OutOfMemory,
-    AccessDenied,
-    FileNotFound,
-    SystemResources,
-    Unexpected,
-};
-
 /// Default CLI context used by init() and initWithIndex() for backwards compatibility.
 var default_context: Context = .{
     .color = color_mod.Color{ .enabled = false },
