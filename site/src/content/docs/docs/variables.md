@@ -6,9 +6,9 @@ description: Using variables in your Jakefile.
 ## Defining Variables
 
 ```jake
-name = "Jake"
-version = "1.0.0"
-build_dir = "dist"
+name = "Jake";
+version = "1.0.0";
+build_dir = "dist";
 ```
 
 ## Using Variables
@@ -44,15 +44,15 @@ task test:
 Jake has **two separate variable namespaces** and they don't override each other.
 This trips people up; understand it once and the rest is obvious.
 
-| Syntax     | Reads from                                                       |
-| ---------- | ---------------------------------------------------------------- |
-| `{{name}}` | Jakefile variables (`name = "..."`) and recipe parameters        |
+| Syntax     | Reads from                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------ |
+| `{{name}}` | Jakefile variables (`name = "..."`) and recipe parameters                                  |
 | `$NAME`    | Shell environment (loaded by `@dotenv`, set by `@export`, inherited from the parent shell) |
 
 `{{...}}` substitutions are resolved by Jake **before** the shell sees the
 command. `$NAME` substitutions are resolved by the shell at command time.
-Setting `PORT = "3000"` in the Jakefile does *not* put `PORT` in the
-environment, and conversely `@dotenv` does *not* put loaded values into the
+Setting `PORT = "3000"` in the Jakefile does _not_ put `PORT` in the
+environment, and conversely `@dotenv` does _not_ put loaded values into the
 `{{...}}` namespace.
 
 ### Precedence within each namespace

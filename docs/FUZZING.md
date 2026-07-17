@@ -29,16 +29,16 @@ This is much more effective than "dumb" random fuzzing because the fuzzer learns
 
 Fuzz tests are embedded in the source files using `std.testing.fuzz`:
 
-| Component  | File                 | What it tests                                  |
-| ---------- | -------------------- | ---------------------------------------------- |
-| Lexer      | `src/frontend/lexer.zig`      | Token parsing from arbitrary input             |
-| Parser     | `src/frontend/parser.zig`     | AST construction from fuzzed source            |
-| Glob       | `src/util/glob.zig`       | Pattern matching and parsing                   |
+| Component  | File                         | What it tests                                  |
+| ---------- | ---------------------------- | ---------------------------------------------- |
+| Lexer      | `src/frontend/lexer.zig`     | Token parsing from arbitrary input             |
+| Parser     | `src/frontend/parser.zig`    | AST construction from fuzzed source            |
+| Glob       | `src/util/glob.zig`          | Pattern matching and parsing                   |
 | Functions  | `src/runtime/functions.zig`  | Built-in function evaluation                   |
 | Conditions | `src/runtime/conditions.zig` | @if/@elif condition evaluation                 |
-| Formatter  | `src/output/formatter.zig`  | Round-trip formatting (parse → format → parse) |
-| Args       | `src/cli/args.zig`       | CLI argument parsing, flag suggestion          |
-| Suggest    | `src/cli/suggest.zig`    | Levenshtein distance, typo suggestions         |
+| Formatter  | `src/output/formatter.zig`   | Round-trip formatting (parse → format → parse) |
+| Args       | `src/cli/args.zig`           | CLI argument parsing, flag suggestion          |
+| Suggest    | `src/cli/suggest.zig`        | Levenshtein distance, typo suggestions         |
 | Env        | `src/runtime/env.zig`        | .env file parsing                              |
 
 ## Web Interface

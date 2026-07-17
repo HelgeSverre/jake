@@ -27,12 +27,12 @@ Recipes are prefixed: `deploy.production`, `deploy.staging`, etc. Use namespaced
 
 When you import a file, Jake merges everything into the main Jakefile:
 
-| What | Behavior |
-| ---- | -------- |
-| Recipes | Merged; prefix applied if `as name` is used |
-| Variables | Merged globally, no prefix — last definition wins |
-| Directives (`@dotenv`, `@export`, `@require`) | Merged and applied globally |
-| Global hooks (`@pre`, `@post`, `@on_error`) | Merged and apply to all recipes in the project |
+| What                                          | Behavior                                          |
+| --------------------------------------------- | ------------------------------------------------- |
+| Recipes                                       | Merged; prefix applied if `as name` is used       |
+| Variables                                     | Merged globally, no prefix — last definition wins |
+| Directives (`@dotenv`, `@export`, `@require`) | Merged and applied globally                       |
+| Global hooks (`@pre`, `@post`, `@on_error`)   | Merged and apply to all recipes in the project    |
 
 This means an imported file's `@dotenv`, `@export`, or `@pre` directives affect the entire project, not just the recipes in that file.
 

@@ -6,15 +6,15 @@ This document identifies locations where additional debug information should be 
 
 The verbose flag is currently used in these locations:
 
-| File            | Line      | What's Logged                                          |
-| --------------- | --------- | ------------------------------------------------------ |
-| `executor.zig`  | 794-797   | Parallel execution thread count and stats              |
-| `executor.zig`  | 866-868   | File target "is up to date" messages                   |
-| `executor.zig`  | 1463-1466 | Command execution logging (`jake: executing '{cmd}'`)  |
-| `hooks.zig`     | 191-193   | Hook type and command (`jake: running @{type} hook:`)  |
-| `watch.zig`     | 327-336   | File not found warning during pattern resolution       |
-| `watch.zig`     | 454-456   | Lists individual watched files                         |
-| `parallel.zig`  | 429-430   | File target "is up to date" (parallel mode)            |
+| File           | Line      | What's Logged                                         |
+| -------------- | --------- | ----------------------------------------------------- |
+| `executor.zig` | 794-797   | Parallel execution thread count and stats             |
+| `executor.zig` | 866-868   | File target "is up to date" messages                  |
+| `executor.zig` | 1463-1466 | Command execution logging (`jake: executing '{cmd}'`) |
+| `hooks.zig`    | 191-193   | Hook type and command (`jake: running @{type} hook:`) |
+| `watch.zig`    | 327-336   | File not found warning during pattern resolution      |
+| `watch.zig`    | 454-456   | Lists individual watched files                        |
+| `parallel.zig` | 429-430   | File target "is up to date" (parallel mode)           |
 
 ### Notable: `verbose_level` exists but is unused
 

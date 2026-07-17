@@ -34,21 +34,21 @@ task info:
 
 ## System Functions
 
-| Function           | Description                             | Example                                                              |
-| ------------------ | --------------------------------------- | -------------------------------------------------------------------- |
-| `home()`           | User home directory                     | `{{home()}}` → `/Users/alice` or `C:\Users\alice`                    |
-| `local_bin(name)`  | Path to `~/.local/bin` binary           | `{{local_bin(jake)}}` → `/Users/alice/.local/bin/jake`               |
-| `shell_config()`   | Current shell's config file             | `{{shell_config()}}` → `/Users/alice/.zshrc`                         |
-| `launch(target)`   | Platform command to open a file or URL  | `{{launch(https://example.com)}}` → `open https://example.com`       |
+| Function          | Description                            | Example                                                        |
+| ----------------- | -------------------------------------- | -------------------------------------------------------------- |
+| `home()`          | User home directory                    | `{{home()}}` → `/Users/alice` or `C:\Users\alice`              |
+| `local_bin(name)` | Path to `~/.local/bin` binary          | `{{local_bin(jake)}}` → `/Users/alice/.local/bin/jake`         |
+| `shell_config()`  | Current shell's config file            | `{{shell_config()}}` → `/Users/alice/.zshrc`                   |
+| `launch(target)`  | Platform command to open a file or URL | `{{launch(https://example.com)}}` → `open https://example.com` |
 
 ### launch(target)
 
 `launch()` returns the platform-specific command for opening a file or URL in the default application. It doesn't open the target directly — it expands to the correct command, which then runs as part of the recipe.
 
-| Platform | Expands to               |
-| -------- | ------------------------ |
-| macOS    | `open {target}`          |
-| Linux    | `xdg-open {target}`      |
+| Platform | Expands to                 |
+| -------- | -------------------------- |
+| macOS    | `open {target}`            |
+| Linux    | `xdg-open {target}`        |
 | Windows  | `cmd /c start "" {target}` |
 
 ```jake
@@ -67,16 +67,16 @@ On unsupported platforms (anything other than macOS, Linux, or Windows), `launch
 
 `shell_config()` detects your shell from `$SHELL`. On Windows, it understands Windows-style shell paths and falls back to PowerShell or `COMSPEC` when needed.
 
-| Shell      | Config File                                                               |
-| ---------- | ------------------------------------------------------------------------- |
-| bash       | `~/.bashrc`                                                               |
-| zsh        | `~/.zshrc`                                                                |
-| fish       | `~/.config/fish/config.fish`                                              |
-| sh         | `~/.profile`                                                              |
-| ksh        | `~/.kshrc`                                                                |
-| csh / tcsh | `~/.cshrc` / `~/.tcshrc`                                                  |
-| powershell | `~/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1`          |
-| pwsh       | `~/Documents/PowerShell/Microsoft.PowerShell_profile.ps1`                 |
+| Shell      | Config File                                                      |
+| ---------- | ---------------------------------------------------------------- |
+| bash       | `~/.bashrc`                                                      |
+| zsh        | `~/.zshrc`                                                       |
+| fish       | `~/.config/fish/config.fish`                                     |
+| sh         | `~/.profile`                                                     |
+| ksh        | `~/.kshrc`                                                       |
+| csh / tcsh | `~/.cshrc` / `~/.tcshrc`                                         |
+| powershell | `~/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1` |
+| pwsh       | `~/Documents/PowerShell/Microsoft.PowerShell_profile.ps1`        |
 
 `shell_config()` returns nothing for plain `cmd.exe`. `home()` resolves from `HOME` on Unix and from `HOME`, `USERPROFILE`, or `HOMEDRIVE` + `HOMEPATH` on Windows.
 

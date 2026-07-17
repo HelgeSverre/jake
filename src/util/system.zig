@@ -15,6 +15,8 @@ pub const ShellKind = enum {
     powershell,
     pwsh,
     cmd,
+    // TODO: add nushell, and whatever else is relatively well known.
+    // See: https://github.com/alebcay/awesome-shell#shells
 };
 
 const default_windows_pathext = ".COM;.EXE;.BAT;.CMD";

@@ -23,10 +23,12 @@
 ### Task 1: Parse logical command boundaries
 
 **Files:**
+
 - Modify: `src/parser.zig`
 - Test: `src/parser.zig`
 
 **Interfaces:**
+
 - Produces: `fn lineEndsWithContinuation(source: []const u8, line_end: usize) bool`
 - Produces: one `Recipe.Command` whose `line` slice spans every continued physical line
 
@@ -85,10 +87,12 @@ git commit -m "fix(parser): group continued recipe lines"
 ### Task 2: Normalize logical commands before execution
 
 **Files:**
+
 - Modify: `src/executor.zig`
 - Test: `src/executor.zig`
 
 **Interfaces:**
+
 - Consumes: multiline `Recipe.Command.line` slices from Task 1
 - Produces: `fn normalizeLineContinuations(allocator: std.mem.Allocator, line: []const u8) ![]const u8`
 - Contract: returns `line` unchanged when no continuation exists; otherwise returns an allocated normalized slice
@@ -151,11 +155,13 @@ git commit -m "fix(executor): normalize continued commands"
 ### Task 3: Preserve formatting and prove end-to-end execution
 
 **Files:**
+
 - Test: `src/formatter.zig`
 - Create: `tests/e2e/fixtures/basic/line-continuation.jake`
 - Modify: `tests/e2e/Jakefile`
 
 **Interfaces:**
+
 - Consumes: the source-backed multiline command slice from Task 1
 - Produces: formatted Jakefiles that keep continuation line breaks and indentation
 
@@ -211,12 +217,14 @@ git commit -m "test: cover command line continuation"
 ### Task 4: Update user-facing documentation
 
 **Files:**
+
 - Modify: `GUIDE.md`
 - Modify: `docs/SYNTAX.md`
 - Modify: `docs/TUTORIAL.md`
 - Modify: `site/src/content/docs/docs/syntax.md`
 
 **Interfaces:**
+
 - Produces: consistent syntax reference and examples across all maintained documentation surfaces
 
 - [ ] **Step 1: Document exact continuation rules**
@@ -246,9 +254,11 @@ git commit -m "docs: define line continuation semantics"
 ### Task 5: Review, verify, publish, and close the issue
 
 **Files:**
+
 - Review all files changed since `2eca881`
 
 **Interfaces:**
+
 - Produces: a reviewed, tested, pushed implementation and a closed GitHub issue #24
 
 - [ ] **Step 1: Self-review the complete diff**

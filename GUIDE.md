@@ -552,7 +552,7 @@ task build: [api.build, web.build]
     echo "Workspace build complete"
 ```
 
-Rooting is **additive**: a module is rooted if its own file says `@rooted` *or*
+Rooting is **additive**: a module is rooted if its own file says `@rooted` _or_
 the import says `rooted` (both is fine). There is no way to un-root a module that
 declares `@rooted` itself.
 

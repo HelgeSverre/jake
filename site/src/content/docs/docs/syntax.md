@@ -65,8 +65,8 @@ task long-command:
 ### Defining Variables
 
 ```jake
-name = "Jake"
-version = "1.0.0"
+name = "Jake";
+version = "1.0.0";
 ```
 
 ### Using Variables

@@ -29,6 +29,7 @@ zig build -Doptimize=ReleaseFast
 Run `git status` to check for uncommitted changes.
 
 If there are unstaged or uncommitted changes:
+
 - Review what changed
 - Commit them using conventional commit format (e.g., `feat:`, `fix:`, `refactor:`, `test:`, `docs:`)
 - Keep commits atomic when feasible
@@ -54,16 +55,20 @@ If there are unstaged or uncommitted changes:
 ## [X.Y.Z] - YYYY-MM-DD
 
 ### Added
+
 - New features from feat() commits
 
 ### Changed
+
 - Changes from refactor() and other commits
 
 ### Fixed
+
 - Bug fixes from fix() commits
 ```
 
 **Guidelines:**
+
 - Summarize related commits into feature descriptions
 - Use bullet points with bold feature names for major additions
 - Keep descriptions concise but informative
@@ -98,6 +103,7 @@ git push origin vX.Y.Z
 ### 8. GitHub Actions Handles the Rest
 
 The `.github/workflows/release.yml` workflow will automatically:
+
 - Build binaries for all 5 platforms (Linux/macOS/Windows x x86_64/aarch64)
 - Generate SHA256 checksums
 - Create the GitHub release with all assets
@@ -106,6 +112,7 @@ The `.github/workflows/release.yml` workflow will automatically:
 ## Completion
 
 Report the release summary:
+
 - Previous version -> New version
 - Key changes included
 - Note that GitHub Actions will create the release automatically

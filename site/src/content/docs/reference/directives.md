@@ -7,20 +7,20 @@ description: All Jake directives reference.
 
 Placed at the top level of a Jakefile (outside any recipe).
 
-| Directive                | Description                                                                 |
-| ------------------------ | --------------------------------------------------------------------------- |
-| `@default`               | Mark the next recipe as the default (runs when you invoke `jake` with no args) |
-| `@dotenv`                | Load `.env` from the current working directory                              |
-| `@dotenv "path"`         | Load a specific env file                                                    |
-| `@export VAR=value`      | Export an environment variable to all subprocess commands                   |
-| `@require VAR...`        | Require environment variables to be set — Jake exits with an error if any are missing |
-| `@import "path"`         | Import all recipes from another Jakefile                                    |
-| `@import "path" as name` | Import with a namespace prefix (recipes become `name.recipe`)               |
-| `@rooted`                | Resolve this file's recipe relative paths (`@cd`, `file` targets) against its own directory when imported (see below) |
-| `@pre command`           | Global pre-hook — runs before every recipe                                  |
-| `@post command`          | Global post-hook — runs after every recipe                                  |
-| `@before recipe command` | Targeted pre-hook — runs before a specific recipe only                      |
-| `@after recipe command`  | Targeted post-hook — runs after a specific recipe only                      |
+| Directive                | Description                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `@default`               | Mark the next recipe as the default (runs when you invoke `jake` with no args)                                         |
+| `@dotenv`                | Load `.env` from the current working directory                                                                         |
+| `@dotenv "path"`         | Load a specific env file                                                                                               |
+| `@export VAR=value`      | Export an environment variable to all subprocess commands                                                              |
+| `@require VAR...`        | Require environment variables to be set — Jake exits with an error if any are missing                                  |
+| `@import "path"`         | Import all recipes from another Jakefile                                                                               |
+| `@import "path" as name` | Import with a namespace prefix (recipes become `name.recipe`)                                                          |
+| `@rooted`                | Resolve this file's recipe relative paths (`@cd`, `file` targets) against its own directory when imported (see below)  |
+| `@pre command`           | Global pre-hook — runs before every recipe                                                                             |
+| `@post command`          | Global post-hook — runs after every recipe                                                                             |
+| `@before recipe command` | Targeted pre-hook — runs before a specific recipe only                                                                 |
+| `@after recipe command`  | Targeted post-hook — runs after a specific recipe only                                                                 |
 | `@on_error command`      | Global error hook — runs if any recipe fails. For recipe-specific error hooks, use `@on_error` inside the recipe body. |
 
 ### @rooted
@@ -61,16 +61,16 @@ Rooting is additive: a module is rooted if its file declares `@rooted` **or** an
 
 Placed immediately before a recipe definition (no blank lines between).
 
-| Directive                               | Description                                              |
-| --------------------------------------- | -------------------------------------------------------- |
-| `@desc "text"`                          | Description shown in `jake --list` output                |
-| `@alias name...`                        | Alternate names for the next recipe (`jake <alias>` runs it) |
-| `@group name`                           | Group recipes together in `jake --list` output           |
-| `@platform os...`                       | Only register this recipe on the specified OS(es)        |
-| `@quiet`                                | Suppress command echoing for this recipe                 |
-| `@hidden`                               | Hide from `jake --list` (same as `_` name prefix)       |
-| `@timeout duration`                     | Kill the recipe if it runs longer than `duration`        |
-| `@needs cmd...`                         | Require commands to exist in PATH before running         |
+| Directive           | Description                                                  |
+| ------------------- | ------------------------------------------------------------ |
+| `@desc "text"`      | Description shown in `jake --list` output                    |
+| `@alias name...`    | Alternate names for the next recipe (`jake <alias>` runs it) |
+| `@group name`       | Group recipes together in `jake --list` output               |
+| `@platform os...`   | Only register this recipe on the specified OS(es)            |
+| `@quiet`            | Suppress command echoing for this recipe                     |
+| `@hidden`           | Hide from `jake --list` (same as `_` name prefix)            |
+| `@timeout duration` | Kill the recipe if it runs longer than `duration`            |
+| `@needs cmd...`     | Require commands to exist in PATH before running             |
 
 ### @timeout
 
@@ -129,25 +129,25 @@ task set-permissions:
 
 Used inside recipe bodies.
 
-| Directive              | Description                                                                       |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| `@pre command`         | Run before this recipe's commands                                                 |
-| `@post command`        | Run after this recipe's commands (runs even if the recipe fails)                  |
-| `@confirm "message"`   | Prompt for confirmation before continuing                                         |
-| `@needs cmd...`        | Require commands exist (same as recipe modifier, but scoped to this recipe body)  |
-| `@needs cmd "hint"`    | With installation hint shown if command is missing                                |
-| `@needs cmd -> recipe` | With auto-install recipe that runs if command is missing                          |
-| `@cd path`             | Change working directory for all subsequent commands in this recipe               |
+| Directive              | Description                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| `@pre command`         | Run before this recipe's commands                                                    |
+| `@post command`        | Run after this recipe's commands (runs even if the recipe fails)                     |
+| `@confirm "message"`   | Prompt for confirmation before continuing                                            |
+| `@needs cmd...`        | Require commands exist (same as recipe modifier, but scoped to this recipe body)     |
+| `@needs cmd "hint"`    | With installation hint shown if command is missing                                   |
+| `@needs cmd -> recipe` | With auto-install recipe that runs if command is missing                             |
+| `@cd path`             | Change working directory for all subsequent commands in this recipe                  |
 | `@shell name`          | Use a different shell for all commands in this recipe (e.g., `bash`, `fish`, `pwsh`) |
-| `@ignore`              | Continue to the next command even if the previous command failed                  |
-| `@cache pattern...`    | Skip the recipe if none of the matched files have changed since last run          |
-| `@watch pattern...`    | Register additional file patterns to watch in `-w` mode                           |
-| `@timeout duration`    | Kill this recipe if it runs longer than the specified duration                     |
-| `@launch target`       | Open a file or URL with the OS-default app (`open` / `xdg-open` / `start`)        |
+| `@ignore`              | Continue to the next command even if the previous command failed                     |
+| `@cache pattern...`    | Skip the recipe if none of the matched files have changed since last run             |
+| `@watch pattern...`    | Register additional file patterns to watch in `-w` mode                              |
+| `@timeout duration`    | Kill this recipe if it runs longer than the specified duration                       |
+| `@launch target`       | Open a file or URL with the OS-default app (`open` / `xdg-open` / `start`)           |
 
 ### @ignore
 
-Normally a failing command stops the recipe. `@ignore` marks the *next* command as non-fatal. Place it on its own line, immediately before the command:
+Normally a failing command stops the recipe. `@ignore` marks the _next_ command as non-fatal. Place it on its own line, immediately before the command:
 
 ```jake
 task clean:
@@ -195,13 +195,13 @@ task lint:
 
 ## Control Flow
 
-| Directive         | Description                    |
-| ----------------- | ------------------------------ |
-| `@if condition`   | Conditional start              |
-| `@elif condition` | Else-if branch                 |
-| `@else`           | Else branch                    |
+| Directive         | Description                     |
+| ----------------- | ------------------------------- |
+| `@if condition`   | Conditional start               |
+| `@elif condition` | Else-if branch                  |
+| `@else`           | Else branch                     |
 | `@end`            | End a conditional or loop block |
-| `@each items...`  | Loop over a list of items      |
+| `@each items...`  | Loop over a list of items       |
 
 See [Conditionals](/docs/conditionals/) for condition function reference.
 

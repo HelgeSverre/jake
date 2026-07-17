@@ -157,38 +157,39 @@ Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yarg
 
 ### `jake init` Enhancements (Phase 2) ✓ DONE
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Project detection | ✓ DONE | Detects via marker files |
-| Language templates | ✓ DONE | node, go, rust, python, zig |
-| Interactive mode | LATER | Prompt when TTY and no --template |
-| `--yes` flag | ✓ DONE | Infrastructure ready |
+| Feature            | Status | Notes                             |
+| ------------------ | ------ | --------------------------------- |
+| Project detection  | ✓ DONE | Detects via marker files          |
+| Language templates | ✓ DONE | node, go, rust, python, zig       |
+| Interactive mode   | LATER  | Prompt when TTY and no --template |
+| `--yes` flag       | ✓ DONE | Infrastructure ready              |
 
 #### Project Detection (marker files) ✓
 
 Checks for these files in cwd (first match wins):
 
-| Type | Marker File |
-|------|-------------|
-| Node | `package.json` |
-| Rust | `Cargo.toml` |
-| Go | `go.mod` |
+| Type   | Marker File                          |
+| ------ | ------------------------------------ |
+| Node   | `package.json`                       |
+| Rust   | `Cargo.toml`                         |
+| Go     | `go.mod`                             |
 | Python | `pyproject.toml`, `requirements.txt` |
-| Zig | `build.zig` |
+| Zig    | `build.zig`                          |
 
 **Behavior:**
+
 - Match found → auto-select template, print "Detected X project, using Y template"
 - No match → use `starter` template
 
 #### Language Templates ✓
 
-| Template | Key Tasks |
-|----------|-----------|
-| `node` | setup, build, test, lint, dev, fmt |
-| `go` | build, test, fmt, vet, run |
-| `rust` | build, test, fmt, clippy, run, doc |
+| Template | Key Tasks                                |
+| -------- | ---------------------------------------- |
+| `node`   | setup, build, test, lint, dev, fmt       |
+| `go`     | build, test, fmt, vet, run               |
+| `rust`   | build, test, fmt, clippy, run, doc       |
 | `python` | setup (venv), test, fmt, lint, typecheck |
-| `zig` | build, test, fmt, run |
+| `zig`    | build, test, fmt, run                    |
 
 ---
 
@@ -452,7 +453,6 @@ For edge cases requiring containerized builds.
 
 ---
 
-
 ### Ability to add group level descriptions
 
 ```just
@@ -686,8 +686,8 @@ yes/no before 1.0.
 ### Pitch & positioning
 
 - [ ] Reframe README from "best of Make and Just" to lead with the actual
-      wedge: *Make's correctness model (file targets, stale rebuilds) with
-      Just's ergonomics, in a fast single binary*. Current framing puts Jake
+      wedge: _Make's correctness model (file targets, stale rebuilds) with
+      Just's ergonomics, in a fast single binary_. Current framing puts Jake
       directly in Just's competitive frame where Just wins on maturity.
 - [ ] "Smart rebuilds" oversells what is `mtime`-based file targets. Either
       back it with content hashing or rename it to be honest about the
@@ -734,7 +734,7 @@ yes/no before 1.0.
 
 ### Open questions to resolve before 1.0
 
-- [ ] What is Jake's *one-line* differentiator vs Just for a developer who
+- [ ] What is Jake's _one-line_ differentiator vs Just for a developer who
       already uses Just happily? File targets is the answer; make sure the
       docs and landing page make this immediately obvious.
 - [ ] Lock the directive surface — every `@thing` shipped in 1.0 is a

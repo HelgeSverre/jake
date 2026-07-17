@@ -264,19 +264,19 @@ Directives are special commands prefixed with `@`. They fall into two categories
 
 Appear at the top level of a Jakefile (not indented).
 
-| Directive   | Purpose                        | Example                              |
-| ----------- | ------------------------------ | ------------------------------------ |
-| `@import`   | Import another Jakefile        | `@import "jake/ci.jake" as ci`       |
-| `@rooted`   | Resolve this file's relative paths against its own directory when imported | `@rooted` |
-| `@dotenv`   | Load environment file          | `@dotenv .env.local`                 |
-| `@require`  | Require environment variables  | `@require NODE_ENV API_KEY`          |
-| `@export`   | Export variable to environment | `@export PATH = $PATH:./bin`         |
-| `@pre`      | Global pre-hook                | `@pre echo "Starting..."`            |
-| `@post`     | Global post-hook               | `@post echo "Done!"`                 |
-| `@before`   | Targeted pre-hook              | `@before deploy echo "Deploying..."` |
-| `@after`    | Targeted post-hook             | `@after deploy notify-slack`         |
-| `@on_error` | Global error handler           | `@on_error echo "Failed!"`           |
-| `@default`  | Mark next recipe as default    | `@default`                           |
+| Directive   | Purpose                                                                    | Example                              |
+| ----------- | -------------------------------------------------------------------------- | ------------------------------------ |
+| `@import`   | Import another Jakefile                                                    | `@import "jake/ci.jake" as ci`       |
+| `@rooted`   | Resolve this file's relative paths against its own directory when imported | `@rooted`                            |
+| `@dotenv`   | Load environment file                                                      | `@dotenv .env.local`                 |
+| `@require`  | Require environment variables                                              | `@require NODE_ENV API_KEY`          |
+| `@export`   | Export variable to environment                                             | `@export PATH = $PATH:./bin`         |
+| `@pre`      | Global pre-hook                                                            | `@pre echo "Starting..."`            |
+| `@post`     | Global post-hook                                                           | `@post echo "Done!"`                 |
+| `@before`   | Targeted pre-hook                                                          | `@before deploy echo "Deploying..."` |
+| `@after`    | Targeted post-hook                                                         | `@after deploy notify-slack`         |
+| `@on_error` | Global error handler                                                       | `@on_error echo "Failed!"`           |
+| `@default`  | Mark next recipe as default                                                | `@default`                           |
 
 **Scope Name:** `keyword.control.directive.jake`
 
@@ -313,7 +313,7 @@ task all: [sub.build]
 ```
 
 `@rooted` takes no arguments. When a file is run directly as the root Jakefile
-its directory *is* the working directory, so `@rooted` is a harmless no-op there —
+its directory _is_ the working directory, so `@rooted` is a harmless no-op there —
 it only changes behaviour when the file is imported by a parent.
 
 ##### Forcing `rooted` at the import site
@@ -327,8 +327,8 @@ directive instead to force the module to be rooted from the importer's side:
 @import "sub/Jakefile" rooted            # also valid without `as`
 ```
 
-The rule is **monotonic / additive-only**: a module is rooted if *either* its
-file declares `@rooted` *or* an import directive says `rooted`. Both present is
+The rule is **monotonic / additive-only**: a module is rooted if _either_ its
+file declares `@rooted` _or_ an import directive says `rooted`. Both present is
 fine (no conflict). There is no `unrooted` — you cannot force a `@rooted` module
 back to root-relative.
 
@@ -336,15 +336,15 @@ back to root-relative.
 
 Appear before a recipe definition to set metadata.
 
-| Directive                          | Purpose                         | Example                     |
-| ---------------------------------- | ------------------------------- | --------------------------- |
-| `@group`                           | Organize recipes into groups    | `@group testing`            |
-| `@desc`                            | Recipe description              | `@desc "Build the project"` |
-| `@alias`                           | Alternative recipe names        | `@alias b`                  |
-| `@quiet`                           | Suppress command echoing        | `@quiet`                    |
-| `@hidden`                          | Hide from recipe listings       | `@hidden`                   |
-| `@platform`                        | OS-specific recipe              | `@platform macos linux`     |
-| `@needs`                           | Require commands (recipe-level) | `@needs docker kubectl`     |
+| Directive   | Purpose                         | Example                     |
+| ----------- | ------------------------------- | --------------------------- |
+| `@group`    | Organize recipes into groups    | `@group testing`            |
+| `@desc`     | Recipe description              | `@desc "Build the project"` |
+| `@alias`    | Alternative recipe names        | `@alias b`                  |
+| `@quiet`    | Suppress command echoing        | `@quiet`                    |
+| `@hidden`   | Hide from recipe listings       | `@hidden`                   |
+| `@platform` | OS-specific recipe              | `@platform macos linux`     |
+| `@needs`    | Require commands (recipe-level) | `@needs docker kubectl`     |
 
 **Scope Names:**
 
@@ -356,26 +356,26 @@ Appear before a recipe definition to set metadata.
 
 Appear inside recipe body (indented).
 
-| Directive  | Purpose                      | Example                         |
-| ---------- | ---------------------------- | ------------------------------- |
-| `@if`      | Conditional execution        | `@if exists(Cargo.toml)`        |
-| `@elif`    | Else-if branch               | `@elif env(CI)`                 |
-| `@else`    | Else branch                  | `@else`                         |
-| `@end`     | End conditional/loop         | `@end`                          |
-| `@each`    | Loop iteration               | `@each {{files}}`               |
-| `@needs`   | Require commands             | `@needs npm "Install Node.js"`  |
-| `@confirm` | User confirmation prompt     | `@confirm "Deploy to prod?"`    |
-| `@cache`   | Cache based on file          | `@cache package-lock.json`      |
-| `@watch`   | Watch files for changes      | `@watch src/**/*.ts`            |
-| `@cd`      | Change working directory     | `@cd src/app`                   |
-| `@shell`   | Set shell interpreter        | `@shell bash`                   |
-| `@ignore`  | Ignore command failure       | `@ignore`                       |
-| `@launch`  | Open file/URL cross-platform | `@launch https://example.com`   |
-| `@require` | Require environment variable | `@require API_KEY`              |
-| `@export`  | Export to environment        | `@export NODE_ENV = production` |
-| `@pre`     | Recipe pre-hook              | `@pre echo "Starting..."`       |
-| `@post`    | Recipe post-hook             | `@post cleanup`                 |
-| `@on_error`| Recipe error hook            | `@on_error ./rollback.sh`       |
+| Directive   | Purpose                      | Example                         |
+| ----------- | ---------------------------- | ------------------------------- |
+| `@if`       | Conditional execution        | `@if exists(Cargo.toml)`        |
+| `@elif`     | Else-if branch               | `@elif env(CI)`                 |
+| `@else`     | Else branch                  | `@else`                         |
+| `@end`      | End conditional/loop         | `@end`                          |
+| `@each`     | Loop iteration               | `@each {{files}}`               |
+| `@needs`    | Require commands             | `@needs npm "Install Node.js"`  |
+| `@confirm`  | User confirmation prompt     | `@confirm "Deploy to prod?"`    |
+| `@cache`    | Cache based on file          | `@cache package-lock.json`      |
+| `@watch`    | Watch files for changes      | `@watch src/**/*.ts`            |
+| `@cd`       | Change working directory     | `@cd src/app`                   |
+| `@shell`    | Set shell interpreter        | `@shell bash`                   |
+| `@ignore`   | Ignore command failure       | `@ignore`                       |
+| `@launch`   | Open file/URL cross-platform | `@launch https://example.com`   |
+| `@require`  | Require environment variable | `@require API_KEY`              |
+| `@export`   | Export to environment        | `@export NODE_ENV = production` |
+| `@pre`      | Recipe pre-hook              | `@pre echo "Starting..."`       |
+| `@post`     | Recipe post-hook             | `@post cleanup`                 |
+| `@on_error` | Recipe error hook            | `@on_error ./rollback.sh`       |
 
 **Scope Names:**
 
@@ -417,21 +417,21 @@ Used in `@if` and `@elif` directives.
 
 Used in `{{...}}` interpolations.
 
-| Function                   | Purpose               | Example                                            |
-| -------------------------- | --------------------- | -------------------------------------------------- |
-| `uppercase(s)`             | Convert to uppercase  | `{{uppercase(name)}}`                              |
-| `lowercase(s)`             | Convert to lowercase  | `{{lowercase(name)}}`                              |
-| `trim(s)`                  | Trim whitespace       | `{{trim(input)}}`                                  |
-| `dirname(path)`            | Directory component   | `{{dirname(/foo/bar.txt)}}` → `/foo`               |
-| `basename(path)`           | Filename component    | `{{basename(/foo/bar.txt)}}` → `bar.txt`           |
-| `extension(path)`          | File extension        | `{{extension(file.tar.gz)}}` → `.gz`               |
-| `without_extension(path)`  | Remove last extension | `{{without_extension(file.tar.gz)}}` → `file.tar`  |
-| `without_extensions(path)` | Remove all extensions | `{{without_extensions(file.tar.gz)}}` → `file`     |
-| `absolute_path(path)`      | Make path absolute    | `{{absolute_path(./src)}}`                         |
-| `home()`                   | Home directory        | `{{home()}}` → `/Users/helge` or `C:\Users\helge` |
-| `local_bin(name)`          | Local bin path        | `{{local_bin(jake)}}` → `~/.local/bin/jake`        |
+| Function                   | Purpose               | Example                                                 |
+| -------------------------- | --------------------- | ------------------------------------------------------- |
+| `uppercase(s)`             | Convert to uppercase  | `{{uppercase(name)}}`                                   |
+| `lowercase(s)`             | Convert to lowercase  | `{{lowercase(name)}}`                                   |
+| `trim(s)`                  | Trim whitespace       | `{{trim(input)}}`                                       |
+| `dirname(path)`            | Directory component   | `{{dirname(/foo/bar.txt)}}` → `/foo`                    |
+| `basename(path)`           | Filename component    | `{{basename(/foo/bar.txt)}}` → `bar.txt`                |
+| `extension(path)`          | File extension        | `{{extension(file.tar.gz)}}` → `.gz`                    |
+| `without_extension(path)`  | Remove last extension | `{{without_extension(file.tar.gz)}}` → `file.tar`       |
+| `without_extensions(path)` | Remove all extensions | `{{without_extensions(file.tar.gz)}}` → `file`          |
+| `absolute_path(path)`      | Make path absolute    | `{{absolute_path(./src)}}`                              |
+| `home()`                   | Home directory        | `{{home()}}` → `/Users/helge` or `C:\Users\helge`       |
+| `local_bin(name)`          | Local bin path        | `{{local_bin(jake)}}` → `~/.local/bin/jake`             |
 | `shell_config()`           | Shell config file     | `{{shell_config()}}` → `~/.zshrc` or PowerShell profile |
-| `launch(target)`           | Platform open command | `{{launch(file.html)}}` → `open file.html` (macOS) |
+| `launch(target)`           | Platform open command | `{{launch(file.html)}}` → `open file.html` (macOS)      |
 
 `home()` resolves from `HOME` on Unix-like systems and from `HOME`, `USERPROFILE`, or `HOMEDRIVE` + `HOMEPATH` on Windows.
 `shell_config()` follows the detected shell, including Windows-style `SHELL` paths such as `C:\Program Files\Git\bin\bash.exe`. Native PowerShell and `pwsh` sessions resolve to their profile paths; plain `cmd.exe` does not have a matching config file.
@@ -582,18 +582,19 @@ Research on syntax highlighting approaches from similar tools.
 Make has well-established TextMate grammars with the root scope `source.makefile`.
 
 **Key scope conventions:**
-| Element | Scope |
-|---------|-------|
-| Target names | `entity.name.function.target.makefile` |
-| Special targets (.PHONY, etc.) | `support.function.target.$1.makefile` |
-| User variables | `variable.other.makefile` |
-| Built-in variables | `variable.language.makefile` |
-| Variable expansions $(VAR) | `string.interpolated.makefile` |
-| Built-in functions | `support.function.$1.makefile` |
-| Comments | `comment.line.number-sign.makefile` |
-| Recipe prefixes (@, -, +) | `keyword.control.$1.makefile` |
-| Conditionals (ifdef, etc.) | `keyword.control.ifdef.makefile` |
-| Assignment operators | `keyword.operator.assignment.makefile` |
+
+| Element                        | Scope                                  |
+| ------------------------------ | -------------------------------------- |
+| Target names                   | `entity.name.function.target.makefile` |
+| Special targets (.PHONY, etc.) | `support.function.target.$1.makefile`  |
+| User variables                 | `variable.other.makefile`              |
+| Built-in variables             | `variable.language.makefile`           |
+| Variable expansions $(VAR)     | `string.interpolated.makefile`         |
+| Built-in functions             | `support.function.$1.makefile`         |
+| Comments                       | `comment.line.number-sign.makefile`    |
+| Recipe prefixes (@, -, +)      | `keyword.control.$1.makefile`          |
+| Conditionals (ifdef, etc.)     | `keyword.control.ifdef.makefile`       |
+| Assignment operators           | `keyword.operator.assignment.makefile` |
 
 **Sources:**
 
@@ -608,20 +609,21 @@ Make has well-established TextMate grammars with the root scope `source.makefile
 Just uses the root scope `source.just` with fine-grained hierarchical scopes.
 
 **Key scope conventions:**
-| Element | Scope |
-|---------|-------|
-| Recipe names | `entity.name.function.just` |
-| Recipe parameters | `variable.parameter.recipe.just` |
-| Recipe prefixes (@, \_) | `keyword.other.recipe.prefix.just` |
-| Recipe attributes [private] | `support.function.system.just` |
-| Variables | `variable.other.just` |
-| Built-in functions | `support.function.builtin.just` |
-| Conditionals (if, else) | `keyword.control.conditional.just` |
-| Reserved keywords | `keyword.other.reserved.just` |
-| Assignment := | `keyword.operator.assignment.just` |
-| Quiet operator @ | `keyword.operator.quiet.just` |
-| String interpolation {{}} | `string.interpolated.escaping.just` |
-| Comments | `comment.line.number-sign.just` |
+
+| Element                     | Scope                               |
+| --------------------------- | ----------------------------------- |
+| Recipe names                | `entity.name.function.just`         |
+| Recipe parameters           | `variable.parameter.recipe.just`    |
+| Recipe prefixes (@, \_)     | `keyword.other.recipe.prefix.just`  |
+| Recipe attributes [private] | `support.function.system.just`      |
+| Variables                   | `variable.other.just`               |
+| Built-in functions          | `support.function.builtin.just`     |
+| Conditionals (if, else)     | `keyword.control.conditional.just`  |
+| Reserved keywords           | `keyword.other.reserved.just`       |
+| Assignment :=               | `keyword.operator.assignment.just`  |
+| Quiet operator @            | `keyword.operator.quiet.just`       |
+| String interpolation {{}}   | `string.interpolated.escaping.just` |
+| Comments                    | `comment.line.number-sign.just`     |
 
 **Notable patterns:**
 

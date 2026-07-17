@@ -21,23 +21,23 @@ A `<token>` is classified in a single left-to-right pass:
    treated literally (recipe name if none yet, otherwise a recipe argument);
    no further flag parsing happens.
 2. **A flag-like token** — starts with `-` and has at least one more character
-   (`isFlagLike`). Bare `-` is *not* flag-like; it is a positional (the stdin
+   (`isFlagLike`). Bare `-` is _not_ flag-like; it is a positional (the stdin
    convention).
 3. **A bare token** — the first bare token becomes the **recipe name**; every
    later bare token is a **recipe positional argument**.
 
 ### Flag forms (accepted anywhere on the line)
 
-| Form | Example | Meaning |
-| --- | --- | --- |
-| Long | `--verbose` | Boolean / value-less flag |
-| Long with value | `--jakefile Jakefile.ci` | Value in the next token |
-| Long inline value | `--jakefile=Jakefile.ci` | Value after `=` |
-| Negatable | `--no-verbose` | Negated form of a `negatable` flag |
-| Short | `-v` | Single short flag |
-| Combined short | `-vn` | Several value-less short flags |
-| Countable | `-vvv` | Repeats a countable flag (verbosity level 3) |
-| Attached short value | `-fFILE`, `-j4`, `-sRECIPE` | Value attached to the flag |
+| Form                 | Example                     | Meaning                                      |
+| -------------------- | --------------------------- | -------------------------------------------- |
+| Long                 | `--verbose`                 | Boolean / value-less flag                    |
+| Long with value      | `--jakefile Jakefile.ci`    | Value in the next token                      |
+| Long inline value    | `--jakefile=Jakefile.ci`    | Value after `=`                              |
+| Negatable            | `--no-verbose`              | Negated form of a `negatable` flag           |
+| Short                | `-v`                        | Single short flag                            |
+| Combined short       | `-vn`                       | Several value-less short flags               |
+| Countable            | `-vvv`                      | Repeats a countable flag (verbosity level 3) |
+| Attached short value | `-fFILE`, `-j4`, `-sRECIPE` | Value attached to the flag                   |
 
 ### Recipe arguments
 
@@ -54,9 +54,9 @@ named parameters. See `docs/SYNTAX.md` §5.4 and §5.5.
   `jake deploy prod fast` → recipe `deploy`, args `prod fast`.
 - **`--` stops flag parsing.** Use it to pass a flag-like argument to the recipe:
   `jake run -- --port 8080` runs `run` with the literal args `--port 8080`.
-- **Unknown flag *before* the recipe is an error** (with a "did you mean?"
+- **Unknown flag _before_ the recipe is an error** (with a "did you mean?"
   suggestion): `jake --prot 8080 serve` → error.
-- **Unknown flag *after* the recipe is forwarded to the recipe** as a positional
+- **Unknown flag _after_ the recipe is forwarded to the recipe** as a positional
   argument. Because jake recipes commonly wrap arbitrary tools, `jake test --foo`
   forwards `--foo` to whatever `test` invokes. (Trade-off: a mistyped jake flag
   placed after the recipe is not caught — it is forwarded.)
@@ -68,7 +68,7 @@ named parameters. See `docs/SYNTAX.md` §5.4 and §5.5.
 ### Edge cases
 
 - **A value-less flag given an inline value is an error.** `--yes=false` and
-  `--verbose=3` report *"Option … does not take a value"* rather than silently
+  `--verbose=3` report _"Option … does not take a value"_ rather than silently
   ignoring the value (which would make `--yes=false` mean `yes=true`). Use
   `--no-yes` / `--no-verbose` to negate, and `-vvv` for verbosity levels.
 - **A value-taking short flag consumes the rest of its token as the value.**
@@ -82,7 +82,7 @@ named parameters. See `docs/SYNTAX.md` §5.4 and §5.5.
 
 ### Optional-value flags
 
-`-j/--jobs`, `-w/--watch`, `--completions`, and `--external` take an *optional*
+`-j/--jobs`, `-w/--watch`, `--completions`, and `--external` take an _optional_
 value. Whether they consume the following token depends on the flag:
 
 - `--jobs` consumes the next token only if it parses as an integer, else it
@@ -101,7 +101,7 @@ Before the single-pass rewrite, `src/cli/args.zig` had **two separate parsing pa
 surprising, position-dependent bugs:
 
 - **Required-value flags after the recipe were silently dropped.**
-  `jake pkg.dev --show` treated `--show` as a recipe argument and *ran* `pkg.dev`
+  `jake pkg.dev --show` treated `--show` as a recipe argument and _ran_ `pkg.dev`
   instead of showing it. The same happened to `-f`, `--group`, `--filter`,
   `--type`, and `--port` after a recipe.
 - **No `=` splitting after the recipe.** `jake build --jakefile=x` after a recipe

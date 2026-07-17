@@ -11,9 +11,9 @@ jake [OPTIONS] [RECIPE] [ARGS...]
 
 ## Arguments
 
-| Argument | Description                                         |
-| -------- | --------------------------------------------------- |
-| `RECIPE` | Recipe to run (default: first recipe or `@default`) |
+| Argument | Description                                          |
+| -------- | ---------------------------------------------------- |
+| `RECIPE` | Recipe to run (default: first recipe or `@default`)  |
 | `ARGS`   | Recipe parameters (`name=value`) and positional args |
 
 ## Argument ordering
@@ -32,36 +32,36 @@ name, interspersed with recipe arguments (clap-style). `jake build -v`,
 
 ## Options
 
-| Option              | Short | Description                         |
-| ------------------- | ----- | ----------------------------------- |
-| `--help`            | `-h`  | Show help message                   |
-| `--version`         | `-V`  | Show version                        |
-| `--list`            | `-l`  | List available recipes              |
-| `--all`             | `-a`  | Show all recipes including hidden   |
-| `--dry-run`         | `-n`  | Print commands without executing    |
-| `--verbose`         | `-v`  | Show verbose output                 |
-| `--yes`             | `-y`  | Auto-confirm all `@confirm` prompts |
-| `--jakefile PATH`   | `-f`  | Use specified Jakefile              |
-| `--watch [PATTERN]` | `-w`  | Watch and re-run on changes         |
-| `--jobs [N]`        | `-j`  | Parallel jobs (default: CPU count)  |
-| `--show [RECIPE]`   | `-s`  | Show recipe details (defaults to the recipe on the line) |
-| `--summary`         |       | Print recipe names for scripts      |
-| `--short`           |       | Output one recipe name per line     |
-| `--json`            |       | Emit JSON for listing-style output  |
-| `--group GROUP`     |       | Filter recipes to a specific group  |
-| `--filter PATTERN`  |       | Filter recipe names by glob pattern |
-| `--type TYPE`       |       | Filter recipes by type (`task`, `file`, `simple`, `external`) |
-| `--groups`          |       | List available group names          |
-| `--web`             |       | Start web UI server                 |
-| `--port PORT`       |       | Web UI port (default: 8420)         |
-| `--external [TYPE]` |       | Show external recipes (make/just)   |
-| `--no-external`     |       | Hide external recipes from listing  |
-| `--completions [SHELL]` |   | Print shell completion script       |
-| `--install`         |       | Install shell completions           |
-| `--uninstall`       |       | Remove shell completions            |
-| `--fmt`             |       | Format Jakefile                     |
-| `--check`           |       | Validate formatting (requires `--fmt`) |
-| `--dump`            |       | Print formatted Jakefile (requires `--fmt`) |
+| Option                  | Short | Description                                                   |
+| ----------------------- | ----- | ------------------------------------------------------------- |
+| `--help`                | `-h`  | Show help message                                             |
+| `--version`             | `-V`  | Show version                                                  |
+| `--list`                | `-l`  | List available recipes                                        |
+| `--all`                 | `-a`  | Show all recipes including hidden                             |
+| `--dry-run`             | `-n`  | Print commands without executing                              |
+| `--verbose`             | `-v`  | Show verbose output                                           |
+| `--yes`                 | `-y`  | Auto-confirm all `@confirm` prompts                           |
+| `--jakefile PATH`       | `-f`  | Use specified Jakefile                                        |
+| `--watch [PATTERN]`     | `-w`  | Watch and re-run on changes                                   |
+| `--jobs [N]`            | `-j`  | Parallel jobs (default: CPU count)                            |
+| `--show [RECIPE]`       | `-s`  | Show recipe details (defaults to the recipe on the line)      |
+| `--summary`             |       | Print recipe names for scripts                                |
+| `--short`               |       | Output one recipe name per line                               |
+| `--json`                |       | Emit JSON for listing-style output                            |
+| `--group GROUP`         |       | Filter recipes to a specific group                            |
+| `--filter PATTERN`      |       | Filter recipe names by glob pattern                           |
+| `--type TYPE`           |       | Filter recipes by type (`task`, `file`, `simple`, `external`) |
+| `--groups`              |       | List available group names                                    |
+| `--web`                 |       | Start web UI server                                           |
+| `--port PORT`           |       | Web UI port (default: 8420)                                   |
+| `--external [TYPE]`     |       | Show external recipes (make/just)                             |
+| `--no-external`         |       | Hide external recipes from listing                            |
+| `--completions [SHELL]` |       | Print shell completion script                                 |
+| `--install`             |       | Install shell completions                                     |
+| `--uninstall`           |       | Remove shell completions                                      |
+| `--fmt`                 |       | Format Jakefile                                               |
+| `--check`               |       | Validate formatting (requires `--fmt`)                        |
+| `--dump`                |       | Print formatted Jakefile (requires `--fmt`)                   |
 
 ## Examples
 
@@ -147,11 +147,11 @@ Web UI runs inherit the CLI process' `--verbose` and `--jobs` settings, forward 
 
 ## Environment Variables
 
-| Variable    | Description            |
-| ----------- | ---------------------- |
-| `JAKEFILE`  | Default Jakefile path  |
-| `JAKE_DRY_RUN` | Enable dry-run mode |
-| `JAKE_VERBOSE` | Enable verbose output |
-| `JAKE_YES` | Auto-confirm prompts |
-| `JAKE_JOBS` | Default parallel job count |
-| `NO_COLOR` | Disable colored output |
+| Variable       | Description                |
+| -------------- | -------------------------- |
+| `JAKEFILE`     | Default Jakefile path      |
+| `JAKE_DRY_RUN` | Enable dry-run mode        |
+| `JAKE_VERBOSE` | Enable verbose output      |
+| `JAKE_YES`     | Auto-confirm prompts       |
+| `JAKE_JOBS`    | Default parallel job count |
+| `NO_COLOR`     | Disable colored output     |

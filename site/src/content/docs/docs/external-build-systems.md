@@ -12,11 +12,13 @@ If you select a Jakefile with `-f`, external detection and delegation follow tha
 Jake automatically detects these files:
 
 **Makefile variants** (in priority order):
+
 - `GNUmakefile`
 - `Makefile`
 - `makefile`
 
 **Justfile variants** (in priority order):
+
 - `justfile`
 - `Justfile`
 - `.justfile`
@@ -25,8 +27,8 @@ Jake automatically detects these files:
 
 External recipes get a prefix to avoid conflicts:
 
-| Source | Prefix | Example |
-|--------|--------|---------|
+| Source   | Prefix  | Example                    |
+| -------- | ------- | -------------------------- |
 | Makefile | `make.` | `make.build`, `make.clean` |
 | Justfile | `just.` | `just.test`, `just.deploy` |
 
@@ -95,6 +97,7 @@ build: _helper
 ## Example: Mixed Project
 
 Directory structure:
+
 ```
 project/
 ├── Jakefile      # Jake recipes
