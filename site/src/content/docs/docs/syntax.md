@@ -52,13 +52,30 @@ task example:
 
 ## Line Continuation
 
-Long commands can span multiple lines using shell continuation:
+Long commands can span multiple lines. End a line with a trailing `\` (the
+backslash must be the final character before the line ending) and the next
+indented line joins it into a single shell invocation:
 
 ```jake
 task long-command:
     echo "This is a very long command" \
          "that spans multiple lines"
 ```
+
+Rules:
+
+- The backslash must be the last character of the physical line. A backslash
+  followed by spaces does not continue.
+- The continued line must be indented as part of the recipe body. Jake removes
+  the continuation backslash, the line ending, and the next line's indentation.
+- Jake inserts no separator. Keep a space before the backslash if the joined
+  text needs one.
+- Shell variables and command chains stay in the same shell process across
+  continued lines.
+- An even run of trailing backslashes (e.g. `\\`) is literal and does not
+  continue the line.
+- Metadata and hook directives (`@cd`, `@shell`, `@pre`, `@post`, `@on_error`)
+  remain single-line.
 
 ## Variables
 

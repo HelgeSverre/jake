@@ -483,6 +483,33 @@ task build:
     @ignore rm -rf tmp    # Directive followed by shell command
 ```
 
+#### 10.1 Line Continuation
+
+A physical line ending with a trailing `\` (immediately before the line ending)
+continues onto the next indented line. Jake joins the physical lines into one
+shell invocation, removing the continuation backslash, the line ending, and the
+next line's leading spaces or tabs:
+
+```jake
+task long-command:
+    echo "This is a very long command" \
+         "that spans multiple lines"
+```
+
+Rules:
+
+- The backslash must be the final character before LF or CRLF. A backslash
+  followed by spaces does not continue.
+- The continued line must be indented as part of the recipe body; a non-indented
+  line ends the recipe and leaves the backslash literal.
+- No whitespace is inserted at the join; keep a space before the backslash when
+  the joined text needs a separator.
+- An odd run of N trailing backslashes continues and keeps N-1 of them; an even
+  run is literal.
+- Continuation works for plain and silent (`@cmd`) commands. Metadata and hook
+  directives (`@cd`, `@shell`, `@pre`, `@post`, `@on_error`) stay single-line.
+- A continuation at end of file is literal.
+
 **Scope Name:** `meta.shell-line.jake` (container)
 
 ---

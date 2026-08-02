@@ -1842,6 +1842,29 @@ task release | r | rel:
 # jake release, jake r, jake rel
 ```
 
+### Pattern 9: Line Continuation for Long Commands
+
+Break long commands across lines with a trailing `\`. The joined physical
+lines run as a single shell invocation, so shell variables and `&&`/`;` chains
+share state across the whole command:
+
+```jake
+task wasm:
+    wasm-pack build --target web --out-dir pkg \
+        -- --config 'profile.release.opt-level="s"'
+
+task dev port="3000":
+    port={{port}}; \
+    while lsof -iTCP:$port -sTCP:LISTEN -t >/dev/null 2>&1; do port=$((port+1)); done; \
+    echo "starting dev server on http://localhost:$port"; \
+    cargo run
+```
+
+The backslash must be the last character of the line, and the continued line
+must be indented. Jake removes the backslash, the line ending, and the next
+line's indentation without inserting a separator — keep a space before the
+backslash where the joined text needs one.
+
 ---
 
 ## Migrating from Make or Just {#migrating-from-make-or-just}
