@@ -11,9 +11,6 @@ The best of **Make** and **Just**, combined. Clean syntax, parallel execution, g
 
 **[Documentation](https://jakefile.dev)** · **[Installation](#installation)** · **[Quick Start](#quick-start)** · **[User Guide](GUIDE.md)** · **[Cookbook](https://www.jakefile.dev/examples/benchmarking/)**
 
-> [!WARNING]
-> This project is still a work in progress and not yet production ready.
-
 ---
 
 ## Quick Start

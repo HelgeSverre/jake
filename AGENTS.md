@@ -74,8 +74,7 @@ zig build test --test-filter "test_name"
 **Jake** is a modern command runner/build system written in Zig that combines features from GNU Make and Just with clean syntax, parallel execution, and file-based dependency tracking.
 
 **Repository:** https://github.com/HelgeSverre/jake  
-**Language:** Zig 0.15.2+  
-**Status:** Work in progress (not yet production-ready)
+**Language:** Zig 0.15.2+
 
 ### Subsystems & Responsibilities
 
@@ -211,7 +210,6 @@ perf: performance
 
 ### From README.md
 
-- **Status:** Work in progress, not yet production-ready
 - **License:** MIT
 - **Minimum Zig version:** 0.15.2+
 
