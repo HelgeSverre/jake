@@ -1,5 +1,9 @@
 # jake - a justfile runner written in Zig
 
+# Jake targets Zig 0.15.x. Prefer the repo's toolchain shim (resolves a
+# compatible zig even when a newer one is on PATH); fall back to `zig`.
+zig := if path_exists(justfile_directory() + "/scripts/zig") == "true" { justfile_directory() + "/scripts/zig" } else { "zig" }
+
 # Default: show available recipes
 default:
     @just --list
@@ -11,22 +15,22 @@ default:
 # Build the project (debug mode)
 [group('build')]
 build:
-    zig build
+    {{zig}} build
 
 # Build with ReleaseFast optimizations
 [group('build')]
 release:
-    zig build -Doptimize=ReleaseFast
+    {{zig}} build -Doptimize=ReleaseFast
 
 # Build smallest binary
 [group('build')]
 release-small:
-    zig build -Doptimize=ReleaseSmall
+    {{zig}} build -Doptimize=ReleaseSmall
 
 # Build with safety checks enabled
 [group('build')]
 release-safe:
-    zig build -Doptimize=ReleaseSafe
+    {{zig}} build -Doptimize=ReleaseSafe
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Running
@@ -35,7 +39,7 @@ release-safe:
 # Build and run the application
 [group('run')]
 run *ARGS:
-    zig build run {{ if ARGS != "" { "-- " + ARGS } else { "" } }}
+    {{zig}} build run {{ if ARGS != "" { "-- " + ARGS } else { "" } }}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Testing
@@ -44,12 +48,12 @@ run *ARGS:
 # Run all tests
 [group('test')]
 test:
-    zig build test --summary all
+    {{zig}} build test --summary all
 
 # Run tests with verbose output
 [group('test')]
 test-verbose:
-    zig build test --summary all
+    {{zig}} build test --summary all
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Code Quality
@@ -58,12 +62,12 @@ test-verbose:
 # Format all Zig source files
 [group('quality')]
 fmt:
-    zig fmt src/
+    {{zig}} fmt src/
 
 # Check formatting without modifying files
 [group('quality')]
 fmt-check:
-    zig fmt --check src/
+    {{zig}} fmt --check src/
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Development
@@ -91,12 +95,12 @@ clean:
 # Fetch dependencies
 [group('maintenance')]
 fetch:
-    zig build --fetch
+    {{zig}} build --fetch
 
 # Install to ~/.local/bin
 [group('maintenance')]
 install:
-    zig build --prefix ~/.local
+    {{zig}} build --prefix ~/.local
 
 # Uninstall from ~/.local/bin
 [group('maintenance')]
@@ -106,7 +110,7 @@ uninstall:
 # Generate Zig API documentation (into zig-out/docs)
 [group('maintenance')]
 docs:
-    zig build-lib src/root.zig -femit-docs=zig-out/docs -fno-emit-bin
+    {{zig}} build-lib src/root.zig -femit-docs=zig-out/docs -fno-emit-bin
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CI (requires: brew install act)
@@ -125,7 +129,7 @@ ci:
 # Run coverage-guided fuzz tests
 [group('fuzz')]
 fuzz:
-    zig build fuzz --fuzz
+    {{zig}} build fuzz --fuzz
 
 # ─────────────────────────────────────────────────────────────────────────────
 # E2E Tests
@@ -143,12 +147,12 @@ e2e: release
 # Run internal zBench benchmarks
 [group('bench')]
 bench-internal:
-    zig build bench -Doptimize=ReleaseFast
+    {{zig}} build bench -Doptimize=ReleaseFast
 
 # Build benchmark binary only
 [group('bench')]
 bench-build:
-    zig build bench-build -Doptimize=ReleaseFast
+    {{zig}} build bench-build -Doptimize=ReleaseFast
 
 # Benchmark jake vs just (requires: brew install hyperfine)
 [group('bench')]
@@ -199,10 +203,10 @@ leaks: release-safe
 [group('bench')]
 sizes:
     @echo "Building all optimization levels..."
-    @zig build -Doptimize=Debug && cp zig-out/bin/jake /tmp/jake-debug
-    @zig build -Doptimize=ReleaseSafe && cp zig-out/bin/jake /tmp/jake-safe
-    @zig build -Doptimize=ReleaseFast && cp zig-out/bin/jake /tmp/jake-fast
-    @zig build -Doptimize=ReleaseSmall && cp zig-out/bin/jake /tmp/jake-small
+    @{{zig}} build -Doptimize=Debug && cp zig-out/bin/jake /tmp/jake-debug
+    @{{zig}} build -Doptimize=ReleaseSafe && cp zig-out/bin/jake /tmp/jake-safe
+    @{{zig}} build -Doptimize=ReleaseFast && cp zig-out/bin/jake /tmp/jake-fast
+    @{{zig}} build -Doptimize=ReleaseSmall && cp zig-out/bin/jake /tmp/jake-small
     @echo ""
     @echo "Binary sizes:"
     @ls -lh /tmp/jake-debug /tmp/jake-safe /tmp/jake-fast /tmp/jake-small
@@ -215,14 +219,14 @@ sizes:
 [group('info')]
 info:
     @echo "Project: jake"
-    @echo "Zig version: $(zig version)"
+    @echo "Zig version: $({{zig}} version)"
     @echo "Source files:"
     @find src -name '*.zig' | xargs wc -l | tail -1
 
 # Show zig build options
 [group('info')]
 zig-help:
-    zig build --help
+    {{zig}} build --help
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Editor Plugins
