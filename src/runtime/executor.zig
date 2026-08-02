@@ -1578,9 +1578,17 @@ pub const Executor = struct {
     fn runCommandWithTimeout(self: *Executor, cmd: Recipe.Command, timeout_ctx: anytype) ExecuteError!void {
         const has_timeout = comptime @TypeOf(timeout_ctx) != ?*anyopaque;
 
+        // Join continued physical lines (trailing unescaped backslash) into a
+        // single normalized command before any expansion, so expansions, dry-run
+        // display, and the shell all see the same text.
+        const normalized = normalizeLineContinuations(self.allocator, cmd.line) catch return ExecuteError.OutOfMemory;
+        if (normalized.ptr != cmd.line.ptr) {
+            self.expanded_strings.append(self.allocator, normalized) catch return ExecuteError.OutOfMemory;
+        }
+
         // First expand {{var}} Jake variables
-        const jake_expanded = self.expandJakeVariables(cmd.line) catch cmd.line;
-        if (jake_expanded.ptr != cmd.line.ptr) {
+        const jake_expanded = self.expandJakeVariables(normalized) catch normalized;
+        if (jake_expanded.ptr != normalized.ptr) {
             self.expanded_strings.append(self.allocator, jake_expanded) catch return ExecuteError.OutOfMemory;
         }
 
@@ -3102,6 +3110,53 @@ fn stripQuotes(s: []const u8) []const u8 {
     return parser.stripQuotes(s);
 }
 
+/// Normalize a logical command by joining continued physical lines.
+///
+/// A physical line ending with an odd run of backslashes continues onto the
+/// next line: the final continuation backslash, the line ending, and the next
+/// line's leading spaces/tabs are removed without inserting whitespace (an odd
+/// run of N backslashes keeps N-1 of them). Lines without a continuation pass
+/// through unchanged. Returns `line` as-is when no continuation exists;
+/// otherwise returns an allocated normalized copy.
+fn normalizeLineContinuations(allocator: std.mem.Allocator, line: []const u8) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    var pos: usize = 0;
+    var i: usize = 0;
+    while (i < line.len) {
+        if (line[i] != '\n') {
+            i += 1;
+            continue;
+        }
+
+        // Determine whether this line ending continues the command.
+        var end = i;
+        if (end > 0 and line[end - 1] == '\r') end -= 1;
+
+        var backslashes: usize = 0;
+        while (end > backslashes and line[end - backslashes - 1] == '\\') {
+            backslashes += 1;
+        }
+
+        if (backslashes % 2 == 1) {
+            // Continuation: copy up to (but excluding) the final backslash,
+            // then drop the line ending and the next line's indentation.
+            try out.appendSlice(allocator, line[pos .. end - 1]);
+            i += 1; // past '\n' (the '\r' was already excluded above)
+            while (i < line.len and (line[i] == ' ' or line[i] == '\t')) i += 1;
+            pos = i;
+            continue;
+        }
+        i += 1;
+    }
+
+    if (out.items.len == 0) return line; // no continuation present
+
+    try out.appendSlice(allocator, line[pos..]);
+    return out.toOwnedSlice(allocator);
+}
+
 test "executor basic" {
     const source =
         \\task hello:
@@ -3117,6 +3172,54 @@ test "executor basic" {
 
     executor.ctx.dry_run = true;
     try executor.execute("hello");
+}
+
+test "line continuation normalization joins continued lines" {
+    const input =
+        \\start=3000; p=$start; \
+        \\    p=$((p+1)); \
+        \\    echo $p
+    ;
+    const normalized = try normalizeLineContinuations(std.testing.allocator, input);
+    defer if (normalized.ptr != input.ptr) std.testing.allocator.free(normalized);
+    try std.testing.expectEqualStrings(
+        "start=3000; p=$start; p=$((p+1)); echo $p",
+        normalized,
+    );
+}
+
+test "line continuation normalization handles CRLF" {
+    const input = "echo one \\\r\n     two";
+    const normalized = try normalizeLineContinuations(std.testing.allocator, input);
+    defer if (normalized.ptr != input.ptr) std.testing.allocator.free(normalized);
+    try std.testing.expectEqualStrings("echo one two", normalized);
+}
+
+test "line continuation normalization returns input when no continuation" {
+    const input = "echo one\necho two";
+    const normalized = try normalizeLineContinuations(std.testing.allocator, input);
+    try std.testing.expect(normalized.ptr == input.ptr);
+}
+
+test "line continuation normalization preserves even backslash runs" {
+    const input = "echo one \\\\\n     two";
+    const normalized = try normalizeLineContinuations(std.testing.allocator, input);
+    defer if (normalized.ptr != input.ptr) std.testing.allocator.free(normalized);
+    try std.testing.expectEqualStrings("echo one \\\\\n     two", normalized);
+}
+
+test "line continuation normalization keeps N-1 backslashes of odd runs" {
+    const input = "printf '%s\\n' foo\\\\\\\n    bar";
+    const normalized = try normalizeLineContinuations(std.testing.allocator, input);
+    defer if (normalized.ptr != input.ptr) std.testing.allocator.free(normalized);
+    try std.testing.expectEqualStrings("printf '%s\\n' foo\\\\bar", normalized);
+}
+
+test "line continuation normalization preserves non-continuation line endings" {
+    const input = "echo one\n    echo two \\\n    three";
+    const normalized = try normalizeLineContinuations(std.testing.allocator, input);
+    defer if (normalized.ptr != input.ptr) std.testing.allocator.free(normalized);
+    try std.testing.expectEqualStrings("echo one\n    echo two three", normalized);
 }
 
 // ============================================================================

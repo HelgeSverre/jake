@@ -493,6 +493,29 @@ test "format simple recipe" {
     try std.testing.expect(std.mem.indexOf(u8, result.output, "    echo") != null);
 }
 
+test "format line continuation preserves breaks" {
+    // The formatter renders the source-backed logical command verbatim, so
+    // continuation breaks and their indentation survive formatting and the
+    // output still parses back to a single command.
+    const allocator = std.testing.allocator;
+    const source =
+        \\task build:
+        \\    echo one \
+        \\        two
+        \\
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "    echo one \\\n        two") != null);
+
+    // Round-trip: reformatting the formatted output is a no-op and the
+    // continuation still parses to one command.
+    const second = try format(allocator, result.output);
+    defer allocator.free(second.output);
+    try std.testing.expectEqualStrings(result.output, second.output);
+}
+
 test "format aligns variables" {
     const allocator = std.testing.allocator;
     const source =

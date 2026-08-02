@@ -1177,6 +1177,20 @@ pub const Parser = struct {
         }) catch return ParseError.OutOfMemory;
     }
 
+    /// Check whether a physical recipe line ends with an unescaped trailing
+    /// backslash (an odd run of backslashes immediately before the line ending),
+    /// which continues the command onto the next indented line.
+    fn lineEndsWithContinuation(source: []const u8, line_end: usize) bool {
+        var end = line_end;
+        if (end > 0 and source[end - 1] == '\r') end -= 1;
+
+        var backslashes: usize = 0;
+        while (end > backslashes and source[end - backslashes - 1] == '\\') {
+            backslashes += 1;
+        }
+        return backslashes % 2 == 1;
+    }
+
     /// Parse the indented command body shared by simple/task/file recipes.
     /// Handles @pre/@post/@on_error hooks, @cd, @shell, command-level directives
     /// (@needs, @cache, @if, @each, …), and plain commands (including `@cmd`
@@ -1294,7 +1308,25 @@ pub const Parser = struct {
             while (self.current.tag != .newline and self.current.tag != .eof) {
                 self.advance();
             }
-            const cmd_end = self.current.loc.start;
+            var cmd_end = self.current.loc.start;
+            // A trailing, unescaped backslash continues the command onto the
+            // next indented recipe line. Consume the newline and the following
+            // indent token, then keep scanning until a physical line without a
+            // continuation (a non-indented line ends the recipe and leaves the
+            // backslash literal). Only plain/silent commands continue; directive
+            // commands (@needs, @cache, @if, ...) stay single-line.
+            while (directive == null and
+                self.current.tag == .newline and
+                lineEndsWithContinuation(self.source, cmd_end))
+            {
+                self.advance();
+                if (self.current.tag != .indent) break;
+                self.advance();
+                while (self.current.tag != .newline and self.current.tag != .eof) {
+                    self.advance();
+                }
+                cmd_end = self.current.loc.start;
+            }
 
             commands.append(self.allocator, .{
                 .line = std.mem.trim(u8, self.source[cmd_start..cmd_end], " \t\r"),
@@ -1603,6 +1635,118 @@ test "parser strips trailing CR from command lines (CRLF source)" {
     const echo_line = recipe.commands[1].line;
     try std.testing.expect(std.mem.indexOfScalar(u8, echo_line, '\r') == null);
     try std.testing.expectEqualStrings("echo done", echo_line);
+}
+
+test "parser joins continued lines into one command" {
+    // A trailing unescaped backslash joins the next indented line into the
+    // same logical command, retaining the original source spelling.
+    const source =
+        \\task build:
+        \\    echo "This is a very long command" \
+        \\         "that spans multiple lines"
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
+    try std.testing.expectEqualStrings(
+        "echo \"This is a very long command\" \\\n         \"that spans multiple lines\"",
+        recipe.commands[0].line,
+    );
+}
+
+test "parser joins three or more continued lines" {
+    const source =
+        \\task multi:
+        \\    echo one \
+        \\        two \
+        \\        three
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].commands.len);
+    try std.testing.expectEqualStrings(
+        "echo one \\\n        two \\\n        three",
+        jakefile.recipes[0].commands[0].line,
+    );
+}
+
+test "parser continues silent commands across lines" {
+    const source =
+        \\task quiet:
+        \\    @echo one \
+        \\         two
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
+    try std.testing.expect(std.mem.startsWith(u8, recipe.commands[0].line, "@echo one \\\n"));
+}
+
+test "parser even trailing backslashes do not continue" {
+    // Two backslashes before the line ending are literal; the next line is a
+    // separate command.
+    const source =
+        \\task even:
+        \\    echo one \\
+        \\    echo two
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(@as(usize, 2), recipe.commands.len);
+    try std.testing.expectEqualStrings("echo one \\\\", recipe.commands[0].line);
+    try std.testing.expectEqualStrings("echo two", recipe.commands[1].line);
+}
+
+test "parser CRLF continued lines behave like LF" {
+    const source = "task build:\r\n    echo one \\\r\n         two\r\n";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
+    try std.testing.expectEqualStrings(
+        "echo one \\\r\n         two",
+        recipe.commands[0].line,
+    );
+}
+
+test "parser continuation stops at non-indented line" {
+    // A trailing backslash followed by a top-level statement is literal; the
+    // recipe body ends without absorbing the next statement.
+    const source =
+        \\task build:
+        \\    echo one \
+        \\two: after
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+    const recipe = jakefile.recipes[0];
+    try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
+    try std.testing.expectEqualStrings("echo one \\", recipe.commands[0].line);
+    // The second line parsed as a separate recipe, not absorbed into the command.
+    try std.testing.expectEqualStrings("two", jakefile.recipes[1].name);
 }
 
 test "parser error message with line and column" {

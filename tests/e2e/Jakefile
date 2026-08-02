@@ -56,6 +56,23 @@ task test-basic:
     {{jake}} -f fixtures/basic/alias.jake b > {{out}} 2>&1
     grep -q "Building with alias" {{out}}
     echo "  Recipe can be called by alias ......................... PASS"
+    # Line continuation joins continued lines into one command
+    {{jake}} -f fixtures/basic/line-continuation.jake documented > {{out}} 2>&1
+    grep -q "This is a very long command that spans multiple lines" {{out}}
+    echo "  Line continuation joins command lines .................. PASS"
+    # Line continuation preserves shared shell state
+    {{jake}} -f fixtures/basic/line-continuation.jake state > {{out}} 2>&1
+    grep -q "port=3001" {{out}}
+    echo "  Line continuation preserves shell state ............... PASS"
+    # Dry run shows one normalized command
+    {{jake}} -f fixtures/basic/line-continuation.jake -n documented > {{out}} 2>&1
+    ! grep -q '\\\\$' {{out}}
+    grep -q "that spans multiple lines" {{out}}
+    echo "  Dry run shows normalized continuation ................. PASS"
+    # Formatter round-trips continuation breaks
+    {{jake}} -f fixtures/basic/line-continuation.jake --fmt --check > {{out}} 2>&1
+    grep -q "correctly formatted" {{out}}
+    echo "  Formatter preserves continuation ...................... PASS"
 
 # ============================================================================
 # Dependency Tests
