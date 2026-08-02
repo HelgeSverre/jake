@@ -149,13 +149,14 @@ require_contains "--group output includes build" "$GROUP_OUTPUT" "build"
 require_contains "--group output includes test" "$GROUP_OUTPUT" "test"
 
 GROUPS_OUTPUT="$(run_capture "documented --groups example succeeds" env NO_COLOR=1 "$JAKE_BIN" -f "$FILTER_FIXTURE" --groups)"
-require_contains "--groups output includes assets" "$GROUPS_OUTPUT" "assets"
 require_contains "--groups output includes dev" "$GROUPS_OUTPUT" "dev"
 require_contains "--groups output includes prod" "$GROUPS_OUTPUT" "prod"
+require_no_match "--groups omits hidden file-recipe group" "assets" "$GROUPS_OUTPUT"
 
 JSON_OUTPUT="$(run_capture "documented --json example succeeds" env NO_COLOR=1 "$JAKE_BIN" -f "$FILTER_FIXTURE" --json)"
 require_contains "--json output includes build metadata" "$JSON_OUTPUT" "\"name\":\"build\""
-require_contains "--json output includes file recipe type" "$JSON_OUTPUT" "\"kind\":\"file\""
+require_contains "--json output includes task recipe type" "$JSON_OUTPUT" "\"kind\":\"task\""
+require_no_match "--json omits hidden file recipe" "\"name\":\"dist/app.js\"" "$JSON_OUTPUT"
 
 SUMMARY_JSON_OUTPUT="$(run_capture "documented --summary --json example succeeds" env NO_COLOR=1 "$JAKE_BIN" -f "$FILTER_FIXTURE" --summary --json)"
 require_contains "--summary --json output includes build" "$SUMMARY_JSON_OUTPUT" "\"build\""

@@ -679,7 +679,7 @@ task silent:
 only-os attribute
 ================================================================================
 
-@only-os macos
+@platform macos
 task mac-only:
     brew install pkg
 
@@ -870,7 +870,7 @@ multiple attributes on recipe
 ================================================================================
 
 @group release
-@only-os linux
+@platform linux
 @desc "Linux release build"
 task linux-release:
     make release

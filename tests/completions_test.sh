@@ -348,9 +348,9 @@ if CUSTOM_SUMMARY=$("$JAKE_BIN" -f "$TEMP_JAKEFILE" --summary 2>/dev/null); then
 	fi
 
 	if echo "$CUSTOM_SUMMARY" | grep -q "target.txt"; then
-		pass "-f flag: --summary includes file targets"
+		fail "-f flag: --summary should hide file targets"
 	else
-		fail "-f flag: expected target.txt in summary"
+		pass "-f flag: --summary hides file targets"
 	fi
 else
 	fail "-f flag: --summary command failed"
@@ -359,10 +359,10 @@ fi
 # Test --short with custom jakefile
 if CUSTOM_SHORT=$("$JAKE_BIN" -f "$TEMP_JAKEFILE" --short 2>/dev/null); then
 	SHORT_LINE_COUNT=$(echo "$CUSTOM_SHORT" | wc -l | tr -d ' ')
-	if [[ $SHORT_LINE_COUNT -ge 3 ]]; then
-		pass "-f flag: --short returns $SHORT_LINE_COUNT lines"
+	if [[ $SHORT_LINE_COUNT -eq 2 ]]; then
+		pass "-f flag: --short returns $SHORT_LINE_COUNT lines (file targets hidden)"
 	else
-		fail "-f flag: --short returned only $SHORT_LINE_COUNT lines (expected 3+)"
+		fail "-f flag: --short returned $SHORT_LINE_COUNT lines (expected 2, file targets hidden)"
 	fi
 else
 	fail "-f flag: --short command failed"
