@@ -6291,7 +6291,7 @@ test "recipe parameters bind bare CLI args positionally" {
         \\task ask question:
         \\    echo "{{question}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
@@ -6313,7 +6313,7 @@ test "named recipe parameters override positional binding" {
         \\task deploy environment region:
         \\    echo "{{environment}} {{region}}"
     ;
-    var lex = @import("lexer.zig").Lexer.init(source);
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
