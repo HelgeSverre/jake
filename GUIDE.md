@@ -1157,6 +1157,23 @@ $ jake greet World
 Hello, World!
 ```
 
+### Binding Parameters
+
+Bare arguments fill declared recipe parameters from left to right:
+
+```jake
+task greet name:
+    echo "Hello, {{name}}!"
+```
+
+```bash
+$ jake greet World
+Hello, World!
+```
+
+Named `name=value` arguments take precedence over positional arguments. An
+unfilled parameter expands to an empty string.
+
 ### Multiple Arguments
 
 ```jake

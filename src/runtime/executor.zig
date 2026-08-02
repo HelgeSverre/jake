@@ -1083,11 +1083,12 @@ pub const Executor = struct {
         }
     }
 
-    /// Bind recipe parameters to variables based on CLI args and defaults
+    /// Bind recipe parameters to variables based on CLI args and defaults.
     fn bindRecipeParams(self: *Executor, recipe: *const Recipe) !void {
-        // Build a map of CLI args in key=value format
+        // Build a map of named CLI args and retain bare arguments for positional binding.
         var cli_args = std.StringHashMap([]const u8).init(self.allocator);
         defer cli_args.deinit();
+        var positional_index: usize = 0;
 
         for (self.ctx.positional_args) |arg| {
             if (std.mem.indexOfScalar(u8, arg, '=')) |eq_pos| {
@@ -1097,18 +1098,29 @@ pub const Executor = struct {
             }
         }
 
-        // For each recipe parameter, bind to a variable
+        // Named arguments take precedence. Bare arguments fill the remaining
+        // parameters in declaration order, then defaults apply.
         for (recipe.params) |param| {
             if (cli_args.get(param.name)) |value| {
-                // CLI arg takes precedence
+                try self.variables.put(param.name, value);
+            } else if (nextPositionalArg(self.ctx.positional_args, &positional_index)) |value| {
                 try self.variables.put(param.name, value);
             } else if (param.default) |default_value| {
-                // Use default value
                 try self.variables.put(param.name, default_value);
+            } else {
+                try self.variables.put(param.name, "");
             }
-            // If no CLI arg and no default, param is simply not set
-            // (could add required param check here if needed)
         }
+    }
+
+    /// Return the next bare argument and advance `index`, skipping named arguments.
+    fn nextPositionalArg(args: []const []const u8, index: *usize) ?[]const u8 {
+        while (index.* < args.len) {
+            const arg = args[index.*];
+            index.* += 1;
+            if (std.mem.indexOfScalar(u8, arg, '=') == null) return arg;
+        }
+        return null;
     }
 
     /// A path optionally rebased onto a `@rooted` module's base_dir. When
@@ -6255,7 +6267,7 @@ test "recipe parameter CLI arg overrides default" {
     try std.testing.expectEqualStrings("Alice", executor.variables.get("name").?);
 }
 
-test "recipe parameter without default stays unset if no CLI arg" {
+test "recipe parameter without default expands to empty if unfilled" {
     const source =
         \\task greet name:
         \\    echo "Hello, {{name}}!"
@@ -6271,8 +6283,52 @@ test "recipe parameter without default stays unset if no CLI arg" {
 
     try executor.execute("greet");
 
-    // Without CLI arg and no default, param should not be set
-    try std.testing.expect(executor.variables.get("name") == null);
+    try std.testing.expectEqualStrings("", executor.variables.get("name").?);
+}
+
+test "recipe parameters bind bare CLI args positionally" {
+    const source =
+        \\task ask question:
+        \\    echo "{{question}}"
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.dry_run = true;
+
+    const args = [_][]const u8{"what is your name"};
+    executor.setPositionalArgs(&args);
+
+    try executor.execute("ask");
+
+    try std.testing.expectEqualStrings("what is your name", executor.variables.get("question").?);
+}
+
+test "named recipe parameters override positional binding" {
+    const source =
+        \\task deploy environment region:
+        \\    echo "{{environment}} {{region}}"
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.dry_run = true;
+
+    const args = [_][]const u8{ "environment=production", "us-east-1" };
+    executor.setPositionalArgs(&args);
+
+    try executor.execute("deploy");
+
+    try std.testing.expectEqualStrings("production", executor.variables.get("environment").?);
+    try std.testing.expectEqualStrings("us-east-1", executor.variables.get("region").?);
 }
 
 test "recipe multiple parameters bind correctly" {
