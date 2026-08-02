@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-08-02
+
+### Added
+
+- **Line continuation (jake#24) — trailing `\` joins recipe lines.** A physical line ending with an unescaped backslash continues onto the next line: the continuation backslash, the line ending, and the next line's indentation are removed, and the joined text runs as a single shell invocation. Odd runs of backslashes continue (an N-backslash run keeps N−1), even runs stay literal, CRLF behaves like LF, and a backslash before a non-indented line is left alone. `@cd`, `@shell`, `@pre`, `@post`, and `@on_error` stay single-line. The parser groups continued physical lines while retaining the original source spelling, so `jake --fmt` round-trips continuation breaks unchanged; the executor normalizes joins before variable expansion, so `{{var}}` expansions, dry-run output, and the shell all see the same text. The exact rules are documented in `GUIDE.md`, `docs/SYNTAX.md` §10.1, `docs/TUTORIAL.md` (Advanced Pattern 9), and the site syntax reference, with unit + e2e coverage (joined args, shared shell state, dry-run normalization, formatter round-trip).
+
+- **Positional recipe parameters (jake#25).** Bare trailing arguments now bind to declared recipe parameters in declaration order — `jake ask "what is your name"` fills `task ask question:` — while `name=value` still binds by name and takes precedence over positional values. Unfilled declared parameters now expand to an empty string instead of leaking the literal `{{param}}` text into commands. `{{$1}}`/`{{$@}}` positional expansion is unchanged. Documented in `GUIDE.md`, `docs/CLI-ARGS.md`, and the site's positional-arguments reference, with unit tests for positional binding, named-over-positional precedence, and empty expansion.
+
 ### Fixed
 
 - **Web UI: stopping a run no longer locks the UI.** The server's cancellation path (and mid-run execution errors) returned without emitting a `task_complete`/`summary`, so after clicking Stop the client waited forever — Run stayed disabled, the spinner and timer ran until reload. Both paths now emit a completion + summary ("Execution cancelled by user").
@@ -16,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Web UI: results from a previous run no longer linger.** Finished-run state used to stick around indefinitely — old ✓/✗ icons stayed next to recipes after starting a different recipe, and the status pill kept reporting "1 completed" forever. Starting a new run now resets every other recipe's result to idle, and after ~15 seconds of inactivity the whole UI (icons, status pill, elapsed timer) drifts back to "Ready". Output history is preserved per recipe.
 - **Web UI: a dropped WebSocket connection no longer locks the UI.** If the connection died mid-run, the Run button stayed disabled and the elapsed timer ticked forever, because the completion message that would clear them never arrived. Disconnects now reset local run state (with a "run state unknown" note in the output) while the auto-reconnect keeps retrying. A run started from another connected browser tab is now also reflected in this tab's status pill, timer, and Stop button.
 - **Web UI: recipe names containing quotes no longer break the page.** Recipe/group names were interpolated into inline `onclick="…"` handler strings, where an apostrophe (already HTML-entity-decoded by the browser before JS parsing) corrupted the handler. All inline handlers were replaced with delegated event listeners keyed off `data-*` attributes.
+- **`just test` (and other justfile recipes) no longer break when the default `zig` is 0.16.** The justfile called `zig` directly, so building/testing Jake via `just` failed on machines where PATH points at a newer Zig than the 0.15.x Jake targets. A `zig` variable now prefers the repo's `scripts/zig` toolchain resolver when present and falls back to `zig` on PATH, matching how Jake's own Jakefile recipes already worked.
 
 ### Changed
 
@@ -31,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`src/` reorganized into pipeline-stage folders.** The flat 30-file directory is now grouped as `cli/` (args, completions, suggest, init, upgrade, templates), `frontend/` (lexer, parser, import, loaders, external), `runtime/` (executor, parallel, cache, hooks, conditions, functions, env, context, watch), `output/` (color, formatter, progress, prompt, event_emitter), `webui/`, and `util/` (glob, system, tracy); `main.zig`, `jake.zig`, and `compat.zig` stay at the root. Moves were done with `git mv` so blame history follows. Docs (`CLAUDE.md`, `AGENTS.md`, `docs/`) were updated to match.
 
 - **`--filter` now hints when a glob was eaten by the shell.** `jake --filter opencode*` could silently print `0 recipes` when the shell expanded the unquoted glob before jake ran (e.g. `opencode*` → a matching `opencode-sema/` directory, so jake filtered on `opencode-sema` and matched nothing). When `--filter` matches no recipes **and** the pattern arrives without any glob metacharacters (`*`, `?`, `[`) — the fingerprint of an already-expanded argument — jake now prints a reminder to quote the pattern. The hint appears only on the human-readable `--list` path; `--short`, `--summary`, and `--json` stay clean for scripting. A new "`--filter` Matches Nothing" troubleshooting entry documents the gotcha.
+
+- **CI checks were synced with the intentional file-recipe hiding.** Since 0.9.4, `--groups`/`--json`/`--summary` intentionally hide `file` recipes (they're build artifacts, not commands), but the docs-contract and completion tests still asserted the old listing behavior, so CI's "Docs Contract" and "Completion Tests" jobs failed on every push. Both test suites now assert file recipes stay hidden, and the tree-sitter corpus tests were updated from the removed `@only-os` attribute to the current `@platform` spelling.
 
 ## [0.9.6] - 2026-07-07
 
