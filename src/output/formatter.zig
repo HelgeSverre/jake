@@ -132,6 +132,23 @@ fn drainComments(
     }
 }
 
+/// Source line of the first import, directive, or recipe — the upper bound for
+/// comments that belong above everything else in the file. Returns
+/// `std.math.maxInt(usize)` for a file with no such elements.
+fn firstElementLine(jakefile: *const Jakefile) usize {
+    var first: usize = std.math.maxInt(usize);
+    if (jakefile.imports.len > 0 and jakefile.imports[0].line > 0) {
+        first = @min(first, jakefile.imports[0].line);
+    }
+    if (jakefile.directives.len > 0 and jakefile.directives[0].line > 0) {
+        first = @min(first, jakefile.directives[0].line);
+    }
+    if (jakefile.recipes.len > 0 and jakefile.recipes[0].loc.line > 0) {
+        first = @min(first, jakefile.recipes[0].loc.line);
+    }
+    return first;
+}
+
 /// Render Jakefile AST to formatted source
 fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![]const u8 {
     var out: Out = .empty;
@@ -140,6 +157,21 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
     const writer = out.writer(allocator);
 
     var comment_index: usize = 0;
+
+    // `@rooted` is a module-level flag, so the parser records a bool rather
+    // than a Directive node and the formatter used to drop it silently. It
+    // applies to the whole file, so emit it first. The comment drain is
+    // clamped to the first element's line: `@rooted` is written at the top in
+    // practice, but the parser accepts it anywhere, and an unclamped bound
+    // would hoist a later element's comments up here (jake#29).
+    if (jakefile.rooted) {
+        const bound = @min(jakefile.rooted_line, firstElementLine(jakefile));
+        if (bound > 0) {
+            try drainComments(&out, allocator, jakefile, &comment_index, bound);
+        }
+        try writer.writeAll("@rooted\n");
+        try writeBlankLine(&out, allocator);
+    }
 
     // Render imports first, each preceded by the comments written above it.
     for (jakefile.imports) |import_dir| {
@@ -1464,6 +1496,72 @@ test "comment: stays anchored to its own directive-decorated recipe (jake#19)" {
     try std.testing.expect(rollback_comment < rollback_task);
     // ...and the rollback comment is NOT hoisted above the deploy recipe.
     try std.testing.expect(rollback_comment > deploy_task);
+}
+
+test "rooted: a file-level @rooted directive survives formatting" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@rooted
+        \\
+        \\@group a
+        \\@desc "first"
+        \\task one:
+        \\    echo one
+        \\
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    // @rooted is a module-level flag rather than a Directive node, so the
+    // formatter used to drop it — silently unrooting an imported module.
+    try std.testing.expectEqualStrings(source, result.output);
+    try std.testing.expect(!result.changed);
+}
+
+test "rooted: the comment above @rooted stays above it" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\# Header for this module.
+        \\
+        \\# Rooted so the parent workspace can import it.
+        \\@rooted
+        \\
+        \\@import "jake/rust.jake"
+        \\
+        \\@group a
+        \\@desc "first"
+        \\task one:
+        \\    echo one
+        \\
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expectEqualStrings(source, result.output);
+    try std.testing.expect(!result.changed);
+}
+
+test "rooted: formatting a rooted file is idempotent" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\# header
+        \\@rooted
+        \\@import "a.jake" as a
+        \\x = 1
+        \\
+        \\# documents one
+        \\task one:
+        \\    echo one
+    ;
+    const first = try format(allocator, source);
+    defer allocator.free(first.output);
+
+    const second = try format(allocator, first.output);
+    defer allocator.free(second.output);
+
+    try std.testing.expect(std.mem.indexOf(u8, first.output, "@rooted") != null);
+    try std.testing.expectEqualStrings(first.output, second.output);
+    try std.testing.expect(!second.changed);
 }
 
 test "comment: header and directive comments are not moved onto the first recipe (jake#29)" {

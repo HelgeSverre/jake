@@ -164,6 +164,9 @@ pub const Jakefile = struct {
     /// recipes' relative paths (`@cd`, `file` targets) resolve against this
     /// file's own directory when imported from a parent. No-op when run directly.
     rooted: bool = false,
+    /// 1-based source line of the `@rooted` directive, so the formatter can
+    /// re-emit it with the comments written above it. 0 when not declared.
+    rooted_line: usize = 0,
 
     pub fn deinit(self: *Jakefile, allocator: std.mem.Allocator) void {
         allocator.free(self.variables);
@@ -360,6 +363,8 @@ pub const Parser = struct {
 
     // Set when a top-level `@rooted` directive is parsed
     rooted: bool,
+    // 1-based source line of that `@rooted`, kept so the formatter can re-emit it.
+    rooted_line: usize = 0,
 
     // 1-based source line of the `@` of the directive being parsed. Handlers
     // read it because they run after the `@` token has been consumed.
@@ -711,6 +716,7 @@ pub const Parser = struct {
             .comments = &.{},
             .source = self.source,
             .rooted = self.rooted,
+            .rooted_line = self.rooted_line,
         };
         errdefer result.deinit(self.allocator);
 
@@ -1023,6 +1029,7 @@ pub const Parser = struct {
     fn parseRootedDirective(self: *Parser) ParseError!void {
         self.advance(); // consume `rooted`
         self.rooted = true;
+        self.rooted_line = self.directive_line;
         // No arguments; skip anything trailing on the line (e.g. a comment).
         self.skipToEndOfLine();
     }
