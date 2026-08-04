@@ -73,126 +73,157 @@ pub fn formatFile(
     return result;
 }
 
+const Out = std.ArrayListUnmanaged(u8);
+
+/// Append a blank line, unless the output is empty or already ends with one.
+/// Section separators and comment spacing therefore never stack up.
+fn writeBlankLine(out: *Out, allocator: std.mem.Allocator) FormatError!void {
+    if (out.items.len == 0) return;
+    if (std.mem.endsWith(u8, out.items, "\n\n")) return;
+    try out.append(allocator, '\n');
+}
+
+/// True when the source line directly below `line` (1-based) is blank.
+///
+/// This is how the formatter tells a comment that documents the element below
+/// it (no blank line between them) from a file header or a section separator
+/// (blank line between them, so it documents nothing). Scans from the start of
+/// the source; Jakefiles are small enough that this is not worth an index.
+fn blankLineFollows(source: []const u8, line: usize) bool {
+    var it = std.mem.splitScalar(u8, source, '\n');
+    var n: usize = 0;
+    while (it.next()) |text| {
+        n += 1;
+        if (n == line + 1) return std.mem.trim(u8, text, " \t\r").len == 0;
+    }
+    return false;
+}
+
+/// Emit standalone comments from `index` that sit above source line
+/// `before_line`, advancing `index` past them. `before_line == null` drains
+/// every remaining comment. Inline comments are skipped: they are rendered
+/// with the command, variable, or recipe header they sit on.
+///
+/// Each comment keeps the blank line the author wrote below it, so a comment
+/// block that directly precedes an element stays attached to it while a file
+/// header or section separator stays detached (jake#29).
+fn drainComments(
+    out: *Out,
+    allocator: std.mem.Allocator,
+    jakefile: *const Jakefile,
+    index: *usize,
+    before_line: ?usize,
+) FormatError!void {
+    while (index.* < jakefile.comments.len) {
+        const comment = jakefile.comments[index.*];
+        if (comment.kind != .standalone) {
+            index.* += 1;
+            continue;
+        }
+        if (before_line) |limit| {
+            if (comment.line >= limit) return;
+        }
+        try out.appendSlice(allocator, comment.text);
+        try out.append(allocator, '\n');
+        index.* += 1;
+        if (blankLineFollows(jakefile.source, comment.line)) {
+            try writeBlankLine(out, allocator);
+        }
+    }
+}
+
 /// Render Jakefile AST to formatted source
 fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![]const u8 {
-    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var out: Out = .empty;
     errdefer out.deinit(allocator);
 
     const writer = out.writer(allocator);
 
-    // Track current output line for comment interleaving
-    var current_line: usize = 1;
     var comment_index: usize = 0;
 
-    // Render imports first
+    // Render imports first, each preceded by the comments written above it.
     for (jakefile.imports) |import_dir| {
-        // Write any standalone comments before this line
-        while (comment_index < jakefile.comments.len and
-            jakefile.comments[comment_index].line <= current_line and
-            jakefile.comments[comment_index].kind == .standalone)
-        {
-            try writer.print("{s}\n", .{jakefile.comments[comment_index].text});
-            comment_index += 1;
-            current_line += 1;
-        }
-
+        try drainComments(&out, allocator, jakefile, &comment_index, import_dir.line);
         try renderImport(writer, &import_dir);
-        current_line += 1;
     }
 
-    // Add blank line after imports if there are any
     if (jakefile.imports.len > 0) {
-        try writer.writeByte('\n');
-        current_line += 1;
+        // A comment block written directly below the last import documents the
+        // import list, so keep it there instead of pushing it into the next
+        // section (jake#29).
+        var next_line = jakefile.imports[jakefile.imports.len - 1].line + 1;
+        while (comment_index < jakefile.comments.len and
+            jakefile.comments[comment_index].kind == .standalone and
+            jakefile.comments[comment_index].line == next_line)
+        {
+            try drainComments(&out, allocator, jakefile, &comment_index, next_line + 1);
+            next_line += 1;
+        }
+        try writeBlankLine(&out, allocator);
     }
 
     // Render global directives (@dotenv, @require, @export)
     for (jakefile.directives) |directive| {
+        try drainComments(&out, allocator, jakefile, &comment_index, directive.line);
         try renderDirective(writer, &directive);
-        current_line += 1;
     }
 
-    // Add blank line after directives if there are any
     if (jakefile.directives.len > 0) {
-        try writer.writeByte('\n');
-        current_line += 1;
+        try writeBlankLine(&out, allocator);
     }
 
     // Render variables with alignment
     if (jakefile.variables.len > 0) {
         try renderVariables(writer, jakefile.variables);
-        current_line += jakefile.variables.len;
-        try writer.writeByte('\n');
-        current_line += 1;
+        try writeBlankLine(&out, allocator);
     }
 
     // Render global hooks
     for (jakefile.global_pre_hooks) |hook| {
         try renderGlobalHook(writer, &hook, "pre");
-        current_line += 1;
     }
     for (jakefile.global_post_hooks) |hook| {
         try renderGlobalHook(writer, &hook, "post");
-        current_line += 1;
     }
     for (jakefile.global_on_error_hooks) |hook| {
         try renderGlobalHook(writer, &hook, "on_error");
-        current_line += 1;
     }
 
     // Render recipes with interleaved comments
-    for (jakefile.recipes, 0..) |recipe, i| {
-        // Add blank line before recipes (except first if no other content)
-        if (i > 0 or jakefile.variables.len > 0 or jakefile.imports.len > 0 or jakefile.directives.len > 0) {
-            try writer.writeByte('\n');
-            current_line += 1;
-        }
+    for (jakefile.recipes) |recipe| {
+        try writeBlankLine(&out, allocator);
 
-        // Write standalone comments that appear before this recipe in the
-        // source (compared by source line), so each comment stays anchored to
-        // the recipe it documents instead of every comment hoisting onto the
+        // Comments above this recipe's line stay with it, so each comment
+        // anchors to the recipe it documents instead of hoisting onto the
         // first recipe (jake#19). recipe.loc.line is the recipe-name line; a
         // leading comment sits above the recipe's @group/@desc directives, so
         // the bound is strictly-less-than. (loc.line == 0 means unset — e.g. a
         // hand-built recipe in a test — so fall back to draining.)
-        while (comment_index < jakefile.comments.len and
-            jakefile.comments[comment_index].kind == .standalone and
-            (recipe.loc.line == 0 or jakefile.comments[comment_index].line < recipe.loc.line))
-        {
-            try writer.print("{s}\n", .{jakefile.comments[comment_index].text});
-            comment_index += 1;
-            current_line += 1;
-        }
+        const bound: ?usize = if (recipe.loc.line == 0) null else recipe.loc.line;
+        try drainComments(&out, allocator, jakefile, &comment_index, bound);
 
         try renderRecipe(writer, &recipe);
-        // Estimate lines used by recipe
-        current_line += 1 + recipe.commands.len;
     }
 
-    // Emit any standalone comments trailing the last recipe so they aren't
-    // dropped now that the per-recipe drain is line-bounded (jake#19).
+    // Emit any standalone comments left over (below the last element) so they
+    // aren't dropped now that the drains are line-bounded (jake#19).
     var has_trailing = false;
-    {
-        var ti = comment_index;
-        while (ti < jakefile.comments.len) : (ti += 1) {
-            if (jakefile.comments[ti].kind == .standalone) {
-                has_trailing = true;
-                break;
-            }
+    for (jakefile.comments[@min(comment_index, jakefile.comments.len)..]) |comment| {
+        if (comment.kind == .standalone) {
+            has_trailing = true;
+            break;
         }
     }
     if (has_trailing) {
-        if (jakefile.recipes.len > 0) try writer.writeByte('\n');
-        while (comment_index < jakefile.comments.len) : (comment_index += 1) {
-            if (jakefile.comments[comment_index].kind != .standalone) continue;
-            try writer.print("{s}\n", .{jakefile.comments[comment_index].text});
-        }
+        try writeBlankLine(&out, allocator);
+        try drainComments(&out, allocator, jakefile, &comment_index, null);
     }
 
-    // Ensure final newline
-    if (out.items.len > 0 and out.items[out.items.len - 1] != '\n') {
-        try writer.writeByte('\n');
+    // Exactly one final newline, and no trailing blank line.
+    while (out.items.len > 0 and (out.items[out.items.len - 1] == '\n' or out.items[out.items.len - 1] == ' ')) {
+        out.items.len -= 1;
     }
+    if (out.items.len > 0) try out.append(allocator, '\n');
 
     return out.toOwnedSlice(allocator) catch return FormatError.OutOfMemory;
 }
@@ -1433,6 +1464,98 @@ test "comment: stays anchored to its own directive-decorated recipe (jake#19)" {
     try std.testing.expect(rollback_comment < rollback_task);
     // ...and the rollback comment is NOT hoisted above the deploy recipe.
     try std.testing.expect(rollback_comment > deploy_task);
+}
+
+test "comment: header and directive comments are not moved onto the first recipe (jake#29)" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\# header comment for the file
+        \\
+        \\# Comment that documents dotenv.
+        \\@dotenv
+        \\
+        \\# ── Section one ──
+        \\
+        \\@group a
+        \\@desc "first"
+        \\task one:
+        \\    echo one
+        \\
+        \\# ── Section two ──
+        \\
+        \\@group b
+        \\@desc "second"
+        \\task two:
+        \\    echo two
+        \\
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    // The header stays at the top, the dotenv comment stays above @dotenv, and
+    // both section separators keep their blank line — nothing is concatenated
+    // onto the first recipe.
+    try std.testing.expectEqualStrings(source, result.output);
+    try std.testing.expect(!result.changed);
+}
+
+test "comment: block directly above a recipe stays attached to it (jake#29)" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\# documents build
+        \\@desc "Build"
+        \\task build:
+        \\    echo build
+        \\
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    // No blank line is inserted between the comment and the recipe it documents.
+    try std.testing.expectEqualStrings(source, result.output);
+}
+
+test "comment: block below the last import stays with the imports (jake#29)" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@import "a.jake"
+        \\@import "b.jake"
+        \\#  @import "c.jake" as c
+        \\
+        \\@dotenv
+        \\
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expectEqualStrings(source, result.output);
+}
+
+test "comment: comment placement is idempotent (jake#29)" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\# header
+        \\
+        \\
+        \\@import "a.jake"
+        \\# note below the imports
+        \\
+        \\@dotenv
+        \\x = 1
+        \\
+        \\# documents one
+        \\task one:
+        \\    echo one
+        \\# floating tail
+    ;
+    const first = try format(allocator, source);
+    defer allocator.free(first.output);
+
+    const second = try format(allocator, first.output);
+    defer allocator.free(second.output);
+
+    try std.testing.expectEqualStrings(first.output, second.output);
+    try std.testing.expect(!second.changed);
 }
 
 // ============================================================================

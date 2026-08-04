@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Formatter: file-header and directive comments are no longer moved onto the first recipe (jake#29).** `jake --fmt` drained every standalone comment above the first recipe into one block glued to that recipe, so a file header, a comment documenting `@dotenv`/`@import`, and section separators were concatenated and the directive they documented was left bare. The 0.9.0 fix only stopped a *later* recipe from taking an *earlier* recipe's comment; the first recipe still absorbed everything above it, because imports and directives carried no source line to bound the drain against. `Directive` and `ImportDirective` now record their 1-based source line, and the formatter emits comments in source order against those lines: a comment block written directly above an element stays attached to it, a comment followed by a blank line keeps that blank line (so a file header stays at the top and a section separator stays a separator), and a comment block below the last import stays with the import list. Blank lines no longer double up, and the output ends with exactly one newline, so a second `--fmt` pass is a no-op. `jake --fmt` on jake's own `Jakefile` is now a no-op.
+
 ## [0.9.7] - 2026-08-02
 
 ### Added

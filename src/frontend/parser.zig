@@ -104,6 +104,11 @@ pub const Variable = struct {
 pub const Directive = struct {
     kind: Kind,
     args: []const []const u8,
+    /// 1-based source line of the leading `@`. 0 when the directive was
+    /// synthesized rather than read from a line (see the trailing `@require`
+    /// flush in `parseJakefile`). The formatter uses it to keep a comment above
+    /// the directive it documents.
+    line: usize = 0,
 
     pub const Kind = enum {
         dotenv,
@@ -124,6 +129,9 @@ pub const ImportDirective = struct {
     /// module's own file did not declare `@rooted`. Monotonic: this OR the
     /// file's `@rooted` roots the module; there is no way to un-root.
     rooted: bool = false,
+    /// 1-based source line of the leading `@`. 0 when unknown. The formatter
+    /// uses it to keep a comment above the import it documents.
+    line: usize = 0,
 };
 
 /// Represents a comment in the source file (for formatting preservation)
@@ -352,6 +360,10 @@ pub const Parser = struct {
 
     // Set when a top-level `@rooted` directive is parsed
     rooted: bool,
+
+    // 1-based source line of the `@` of the directive being parsed. Handlers
+    // read it because they run after the `@` token has been consumed.
+    directive_line: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator, lex: *Lexer) Parser {
         return .{
@@ -718,6 +730,7 @@ pub const Parser = struct {
     /// after consuming the leading `@`. Each handler is responsible for
     /// advancing past its own keyword.
     fn parseDirective(self: *Parser) ParseError!void {
+        self.directive_line = self.current.loc.line;
         _ = try self.expect(.at);
 
         switch (self.current.tag) {
@@ -1001,6 +1014,7 @@ pub const Parser = struct {
         self.directives.append(self.allocator, .{
             .kind = kind,
             .args = owned_args,
+            .line = self.directive_line,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1059,6 +1073,7 @@ pub const Parser = struct {
             .path = path,
             .prefix = prefix,
             .rooted = rooted,
+            .line = self.directive_line,
         }) catch return ParseError.OutOfMemory;
     }
 
