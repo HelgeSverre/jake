@@ -99,10 +99,10 @@ fn blankLineFollows(source: []const u8, line: usize) bool {
     return false;
 }
 
-/// Emit standalone comments from `index` that sit above source line
-/// `before_line`, advancing `index` past them. `before_line == null` drains
-/// every remaining comment. Inline comments are skipped: they are rendered
-/// with the command, variable, or recipe header they sit on.
+/// Emit unconsumed standalone comments in the source range
+/// (`after_line`, `before_line`). `before_line == null` has no upper bound.
+/// Inline comments are rendered with the command, variable, or recipe header
+/// they sit on and are therefore ignored here.
 ///
 /// Each comment keeps the blank line the author wrote below it, so a comment
 /// block that directly precedes an element stays attached to it while a file
@@ -129,11 +129,11 @@ fn drainComments(
     }
 }
 
-/// Source line of the first import, directive, or recipe — the upper bound for
-/// comments that belong above everything else in the file. Returns
-/// `std.math.maxInt(usize)` for a file with no such elements.
+/// Source line of the first top-level element. Returns `std.math.maxInt(usize)`
+/// for a file with no elements.
 fn firstElementLine(jakefile: *const Jakefile) usize {
     var first: usize = std.math.maxInt(usize);
+    if (jakefile.rooted_line > 0) first = jakefile.rooted_line;
     if (jakefile.imports.len > 0 and jakefile.imports[0].line > 0) {
         first = @min(first, jakefile.imports[0].line);
     }
@@ -156,6 +156,38 @@ fn firstElementLine(jakefile: *const Jakefile) usize {
         first = @min(first, hook.line);
     };
     return first;
+}
+
+/// Emit detached file-leading comment blocks before canonical reordering moves
+/// another element (notably `@rooted`) ahead of the first source element. A
+/// directly attached comment is deliberately left for its owning element.
+fn drainFileHeaderComments(
+    out: *Out,
+    allocator: std.mem.Allocator,
+    jakefile: *const Jakefile,
+    consumed: []bool,
+) FormatError!void {
+    const first_line = firstElementLine(jakefile);
+    var header_end: usize = 0;
+    for (jakefile.comments) |comment| {
+        if (comment.kind != .standalone or comment.line >= first_line) continue;
+        if (blankLineFollows(jakefile.source, comment.line)) header_end = comment.line + 1;
+    }
+    if (header_end > 0) {
+        try drainComments(out, allocator, jakefile, consumed, 0, header_end);
+    }
+}
+
+fn hasUnconsumedCommentInRange(
+    jakefile: *const Jakefile,
+    consumed: []const bool,
+    after_line: usize,
+    before_line: usize,
+) bool {
+    for (jakefile.comments, consumed) |comment, was_consumed| {
+        if (!was_consumed and comment.kind == .standalone and comment.line > after_line and comment.line < before_line) return true;
+    }
+    return false;
 }
 
 /// Source line of the nearest top-level element before `line`. Restricting a
@@ -199,16 +231,15 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
     defer allocator.free(consumed_comments);
     @memset(consumed_comments, false);
 
+    try drainFileHeaderComments(&out, allocator, jakefile, consumed_comments);
+
     // `@rooted` is a module-level flag, so the parser records a bool rather
     // than a Directive node and the formatter used to drop it silently. It
-    // applies to the whole file, so emit it first. The comment drain is
-    // clamped to the first element's line: `@rooted` is written at the top in
-    // practice, but the parser accepts it anywhere, and an unclamped bound
-    // would hoist a later element's comments up here (jake#29).
+    // applies to the whole file, so emit it first. Its source-range ownership
+    // keeps a comment attached even when `@rooted` was originally lower down.
     if (jakefile.rooted) {
-        const bound = @min(jakefile.rooted_line, firstElementLine(jakefile));
-        if (bound > 0) {
-            try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, bound), bound);
+        if (jakefile.rooted_line > 0) {
+            try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, jakefile.rooted_line), jakefile.rooted_line);
         }
         try writer.writeAll("@rooted\n");
         try writeBlankLine(&out, allocator);
@@ -248,9 +279,21 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
 
     // Render variables with alignment
     if (jakefile.variables.len > 0) {
-        const first_variable = jakefile.variables[0];
-        try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, first_variable.line), first_variable.line);
-        try renderVariables(writer, jakefile.variables);
+        var group_start: usize = 0;
+        while (group_start < jakefile.variables.len) {
+            const first_variable = jakefile.variables[group_start];
+            const after_line = previousElementLine(jakefile, first_variable.line);
+            try drainComments(&out, allocator, jakefile, consumed_comments, after_line, first_variable.line);
+
+            var group_end = group_start + 1;
+            while (group_end < jakefile.variables.len) : (group_end += 1) {
+                const next_variable = jakefile.variables[group_end];
+                const next_after_line = previousElementLine(jakefile, next_variable.line);
+                if (hasUnconsumedCommentInRange(jakefile, consumed_comments, next_after_line, next_variable.line)) break;
+            }
+            try renderVariables(writer, jakefile.variables[group_start..group_end]);
+            group_start = group_end;
+        }
         try writeBlankLine(&out, allocator);
     }
 
@@ -1738,6 +1781,123 @@ test "comment: file header stays above variables (jake#29)" {
 
     try std.testing.expect(std.mem.startsWith(u8, result.output, "# file header\n\n"));
     try std.testing.expect(std.mem.indexOf(u8, result.output, "x = \"1\"") != null);
+}
+
+test "comment: mixed multi-recipe file preserves ownership through canonical reordering" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\# Large fixture header
+        \\# Exercises every top-level formatter section.
+        \\
+        \\# dotenv docs
+        \\@dotenv
+        \\
+        \\# first import docs
+        \\@import "a.jake" as a
+        \\# second import docs
+        \\@import "b.jake" as b
+        \\
+        \\alpha = 1
+        \\# beta docs
+        \\beta = 22
+        \\gamma = 333
+        \\
+        \\# rooted docs
+        \\@rooted
+        \\
+        \\# global pre docs
+        \\@pre echo preparing
+        \\
+        \\# first recipe docs
+        \\@desc "First"
+        \\task first:
+        \\    echo first
+        \\
+        \\# Second recipe section
+        \\
+        \\@group release
+        \\@desc "Second"
+        \\task second: [first]
+        \\    echo second
+        \\
+        \\# third recipe docs
+        \\task third: [second]
+        \\    echo third
+        \\
+        \\# trailing note
+    ;
+
+    const first = try format(allocator, source);
+    defer allocator.free(first.output);
+    const second = try format(allocator, first.output);
+    defer allocator.free(second.output);
+
+    const owned_pairs = [_][]const u8{
+        "# rooted docs\n@rooted",
+        "# first import docs\n@import \"a.jake\" as a",
+        "# second import docs\n@import \"b.jake\" as b",
+        "# dotenv docs\n@dotenv",
+        "# beta docs\nbeta",
+        "# global pre docs\n@pre echo preparing",
+        "# first recipe docs\n@desc \"First\"",
+        "# Second recipe section\n\n@group release",
+        "# third recipe docs\ntask third",
+    };
+    for (owned_pairs) |pair| {
+        try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, first.output, pair));
+    }
+
+    try std.testing.expect(std.mem.startsWith(u8, first.output, "# Large fixture header\n# Exercises every top-level formatter section.\n\n"));
+    try std.testing.expect(std.mem.endsWith(u8, first.output, "# trailing note\n"));
+    try std.testing.expect(std.mem.indexOf(u8, first.output, "@rooted").? < std.mem.indexOf(u8, first.output, "@import").?);
+    try std.testing.expectEqualStrings(first.output, second.output);
+    try std.testing.expect(!second.changed);
+}
+
+test "comment: directive ownership survives source-order permutations" {
+    const allocator = std.testing.allocator;
+    const cases = [_][]const u8{
+        \\# rooted owner
+        \\@rooted
+        \\# dotenv owner
+        \\@dotenv
+        \\# import owner
+        \\@import "a.jake"
+        \\task run:
+        \\    echo run
+        ,
+        \\# dotenv owner
+        \\@dotenv
+        \\# import owner
+        \\@import "a.jake"
+        \\# rooted owner
+        \\@rooted
+        \\task run:
+        \\    echo run
+        ,
+        \\# import owner
+        \\@import "a.jake"
+        \\# rooted owner
+        \\@rooted
+        \\# dotenv owner
+        \\@dotenv
+        \\task run:
+        \\    echo run
+        ,
+    };
+
+    for (cases) |source| {
+        const first = try format(allocator, source);
+        defer allocator.free(first.output);
+        const second = try format(allocator, first.output);
+        defer allocator.free(second.output);
+
+        try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, first.output, "# rooted owner\n@rooted"));
+        try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, first.output, "# dotenv owner\n@dotenv"));
+        try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, first.output, "# import owner\n@import \"a.jake\""));
+        try std.testing.expectEqualStrings(first.output, second.output);
+        try std.testing.expect(!second.changed);
+    }
 }
 
 // ============================================================================
