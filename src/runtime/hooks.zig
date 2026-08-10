@@ -18,6 +18,8 @@ pub const Hook = struct {
     kind: Kind,
     /// Optional: Only run for specific recipe (null = global)
     recipe_name: ?[]const u8,
+    /// 1-based source line for formatter comment anchoring. 0 when synthesized.
+    line: usize = 0,
 
     pub const Kind = enum {
         pre,

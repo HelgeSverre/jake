@@ -98,12 +98,19 @@ pub const RecipeOrigin = struct {
 pub const Variable = struct {
     name: []const u8,
     value: []const u8,
+    /// 1-based source line for formatter comment anchoring. 0 when synthesized.
+    line: usize = 0,
 };
 
 /// A top-level directive (@dotenv, @export, @require, etc.).
 pub const Directive = struct {
     kind: Kind,
     args: []const []const u8,
+    /// 1-based source line of the leading `@`. 0 when the directive was
+    /// synthesized rather than read from a line (see the trailing `@require`
+    /// flush in `parseJakefile`). The formatter uses it to keep a comment above
+    /// the directive it documents.
+    line: usize = 0,
 
     pub const Kind = enum {
         dotenv,
@@ -124,6 +131,9 @@ pub const ImportDirective = struct {
     /// module's own file did not declare `@rooted`. Monotonic: this OR the
     /// file's `@rooted` roots the module; there is no way to un-root.
     rooted: bool = false,
+    /// 1-based source line of the leading `@`. 0 when unknown. The formatter
+    /// uses it to keep a comment above the import it documents.
+    line: usize = 0,
 };
 
 /// Represents a comment in the source file (for formatting preservation)
@@ -156,6 +166,9 @@ pub const Jakefile = struct {
     /// recipes' relative paths (`@cd`, `file` targets) resolve against this
     /// file's own directory when imported from a parent. No-op when run directly.
     rooted: bool = false,
+    /// 1-based source line of the `@rooted` directive, so the formatter can
+    /// re-emit it with the comments written above it. 0 when not declared.
+    rooted_line: usize = 0,
 
     pub fn deinit(self: *Jakefile, allocator: std.mem.Allocator) void {
         allocator.free(self.variables);
@@ -352,6 +365,12 @@ pub const Parser = struct {
 
     // Set when a top-level `@rooted` directive is parsed
     rooted: bool,
+    // 1-based source line of that `@rooted`, kept so the formatter can re-emit it.
+    rooted_line: usize = 0,
+
+    // 1-based source line of the `@` of the directive being parsed. Handlers
+    // read it because they run after the `@` token has been consumed.
+    directive_line: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator, lex: *Lexer) Parser {
         return .{
@@ -699,6 +718,7 @@ pub const Parser = struct {
             .comments = &.{},
             .source = self.source,
             .rooted = self.rooted,
+            .rooted_line = self.rooted_line,
         };
         errdefer result.deinit(self.allocator);
 
@@ -718,6 +738,7 @@ pub const Parser = struct {
     /// after consuming the leading `@`. Each handler is responsible for
     /// advancing past its own keyword.
     fn parseDirective(self: *Parser) ParseError!void {
+        self.directive_line = self.current.loc.line;
         _ = try self.expect(.at);
 
         switch (self.current.tag) {
@@ -948,6 +969,7 @@ pub const Parser = struct {
             .command = command,
             .kind = kind,
             .recipe_name = target,
+            .line = self.directive_line,
         };
 
         switch (kind) {
@@ -972,6 +994,7 @@ pub const Parser = struct {
             .command = command,
             .kind = .on_error,
             .recipe_name = null,
+            .line = self.directive_line,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1001,6 +1024,7 @@ pub const Parser = struct {
         self.directives.append(self.allocator, .{
             .kind = kind,
             .args = owned_args,
+            .line = self.directive_line,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1009,6 +1033,7 @@ pub const Parser = struct {
     fn parseRootedDirective(self: *Parser) ParseError!void {
         self.advance(); // consume `rooted`
         self.rooted = true;
+        self.rooted_line = self.directive_line;
         // No arguments; skip anything trailing on the line (e.g. a comment).
         self.skipToEndOfLine();
     }
@@ -1059,6 +1084,7 @@ pub const Parser = struct {
             .path = path,
             .prefix = prefix,
             .rooted = rooted,
+            .line = self.directive_line,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1081,7 +1107,11 @@ pub const Parser = struct {
             if (self.current.tag != .newline and self.current.tag != .eof) {
                 self.advance();
             }
-            self.variables.append(self.allocator, .{ .name = name, .value = stripQuotes(value) }) catch return ParseError.OutOfMemory;
+            self.variables.append(self.allocator, .{
+                .name = name,
+                .value = stripQuotes(value),
+                .line = name_tok.loc.line,
+            }) catch return ParseError.OutOfMemory;
         } else if (self.current.tag == .colon) {
             // Simple recipe: name: [deps]
             try self.parseSimpleRecipe(name, name_tok.loc);
