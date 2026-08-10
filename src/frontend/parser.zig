@@ -98,6 +98,8 @@ pub const RecipeOrigin = struct {
 pub const Variable = struct {
     name: []const u8,
     value: []const u8,
+    /// 1-based source line for formatter comment anchoring. 0 when synthesized.
+    line: usize = 0,
 };
 
 /// A top-level directive (@dotenv, @export, @require, etc.).
@@ -967,6 +969,7 @@ pub const Parser = struct {
             .command = command,
             .kind = kind,
             .recipe_name = target,
+            .line = self.directive_line,
         };
 
         switch (kind) {
@@ -991,6 +994,7 @@ pub const Parser = struct {
             .command = command,
             .kind = .on_error,
             .recipe_name = null,
+            .line = self.directive_line,
         }) catch return ParseError.OutOfMemory;
     }
 
@@ -1103,7 +1107,11 @@ pub const Parser = struct {
             if (self.current.tag != .newline and self.current.tag != .eof) {
                 self.advance();
             }
-            self.variables.append(self.allocator, .{ .name = name, .value = stripQuotes(value) }) catch return ParseError.OutOfMemory;
+            self.variables.append(self.allocator, .{
+                .name = name,
+                .value = stripQuotes(value),
+                .line = name_tok.loc.line,
+            }) catch return ParseError.OutOfMemory;
         } else if (self.current.tag == .colon) {
             // Simple recipe: name: [deps]
             try self.parseSimpleRecipe(name, name_tok.loc);

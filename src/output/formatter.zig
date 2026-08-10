@@ -111,21 +111,18 @@ fn drainComments(
     out: *Out,
     allocator: std.mem.Allocator,
     jakefile: *const Jakefile,
-    index: *usize,
+    consumed: []bool,
+    after_line: usize,
     before_line: ?usize,
 ) FormatError!void {
-    while (index.* < jakefile.comments.len) {
-        const comment = jakefile.comments[index.*];
-        if (comment.kind != .standalone) {
-            index.* += 1;
-            continue;
-        }
+    for (jakefile.comments, 0..) |comment, index| {
+        if (consumed[index] or comment.kind != .standalone or comment.line <= after_line) continue;
         if (before_line) |limit| {
-            if (comment.line >= limit) return;
+            if (comment.line >= limit) continue;
         }
         try out.appendSlice(allocator, comment.text);
         try out.append(allocator, '\n');
-        index.* += 1;
+        consumed[index] = true;
         if (blankLineFollows(jakefile.source, comment.line)) {
             try writeBlankLine(out, allocator);
         }
@@ -146,7 +143,49 @@ fn firstElementLine(jakefile: *const Jakefile) usize {
     if (jakefile.recipes.len > 0 and jakefile.recipes[0].loc.line > 0) {
         first = @min(first, jakefile.recipes[0].loc.line);
     }
+    if (jakefile.variables.len > 0 and jakefile.variables[0].line > 0) {
+        first = @min(first, jakefile.variables[0].line);
+    }
+    for (jakefile.global_pre_hooks) |hook| if (hook.line > 0) {
+        first = @min(first, hook.line);
+    };
+    for (jakefile.global_post_hooks) |hook| if (hook.line > 0) {
+        first = @min(first, hook.line);
+    };
+    for (jakefile.global_on_error_hooks) |hook| if (hook.line > 0) {
+        first = @min(first, hook.line);
+    };
     return first;
+}
+
+/// Source line of the nearest top-level element before `line`. Restricting a
+/// comment drain to this range lets the formatter reorder element categories
+/// without stealing comments from an element that appeared earlier in source.
+fn previousElementLine(jakefile: *const Jakefile, line: usize) usize {
+    var previous: usize = 0;
+    if (jakefile.rooted_line > 0 and jakefile.rooted_line < line) previous = jakefile.rooted_line;
+    for (jakefile.imports) |item| if (item.line > previous and item.line < line) {
+        previous = item.line;
+    };
+    for (jakefile.directives) |item| if (item.line > previous and item.line < line) {
+        previous = item.line;
+    };
+    for (jakefile.variables) |item| if (item.line > previous and item.line < line) {
+        previous = item.line;
+    };
+    for (jakefile.global_pre_hooks) |item| if (item.line > previous and item.line < line) {
+        previous = item.line;
+    };
+    for (jakefile.global_post_hooks) |item| if (item.line > previous and item.line < line) {
+        previous = item.line;
+    };
+    for (jakefile.global_on_error_hooks) |item| if (item.line > previous and item.line < line) {
+        previous = item.line;
+    };
+    for (jakefile.recipes) |item| if (item.loc.line > previous and item.loc.line < line) {
+        previous = item.loc.line;
+    };
+    return previous;
 }
 
 /// Render Jakefile AST to formatted source
@@ -156,7 +195,9 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
 
     const writer = out.writer(allocator);
 
-    var comment_index: usize = 0;
+    const consumed_comments = try allocator.alloc(bool, jakefile.comments.len);
+    defer allocator.free(consumed_comments);
+    @memset(consumed_comments, false);
 
     // `@rooted` is a module-level flag, so the parser records a bool rather
     // than a Directive node and the formatter used to drop it silently. It
@@ -167,7 +208,7 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
     if (jakefile.rooted) {
         const bound = @min(jakefile.rooted_line, firstElementLine(jakefile));
         if (bound > 0) {
-            try drainComments(&out, allocator, jakefile, &comment_index, bound);
+            try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, bound), bound);
         }
         try writer.writeAll("@rooted\n");
         try writeBlankLine(&out, allocator);
@@ -175,7 +216,7 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
 
     // Render imports first, each preceded by the comments written above it.
     for (jakefile.imports) |import_dir| {
-        try drainComments(&out, allocator, jakefile, &comment_index, import_dir.line);
+        try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, import_dir.line), import_dir.line);
         try renderImport(writer, &import_dir);
     }
 
@@ -183,20 +224,21 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
         // A comment block written directly below the last import documents the
         // import list, so keep it there instead of pushing it into the next
         // section (jake#29).
-        var next_line = jakefile.imports[jakefile.imports.len - 1].line + 1;
-        while (comment_index < jakefile.comments.len and
-            jakefile.comments[comment_index].kind == .standalone and
-            jakefile.comments[comment_index].line == next_line)
-        {
-            try drainComments(&out, allocator, jakefile, &comment_index, next_line + 1);
-            next_line += 1;
+        const last_import_line = jakefile.imports[jakefile.imports.len - 1].line;
+        var next_line = last_import_line + 1;
+        while (true) : (next_line += 1) {
+            const has_comment = for (jakefile.comments) |comment| {
+                if (comment.kind == .standalone and comment.line == next_line) break true;
+            } else false;
+            if (!has_comment) break;
+            try drainComments(&out, allocator, jakefile, consumed_comments, next_line - 1, next_line + 1);
         }
         try writeBlankLine(&out, allocator);
     }
 
     // Render global directives (@dotenv, @require, @export)
     for (jakefile.directives) |directive| {
-        try drainComments(&out, allocator, jakefile, &comment_index, directive.line);
+        try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, directive.line), directive.line);
         try renderDirective(writer, &directive);
     }
 
@@ -206,18 +248,23 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
 
     // Render variables with alignment
     if (jakefile.variables.len > 0) {
+        const first_variable = jakefile.variables[0];
+        try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, first_variable.line), first_variable.line);
         try renderVariables(writer, jakefile.variables);
         try writeBlankLine(&out, allocator);
     }
 
     // Render global hooks
     for (jakefile.global_pre_hooks) |hook| {
+        try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, hook.line), hook.line);
         try renderGlobalHook(writer, &hook, "pre");
     }
     for (jakefile.global_post_hooks) |hook| {
+        try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, hook.line), hook.line);
         try renderGlobalHook(writer, &hook, "post");
     }
     for (jakefile.global_on_error_hooks) |hook| {
+        try drainComments(&out, allocator, jakefile, consumed_comments, previousElementLine(jakefile, hook.line), hook.line);
         try renderGlobalHook(writer, &hook, "on_error");
     }
 
@@ -232,7 +279,8 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
         // the bound is strictly-less-than. (loc.line == 0 means unset — e.g. a
         // hand-built recipe in a test — so fall back to draining.)
         const bound: ?usize = if (recipe.loc.line == 0) null else recipe.loc.line;
-        try drainComments(&out, allocator, jakefile, &comment_index, bound);
+        const after_line = if (bound) |line| previousElementLine(jakefile, line) else 0;
+        try drainComments(&out, allocator, jakefile, consumed_comments, after_line, bound);
 
         try renderRecipe(writer, &recipe);
     }
@@ -240,15 +288,15 @@ fn render(allocator: std.mem.Allocator, jakefile: *const Jakefile) FormatError![
     // Emit any standalone comments left over (below the last element) so they
     // aren't dropped now that the drains are line-bounded (jake#19).
     var has_trailing = false;
-    for (jakefile.comments[@min(comment_index, jakefile.comments.len)..]) |comment| {
-        if (comment.kind == .standalone) {
+    for (jakefile.comments, consumed_comments) |comment, consumed| {
+        if (!consumed and comment.kind == .standalone) {
             has_trailing = true;
             break;
         }
     }
     if (has_trailing) {
         try writeBlankLine(&out, allocator);
-        try drainComments(&out, allocator, jakefile, &comment_index, null);
+        try drainComments(&out, allocator, jakefile, consumed_comments, 0, null);
     }
 
     // Exactly one final newline, and no trailing blank line.
@@ -1619,6 +1667,7 @@ test "comment: block below the last import stays with the imports (jake#29)" {
         \\@import "a.jake"
         \\@import "b.jake"
         \\#  @import "c.jake" as c
+        \\#  @import "d.jake" as d
         \\
         \\@dotenv
         \\
@@ -1654,6 +1703,41 @@ test "comment: comment placement is idempotent (jake#29)" {
 
     try std.testing.expectEqualStrings(first.output, second.output);
     try std.testing.expect(!second.changed);
+}
+
+test "comment: directive and import comments survive canonical reordering (jake#29)" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\# dotenv docs
+        \\@dotenv
+        \\
+        \\# import docs
+        \\@import "a.jake"
+        \\
+        \\task one:
+        \\    echo one
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    const import_comment = std.mem.indexOf(u8, result.output, "# import docs\n@import").?;
+    const dotenv_comment = std.mem.indexOf(u8, result.output, "# dotenv docs\n@dotenv").?;
+    try std.testing.expect(import_comment < dotenv_comment);
+}
+
+test "comment: file header stays above variables (jake#29)" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\# file header
+        \\
+        \\x = 1
+        \\
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+
+    try std.testing.expect(std.mem.startsWith(u8, result.output, "# file header\n\n"));
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "x = \"1\"") != null);
 }
 
 // ============================================================================
