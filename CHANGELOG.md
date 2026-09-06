@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Parser and library API memory ownership.** `jake.load()` now returns an AST that owns its loaded source until `Jakefile.deinit`, eliminating dangling source-backed slices. Parser metadata, trailing `@require` arguments, imported source paths, prefixed dependencies, watch patterns, and failed import merges now clean up correctly on success and allocation failure.
+- **Malformed input no longer reaches panic-prone slices or environment maps.** Unterminated quoted strings are rejected, function and condition expressions validate parenthesis ordering, and invalid WTF-8 environment keys are rejected before OS lookup or insertion.
+- **Formatter string handling is stable and semantics-preserving.** Variable values retain their parsed escape bytes and use a compatible quote delimiter, so multiline values, backslashes, escaped quotes, and repeated formatting no longer change on every pass. Formatter out-of-memory errors also remain distinguishable from syntax errors.
+- **Web UI connections and protocol frames are race-safe.** Client readers exclusively own connection destruction, concurrent writes are serialized, shutdown wakes blocked readers without recycling live descriptors, HTTP headers are bounded without consuming the first WebSocket frame, and partial frame reads are accumulated correctly.
+- **Web UI execution and display state remain consistent across tabs and reconnects.** Run admission is synchronized, reconnecting clients receive an authoritative run snapshot, dependency tasks are tracked independently from the requested root, request rejections do not corrupt an active run, and each execution emits matching start/completion events and one consistent summary before controls unlock.
+- **Stopping Web UI runs reliably cancels every child process.** Each sequential or parallel child observes cancellation independently, closing the race between spawning a command and publishing its process ID. Immediate stops, confirmation waits, external recipes, and multiple parallel commands now terminate promptly.
+
+### Internal
+
+- Expanded allocation-failure, parser/formatter lifecycle, watch reload, WebSocket teardown, multi-client, repeated-run, reconnect, and parallel cancellation stress coverage. Added browser-state tests and end-to-end Web UI runs for both single-job and parallel execution.
+- Fuzz builds now compile only selected fuzz targets with LLVM coverage instrumentation. Structured formatter fuzzing compares execution-relevant AST fields, and deterministic mutation coverage checks formatter idempotence across malformed and valid inputs.
+
 ## [0.9.8] - 2026-08-10
 
 ### Fixed
