@@ -1656,7 +1656,7 @@ pub const Executor = struct {
 
         // For timeouts and Web UI cancellation, put the child in its own process
         // group so we can terminate the whole shell/process tree reliably.
-        if (has_timeout or self.ctx.current_child_pid != null) {
+        if (has_timeout or self.ctx.current_child_pid != null or self.ctx.cancellation_flag != null) {
             if (builtin.os.tag != .windows and builtin.os.tag != .wasi) {
                 child.pgid = 0;
             }
@@ -1666,38 +1666,7 @@ pub const Executor = struct {
             child.cwd = working_dir;
         }
 
-        var env_map = self.environment.buildEnvMap(self.allocator) catch |err| {
-            self.print("{s}failed to build env map: {s}\n", .{ self.color.warnPrefix(), @errorName(err) });
-            _ = child.spawn() catch |spawn_err| {
-                self.print("{s}failed to spawn: {s}\n", .{ self.color.errPrefix(), @errorName(spawn_err) });
-                return ExecuteError.CommandFailed;
-            };
-            const result = child.wait() catch |wait_err| {
-                self.print("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(wait_err) });
-                return ExecuteError.CommandFailed;
-            };
-            switch (result) {
-                .Exited => |code| {
-                    if (code != 0) {
-                        self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
-                        return ExecuteError.CommandFailed;
-                    }
-                },
-                .Signal => |sig| {
-                    self.print("{s}command killed by signal {d}\n", .{ self.color.errPrefix(), sig });
-                    return ExecuteError.CommandFailed;
-                },
-                .Stopped => |sig| {
-                    self.print("{s}command stopped by signal {d}\n", .{ self.color.errPrefix(), sig });
-                    return ExecuteError.CommandFailed;
-                },
-                .Unknown => |code| {
-                    self.print("{s}command terminated with unknown status {d}\n", .{ self.color.errPrefix(), code });
-                    return ExecuteError.CommandFailed;
-                },
-            }
-            return;
-        };
+        var env_map = self.environment.buildEnvMap(self.allocator) catch return ExecuteError.OutOfMemory;
         defer env_map.deinit();
         child.env_map = &env_map;
 
@@ -1728,7 +1697,7 @@ pub const Executor = struct {
         defer output_drains.join();
 
         // Wait for child to complete
-        const result = child.wait() catch |err| {
+        const result = self.waitForChild(&child) catch |err| {
             if (self.ctx.current_child_pid) |pid_atomic| {
                 pid_atomic.store(0, .release);
             }
@@ -1749,6 +1718,11 @@ pub const Executor = struct {
             timeout_ctx.current_child.store(null, .release);
         }
 
+        if (self.ctx.isCancelled()) {
+            self.ctx.emitOutput("Execution cancelled by user", true);
+            self.emitCommandOutput("Execution cancelled by user", true);
+            return ExecuteError.Cancelled;
+        }
         // Handle both normal exit and signal termination
         switch (result) {
             .Exited => |code| {
@@ -1913,6 +1887,53 @@ pub const Executor = struct {
         return drains;
     }
 
+    /// Monitor each child independently. A single shared PID cannot cover
+    /// parallel commands or a stop arriving between the pre-spawn check and
+    /// PID publication. The monitor owns a stable ID until it has been joined.
+    fn waitForChild(self: *Executor, child: *std.process.Child) !std.process.Child.Term {
+        if (self.ctx.cancellation_flag == null) return child.wait();
+        const CancellationMonitor = struct {
+            ctx: *const Context,
+            id: std.process.Child.Id,
+            done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+            fn run(monitor: *@This()) void {
+                while (!monitor.done.load(.acquire)) {
+                    if (monitor.ctx.isCancelled()) {
+                        if (builtin.os.tag == .windows) {
+                            std.os.windows.TerminateProcess(monitor.id, 1) catch {};
+                        } else if (builtin.os.tag != .wasi) {
+                            std.posix.kill(-monitor.id, std.posix.SIG.KILL) catch {
+                                std.posix.kill(monitor.id, std.posix.SIG.KILL) catch {};
+                            };
+                        }
+                        return;
+                    }
+                    std.Thread.sleep(10 * std.time.ns_per_ms);
+                }
+            }
+        };
+        var monitor = CancellationMonitor{ .ctx = self.ctx, .id = child.id };
+        if (builtin.os.tag == .windows) {
+            const windows = std.os.windows;
+            const process = windows.GetCurrentProcess();
+            if (windows.kernel32.DuplicateHandle(process, child.id, process, &monitor.id, 0, windows.FALSE, windows.DUPLICATE_SAME_ACCESS) == 0) {
+                _ = child.kill() catch {};
+                return error.SystemResources;
+            }
+        }
+        defer if (builtin.os.tag == .windows) std.os.windows.CloseHandle(monitor.id);
+        const thread = std.Thread.spawn(.{}, CancellationMonitor.run, .{&monitor}) catch |err| {
+            _ = child.kill() catch {};
+            return err;
+        };
+        defer {
+            monitor.done.store(true, .release);
+            thread.join();
+        }
+        return child.wait();
+    }
+
     /// Execute an external recipe by delegating to make or just
     fn executeExternalRecipe(
         self: *Executor,
@@ -1973,7 +1994,7 @@ pub const Executor = struct {
         var child = std.process.Child.init(argv.items, self.allocator);
         child.cwd = external_cwd;
 
-        if (self.ctx.current_child_pid != null) {
+        if (self.ctx.current_child_pid != null or self.ctx.cancellation_flag != null) {
             if (builtin.os.tag != .windows and builtin.os.tag != .wasi) {
                 child.pgid = 0;
             }
@@ -2019,7 +2040,7 @@ pub const Executor = struct {
         var output_drains = self.startChildOutputDrains(&child);
         defer output_drains.join();
 
-        const result = child.wait() catch |err| {
+        const result = self.waitForChild(&child) catch |err| {
             if (self.ctx.current_child_pid) |pid_atomic| {
                 pid_atomic.store(0, .release);
             }
@@ -2029,6 +2050,12 @@ pub const Executor = struct {
 
         if (self.ctx.current_child_pid) |pid_atomic| {
             pid_atomic.store(0, .release);
+        }
+
+        if (self.ctx.isCancelled()) {
+            self.ctx.emitOutput("Execution cancelled by user", true);
+            self.emitCommandOutput("Execution cancelled by user", true);
+            return ExecuteError.Cancelled;
         }
 
         switch (result) {

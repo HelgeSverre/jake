@@ -1,82 +1,66 @@
-# Initial quality review — 2026-09-06
+# Quality review and fixes — 2026-09-06
 
-This is a light first pass, not an exhaustive audit or a claim that Jake is bug-free.
-Runtime fixes below remain follow-up work. Web UI findings came from a separate
-read-only review agent. Findings marked static have not been reproduced dynamically.
+All findings from the initial light review have been addressed. This records the
+bounded work completed, not a claim that Jake has no remaining bugs. A separate
+agent reviewed the Web UI and reviewed the final server/cancellation changes.
 
-## What Jake does
+## Fixes
 
-Jake parses a Jakefile into a borrowed-source AST, resolves imports and recipe
-references, then executes shell commands with dependencies, hooks, caching and
-optional parallelism/watch mode. The formatter renders that AST back to source.
-The web UI exposes execution through a local HTTP/WebSocket server and renders
-executor lifecycle/output events in a browser.
+| Finding | Resolution | Coverage |
+| --- | --- | --- |
+| Public `load()` returned an AST borrowing freed source | Loaded ASTs own their source until `Jakefile.deinit`; `parse()` explicitly borrows source | Loaded-source lifetime and allocation-failure sweep |
+| Pending parser metadata leaked on success or transfer failure | Cleanup runs on every parser exit; transferred require arguments have error cleanup | Valid/invalid syntax and allocation-failure sweep |
+| Imported paths and failed merges had ownership gaps | Persist origin paths, roll back retirement tracking on merge failure, clean keys/dependency arrays, preserve OutOfMemory | Prefixed/rooted import lifetime and allocation-failure sweep |
+| Formatter fuzzing swallowed second-pass failure | Assert successful second format and identical output; preserve OOM classification | Existing seeds, generated syntax semantic comparisons and allocation-failure sweep |
+| Unterminated strings and raw escapes destabilized formatting | Reject unterminated quotes; preserve parsed escape bytes and choose a valid quote delimiter | Quote regressions and 1,736 valid single-byte mutations |
+| Function and condition calls sliced reversed delimiters | Validate that the closing parenthesis follows the opening parenthesis | Malformed-expression regressions and fuzz targets |
+| Invalid text reached environment map assertions | Reject non-WTF-8 environment keys before OS lookup or owned insertion | Invalid-key regression and allocation-failure sweep |
+| Broadcast and reader threads could both destroy clients | Readers exclusively destroy clients; shutdown interrupts I/O without recycling descriptors; teardown waits for readers | Repeated connection teardown under testing allocator |
+| Concurrent writes could interleave frames | Per-client write lock, failed-write shutdown, socket send timeout | Two concurrent writers, 64 whole messages |
+| Protocol fields assumed complete transport reads | Exact-read helper and bounded HTTP header accumulation without consuming following bytes | Chunked in-memory reader, EOF and header-boundary tests |
+| Competing run requests waited and launched later | Separate synchronized admission from cancellation and thread cleanup | Second-tab rejection during active execution |
+| Duplicate or missing terminal events | Executor task events retained; server supplies missing failed-root lifecycle; one summary after teardown | Normal failure, immediate stop, blocked parallel root, confirmation and repeated runs |
+| Reconnect and parallel display state were incomplete | Authoritative run snapshot and active task set; summary belongs to requested root | Node VM state tests and sequential/parallel WebSocket integration |
+| Dependency controls lacked keyboard activation | Native buttons | State/render test and source review |
+| Stop could race child PID registration or miss parallel children | Each child monitors cancellation; worker lifetime includes monitor join | Immediate stop and cancellation of two simultaneous commands |
+| Repeated watch/test execution exposed stale state | Repeated watch reload assertions, pattern allocation cleanup, isolated E2E output fixture | 16 reloads and repeatable full E2E suite |
 
-The most useful bug classes are ownership across source/AST boundaries, cleanup
-on parse errors and allocation failures, lexer progress/location bounds, formatter
-semantic preservation, repeated-run state reset, dependency scheduling, and event
-ordering across execution, cancellation, reconnect and concurrent clients.
+## Coverage added
 
-## Triage
+The testing allocator checks leaks on exercised unit-test paths. Allocation-failure
+sweeps traverse successful and failed construction paths. The structured formatter
+fuzz target generates bounded valid recipes with variables, imports, dependencies,
+parameters, aliases and metadata, and compares execution-relevant AST fields.
+The earlier 256-recipe/eight-iteration lifecycle test remains in place.
 
-| Priority | Area and evidence | Finding and confidence | Next action |
-| --- | --- | --- | --- |
-| High | `src/jake.zig:64-71`, `src/frontend/parser.zig:164,723` | Static: public `load()` frees source before returning an AST whose source and string fields borrow it. The CLI's separate `LoadedJakefile` owns its source; scope is the public library helper. | Give loaded ASTs explicit source ownership and verify their complete lifetime. |
-| High | `src/webui/server.zig:742-805,460-476,135-149` | Static concurrency defect: failed broadcasts destroy clients while reader threads retain them and also perform cleanup; shutdown has the same ownership concern. | Establish one cleanup owner and join readers before server teardown. |
-| High | `src/webui/server.zig:446,472,482-510,742-861` | Static concurrency defect: direct replies and broadcasts can write concurrently to the same stream. | Serialize every write per connection. |
-| High | `src/webui/server.zig:345-357,1137-1159` | Static: HTTP/WebSocket decoding assumes complete transport reads for protocol fields. Ordinary short reads are not consistently handled. | Accumulate bounded HTTP headers and read complete frame fields before decoding. |
-| High | `src/webui/server.zig:494-499` | Static: joining the previous execution before checking its running flag waits and launches a second request instead of promptly rejecting it. | Make execution admission and thread ownership one synchronized transition. |
-| Medium | `src/runtime/executor.zig:801-823,879-884`, `src/webui/server.zig:670-699` | Static: executor failure paths emit terminal events, then server fallbacks can emit duplicate completion/summary events. | Assign terminal-event ownership; assert exactly one terminal event per task/run. |
-| Medium | `src/webui/app.js:66-82,99-160` | Static: reconnect clears active state without an authoritative snapshot; one running-task identifier cannot represent parallel tasks. | Separate run state from an active-task set and restore state at reconnect. |
-| Medium | `src/frontend/parser.zig:665-735` | Static: successful parses do not release unconsumed pending metadata lists. The trailing require transfer also lacks cleanup if directive append fails at line 707. | Cover metadata ownership at EOF and allocation-failure cleanup. |
-| Medium (addressed) | `src/output/formatter.zig`, fuzz round-trip test | Confirmed test gap: second-pass failure was swallowed and no equality/idempotence assertion ran. | Assertions now fail on second-pass errors or unstable output. |
-| Low | `src/webui/app.js:325-328` | Static: dependency controls have button semantics but only click handling. | Use native buttons or add keyboard activation coverage. |
-
-Concurrency findings identify unsafe ownership/synchronization in code; their
-frequency and observed runtime effects remain unmeasured. No exploit testing was
-performed. Overall review verdict: **Request changes** for the high-priority
-runtime findings; the test improvements are a starting point for that work.
-
-## Initial test expansion
-
-- Lexer fuzzing asserts monotonic in-bounds spans and forward progress, with a
-  token budget derived from source length. Added deterministic syntax seeds.
-- Formatter fuzzing asserts successful second formatting, identical output and
-  `changed == false`. Added valid seeds for variables, dependencies and imports.
-- A deterministic lifecycle stress test builds 256 recipes and repeats formatting,
-  parsing, content checks and teardown eight times using the testing allocator.
-  It checks every recipe name and command, rather than only output idempotence.
-- Existing coverage-guided targets remain available through `jake fuzz`.
-
-## Next testing passes
-
-1. Add allocation-failure sweeps after fixing parser/source ownership, covering
-   successful AST construction, invalid syntax, metadata transfer and imports.
-2. Expand structured generation to parameters, hooks, comments, directives,
-   imports and dependency graphs; compare AST meaning before and after formatting.
-3. Add bounded repeated watch/execute/cancel tests checking state reset, child
-   cleanup, descriptor counts and retained memory. Use benign fixture commands.
-4. Add web UI state tests for parallel tasks, reconnect and unique terminal events;
-   separately test transport read accumulation and connection shutdown ownership.
-5. Run longer coverage-guided campaigns and cross-platform CI after fixes; retain
-   minimized ordinary regression fixtures for each corrected behavior.
+Web tests cover admission locking, repeated runs, dependency output, non-zero exit,
+confirmation, immediate cancellation, reconnect snapshots, parallel task state,
+root summary routing, bounded browser output and disconnect control refresh.
 
 ## Validation
 
-Zig 0.15.2 is the CI toolchain. Default local Zig 0.16 failed to compile this
-repository; this is already documented in `scripts/zig` and is not a new finding.
-Baseline: 1,142 module tests passed, one skipped, plus one executable test.
-Expanded suite: 1,143 module tests passed, one skipped, plus one executable test;
-11 fuzz targets discovered. Debug build, source formatting and diff checks passed.
-These tests cover deterministic fuzz seeds and the bounded lifecycle stress case;
-they do not establish the absence of leaks across all paths or validate browser UX.
+Use Zig 0.15.2, as in CI (`scripts/zig` resolves a compatible compiler).
+Validation completed with 1,160 module tests passing, one platform-specific test
+skipped, and the library import test passing. The deterministic formatter mutation
+campaign checked 1,736 valid mutations. WebSocket integration covers repeated
+execution, confirmation, reconnect, competing clients and cancellation of parallel
+child processes.
 
-A coverage-guided smoke command (`zig build fuzz --fuzz -j2`) was stopped at a
-60-second wall-clock budget, including compilation/startup. Its log confirmed
-the fuzz web interface started and reported no failure, but supplied no execution
-counts; no coverage or campaign-completion claim is made.
+Twelve coverage-guided fuzz targets were compiled separately with LLVM
+instrumentation. Ten completed their bounded campaigns, the parser campaign
+completed without a Jake failure, and the raw formatter campaign eventually
+stopped in Zig's own `lib/fuzzer.zig` memory-mapped corpus code. The formatter's
+deterministic seeds, semantic generator and mutation campaign all passed.
 
-## Tracked follow-ups
+Cross-platform compilation does not substitute for running those platform tests.
+Node VM tests exercise browser state and DOM updates; they do not replace visual
+browser testing. Reconnection restores active state, not missed output history.
+The bounded fuzz campaign is not exhaustive. Zig 0.15.2's multi-target fuzzer
+coordinator can crash when it selects the self-hosted backend, so the fuzz build
+explicitly uses LLVM and targets were run separately. No exploit testing was
+performed.
+
+## Tracking
 
 - [#33: Source lifetime and parser cleanup](https://github.com/HelgeSverre/jake/issues/33)
 - [#34: Web connection ownership and writes](https://github.com/HelgeSverre/jake/issues/34)

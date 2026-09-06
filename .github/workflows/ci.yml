@@ -37,6 +37,9 @@ jobs:
       - name: Run Tests
         run: zig build test
 
+      - name: Web UI state tests
+        run: node tests/webui_state_test.js
+
       - name: Test CLI
         run: |
           ./zig-out/bin/jake --version

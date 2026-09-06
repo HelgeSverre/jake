@@ -45,6 +45,22 @@ Subprocess prompts are different: commands that try to read from stdin themselve
 
 Use the stop control in the browser to cancel the active run. Jake terminates the running command tree and reports the cancellation back through the normal task output and summary stream.
 
+### Run State and Reconnection
+
+One execution can run at a time per server. A request from another tab is rejected
+promptly while that execution is active. With `-j`, dependencies within the run
+can execute in parallel; the UI tracks each active task and attaches the summary
+to the requested recipe.
+
+After a disconnect, launch controls stay disabled until the browser receives the
+server's current run state. Reconnecting restores the active recipe, tasks, timer
+and pending confirmation. Output produced while disconnected is not replayed.
+Cancellation and failures produce one completion per started task and one run
+summary. The run lock is released after execution cleanup finishes.
+
+Dependency badges are keyboard-accessible buttons: use Tab to focus one and
+Enter or Space to select its recipe.
+
 ### Console Tee
 
 Output appears in both the browser and your terminal simultaneously. Useful when you want to keep an eye on both.

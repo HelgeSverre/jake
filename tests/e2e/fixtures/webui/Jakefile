@@ -10,3 +10,15 @@ task confirm-task:
 
 task slow:
     sleep 10
+
+task fails:
+    exit 1
+
+task slow-left:
+    sleep 10
+
+task slow-right:
+    sleep 10
+
+task parallel-slow: [slow-left, slow-right]
+    echo completed

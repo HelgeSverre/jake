@@ -724,3 +724,11 @@ Based on [Sublime Text's scope naming guide](http://www.sublimetext.com/docs/sco
 - [TextMate Language Grammars Manual](https://macromates.com/manual/en/language_grammars)
 - [Tree-sitter Documentation](https://tree-sitter.github.io/tree-sitter/)
 - [Writing a TextMate Grammar: Lessons Learned](https://www.apeth.com/nonblog/stories/textmatebundle.html)
+
+### Browser Execution State
+
+`jake --web` uses the same recipe syntax and accepts one run at a time. `-j`
+allows parallel dependencies within that run. Reconnecting browsers restore
+active task state before enabling launch controls; missed output is not replayed.
+Failed and cancelled runs produce one summary, and controls unlock after cleanup.
+See the [Web UI guide](../site/src/content/docs/docs/web-ui.md) for browser behavior.

@@ -2318,6 +2318,19 @@ Start with a simple `Jakefile`, grow it as your project grows, and never fight y
 
 _Happy automating!_
 
+
+## Running and Reconnecting in the Browser
+
+Run `jake --web -j2` to use the browser with parallel dependency execution. Only
+one run is admitted at a time; another tab cannot queue a second run accidentally.
+The dashboard tracks active dependencies separately from the requested recipe.
+
+If the browser reconnects during a run, it restores the current task state and
+elapsed time before enabling controls. Output from the disconnected interval is
+not replayed. Stop cancels active commands, including parallel commands, and the
+server sends a single run summary after cleanup. Dependency badges support Tab,
+Enter and Space for keyboard navigation.
+
 ---
 
 **Resources:**

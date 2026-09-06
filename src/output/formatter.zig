@@ -35,7 +35,10 @@ pub fn format(allocator: std.mem.Allocator, source: []const u8) FormatError!Form
     // Parse source to get AST
     var lex = lexer.Lexer.init(source);
     var p = parser.Parser.init(allocator, &lex);
-    var jakefile = p.parseJakefile() catch return FormatError.ParseError;
+    var jakefile = p.parseJakefile() catch |err| switch (err) {
+        error.OutOfMemory => return FormatError.OutOfMemory,
+        else => return FormatError.ParseError,
+    };
     defer jakefile.deinit(allocator);
 
     // Render AST back to source
@@ -373,19 +376,28 @@ fn renderDirective(writer: anytype, directive: *const Directive) !void {
     try writer.writeByte('\n');
 }
 
-fn writeQuotedString(writer: anytype, value: []const u8) !void {
-    try writer.writeByte('"');
-    for (value) |char| {
-        switch (char) {
-            '\\' => try writer.writeAll("\\\\"),
-            '"' => try writer.writeAll("\\\""),
-            '\n' => try writer.writeAll("\\n"),
-            '\r' => try writer.writeAll("\\r"),
-            '\t' => try writer.writeAll("\\t"),
-            else => try writer.writeByte(char),
+fn canWrapRawString(value: []const u8, quote: u8) bool {
+    for (value, 0..) |char, i| {
+        if (char == quote) {
+            var backslashes: usize = 0;
+            var j = i;
+            while (j > 0 and value[j - 1] == '\\') : (j -= 1) {
+                backslashes += 1;
+            }
+            if (backslashes % 2 == 0) return false;
         }
     }
-    try writer.writeByte('"');
+    return true;
+}
+
+fn writeQuotedString(writer: anytype, value: []const u8) !void {
+    // Parser string values retain their original escape bytes. Preserve them
+    // verbatim so formatting does not reinterpret `\\n`, tabs, or backslashes.
+    const quote: u8 = if (canWrapRawString(value, '"')) '"' else '\'';
+    std.debug.assert(canWrapRawString(value, quote));
+    try writer.writeByte(quote);
+    try writer.writeAll(value);
+    try writer.writeByte(quote);
 }
 
 fn trimDirectiveKeyword(line: []const u8, keyword: []const u8) []const u8 {
@@ -1408,6 +1420,26 @@ test "edge: special characters in strings" {
     try std.testing.expect(std.mem.indexOf(u8, result.output, "special") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "\\\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "\\\\") != null);
+
+    const second = try format(allocator, result.output);
+    defer allocator.free(second.output);
+    try std.testing.expectEqualStrings(result.output, second.output);
+}
+
+test "format preserves raw escapes, quote choice, and multiline values" {
+    const allocator = std.testing.allocator;
+    const sources = [_][]const u8{
+        "value = \"line\\npath\\\\end\"\n",
+        "value = 'double\"quote'\n",
+        "value = \"first\nsecond\"\n",
+    };
+    for (sources) |source| {
+        const first = try format(allocator, source);
+        defer allocator.free(first.output);
+        const second = try format(allocator, first.output);
+        defer allocator.free(second.output);
+        try std.testing.expectEqualStrings(first.output, second.output);
+    }
 }
 
 test "format preserves parseable variable quoting for numeric-like values" {
@@ -2255,5 +2287,71 @@ test "stress structured parser and formatter lifecycle" {
         defer allocator.free(second.output);
         try std.testing.expectEqualStrings(formatted.output, second.output);
         try std.testing.expect(!second.changed);
+    }
+}
+
+fn checkStructuredFormatting(_: void, input: []const u8) !void {
+    const allocator = std.testing.allocator;
+    var source: std.ArrayListUnmanaged(u8) = .empty;
+    defer source.deinit(allocator);
+    try source.appendSlice(allocator, "@rooted\n@import \"helpers.jake\" as helpers\nmode = \"debug\"\n\n");
+    const count = if (input.len == 0) 1 else 1 + @as(usize, input[0] % 32);
+    for (0..count) |i| {
+        const value: u8 = if (input.len > i + 1) input[i + 1] else @intCast(i);
+        try source.writer(allocator).print("# generated {d}\n@group \"generated\"\n@desc \"Recipe {d}\"\n@alias short_{d}\n@require HOME\ntask task_{d} arg=\"value_{d}\":", .{ i, value, i, i, value });
+        if (i > 0) try source.writer(allocator).print(" [task_{d}]", .{i - 1});
+        try source.appendSlice(allocator, "\n    echo {{arg}}\n\n");
+    }
+    var before_lex = lexer.Lexer.init(source.items);
+    var before_parser = parser.Parser.init(allocator, &before_lex);
+    var before = try before_parser.parseJakefile();
+    defer before.deinit(allocator);
+    const formatted = try format(allocator, source.items);
+    defer allocator.free(formatted.output);
+    var after_lex = lexer.Lexer.init(formatted.output);
+    var after_parser = parser.Parser.init(allocator, &after_lex);
+    var after = try after_parser.parseJakefile();
+    defer after.deinit(allocator);
+    try std.testing.expectEqual(before.rooted, after.rooted);
+    try std.testing.expectEqual(before.imports.len, after.imports.len);
+    try std.testing.expectEqualStrings(before.imports[0].path, after.imports[0].path);
+    try std.testing.expectEqualDeep(before.imports[0].prefix, after.imports[0].prefix);
+    try std.testing.expectEqual(before.variables.len, after.variables.len);
+    try std.testing.expectEqualStrings(before.variables[0].value, after.variables[0].value);
+    try std.testing.expectEqual(before.recipes.len, after.recipes.len);
+    for (before.recipes, after.recipes) |original, result| {
+        // Source coordinates intentionally differ; execution meaning must not.
+        inline for (.{ "name", "kind", "params", "dependencies", "commands", "aliases", "requires", "group", "description", "doc_comment" }) |field| {
+            try std.testing.expectEqualDeep(@field(original, field), @field(result, field));
+        }
+    }
+    const second = try format(allocator, formatted.output);
+    defer allocator.free(second.output);
+    try std.testing.expectEqualStrings(formatted.output, second.output);
+}
+
+test "fuzz structured recipe formatting preserves semantics" {
+    try std.testing.fuzz({}, checkStructuredFormatting, .{ .corpus = &.{ "", "\x01\x07", "\x1f\x00\xff", "structured recipes" } });
+}
+
+fn checkFormatAllocationLifecycle(allocator: std.mem.Allocator, source: []const u8) !void {
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+}
+
+test "formatter allocation failures release parser and rendering state" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkFormatAllocationLifecycle, .{
+        "# generated\n@rooted\n@import \"helpers.jake\" as helpers\nmode = \"debug\"\n@alias short\n@require HOME\ntask build target=\"debug\": [prepare]\n    echo {{target}}\ntask prepare:\n    echo ready\n",
+    });
+}
+
+test "formatter rejects unterminated and mismatched quoted values" {
+    const malformed = [_][]const u8{
+        "name = \"world\n",
+        "name = 'world\n",
+        "name = 'world\"\n",
+    };
+    for (malformed) |source| {
+        try std.testing.expectError(FormatError.ParseError, format(std.testing.allocator, source));
     }
 }

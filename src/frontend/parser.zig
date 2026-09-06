@@ -162,6 +162,8 @@ pub const Jakefile = struct {
     global_on_error_hooks: []const Hook, // Global @on_error hooks run when a recipe fails
     comments: []const CommentNode, // All comments for formatting preservation
     source: []const u8,
+    /// Only library load() transfers source ownership; parse() borrows it.
+    owns_source: bool = false,
     /// When true, this file declared a top-level `@rooted` directive: its
     /// recipes' relative paths (`@cd`, `file` targets) resolve against this
     /// file's own directory when imported from a parent. No-op when run directly.
@@ -195,6 +197,7 @@ pub const Jakefile = struct {
         allocator.free(self.global_post_hooks);
         allocator.free(self.global_on_error_hooks);
         allocator.free(self.comments);
+        if (self.owns_source) allocator.free(self.source);
     }
 
     pub fn getRecipe(self: *const Jakefile, name: []const u8) ?*const Recipe {
@@ -663,7 +666,9 @@ pub const Parser = struct {
     }
 
     pub fn parseJakefile(self: *Parser) ParseError!Jakefile {
-        errdefer self.deinit();
+        // Lists transferred to the AST are emptied by toOwnedSlice. Release
+        // everything still pending on both successful and failed parses.
+        defer self.deinit();
 
         while (self.current.tag != .eof) {
             try self.skipNewlines();
@@ -704,6 +709,7 @@ pub const Parser = struct {
         // flush it as a global directive (validated on any execution).
         if (self.pending_requires.items.len > 0) {
             const args = self.pending_requires.toOwnedSlice(self.allocator) catch return ParseError.OutOfMemory;
+            errdefer self.allocator.free(args);
             self.directives.append(self.allocator, .{ .kind = .require, .args = args }) catch return ParseError.OutOfMemory;
         }
 
@@ -1100,11 +1106,15 @@ pub const Parser = struct {
             }
             // Variable assignment: name = value
             self.advance();
-            const value = if (self.current.tag == .string or self.current.tag == .ident or self.current.tag == .glob_pattern or self.current.tag == .number)
-                self.slice(self.current)
-            else
-                "";
-            if (self.current.tag != .newline and self.current.tag != .eof) {
+            const value = switch (self.current.tag) {
+                .string, .ident, .glob_pattern, .number => self.slice(self.current),
+                .newline, .eof => "",
+                else => {
+                    self.setError("expected variable value", null);
+                    return ParseError.UnexpectedToken;
+                },
+            };
+            if (value.len > 0) {
                 self.advance();
             }
             self.variables.append(self.allocator, .{
@@ -4080,4 +4090,27 @@ test "fuzz parser" {
             defer jakefile.deinit(std.testing.allocator);
         }
     }.testOne, .{});
+}
+
+fn checkParserAllocationLifecycle(allocator: std.mem.Allocator, source: []const u8, valid: bool) !void {
+    var lex = Lexer.init(source);
+    var p = Parser.init(allocator, &lex);
+    var ast = p.parseJakefile() catch |err| switch (err) {
+        error.OutOfMemory => return err,
+        else => if (valid) return err else return,
+    };
+    defer ast.deinit(allocator);
+    try std.testing.expect(valid);
+}
+
+test "parser allocation failures and pending metadata lifecycle" {
+    const sources = [_][]const u8{
+        "@alias short\n@group build\n@desc \"Build\"\n@platform linux macos\n@needs zig\n",
+        "@require HOME PATH\n",
+        "name = \"value\"\n@import \"lib.jake\" as lib\n@alias short\n@needs zig\n@require HOME\ntask build target=\"debug\": [prepare]\n    echo {{target}}\ntask prepare:\n    echo ready\n",
+        "task valid:\n    echo ready\n@default\n",
+    };
+    for (sources, 0..) |source, i| {
+        try std.testing.checkAllAllocationFailures(std.testing.allocator, checkParserAllocationLifecycle, .{ source, i != 3 });
+    }
 }

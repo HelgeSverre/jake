@@ -451,11 +451,13 @@ pub const Lexer = struct {
 
     fn scanString(self: *Lexer, start: usize, start_line: usize, start_column: usize) Token {
         const quote = self.source[self.index];
+        var terminated = false;
         self.advanceIndex(); // Skip opening quote
 
         while (self.index < self.source.len) {
             if (self.source[self.index] == quote) {
                 self.advanceIndex(); // Include closing quote
+                terminated = true;
                 break;
             }
             if (self.source[self.index] == '\\' and self.index + 1 < self.source.len) {
@@ -467,7 +469,7 @@ pub const Lexer = struct {
         }
 
         return .{
-            .tag = .string,
+            .tag = if (terminated) .string else .invalid,
             .loc = self.makeLoc(start, start_line, start_column),
         };
     }
@@ -848,7 +850,7 @@ test "lexer unterminated double quoted string" {
     var lex = Lexer.init(source);
 
     const tok = lex.next();
-    try std.testing.expectEqual(Token.Tag.string, tok.tag);
+    try std.testing.expectEqual(Token.Tag.invalid, tok.tag);
     // Should consume until end
     try std.testing.expectEqualStrings("\"hello world", tok.slice(source));
 }
@@ -858,7 +860,7 @@ test "lexer unterminated single quoted string" {
     var lex = Lexer.init(source);
 
     const tok = lex.next();
-    try std.testing.expectEqual(Token.Tag.string, tok.tag);
+    try std.testing.expectEqual(Token.Tag.invalid, tok.tag);
     try std.testing.expectEqualStrings("'hello world", tok.slice(source));
 }
 

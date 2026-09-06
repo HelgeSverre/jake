@@ -133,10 +133,6 @@ class WebSocketClient:
         self.sock.sendall(first + header + mask + masked)
 
     def close(self) -> None:
-        try:
-            self.send_json({"action": "stop"})
-        except Exception:
-            pass
         self.sock.close()
 
 
@@ -155,50 +151,123 @@ def wait_for(client: WebSocketClient, label: str, predicate, timeout: float = 10
     raise AssertionError(f"timed out waiting for {label}; seen={seen!r}")
 
 
+def collect_run(client, prefix=None):
+    messages = list(prefix or [])
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        msg = client.recv_json(max(0.1, deadline - time.monotonic()))
+        messages.append(msg)
+        if msg.get("type") == "run_state" and msg.get("running") is False:
+            summaries = [m for m in messages if m.get("type") == "summary"]
+            assert len(summaries) == 1, messages
+            starts = [m["name"] for m in messages if m.get("type") == "task_start"]
+            completions = [m for m in messages if m.get("type") == "task_complete"]
+            ends = [m["name"] for m in completions]
+            assert sorted(starts) == sorted(ends), messages
+            assert len(ends) == len(set(ends)), messages
+            assert summaries[0]["tasks_run"] == len(completions), messages
+            assert summaries[0]["tasks_failed"] == sum(not m["success"] for m in completions), messages
+            return messages
+    raise AssertionError("run did not release its admission lock")
+
+
+def run(client, recipe):
+    client.send_json({"action": "run", "recipe": recipe, "params": {}, "dryRun": False})
+
+
+def connect_ready(port, active=False):
+    client = WebSocketClient("127.0.0.1", port)
+    init = wait_for(client, "init", lambda m: m.get("type") == "init")
+    state = wait_for(client, "run state", lambda m: m.get("type") == "run_state")
+    assert state["running"] is active, state
+    return client, init, state
+
+
 def main() -> int:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 18450
-    client = WebSocketClient("127.0.0.1", port)
+    jobs = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    client, init, _ = connect_ready(port)
     try:
-        init_msg = wait_for(
-            client,
-            "init message",
-            lambda msg: msg.get("type") == "init",
-        )
-        recipe_names = {recipe["name"] for recipe in init_msg.get("recipes", [])}
-        expected = {"dep", "root", "confirm-task", "slow"}
-        if not expected.issubset(recipe_names):
-            raise AssertionError(f"missing recipes in init payload: {expected - recipe_names}")
+        names = {r["name"] for r in init["recipes"]}
+        assert {"dep", "root", "confirm-task", "slow", "fails"}.issubset(names)
 
-        client.send_json({"action": "run", "recipe": "confirm-task", "params": {}, "dryRun": False})
-        wait_for(client, "confirm task start", lambda msg: msg.get("type") == "task_start" and msg.get("name") == "confirm-task")
-        confirm_msg = wait_for(client, "confirm prompt", lambda msg: msg.get("type") == "confirm" and msg.get("task") == "confirm-task")
-        client.send_json({"action": "confirm", "confirmId": confirm_msg["confirmId"], "approved": True})
-        wait_for(client, "confirm command event", lambda msg: msg.get("type") == "command" and msg.get("task") == "confirm-task")
-        wait_for(client, "confirm output", lambda msg: msg.get("type") == "output" and msg.get("task") == "confirm-task" and msg.get("line") == "confirmed-output")
-        wait_for(client, "confirm completion", lambda msg: msg.get("type") == "task_complete" and msg.get("name") == "confirm-task" and msg.get("success") is True)
-        wait_for(client, "confirm summary", lambda msg: msg.get("type") == "summary" and msg.get("tasks_failed") == 0)
+        run(client, "confirm-task")
+        prefix = []
+        while True:
+            msg = client.recv_json()
+            prefix.append(msg)
+            if msg.get("type") == "confirm":
+                client.send_json({"action": "confirm", "confirmId": msg["confirmId"], "approved": True})
+                break
+        result = collect_run(client, prefix)
+        assert any(m.get("line") == "confirmed-output" for m in result), result
 
-        client.send_json({"action": "run", "recipe": "root", "params": {}, "dryRun": False})
-        wait_for(client, "root task start", lambda msg: msg.get("type") == "task_start" and msg.get("name") == "root")
-        wait_for(client, "dependency task start", lambda msg: msg.get("type") == "task_start" and msg.get("name") == "dep")
-        wait_for(client, "dependency command event", lambda msg: msg.get("type") == "command" and msg.get("task") == "dep")
-        wait_for(client, "dependency output", lambda msg: msg.get("type") == "output" and msg.get("task") == "dep" and msg.get("line") == "dep-output")
-        wait_for(client, "dependency completion", lambda msg: msg.get("type") == "task_complete" and msg.get("name") == "dep" and msg.get("success") is True)
-        wait_for(client, "root command event", lambda msg: msg.get("type") == "command" and msg.get("task") == "root")
-        wait_for(client, "root output", lambda msg: msg.get("type") == "output" and msg.get("task") == "root" and msg.get("line") == "root-output")
-        wait_for(client, "root completion", lambda msg: msg.get("type") == "task_complete" and msg.get("name") == "root" and msg.get("success") is True)
-        wait_for(client, "root summary", lambda msg: msg.get("type") == "summary" and msg.get("tasks_failed") == 0)
+        # Repeated execution must reset counters and re-run dependencies.
+        for _ in range(8):
+            run(client, "root")
+            result = collect_run(client)
+            assert {m.get("name") for m in result if m.get("type") == "task_complete"} == {"root", "dep"}
+            assert any(m.get("line") == "dep-output" for m in result)
+            assert any(m.get("line") == "root-output" for m in result)
+            assert next(m for m in result if m.get("type") == "summary")["tasks_failed"] == 0
 
-        client.send_json({"action": "run", "recipe": "slow", "params": {}, "dryRun": False})
-        wait_for(client, "slow task start", lambda msg: msg.get("type") == "task_start" and msg.get("name") == "slow")
-        wait_for(client, "slow command event", lambda msg: msg.get("type") == "command" and msg.get("task") == "slow")
-        client.send_json({"action": "stop"})
-        wait_for(client, "cancel output", lambda msg: msg.get("type") == "output" and msg.get("task") == "slow" and "cancelled by user" in msg.get("line", "").lower())
-        wait_for(client, "cancel completion", lambda msg: msg.get("type") == "task_complete" and msg.get("name") == "slow" and msg.get("success") is False)
-        wait_for(client, "cancel summary", lambda msg: msg.get("type") == "summary" and msg.get("tasks_failed", 0) >= 1)
+        run(client, "fails")
+        result = collect_run(client)
+        assert next(m for m in result if m.get("type") == "summary")["tasks_failed"] >= 1
+
+        # Stop during admission, before relying on a task_start notification.
+        for _ in range(4):
+            run(client, "slow")
+            state = client.recv_json()
+            assert state.get("type") == "run_state" and state["running"], state
+            client.send_json({"action": "stop"})
+            result = collect_run(client, [state])
+            assert next(m for m in result if m.get("type") == "summary")["tasks_failed"] >= 1
+
+        # Ordinary reconnect and second-tab admission during a cancellable run.
+        for _ in range(3):
+            run(client, "slow")
+            prefix = []
+            while True:
+                msg = client.recv_json()
+                prefix.append(msg)
+                if msg.get("type") == "command" and msg.get("task") == "slow":
+                    break
+            other, _, state = connect_ready(port, active=True)
+            try:
+                assert state["recipe"] == "slow" and "slow" in state["active_tasks"], state
+                run(other, "dep")
+                rejection = other.recv_json(2)
+                assert rejection.get("type") == "error" and "already running" in rejection.get("message", ""), rejection
+            finally:
+                other.close()
+            client.send_json({"action": "stop"})
+            result = collect_run(client, prefix)
+            ends = [m for m in result if m.get("type") == "task_complete"]
+            assert len(ends) == 1 and ends[0]["name"] == "slow" and not ends[0]["success"], result
+            assert any("cancelled by user" in m.get("line", "").lower() for m in result), result
+            assert next(m for m in result if m.get("type") == "summary")["tasks_failed"] >= 1
+        if jobs > 1:
+            run(client, "parallel-slow")
+            prefix = []
+            commands = set()
+            while len(commands) < 2:
+                msg = client.recv_json()
+                prefix.append(msg)
+                if msg.get("type") == "command":
+                    commands.add(msg.get("task"))
+            other, _, state = connect_ready(port, active=True)
+            other.close()
+            assert set(state["active_tasks"]) == {"slow-left", "slow-right"}, state
+            started = time.monotonic()
+            client.send_json({"action": "stop"})
+            result = collect_run(client, prefix)
+            assert time.monotonic() - started < 3, "all parallel children must stop promptly"
+            ends = [m for m in result if m.get("type") == "task_complete"]
+            assert {m["name"] for m in ends} == {"parallel-slow", "slow-left", "slow-right"}, result
+            assert all(not m["success"] for m in ends), result
     finally:
         client.close()
-
     return 0
 
 

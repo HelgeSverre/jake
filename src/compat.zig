@@ -27,6 +27,11 @@ pub fn getStdIn() std.fs.File {
 /// Get environment variable (cross-platform: works on Windows and POSIX)
 /// Returns null if the variable is not set
 pub fn getenv(key: []const u8) ?[]const u8 {
+    if (!std.unicode.wtf8ValidateSlice(key)) return null;
     env_init_once.call();
     return if (cached_env_map) |env_map| env_map.get(key) else null;
+}
+
+test "environment lookup rejects invalid text keys" {
+    try std.testing.expect(getenv(&.{0xff}) == null);
 }

@@ -258,7 +258,11 @@ pub const ImportResolver = struct {
         }
 
         // Mark as in-progress
-        self.import_stack.put(self.allocator, try self.allocator.dupe(u8, resolved_path), {}) catch return ImportError.OutOfMemory;
+        const stack_key = try self.allocator.dupe(u8, resolved_path);
+        self.import_stack.put(self.allocator, stack_key, {}) catch {
+            self.allocator.free(stack_key);
+            return ImportError.OutOfMemory;
+        };
 
         // Load and parse the imported file
         var imported = self.loadAndParse(resolved_path) catch |err| {
@@ -297,7 +301,11 @@ pub const ImportResolver = struct {
         if (self.import_stack.fetchRemove(resolved_path)) |entry| {
             self.allocator.free(entry.key);
         }
-        self.resolved_cache.put(self.allocator, try self.allocator.dupe(u8, resolved_path), {}) catch return ImportError.OutOfMemory;
+        const cache_key = try self.allocator.dupe(u8, resolved_path);
+        self.resolved_cache.put(self.allocator, cache_key, {}) catch {
+            self.allocator.free(cache_key);
+            return ImportError.OutOfMemory;
+        };
     }
 
     /// Resolve a potentially relative path to an absolute path
@@ -316,6 +324,7 @@ pub const ImportResolver = struct {
             return switch (err) {
                 error.FileNotFound => ImportError.FileNotFound,
                 error.AccessDenied => ImportError.AccessDenied,
+                error.OutOfMemory => ImportError.OutOfMemory,
                 else => ImportError.InvalidPath,
             };
         };
@@ -338,12 +347,18 @@ pub const ImportResolver = struct {
 
         const source = file.readToEndAlloc(self.allocator, 1024 * 1024) catch return ImportError.OutOfMemory;
         // Keep source alive
-        self.loaded_sources.append(self.allocator, source) catch return ImportError.OutOfMemory;
+        self.loaded_sources.append(self.allocator, source) catch {
+            self.allocator.free(source);
+            return ImportError.OutOfMemory;
+        };
 
         // Parse
         var lex = Lexer.init(source);
         var p = Parser.init(self.allocator, &lex);
-        return p.parseJakefile() catch return ImportError.ParseError;
+        return p.parseJakefile() catch |err| switch (err) {
+            error.OutOfMemory => ImportError.OutOfMemory,
+            else => ImportError.ParseError,
+        };
     }
 
     /// Merge an imported Jakefile into the target, optionally with a prefix
@@ -355,6 +370,20 @@ pub const ImportResolver = struct {
         source_file: []const u8,
         force_rooted: bool,
     ) ImportError!void {
+        // Until commit, both input ASTs still own their slices. On failure
+        // discard retirement records, and free only newly built dependency
+        // arrays; the caller can then safely deinit the original ASTs.
+        const fields = @typeInfo(@TypeOf(self.replaced_slices)).@"struct".fields;
+        var lengths: [fields.len]usize = undefined;
+        inline for (fields, 0..) |field, i| lengths[i] = @field(self.replaced_slices, field.name).items.len;
+        errdefer {
+            inline for (fields, 0..) |field, i| @field(self.replaced_slices, field.name).items.len = lengths[i];
+        }
+        var new_dependency_arrays: std.ArrayListUnmanaged([]const []const u8) = .empty;
+        defer new_dependency_arrays.deinit(self.allocator);
+        errdefer for (new_dependency_arrays.items) |deps| self.allocator.free(deps);
+        const owned_source_file = try self.keepName(try self.allocator.dupe(u8, source_file));
+
         // Track old slices from target that will be replaced (only if they have content)
         // These will be freed when the resolver is deinitialized
         if (target.variables.len > 0) {
@@ -452,14 +481,14 @@ pub const ImportResolver = struct {
                 // Create prefixed name: "prefix.recipe_name"
                 const prefixed_name = self.createPrefixedName(p, recipe.name) catch return ImportError.OutOfMemory;
                 // Track the allocated name so it can be freed later
-                self.allocated_names.append(self.allocator, prefixed_name) catch return ImportError.OutOfMemory;
+                _ = try self.keepName(prefixed_name);
                 new_recipe.name = prefixed_name;
 
                 // Set origin to track where this recipe came from
                 new_recipe.origin = .{
                     .original_name = recipe.name,
                     .import_prefix = p,
-                    .source_file = source_file,
+                    .source_file = owned_source_file,
                     .base_dir = base_dir,
                 };
 
@@ -469,11 +498,15 @@ pub const ImportResolver = struct {
                     self.replaced_slices.dependencies.append(self.allocator, recipe.dependencies) catch return ImportError.OutOfMemory;
 
                     const new_deps = self.allocator.alloc([]const u8, recipe.dependencies.len) catch return ImportError.OutOfMemory;
+                    new_dependency_arrays.append(self.allocator, new_deps) catch {
+                        self.allocator.free(new_deps);
+                        return ImportError.OutOfMemory;
+                    };
                     for (recipe.dependencies, 0..) |dep, j| {
                         // Check if this dependency is from the imported file
                         if (self.isImportedRecipe(imported.recipes, dep)) {
                             const prefixed_dep = self.createPrefixedName(p, dep) catch return ImportError.OutOfMemory;
-                            self.allocated_names.append(self.allocator, prefixed_dep) catch return ImportError.OutOfMemory;
+                            _ = try self.keepName(prefixed_dep);
                             new_deps[j] = prefixed_dep;
                         } else {
                             new_deps[j] = dep;
@@ -488,7 +521,7 @@ pub const ImportResolver = struct {
                 new_recipe.origin = .{
                     .original_name = if (recipe.origin) |o| o.original_name else recipe.name,
                     .import_prefix = if (recipe.origin) |o| o.import_prefix else null,
-                    .source_file = source_file,
+                    .source_file = owned_source_file,
                     .base_dir = base_dir,
                 };
             }
@@ -532,6 +565,14 @@ pub const ImportResolver = struct {
         target.global_on_error_hooks = new_on_error_hooks;
     }
 
+    fn keepName(self: *ImportResolver, name: []const u8) ![]const u8 {
+        self.allocated_names.append(self.allocator, name) catch {
+            self.allocator.free(name);
+            return ImportError.OutOfMemory;
+        };
+        return name;
+    }
+
     /// Create a prefixed name like "prefix.name"
     fn createPrefixedName(self: *ImportResolver, prefix: []const u8, name: []const u8) ![]const u8 {
         const prefixed = self.allocator.alloc(u8, prefix.len + 1 + name.len) catch return ImportError.OutOfMemory;
@@ -568,20 +609,24 @@ pub fn resolveImports(
     const base_path = std.fs.path.dirname(jakefile_path) orelse ".";
 
     // Add the main jakefile to import_stack for cycle detection
-    const real_path = std.fs.cwd().realpathAlloc(allocator, jakefile_path) catch {
+    const real_path = std.fs.cwd().realpathAlloc(allocator, jakefile_path) catch |err| {
+        if (err == error.OutOfMemory) return ImportError.OutOfMemory;
         try resolver.resolveImports(jakefile, base_path);
         const allocations = try resolver.extractPersistentAllocations();
         resolver.deinit();
         return allocations;
     };
     // Add to import_stack (not resolved_cache) so that circular imports are detected
-    resolver.import_stack.put(allocator, real_path, {}) catch return ImportError.OutOfMemory;
+    resolver.import_stack.put(allocator, real_path, {}) catch {
+        allocator.free(real_path);
+        return ImportError.OutOfMemory;
+    };
 
     try resolver.resolveImports(jakefile, base_path);
 
     // Move from import_stack to resolved_cache after successful processing
-    _ = resolver.import_stack.remove(real_path);
     resolver.resolved_cache.put(allocator, real_path, {}) catch return ImportError.OutOfMemory;
+    _ = resolver.import_stack.remove(real_path);
     const allocations = try resolver.extractPersistentAllocations();
     resolver.deinit();
     return allocations;
@@ -1406,4 +1451,27 @@ test "import handles missing file gracefully" {
 
     const result = resolveImports(allocator, &jakefile, a_path);
     try std.testing.expectError(ImportError.FileNotFound, result);
+}
+
+fn checkImportAllocationLifecycle(allocator: std.mem.Allocator, path: []const u8) !void {
+    const source = "@import \"module.jake\" as module rooted\ntask root:\n    echo root\n";
+    var lex = Lexer.init(source);
+    var p = Parser.init(allocator, &lex);
+    var ast = try p.parseJakefile();
+    defer ast.deinit(allocator);
+    var allocations = try resolveImports(allocator, &ast, path);
+    defer allocations.deinit();
+    const recipe = ast.getRecipe("module.build") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("module.prepare", recipe.dependencies[0]);
+    try std.testing.expect(std.mem.endsWith(u8, recipe.origin.?.source_file.?, "module.jake"));
+}
+
+test "import construction and merging survive allocation failures" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "Jakefile", .data = "" });
+    try tmp.dir.writeFile(.{ .sub_path = "module.jake", .data = "mode = \"debug\"\n@require HOME\ntask build: [prepare]\n    echo build\ntask prepare:\n    echo prepare\n" });
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, "Jakefile");
+    defer std.testing.allocator.free(path);
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkImportAllocationLifecycle, .{path});
 }

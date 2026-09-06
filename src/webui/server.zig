@@ -60,6 +60,17 @@ pub const WebUIServer = struct {
     running: std.atomic.Value(bool),
     clients: std.ArrayListUnmanaged(*WebSocketClient),
     mutex: std.Thread.Mutex,
+    clients_drained: std.Thread.Condition = .{},
+    execution_mutex: std.Thread.Mutex = .{},
+    execution_active: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    run_recipe: ?[]const u8 = null,
+    run_started_ms: i64 = 0,
+    active_tasks: std.ArrayListUnmanaged([]const u8) = .empty,
+    pending_summary: ?event_emitter.ExecutionSummaryEvent = null,
+    root_started: bool = false,
+    root_completed: bool = false,
+    tasks_completed: usize = 0,
+    tasks_failed: usize = 0,
 
     // Jakefile data for sending to clients
     recipes: []const parser.Recipe,
@@ -135,17 +146,16 @@ pub const WebUIServer = struct {
     pub fn deinit(self: *WebUIServer) void {
         self.stop();
 
-        // Stop any running execution
-        self.execution_running.store(false, .release);
+        self.execution_mutex.lock();
         self.joinExecutionThreadIfPresent();
+        self.execution_mutex.unlock();
 
-        // Clean up any remaining clients
+        // Reader threads exclusively own destruction. Wait until their final
+        // cleanup has completed before releasing server storage.
         self.mutex.lock();
-        for (self.clients.items) |client| {
-            client.deinit();
-            self.allocator.destroy(client);
-        }
+        while (self.clients.items.len != 0) self.clients_drained.wait(&self.mutex);
         self.clients.deinit(self.allocator);
+        self.active_tasks.deinit(self.allocator);
         self.mutex.unlock();
 
         // Free cached init message
@@ -185,12 +195,13 @@ pub const WebUIServer = struct {
     /// Stop the server
     pub fn stop(self: *WebUIServer) void {
         self.running.store(false, .release);
+        self.execution_running.store(false, .release);
         self.cancelPendingConfirm();
 
-        // Close all client connections to unblock readFrame() calls
+        // Shut down all client connections to unblock readFrame() calls
         self.mutex.lock();
         for (self.clients.items) |client| {
-            client.stream.close();
+            client.shutdown();
         }
         self.mutex.unlock();
 
@@ -343,18 +354,21 @@ pub const WebUIServer = struct {
     }
 
     fn handleConnection(self: *WebUIServer, conn: std.net.Server.Connection) !void {
-        // Read HTTP request
-        var buf: [4096]u8 = undefined;
-        const n = conn.stream.read(&buf) catch {
+        setSocketTimeout(conn.stream, std.posix.SO.SNDTIMEO, 1000) catch {
             conn.stream.close();
             return;
         };
-        if (n == 0) {
+        setSocketTimeout(conn.stream, std.posix.SO.RCVTIMEO, 1000) catch {
             conn.stream.close();
             return;
-        }
-
-        const request = buf[0..n];
+        };
+        // Do not read past the header terminator: a pipelined first frame
+        // must remain available to the WebSocket reader.
+        var buf: [4096]u8 = undefined;
+        const request = readHttpHeader(conn.stream, &buf) catch {
+            conn.stream.close();
+            return;
+        };
 
         // Parse request line
         const first_line_end = std.mem.indexOf(u8, request, "\r\n") orelse {
@@ -404,6 +418,8 @@ pub const WebUIServer = struct {
     }
 
     fn handleWebSocketUpgrade(self: *WebUIServer, conn: std.net.Server.Connection, request: []const u8) !void {
+        // Idle WebSockets may wait indefinitely; shutdown wakes the reader.
+        try setSocketTimeout(conn.stream, std.posix.SO.RCVTIMEO, 0);
         // Find Sec-WebSocket-Key header
         const key = findHeader(request, "Sec-WebSocket-Key") orelse return error.MissingWebSocketKey;
 
@@ -433,17 +449,21 @@ pub const WebUIServer = struct {
         };
 
         self.mutex.lock();
-        self.clients.append(self.allocator, client) catch {
+        if (!self.isRunning()) {
             self.mutex.unlock();
-            client.deinit();
             self.allocator.destroy(client);
-            return;
+            return error.ServerStopped;
+        }
+        self.clients.append(self.allocator, client) catch |err| {
+            self.mutex.unlock();
+            self.allocator.destroy(client);
+            return err;
         };
-        self.mutex.unlock();
-
-        // Send initial state with actual recipe data
+        // Initial recipe data and execution snapshot precede any live events.
         const init_msg = self.getInitMessage() catch "{\"type\":\"init\",\"recipes\":[],\"variables\":{}}";
-        client.sendText(init_msg) catch {};
+        client.sendText(init_msg) catch client.shutdown();
+        self.sendRunStateLocked(client) catch client.shutdown();
+        self.mutex.unlock();
         self.sendPendingConfirm(client);
 
         // Spawn a detached thread to handle WebSocket frames (non-blocking for main accept loop)
@@ -491,21 +511,36 @@ pub const WebUIServer = struct {
                 var request_owned = true;
                 defer if (request_owned) request.deinit(self.allocator);
 
-                self.joinExecutionThreadIfPresent();
-
-                if (self.execution_running.cmpxchgStrong(false, true, .acq_rel, .acquire)) |_| {
+                self.execution_mutex.lock();
+                defer self.execution_mutex.unlock();
+                if (self.execution_active.load(.acquire)) {
                     client.sendText("{\"type\":\"error\",\"message\":\"A task is already running\"}") catch {};
                     return;
                 }
-                errdefer self.execution_running.store(false, .release);
 
                 if (self.jakefile == null or self.index == null or self.runtime == null) {
                     client.sendText("{\"type\":\"error\",\"message\":\"No Jakefile loaded\"}") catch {};
                     return;
                 }
 
+                if (!self.isRunning()) return;
+                self.joinExecutionThreadIfPresent();
+                self.execution_running.store(true, .release);
+                self.execution_active.store(true, .release);
+                self.mutex.lock();
+                self.run_recipe = if (self.index.?.getRecipe(request.task_name)) |recipe| recipe.name else request.task_name;
+                self.run_started_ms = std.time.milliTimestamp();
+                self.pending_summary = null;
+                self.root_started = false;
+                self.root_completed = false;
+                self.tasks_completed = 0;
+                self.tasks_failed = 0;
+                self.active_tasks.clearRetainingCapacity();
+                self.broadcastRunStateLocked();
+                self.mutex.unlock();
+
                 self.execution_thread = std.Thread.spawn(.{}, executeRecipeThread, .{ self, request }) catch {
-                    self.execution_running.store(false, .release);
+                    self.finishRun(true);
                     client.sendText("{\"type\":\"error\",\"message\":\"Failed to start execution thread\"}") catch {};
                     return;
                 };
@@ -527,13 +562,8 @@ pub const WebUIServer = struct {
                     self.execution_running.store(false, .release);
                     self.cancelPendingConfirm();
 
-                    if (builtin.os.tag != .windows) {
-                        const pid = self.current_child_pid.load(.acquire);
-                        if (pid > 0) {
-                            std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
-                            std.posix.kill(pid, std.posix.SIG.KILL) catch {};
-                        }
-                    }
+                    // Each executor child observes the cancellation flag;
+                    // no shared PID can represent all parallel children.
                 }
             },
         }
@@ -617,9 +647,10 @@ pub const WebUIServer = struct {
     /// Takes ownership of request and frees it when done
     fn executeRecipeThread(self: *WebUIServer, request_value: ExecutionRequest) void {
         var request = request_value;
+        var failed = false;
         defer {
+            self.finishRun(failed);
             request.deinit(self.allocator);
-            self.execution_running.store(false, .release);
         }
 
         const task_name = request.task_name;
@@ -634,6 +665,7 @@ pub const WebUIServer = struct {
 
         // Create executor
         var executor = executor_mod.Executor.initWithIndexAndContext(self.allocator, jakefile, index, &ctx, runtime) catch |err| {
+            failed = true;
             const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
             self.emitTaskStart(task_name, self.lookupRecipeDeps(task_name));
             var buf: [256]u8 = undefined;
@@ -645,62 +677,83 @@ pub const WebUIServer = struct {
         };
         defer executor.deinit();
 
-        // Execute the recipe
-        const success = blk: {
-            executor.validateRequiredEnv() catch |err| {
-                if (ctx.isCancelled()) {
-                    self.emitTaskStart(task_name, self.lookupRecipeDeps(task_name));
-                    self.emitCommandOutput(task_name, "Execution cancelled by user", true);
-                    self.emitTaskComplete(task_name, false, @intCast(@max(0, std.time.milliTimestamp() - start_time)));
-                    self.emitSummary(0, 1, @intCast(@max(0, std.time.milliTimestamp() - start_time)));
-                    break :blk false;
-                }
-
-                const msg = switch (err) {
-                    error.MissingRequiredEnv => "Required environment variable is not set",
-                    else => "Execution failed",
-                };
-                self.emitTaskStart(task_name, self.lookupRecipeDeps(task_name));
-                self.emitCommandOutput(task_name, msg, true);
-                self.emitTaskComplete(task_name, false, @intCast(@max(0, std.time.milliTimestamp() - start_time)));
-                self.emitSummary(0, 1, @intCast(@max(0, std.time.milliTimestamp() - start_time)));
-                break :blk false;
-            };
-
-            executor.execute(task_name) catch |err| {
-                // Cancellation: the executor bails without emitting task_complete
-                // or a summary, so emit them here or clients stay locked in
-                // "running" forever.
-                if (ctx.isCancelled()) {
-                    const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
-                    self.emitCommandOutput(task_name, "Execution cancelled by user", true);
-                    self.emitTaskComplete(task_name, false, duration_ms);
-                    self.emitSummary(0, 1, duration_ms);
-                    break :blk false;
-                }
-
-                if (err == executor_mod.ExecuteError.RecipeNotFound) {
-                    const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
-                    self.emitTaskStart(task_name, self.lookupRecipeDeps(task_name));
-                    self.emitCommandOutput(task_name, "Execution failed: RecipeNotFound", true);
-                    self.emitTaskComplete(task_name, false, duration_ms);
-                    self.emitSummary(0, 1, duration_ms);
-                    break :blk false;
-                }
-
-                // Emit error; the executor propagated before printing its own
-                // summary, so emit one here to unlock clients.
-                const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - start_time));
-                var buf: [256]u8 = undefined;
-                const err_name = @errorName(err);
-                const msg = std.fmt.bufPrint(&buf, "Execution failed: {s}", .{err_name}) catch "Execution failed";
-                self.emitCommandOutput(task_name, msg, true);
-                self.emitSummary(0, 1, duration_ms);
-                break :blk false;
-            };
-            break :blk true;
+        // Setup failures have no executor lifecycle. Once execute is entered,
+        // it owns task completions; finishRun only supplies a missing summary.
+        executor.validateRequiredEnv() catch |err| {
+            failed = true;
+            self.emitTaskStart(task_name, self.lookupRecipeDeps(task_name));
+            self.emitCommandOutput(task_name, @errorName(err), true);
+            self.emitTaskComplete(task_name, false, @intCast(@max(0, std.time.milliTimestamp() - start_time)));
+            return;
         };
-        _ = success;
+        if (index.getRecipe(task_name) == null) {
+            failed = true;
+            self.emitTaskStart(task_name, &.{});
+            self.emitCommandOutput(task_name, "Execution failed: RecipeNotFound", true);
+            self.emitTaskComplete(task_name, false, 0);
+            return;
+        }
+        executor.execute(task_name) catch |err| {
+            failed = true;
+            self.emitCommandOutput(task_name, if (ctx.isCancelled()) "Execution cancelled by user" else @errorName(err), true);
+        };
+    }
+
+    fn finishRun(self: *WebUIServer, failed: bool) void {
+        // Cancellation/setup failure may precede the executor's first event,
+        // or a failed parallel dependency may prevent the root from starting.
+        self.mutex.lock();
+        const failed_root = if (failed and !self.root_completed) self.run_recipe else null;
+        const needs_start = !self.root_started;
+        self.mutex.unlock();
+        if (failed_root) |name| {
+            if (needs_start) self.emitTaskStart(name, self.lookupRecipeDeps(name));
+            self.emitTaskComplete(name, false, 0);
+        }
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        const duration: u64 = @intCast(@max(0, std.time.milliTimestamp() - self.run_started_ms));
+        const summary = self.pending_summary orelse event_emitter.ExecutionSummaryEvent{
+            .tasks_run = self.tasks_completed + self.tasks_failed,
+            .tasks_failed = self.tasks_failed,
+            .total_ms = duration,
+        };
+        const observed_tasks = self.tasks_completed + self.tasks_failed;
+        // Emit one summary after executor teardown and any final diagnostics.
+        // Parallel execution may not supply executor counters, so retain the
+        // counts observed on the actual task lifecycle events as a fallback.
+        const json = std.json.Stringify.valueAlloc(self.allocator, .{
+            .type = "summary",
+            .recipe = self.run_recipe,
+            .tasks_run = @max(summary.tasks_run, observed_tasks),
+            .tasks_failed = @max(summary.tasks_failed, self.tasks_failed, @as(usize, if (failed) 1 else 0)),
+            .total_ms = summary.total_ms,
+        }, .{}) catch null;
+        if (json) |msg| {
+            defer self.allocator.free(msg);
+            for (self.clients.items) |client| client.sendText(msg) catch client.shutdown();
+        }
+        self.run_recipe = null;
+        self.active_tasks.clearRetainingCapacity();
+        self.execution_running.store(false, .release);
+        self.execution_active.store(false, .release);
+        self.broadcastRunStateLocked();
+    }
+
+    fn sendRunStateLocked(self: *WebUIServer, client: *WebSocketClient) !void {
+        const json = try std.json.Stringify.valueAlloc(self.allocator, .{
+            .type = "run_state",
+            .running = self.run_recipe != null,
+            .recipe = self.run_recipe,
+            .started_ms = self.run_started_ms,
+            .active_tasks = self.active_tasks.items,
+        }, .{});
+        defer self.allocator.free(json);
+        try client.sendText(json);
+    }
+
+    fn broadcastRunStateLocked(self: *WebUIServer) void {
+        for (self.clients.items) |client| self.sendRunStateLocked(client) catch client.shutdown();
     }
 
     /// Emit a task_start event to all clients
@@ -738,70 +791,65 @@ pub const WebUIServer = struct {
         } });
     }
 
-    /// Broadcast a raw JSON string to all connected clients
+    /// Broadcasts never destroy a connection retained by its reader.
     fn broadcastJson(self: *WebUIServer, json: []const u8) void {
-        var failed_clients: std.ArrayListUnmanaged(*WebSocketClient) = .empty;
-        defer failed_clients.deinit(self.allocator);
-
         self.mutex.lock();
-        var i: usize = 0;
-        while (i < self.clients.items.len) {
-            const client = self.clients.items[i];
-            client.sendText(json) catch {
-                failed_clients.append(self.allocator, client) catch {};
-                _ = self.clients.swapRemove(i);
-                continue;
-            };
-            i += 1;
-        }
-        self.mutex.unlock();
-
-        for (failed_clients.items) |client| {
-            client.deinit();
-            self.allocator.destroy(client);
-        }
+        defer self.mutex.unlock();
+        for (self.clients.items) |client| client.sendText(json) catch client.shutdown();
     }
 
-    /// Remove a client from the list and clean it up
+    /// Called only by the connection owner, after it stops reading/writing.
     fn removeClient(self: *WebUIServer, client: *WebSocketClient) void {
         self.mutex.lock();
+        defer self.mutex.unlock();
         for (self.clients.items, 0..) |c, i| {
             if (c == client) {
                 _ = self.clients.swapRemove(i);
-                break;
+                client.deinit();
+                self.allocator.destroy(client);
+                self.clients_drained.broadcast();
+                return;
             }
         }
-        self.mutex.unlock();
-
-        client.deinit();
-        self.allocator.destroy(client);
     }
 
-    /// Broadcast an event to all connected WebSocket clients
-    fn broadcast(self: *WebUIServer, event: event_emitter.Event) void {
+    fn broadcast(self: *WebUIServer, event_value: event_emitter.Event) void {
+        var event = event_value;
+        if (event == .task_complete) {
+            if (self.index) |index| {
+                if (index.getRecipe(event.task_complete.name)) |recipe| event.task_complete.name = recipe.name;
+            }
+        }
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        switch (event) {
+            .task_start => |e| {
+                if (self.run_recipe) |root| {
+                    if (std.mem.eql(u8, root, e.name)) self.root_started = true;
+                }
+                if (!containsString(self.active_tasks.items, e.name)) self.active_tasks.append(self.allocator, e.name) catch {};
+            },
+            .task_complete => |e| {
+                if (self.run_recipe) |root| {
+                    if (std.mem.eql(u8, root, e.name)) self.root_completed = true;
+                }
+                if (e.success) self.tasks_completed += 1 else self.tasks_failed += 1;
+                for (self.active_tasks.items, 0..) |name, i| {
+                    if (std.mem.eql(u8, name, e.name)) {
+                        _ = self.active_tasks.swapRemove(i);
+                        break;
+                    }
+                }
+            },
+            .execution_summary => |e| {
+                self.pending_summary = e;
+                return;
+            },
+            else => {},
+        }
         const json = serializeEvent(self.allocator, event) catch return;
         defer self.allocator.free(json);
-
-        var failed_clients: std.ArrayListUnmanaged(*WebSocketClient) = .empty;
-        defer failed_clients.deinit(self.allocator);
-
-        self.mutex.lock();
-        var i: usize = 0;
-        while (i < self.clients.items.len) {
-            const client = self.clients.items[i];
-            client.sendText(json) catch {
-                failed_clients.append(self.allocator, client) catch {};
-                _ = self.clients.swapRemove(i);
-                continue;
-            };
-            i += 1;
-        }
-        self.mutex.unlock();
-
-        for (failed_clients.items) |client| {
-            client.deinit();
-            self.allocator.destroy(client);
-        }
+        for (self.clients.items) |client| client.sendText(json) catch client.shutdown();
     }
 
     fn lookupRecipeDeps(self: *WebUIServer, name: []const u8) []const []const u8 {
@@ -821,26 +869,9 @@ pub const WebUIServer = struct {
 
     fn broadcastPendingConfirmLocked(self: *WebUIServer) void {
         if (self.pending_confirm) |pending| {
-            var failed_clients: std.ArrayListUnmanaged(*WebSocketClient) = .empty;
-            defer failed_clients.deinit(self.allocator);
-
             self.mutex.lock();
-            var i: usize = 0;
-            while (i < self.clients.items.len) {
-                const client = self.clients.items[i];
-                self.sendConfirmMessage(client, pending) catch {
-                    failed_clients.append(self.allocator, client) catch {};
-                    _ = self.clients.swapRemove(i);
-                    continue;
-                };
-                i += 1;
-            }
-            self.mutex.unlock();
-
-            for (failed_clients.items) |client| {
-                client.deinit();
-                self.allocator.destroy(client);
-            }
+            defer self.mutex.unlock();
+            for (self.clients.items) |client| self.sendConfirmMessage(client, pending) catch client.shutdown();
         }
     }
 
@@ -1124,10 +1155,45 @@ fn serve404(stream: std.net.Stream) !void {
     try stream.writeAll(response);
 }
 
+fn setSocketTimeout(stream: std.net.Stream, option: u32, milliseconds: u32) !void {
+    if (builtin.os.tag == .windows) {
+        try std.posix.setsockopt(stream.handle, std.posix.SOL.SOCKET, option, std.mem.asBytes(&milliseconds));
+    } else {
+        const timeout = std.posix.timeval{ .sec = @intCast(milliseconds / 1000), .usec = @intCast((milliseconds % 1000) * 1000) };
+        try std.posix.setsockopt(stream.handle, std.posix.SOL.SOCKET, option, std.mem.asBytes(&timeout));
+    }
+}
+
+fn readExact(reader: anytype, buf: []u8) !void {
+    var offset: usize = 0;
+    while (offset < buf.len) {
+        const n = try reader.read(buf[offset..]);
+        if (n == 0) return error.EndOfStream;
+        offset += n;
+    }
+}
+
+fn readHttpHeader(reader: anytype, buf: []u8) ![]const u8 {
+    for (0..buf.len) |i| {
+        try readExact(reader, buf[i .. i + 1]);
+        if (i >= 3 and std.mem.eql(u8, buf[i - 3 .. i + 1], "\r\n\r\n")) return buf[0 .. i + 1];
+    }
+    return error.HeaderTooLarge;
+}
+
 /// WebSocket client connection
 pub const WebSocketClient = struct {
     stream: std.net.Stream,
     allocator: std.mem.Allocator,
+
+    write_mutex: std.Thread.Mutex = .{},
+    stopped: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+    /// Shutdown unblocks I/O without recycling the descriptor while the reader
+    /// still owns it. Only deinit closes it, after all users are excluded.
+    pub fn shutdown(self: *WebSocketClient) void {
+        if (!self.stopped.swap(true, .acq_rel)) std.posix.shutdown(self.stream.handle, .both) catch {};
+    }
 
     pub fn deinit(self: *WebSocketClient) void {
         self.stream.close();
@@ -1135,8 +1201,7 @@ pub const WebSocketClient = struct {
 
     pub fn readFrame(self: *WebSocketClient) !WebSocketFrame {
         var header: [2]u8 = undefined;
-        const header_read = self.stream.read(&header) catch return error.EndOfStream;
-        if (header_read != 2) return error.EndOfStream;
+        try readExact(self.stream, &header);
 
         const opcode: WebSocketOpcode = @enumFromInt(header[0] & 0x0F);
         const masked = (header[1] & 0x80) != 0;
@@ -1145,18 +1210,18 @@ pub const WebSocketClient = struct {
         // Extended payload length
         if (payload_len == 126) {
             var ext: [2]u8 = undefined;
-            _ = self.stream.read(&ext) catch return error.EndOfStream;
+            try readExact(self.stream, &ext);
             payload_len = std.mem.readInt(u16, &ext, .big);
         } else if (payload_len == 127) {
             var ext: [8]u8 = undefined;
-            _ = self.stream.read(&ext) catch return error.EndOfStream;
+            try readExact(self.stream, &ext);
             payload_len = std.mem.readInt(u64, &ext, .big);
         }
 
         // Read masking key if present
         var mask: [4]u8 = .{ 0, 0, 0, 0 };
         if (masked) {
-            _ = self.stream.read(&mask) catch return error.EndOfStream;
+            try readExact(self.stream, &mask);
         }
 
         // Read payload
@@ -1196,6 +1261,10 @@ pub const WebSocketClient = struct {
     }
 
     fn writeFrame(self: *WebSocketClient, opcode: WebSocketOpcode, payload: []const u8) !void {
+        self.write_mutex.lock();
+        defer self.write_mutex.unlock();
+        if (self.stopped.load(.acquire)) return error.EndOfStream;
+        errdefer self.shutdown();
         // Server frames are not masked
         var header: [10]u8 = undefined;
         var header_len: usize = 2;
@@ -1695,4 +1764,106 @@ test "buildExecutionContext enables interactive confirm transport when needed" {
     try std.testing.expect(!ctx.allow_interactive_stdin);
     try std.testing.expect(ctx.confirm_callback != null);
     try std.testing.expect(ctx.confirm_callback_ctx == @as(*anyopaque, @ptrCast(&server)));
+}
+
+const ChunkReader = struct {
+    bytes: []const u8,
+    chunk_size: usize,
+    fn read(self: *@This(), out: []u8) !usize {
+        const count = @min(out.len, self.bytes.len, self.chunk_size);
+        @memcpy(out[0..count], self.bytes[0..count]);
+        self.bytes = self.bytes[count..];
+        return count;
+    }
+};
+
+test "complete reads accumulate chunks and report EOF" {
+    for (1..9) |chunk_size| {
+        var reader = ChunkReader{ .bytes = "abcdefgh", .chunk_size = chunk_size };
+        var out: [8]u8 = undefined;
+        try readExact(&reader, &out);
+        try std.testing.expectEqualStrings("abcdefgh", &out);
+        try std.testing.expectError(error.EndOfStream, readExact(&reader, out[0..1]));
+    }
+}
+
+test "HTTP header reader preserves following bytes and bounds storage" {
+    const header = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    var reader = ChunkReader{ .bytes = header ++ "next", .chunk_size = 3 };
+    var out: [128]u8 = undefined;
+    try std.testing.expectEqualStrings(header, try readHttpHeader(&reader, &out));
+    try std.testing.expectEqualStrings("next", reader.bytes);
+    var short = ChunkReader{ .bytes = header, .chunk_size = 1 };
+    try std.testing.expectError(error.HeaderTooLarge, readHttpHeader(&short, out[0..4]));
+}
+
+test "WebSocket readers drain before server teardown across repeated connections" {
+    const allocator = std.testing.allocator;
+    var server = WebUIServer.init(allocator, 0);
+    defer server.deinit();
+    try server.start();
+    for (0..24) |i| {
+        const peer = try std.net.tcpConnectToAddress(server.server.?.listen_address);
+        defer peer.close();
+        const conn = try server.server.?.accept();
+        const client = try allocator.create(WebSocketClient);
+        client.* = .{ .stream = conn.stream, .allocator = allocator };
+        server.mutex.lock();
+        try server.clients.append(allocator, client);
+        server.mutex.unlock();
+        const thread = try std.Thread.spawn(.{}, WebUIServer.handleWebSocketFramesThread, .{ &server, client });
+        thread.detach();
+        // The final reader is blocked in readFrame when stop wakes it. Earlier
+        // iterations end by ordinary peer closure. Neither path double-closes.
+        if (i == 23) server.stop();
+    }
+}
+
+test "pre-execution failure terminates root exactly once" {
+    var server = WebUIServer.init(std.testing.allocator, 0);
+    defer server.deinit();
+    server.run_recipe = "root";
+    server.run_started_ms = std.time.milliTimestamp();
+    server.execution_active.store(true, .release);
+    server.finishRun(true);
+    try std.testing.expect(server.root_started);
+    try std.testing.expect(server.root_completed);
+    try std.testing.expectEqual(@as(usize, 1), server.tasks_failed);
+    try std.testing.expect(!server.execution_active.load(.acquire));
+    try std.testing.expect(server.run_recipe == null);
+}
+
+test "concurrent WebSocket writers preserve whole messages" {
+    var listener = try std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 0).listen(.{});
+    defer listener.deinit();
+    const peer = try std.net.tcpConnectToAddress(listener.listen_address);
+    defer peer.close();
+    const conn = try listener.accept();
+    var sender = WebSocketClient{ .stream = conn.stream, .allocator = std.testing.allocator };
+    defer sender.deinit();
+    var receiver = WebSocketClient{ .stream = peer, .allocator = std.testing.allocator };
+    const Writer = struct {
+        fn run(client: *WebSocketClient, payload: []const u8) void {
+            for (0..32) |_| client.sendText(payload) catch return;
+        }
+    };
+    const first = try std.Thread.spawn(.{}, Writer.run, .{ &sender, "alpha" ** 100 });
+    defer first.join();
+    const second = try std.Thread.spawn(.{}, Writer.run, .{ &sender, "bravo" ** 100 });
+    defer second.join();
+    var alpha_count: usize = 0;
+    var bravo_count: usize = 0;
+    for (0..64) |_| {
+        const frame = try receiver.readFrame();
+        defer std.testing.allocator.free(frame.payload);
+        try std.testing.expectEqual(WebSocketOpcode.text, frame.opcode);
+        if (std.mem.eql(u8, frame.payload, "alpha" ** 100)) {
+            alpha_count += 1;
+        } else {
+            try std.testing.expectEqualStrings("bravo" ** 100, frame.payload);
+            bravo_count += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 32), alpha_count);
+    try std.testing.expectEqual(@as(usize, 32), bravo_count);
 }

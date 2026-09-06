@@ -7,7 +7,13 @@ let reconnectAttempts = 0;
 let recipes = [];
 let selected = null;
 let taskState = {};
+// `running` identifies the recipe requested for the current execution. It is
+// deliberately separate from `activeTasks`: dependency execution may start
+// several recipes concurrently when Jake is invoked with -j.
 let running = null;
+let activeTasks = new Set();
+let runStateReady = false;
+let launchPending = null;
 let start = 0;
 let elapsedTimer = null;
 let statusResetTimer = null;
@@ -59,6 +65,10 @@ function connect() {
   ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
   ws.onopen = () => {
+    // An open socket alone does not say whether a previous browser tab still
+    // has a run in progress. The server sends an authoritative run_state after
+    // init; keep launch controls locked until it arrives.
+    runStateReady = false;
     updateConnectionStatus('connected', 'Connected');
     reconnectAttempts = 0;
   };
@@ -76,6 +86,12 @@ function connect() {
       endRun();
       renderRecipes(true);
     }
+    activeTasks.clear();
+    launchPending = null;
+    runStateReady = false;
+    // The detail panel owns the Run/Dry Run/Stop controls. Refresh it now so
+    // a disconnected tab cannot retain a visible Stop button from its old run.
+    renderDetail();
     updateConnectionStatus('disconnected', 'Disconnected');
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
     reconnectAttempts++;
@@ -112,16 +128,19 @@ function handleServerMessage(msg) {
       renderRecipes();
       if (selected && !taskState[selected]) selected = null;
       renderDetail();
-      updateConnectionStatus('connected', 'Ready');
+      updateConnectionStatus('connected', runStateReady ? 'Ready' : 'Synchronizing run state...');
+      break;
+    case 'run_state':
+      applyRunState(msg);
       break;
     case 'task_start':
-      // A run may have been started by another connected client — adopt it
-      // so this tab's status pill, timer, and buttons reflect reality.
-      if (!running) beginRun(msg.name);
       ensureTaskState(msg.name);
       taskState[msg.name].status = 'running';
       taskState[msg.name].duration = null;
-      taskState[msg.name].output = [];
+      // A task already listed in run_state can be a reconnecting task; do not
+      // erase local output in that case. Fresh task starts begin a new buffer.
+      if (!activeTasks.has(msg.name)) taskState[msg.name].output = [];
+      activeTasks.add(msg.name);
       if (selected === msg.name) renderOutput();
       appendTaskOutput(msg.name, { type: 'task', text: `${msg.name}` });
       updateRecipeStatus(msg.name);
@@ -136,6 +155,7 @@ function handleServerMessage(msg) {
       break;
     case 'task_complete':
       ensureTaskState(msg.name);
+      activeTasks.delete(msg.name);
       taskState[msg.name].status = msg.success ? 'success' : 'failed';
       taskState[msg.name].duration = msg.duration_ms;
       appendTaskOutput(msg.name, {
@@ -147,29 +167,31 @@ function handleServerMessage(msg) {
       updateStatus();
       break;
     case 'summary':
-      if (running && taskState[running]) {
-        appendTaskOutput(running, {
+      // Summary completes result reporting, but server cleanup may still be
+      // running. run_state { running: false } is the sole lock-release event.
+      const summaryTarget = msg.recipe || running;
+      if (summaryTarget && taskState[summaryTarget]) {
+        appendTaskOutput(summaryTarget, {
           type: 'info',
           text: `Summary: ${msg.tasks_run} tasks, ${msg.tasks_failed} failed, ${fmt(msg.total_ms)} total`
         });
       }
       pendingConfirm = null;
       hideConfirm();
-      endRun();
       renderDetail();
       updateStatus();
       break;
     case 'error':
-      if (running && taskState[running]) {
-        appendTaskOutput(running, { type: 'error', text: msg.message || 'Unknown error' });
-        taskState[running].status = 'failed';
-        updateRecipeStatus(running);
-        pendingConfirm = null;
-        hideConfirm();
-        endRun();
-        renderDetail();
-        updateStatus();
-      }
+      // Request errors are scoped to this socket. They must never mark an
+      // already-running execution (possibly started by another tab) as failed;
+      // task_complete remains the authoritative failure signal.
+      const errorTarget = launchPending || selected || running;
+      if (errorTarget) appendTaskOutput(errorTarget, { type: 'error', text: msg.message || 'Unknown error' });
+      launchPending = null;
+      pendingConfirm = null;
+      hideConfirm();
+      renderDetail();
+      updateStatus();
       break;
     case 'confirm':
       pendingConfirm = {
@@ -183,6 +205,37 @@ function handleServerMessage(msg) {
   }
 }
 
+function applyRunState(msg) {
+  runStateReady = true;
+  const names = Array.isArray(msg.active_tasks) ? msg.active_tasks.filter(name => typeof name === 'string') : [];
+  activeTasks = new Set(names);
+
+  if (msg.running) {
+    const recipe = typeof msg.recipe === 'string' && msg.recipe ? msg.recipe : (running || null);
+    launchPending = null;
+    if (recipe) {
+      if (running !== recipe || !elapsedTimer) {
+        beginRun(recipe, Number.isFinite(msg.started_ms) ? msg.started_ms : Date.now());
+      } else if (Number.isFinite(msg.started_ms)) {
+        start = msg.started_ms;
+      }
+    }
+    activeTasks.forEach(name => {
+      ensureTaskState(name);
+      taskState[name].status = 'running';
+      taskState[name].duration = null;
+      updateRecipeStatus(name);
+    });
+  } else {
+    launchPending = null;
+    if (running) endRun();
+    activeTasks.clear();
+  }
+
+  renderDetail();
+  updateStatus();
+}
+
 function updateConnectionStatus(state, text) {
   $('#statusDot').className = 'status-dot ' + state;
   $('#statusText').textContent = text;
@@ -192,11 +245,11 @@ function updateConnectionStatus(state, text) {
 // Run Lifecycle
 // ============================================================================
 
-function beginRun(id) {
+function beginRun(id, startedMs = Date.now()) {
   clearTimeout(statusResetTimer);
   clearStaleStatuses(id);
   running = id;
-  start = Date.now();
+  start = startedMs;
   clearInterval(elapsedTimer);
   elapsedTimer = setInterval(() => {
     $('#elapsed').textContent = fmt(Date.now() - start);
@@ -208,6 +261,10 @@ function endRun() {
   clearInterval(elapsedTimer);
   elapsedTimer = null;
   scheduleStatusReset();
+}
+
+function launchIsLocked() {
+  return !runStateReady || !!running || !!launchPending;
 }
 
 // Results from a previous run shouldn't linger: reset every finished recipe
@@ -601,7 +658,7 @@ function renderDetail() {
   // Dependencies
   if (r.deps && r.deps.length) {
     $('#detailDeps').innerHTML = `<div class="dep-list">${r.deps.map(d =>
-      `<span class="dep-badge" data-dep="${escapeHtml(d)}" role="button" tabindex="0">${escapeHtml(d)}</span>`
+      `<button type="button" class="dep-badge" data-dep="${escapeHtml(d)}">${escapeHtml(d)}</button>`
     ).join('')}</div>`;
   } else {
     $('#detailDeps').innerHTML = '<span style="color:var(--text-muted);font-style:italic">none</span>';
@@ -642,7 +699,8 @@ function renderDetail() {
   $('#runBtn').innerHTML = s.status === 'running'
     ? '<span class="spinner"></span> Running...'
     : 'Run <span class="btn-kbd">Enter</span>';
-  $('#runBtn').disabled = !!running;
+  $('#runBtn').disabled = launchIsLocked();
+  $('#dryRunBtn').disabled = launchIsLocked();
   $('#stopBtn').style.display = running ? 'inline-flex' : 'none';
 
   renderOutput();
@@ -739,15 +797,14 @@ function runSelected(dryRun = false) {
 }
 
 function runRecipe(id, dryRun = false) {
-  if (!taskState[id] || taskState[id].status === 'running' || running) return;
+  if (!taskState[id] || taskState[id].status === 'running' || launchIsLocked()) return;
 
   selectRecipe(id);
 
   const s = taskState[id];
-  s.status = 'running';
   s.duration = null;
   s.output = [];
-  beginRun(id);
+  launchPending = id;
 
   updateRecipeStatus(id);
   renderDetail();
@@ -760,6 +817,7 @@ function runRecipe(id, dryRun = false) {
   } else {
     appendTaskOutput(id, { type: 'error', text: 'Not connected to server' });
     s.status = 'failed';
+    launchPending = null;
     endRun();
     updateRecipeStatus(id);
     renderDetail();
@@ -794,6 +852,12 @@ function stopRunning() {
 function updateStatus() {
   const dot = $('#statusDot');
   const txt = $('#statusText');
+
+  if (!runStateReady) {
+    dot.className = 'status-dot disconnected';
+    txt.textContent = 'Synchronizing run state...';
+    return;
+  }
 
   if (pendingConfirm && running) {
     dot.className = 'status-dot running';

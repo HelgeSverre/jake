@@ -39,6 +39,7 @@ pub fn evaluate(
     if (std.mem.indexOf(u8, trimmed, "(")) |paren_start| {
         const func_name = trimmed[0..paren_start];
         const paren_end = std.mem.lastIndexOf(u8, trimmed, ")") orelse return ConditionError.InvalidSyntax;
+        if (paren_end <= paren_start) return ConditionError.InvalidSyntax;
 
         const args_str = trimmed[paren_start + 1 .. paren_end];
         const has_args = paren_start + 1 < paren_end;
@@ -791,4 +792,10 @@ test "command condition - with whitespace" {
     const condition = try std.fmt.bufPrint(&condition_buf, "command(  {s}  )", .{command_name});
     const result = try evaluate(condition, &variables, test_context);
     try std.testing.expect(result);
+}
+
+test "condition evaluation validates delimiter ordering" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+    try std.testing.expectError(ConditionError.InvalidSyntax, evaluate(")eq(", &variables, .{}));
 }

@@ -41,11 +41,17 @@ pub const Environment = struct {
         const owned_value = try self.allocator.dupe(u8, value);
         errdefer self.allocator.free(owned_value);
 
-        // Track allocations for cleanup
-        try self.allocated_strings.append(self.allocator, owned_key);
-        try self.allocated_strings.append(self.allocator, owned_value);
+        try self.putOwned(owned_key, owned_value);
+    }
 
-        try self.vars.put(owned_key, owned_value);
+    // Commit map and ownership bookkeeping together. Callers retain both
+    // strings on error, so no tracked pointer may refer to a freed allocation.
+    fn putOwned(self: *Environment, key: []const u8, value: []const u8) !void {
+        if (!std.unicode.wtf8ValidateSlice(key)) return error.InvalidEnvironmentKey;
+        try self.allocated_strings.ensureUnusedCapacity(self.allocator, 2);
+        try self.vars.put(key, value);
+        self.allocated_strings.appendAssumeCapacity(key);
+        self.allocated_strings.appendAssumeCapacity(value);
     }
 
     /// Get an environment variable (checks local vars first, then system env)
@@ -107,9 +113,7 @@ pub const Environment = struct {
                 const owned_key = try self.allocator.dupe(u8, key);
                 errdefer self.allocator.free(owned_key);
 
-                try self.allocated_strings.append(self.allocator, owned_key);
-                try self.allocated_strings.append(self.allocator, expanded);
-                try self.vars.put(owned_key, expanded);
+                try self.putOwned(owned_key, expanded);
             }
         }
     }
@@ -743,4 +747,23 @@ test "fuzz dotenv parsing" {
             }
         }
     }.testOne, .{});
+}
+
+fn checkEnvironmentAllocationLifecycle(allocator: std.mem.Allocator) !void {
+    var env = Environment.init(allocator);
+    defer env.deinit();
+    try env.set("name", "first");
+    try env.set("name", "second");
+    try env.parseDotenv("name=third\nother=${name}\n");
+    try std.testing.expectEqualStrings("third", env.get("other").?);
+}
+
+test "environment updates commit ownership on allocation success" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkEnvironmentAllocationLifecycle, .{});
+}
+
+test "environment storage validates system map key encoding" {
+    var env = Environment.init(std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.InvalidEnvironmentKey, env.set(&.{0xff}, "value"));
 }

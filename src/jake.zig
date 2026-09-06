@@ -53,22 +53,24 @@ pub const loadJakefile = jakefile_loader.loadJakefile;
 pub const ExternalRecipes = external.ExternalRecipes;
 pub const loadAndMergeExternalRecipes = external.loadAndMergeExternalRecipes;
 
-/// Parse a Jakefile from source
+/// Parse a Jakefile from borrowed source. Keep source alive until AST deinit.
 pub fn parse(allocator: std.mem.Allocator, source: []const u8) !Jakefile {
     var lex = Lexer.init(source);
     var p = Parser.init(allocator, &lex);
     return p.parseJakefile();
 }
 
-/// Load and parse a Jakefile from disk
+/// Load an owning AST from disk. Jakefile.deinit releases the source too.
 pub fn load(allocator: std.mem.Allocator, path: []const u8) !Jakefile {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
     const source = try file.readToEndAlloc(allocator, 1024 * 1024); // 1MB max
-    defer allocator.free(source);
+    errdefer allocator.free(source);
 
-    return parse(allocator, source);
+    var result = try parse(allocator, source);
+    result.owns_source = true;
+    return result;
 }
 
 // Reference all sub-modules so their tests are discovered
@@ -126,4 +128,22 @@ test "basic lexer tokenizes Jakefile syntax" {
     try std.testing.expectEqual(lexer.Token.Tag.newline, tokens[1].tag);
     try std.testing.expectEqual(lexer.Token.Tag.ident, tokens[2].tag);
     try std.testing.expectEqual(lexer.Token.Tag.equals, tokens[3].tag);
+}
+
+fn checkLoadedSourceLifecycle(allocator: std.mem.Allocator, path: []const u8) !void {
+    var ast = try load(allocator, path);
+    defer ast.deinit(allocator);
+    try std.testing.expect(ast.owns_source);
+    try std.testing.expectEqualStrings("hello", ast.recipes[0].name);
+    try std.testing.expectEqualStrings("echo hello", ast.recipes[0].commands[0].line);
+    try std.testing.expect(std.mem.indexOf(u8, ast.source, "task hello:") != null);
+}
+
+test "library load owns source across complete allocation lifecycle" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "Jakefile", .data = "task hello:\n    echo hello\n" });
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, "Jakefile");
+    defer std.testing.allocator.free(path);
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkLoadedSourceLifecycle, .{path});
 }

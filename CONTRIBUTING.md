@@ -89,12 +89,17 @@ jake e2e             # E2E tests only
 jake fuzz            # Fuzz testing
 ```
 
-The unit suite also runs deterministic fuzz seeds and a bounded parser/formatter
-lifecycle stress test (256 recipes, eight iterations) with allocator leak checks.
-Use `./scripts/zig build test` to select a compatible Zig toolchain. `jake fuzz`
-starts the longer coverage-guided campaign; stop it when your time budget expires.
-See [the initial quality review](docs/QUALITY_REVIEW.md) for findings and the next
-allocation-failure, execution-state and web UI coverage priorities.
+The unit suite runs deterministic fuzz seeds, semantic parse/format comparisons,
+allocation-failure sweeps for parsing/loading/imports/formatting, repeated watch
+reloads, and WebSocket ownership/write stress. Use `./scripts/zig build test` to
+select a compatible Zig toolchain. Run `node tests/webui_state_test.js` for the
+browser state tests (also run in CI). `jake e2e` exercises repeated Web UI runs,
+reconnects, confirmation and cancellation with sequential and parallel workers.
+
+`jake fuzz` compiles only fuzz targets with LLVM coverage instrumentation and starts the longer coverage-guided campaign; stop it when your time
+budget expires. Run the unit, E2E and fuzz suites separately because existing
+fixtures and cache paths are shared. See [the quality review](docs/QUALITY_REVIEW.md)
+for the fixes, coverage and validation limits.
 
 ## Code Style
 

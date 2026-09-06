@@ -15,6 +15,7 @@ pub fn evaluate(allocator: std.mem.Allocator, call: []const u8, variables: *cons
     // Parse function name and arguments
     const paren_start = std.mem.indexOfScalar(u8, call, '(') orelse return FunctionError.InvalidArguments;
     const paren_end = std.mem.lastIndexOfScalar(u8, call, ')') orelse return FunctionError.InvalidArguments;
+    if (paren_end <= paren_start) return FunctionError.InvalidArguments;
 
     const func_name = std.mem.trim(u8, call[0..paren_start], " \t");
     const args_str = call[paren_start + 1 .. paren_end];
@@ -762,4 +763,10 @@ test "fuzz function evaluation" {
             }
         }
     }.testOne, .{});
+}
+
+test "function evaluation validates delimiter ordering" {
+    var variables = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer variables.deinit();
+    try std.testing.expectError(FunctionError.InvalidArguments, evaluate(std.testing.allocator, ")uppercase(", &variables));
 }

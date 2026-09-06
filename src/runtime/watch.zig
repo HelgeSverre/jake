@@ -189,6 +189,7 @@ pub const Watcher = struct {
             }
         }
         const duped = try self.allocator.dupe(u8, pattern);
+        errdefer self.allocator.free(duped);
         try self.watch_patterns.append(self.allocator, duped);
     }
 
@@ -1001,19 +1002,16 @@ test "watcher reloads automatic patterns after jakefile change" {
     try watcher.configureAutomaticPatterns("build");
     try std.testing.expectEqualStrings("src/*.zig", watcher.watch_patterns.items[1]);
 
-    try tmp_dir.dir.writeFile(.{
-        .sub_path = "Jakefile",
-        .data =
-        \\file build: lib/*.zig
-        \\    echo "build"
-        ,
-    });
-
-    try watcher.reloadConfiguration("build");
-
-    try std.testing.expectEqual(@as(usize, 2), watcher.watch_patterns.items.len);
-    try std.testing.expectEqualStrings("Jakefile", watcher.watch_patterns.items[0]);
-    try std.testing.expectEqualStrings("lib/*.zig", watcher.watch_patterns.items[1]);
+    for (0..16) |i| {
+        const pattern = if (i % 2 == 0) "lib/*.zig" else "src/*.zig";
+        const updated = try std.fmt.allocPrint(std.testing.allocator, "file build: {s}\n    echo build\n", .{pattern});
+        defer std.testing.allocator.free(updated);
+        try tmp_dir.dir.writeFile(.{ .sub_path = "Jakefile", .data = updated });
+        try watcher.reloadConfiguration("build");
+        try std.testing.expectEqual(@as(usize, 2), watcher.watch_patterns.items.len);
+        try std.testing.expectEqualStrings("Jakefile", watcher.watch_patterns.items[0]);
+        try std.testing.expectEqualStrings(pattern, watcher.watch_patterns.items[1]);
+    }
 }
 
 test "watcher detects deleted files and reappearance once" {

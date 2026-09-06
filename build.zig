@@ -218,9 +218,18 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
-    // Dedicated fuzz step - only runs module tests (which contain all fuzz tests)
+    // Compile only fuzz targets: normal unit tests include filesystem/process
+    // fixtures and should not be rerun as campaign startup work.
     // Use: zig build fuzz --fuzz
-    const run_fuzz_tests = b.addRunArtifact(mod_tests);
+    const fuzz_filter = b.option([]const u8, "fuzz-filter", "Select fuzz targets by test-name substring") orelse "fuzz";
+    const fuzz_tests = b.addTest(.{
+        .root_module = mod,
+        .filters = &.{fuzz_filter},
+        // Zig's built-in fuzzer requires LLVM coverage instrumentation. The
+        // self-hosted backend can emit an empty PC table and crash Fuzz.zig.
+        .use_llvm = true,
+    });
+    const run_fuzz_tests = b.addRunArtifact(fuzz_tests);
     const fuzz_step = b.step("fuzz", "Run fuzz tests (use with --fuzz flag)");
     fuzz_step.dependOn(&run_fuzz_tests.step);
 
