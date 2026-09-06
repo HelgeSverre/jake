@@ -89,6 +89,13 @@ jake e2e             # E2E tests only
 jake fuzz            # Fuzz testing
 ```
 
+The unit suite also runs deterministic fuzz seeds and a bounded parser/formatter
+lifecycle stress test (256 recipes, eight iterations) with allocator leak checks.
+Use `./scripts/zig build test` to select a compatible Zig toolchain. `jake fuzz`
+starts the longer coverage-guided campaign; stop it when your time budget expires.
+See [the initial quality review](docs/QUALITY_REVIEW.md) for findings and the next
+allocation-failure, execution-state and web UI coverage priorities.
+
 ## Code Style
 
 - Follow Zig's standard style

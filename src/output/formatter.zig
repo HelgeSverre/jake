@@ -2213,15 +2213,47 @@ test "fuzz formatter round-trip" {
 
             // Round-trip: format the formatted output
             // This should always succeed and produce the same output (idempotent)
-            const result2 = format(allocator, result1.output) catch {
-                // If first format succeeded, second should too
-                // This would indicate a bug
-                return;
-            };
+            const result2 = try format(allocator, result1.output);
             defer allocator.free(result2.output);
 
-            // Formatting should be idempotent - formatting twice should give same result
-            // (result2.changed should be false, meaning no changes were made)
+            try std.testing.expectEqualStrings(result1.output, result2.output);
+            try std.testing.expect(!result2.changed);
         }
-    }.testOne, .{});
+    }.testOne, .{ .corpus = &.{
+        "",
+        "name=\"world\"\n\ntask hello:\n    echo {{name}}\n",
+        "# build\n@default\ntask build: [prepare]\n    echo build\n\ntask prepare:\n    echo ready\n",
+        "@rooted\n@import \"lib.jake\" as lib\n",
+    } });
+}
+
+test "stress structured parser and formatter lifecycle" {
+    const allocator = std.testing.allocator;
+    var source: std.ArrayListUnmanaged(u8) = .empty;
+    defer source.deinit(allocator);
+    // Exercise list growth and repeated teardown with valid syntax. Check AST
+    // contents as well as textual stability: idempotence alone can miss loss.
+    for (0..256) |i| {
+        try source.writer(allocator).print("task recipe_{d}:\n    echo value_{d}\n\n", .{ i, i });
+    }
+    for (0..8) |_| {
+        const formatted = try format(allocator, source.items);
+        defer allocator.free(formatted.output);
+        var lex = lexer.Lexer.init(formatted.output);
+        var p = parser.Parser.init(allocator, &lex);
+        var ast = try p.parseJakefile();
+        defer ast.deinit(allocator);
+        try std.testing.expectEqual(@as(usize, 256), ast.recipes.len);
+        for (ast.recipes, 0..) |recipe, i| {
+            var name_buf: [64]u8 = undefined;
+            var command_buf: [64]u8 = undefined;
+            try std.testing.expectEqualStrings(try std.fmt.bufPrint(&name_buf, "recipe_{d}", .{i}), recipe.name);
+            try std.testing.expectEqual(@as(usize, 1), recipe.commands.len);
+            try std.testing.expectEqualStrings(try std.fmt.bufPrint(&command_buf, "echo value_{d}", .{i}), recipe.commands[0].line);
+        }
+        const second = try format(allocator, formatted.output);
+        defer allocator.free(second.output);
+        try std.testing.expectEqualStrings(formatted.output, second.output);
+        try std.testing.expect(!second.changed);
+    }
 }

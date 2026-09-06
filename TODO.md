@@ -429,7 +429,9 @@ For edge cases requiring containerized builds.
 ### Quality & Testing
 
 - [ ] Benchmarks suite (track performance over time)
-- [ ] Property-based/generative tests (structured fuzzing)
+- [x] Initial lexer/formatter fuzz invariants and structured lifecycle stress (1,143 module tests passed, one skipped; 11 fuzz targets)
+- [ ] Broader property-based/generative tests (structured fuzzing)
+- [ ] Resolve ownership and web UI state findings in [initial quality review](docs/QUALITY_REVIEW.md)
 - [ ] Integration test suite with real-world Jakefiles
 - [ ] Regression test for each bug fix
 

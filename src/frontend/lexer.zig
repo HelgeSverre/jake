@@ -1369,9 +1369,20 @@ test "fuzz lexer tokenization" {
     try std.testing.fuzz({}, struct {
         fn testOne(_: void, input: []const u8) !void {
             var lex = Lexer.init(input);
-            while (lex.next().tag != .eof) {
-                // Consume all tokens - should not crash on any input
+            var previous_end: usize = 0;
+            var remaining = input.len;
+            while (true) {
+                const token = lex.next();
+                try std.testing.expect(token.loc.start >= previous_end);
+                try std.testing.expect(token.loc.end >= token.loc.start);
+                try std.testing.expect(token.loc.end <= input.len);
+                if (token.tag == .eof) break;
+                // Every non-EOF token must consume source, bounding execution.
+                try std.testing.expect(token.loc.end > token.loc.start);
+                try std.testing.expect(remaining > 0);
+                remaining -= 1;
+                previous_end = token.loc.end;
             }
         }
-    }.testOne, .{});
+    }.testOne, .{ .corpus = &.{ "", "task hello:\n    echo hello\n", "\t# comment\r\n", "name = \"hello\"\n" } });
 }
