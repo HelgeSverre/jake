@@ -273,7 +273,7 @@
         },
         {
           "name": "keyword.control.directive.jake",
-          "match": "^\\s*@(?:quiet|ignore)\\b"
+          "match": "^\\s*@(?:quiet|silent|ignore)\\b"
         },
         {
           "name": "meta.directive.platform.jake",

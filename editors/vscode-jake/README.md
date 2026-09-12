@@ -21,7 +21,7 @@ Part of the [Jake](https://github.com/HelgeSverre/jake) task runner project.
 The extension provides highlighting for:
 
 - **Keywords**: `task`, `file`, `import`, `as`
-- **Directives**: `@if`, `@else`, `@each`, `@end`, `@needs`, `@require`, `@cache`, `@watch`, `@confirm`, `@group`, `@desc`, `@alias`, `@quiet`, `@ignore`, `@platform`, `@cd`, `@shell`, `@export`, `@pre`, `@post`, `@before`, `@after`, `@on_error`
+- **Directives**: `@if`, `@else`, `@each`, `@end`, `@needs`, `@require`, `@cache`, `@watch`, `@confirm`, `@group`, `@desc`, `@alias`, `@quiet`, `@silent`, `@ignore`, `@platform`, `@cd`, `@shell`, `@export`, `@pre`, `@post`, `@before`, `@after`, `@on_error`
 - **Variables**: `{{variable}}`, `{{function(arg)}}`, `$VAR`, `${VAR}`, `$1`, `$@`
 - **Functions**: `dirname()`, `basename()`, `extension()`, `uppercase()`, `lowercase()`, `trim()`, `home()`, `env()`, `exists()`, `eq()`, `neq()`
 - **Strings**: Double and single quoted strings with escape sequences

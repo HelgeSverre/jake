@@ -342,6 +342,7 @@ Appear before a recipe definition to set metadata.
 | `@desc`     | Recipe description              | `@desc "Build the project"` |
 | `@alias`    | Alternative recipe names        | `@alias b`                  |
 | `@quiet`    | Suppress command echoing        | `@quiet`                    |
+| `@silent`   | Suppress jake's status chrome   | `@silent`                   |
 | `@hidden`   | Hide from recipe listings       | `@hidden`                   |
 | `@platform` | OS-specific recipe              | `@platform macos linux`     |
 | `@needs`    | Require commands (recipe-level) | `@needs docker kubectl`     |
@@ -576,7 +577,7 @@ For implementers, here are the raw token tags from Jake's lexer:
 - `kw_export`, `kw_cd`, `kw_shell`, `kw_ignore`
 - `kw_group`, `kw_desc`, `kw_description`
 - `kw_only`, `kw_only_os`, `kw_platform`
-- `kw_alias`, `kw_quiet`
+- `kw_alias`, `kw_quiet`, `kw_silent`
 
 ### Literals
 

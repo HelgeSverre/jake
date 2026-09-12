@@ -68,9 +68,22 @@ Placed immediately before a recipe definition (no blank lines between).
 | `@group name`       | Group recipes together in `jake --list` output               |
 | `@platform os...`   | Only register this recipe on the specified OS(es)            |
 | `@quiet`            | Suppress command echoing for this recipe                     |
+| `@silent`           | Suppress jake's own status output for this recipe            |
 | `@hidden`           | Hide from `jake --list` (same as `_` name prefix)            |
 | `@timeout duration` | Kill the recipe if it runs longer than `duration`            |
 | `@needs cmd...`     | Require commands to exist in PATH before running             |
+
+### @silent
+
+Hides jake's own status chrome for a recipe: the `→ name` start line, the `✓ name <time>` completion line, and — when it is the requested recipe — the `Successfully ran N tasks / Total time` footer. The recipe's stdout/stderr, error diagnostics, and exit code are unaffected.
+
+```jake
+@silent
+task help:
+    cat docs/usage.txt
+```
+
+`@silent` also implies `@quiet`, so it suppresses `-v` command echoing for that recipe. Use the `--silent` CLI flag (or `JAKE_SILENT=1`) to apply the same suppression to an entire run, including dependencies. `--silent` keeps errors and recipe output; it is not a substitute for redirecting stdout.
 
 ### @timeout
 
@@ -215,4 +228,4 @@ task build:
     npm run build                 # echoed normally
 ```
 
-This is distinct from the `@quiet` recipe modifier, which suppresses echoing for all commands in the recipe.
+This is distinct from the `@quiet` recipe modifier, which suppresses echoing for all commands in the recipe, and from `@silent`, which additionally hides jake's own status lines for the recipe.

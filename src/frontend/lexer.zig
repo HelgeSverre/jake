@@ -50,6 +50,7 @@ pub const Token = struct {
         kw_platform,
         kw_alias,
         kw_quiet,
+        kw_silent,
         kw_hidden,
         kw_timeout,
         kw_launch,
@@ -406,6 +407,8 @@ pub const Lexer = struct {
             .kw_alias
         else if (std.mem.eql(u8, text, "quiet"))
             .kw_quiet
+        else if (std.mem.eql(u8, text, "silent"))
+            .kw_silent
         else if (std.mem.eql(u8, text, "hidden"))
             .kw_hidden
         else if (std.mem.eql(u8, text, "timeout"))
@@ -604,7 +607,7 @@ test "lexer tab column tracking" {
 // --- Token Types: All Keywords ---
 
 test "lexer all keywords" {
-    const source = "task file default if elif else end import as dotenv require watch cache needs confirm each pre post export cd shell ignore group desc platform alias quiet timeout launch";
+    const source = "task file default if elif else end import as dotenv require watch cache needs confirm each pre post export cd shell ignore group desc platform alias quiet silent timeout launch";
     var lex = Lexer.init(source);
 
     try std.testing.expectEqual(Token.Tag.kw_task, lex.next().tag);
@@ -634,6 +637,7 @@ test "lexer all keywords" {
     try std.testing.expectEqual(Token.Tag.kw_platform, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_alias, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_quiet, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.kw_silent, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_timeout, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.kw_launch, lex.next().tag);
     try std.testing.expectEqual(Token.Tag.eof, lex.next().tag);
@@ -1274,6 +1278,16 @@ test "lexer quiet keyword" {
     const tok = lex.next();
     try std.testing.expectEqual(Token.Tag.kw_quiet, tok.tag);
     try std.testing.expectEqualStrings("quiet", tok.slice(source));
+}
+
+test "lexer silent keyword" {
+    const source = "@silent";
+    var lex = Lexer.init(source);
+
+    try std.testing.expectEqual(Token.Tag.at, lex.next().tag);
+    const tok = lex.next();
+    try std.testing.expectEqual(Token.Tag.kw_silent, tok.tag);
+    try std.testing.expectEqualStrings("silent", tok.slice(source));
 }
 
 test "lexer new keywords as identifiers with suffix" {

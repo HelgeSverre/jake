@@ -25,6 +25,7 @@ pub const Context = struct {
     // CLI flags
     dry_run: bool = false,
     verbose: bool = false,
+    silent: bool = false, // Suppress jake's own status chrome (--silent / JAKE_SILENT)
     auto_yes: bool = false,
     watch_mode: bool = false,
     jobs: usize = 0, // 0 = sequential, >0 = parallel with N workers
@@ -254,6 +255,7 @@ test "Context.init creates default context" {
     const ctx = Context.init();
     try std.testing.expect(!ctx.dry_run);
     try std.testing.expect(!ctx.verbose);
+    try std.testing.expect(!ctx.silent);
     try std.testing.expect(!ctx.auto_yes);
     try std.testing.expect(!ctx.watch_mode);
     try std.testing.expect(ctx.allow_interactive_stdin);
@@ -265,10 +267,12 @@ test "Context fields can be set" {
     var ctx = Context.init();
     ctx.dry_run = true;
     ctx.verbose = true;
+    ctx.silent = true;
     ctx.allow_interactive_stdin = false;
     ctx.jobs = 4;
     try std.testing.expect(ctx.dry_run);
     try std.testing.expect(ctx.verbose);
+    try std.testing.expect(ctx.silent);
     try std.testing.expect(!ctx.allow_interactive_stdin);
     try std.testing.expectEqual(@as(usize, 4), ctx.jobs);
 }

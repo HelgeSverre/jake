@@ -1148,6 +1148,19 @@
           "members": [
             {
               "type": "STRING",
+              "value": "@silent"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_newline"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
               "value": "@platform"
             },
             {

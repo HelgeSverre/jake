@@ -40,6 +40,7 @@ name, interspersed with recipe arguments (clap-style). `jake build -v`,
 | `--all`                 | `-a`  | Show all recipes including hidden                             |
 | `--dry-run`             | `-n`  | Print commands without executing                              |
 | `--verbose`             | `-v`  | Show verbose output                                           |
+| `--silent`              |       | Suppress jake's own status output (errors still shown)        |
 | `--yes`                 | `-y`  | Auto-confirm all `@confirm` prompts                           |
 | `--jakefile PATH`       | `-f`  | Use specified Jakefile                                        |
 | `--watch [PATTERN]`     | `-w`  | Watch and re-run on changes                                   |
@@ -77,6 +78,10 @@ jake --list --all
 
 # Run with verbose output
 jake test --verbose
+
+# Suppress jake's own status output (keeps recipe output and errors)
+jake --silent help
+JAKE_SILENT=1 jake help
 
 # Pass parameters
 jake deploy env=production

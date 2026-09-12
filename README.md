@@ -116,6 +116,7 @@ OPTIONS:
       --no-external       Hide external recipes
   -n, --dry-run           Print without executing
   -v, --verbose           Verbose output
+      --silent            Suppress jake's own status output (errors still shown)
   -y, --yes               Auto-confirm prompts
   -f, --jakefile FILE     Use specified Jakefile
   -w, --watch             Watch and re-run on changes

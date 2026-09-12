@@ -16,7 +16,6 @@ const prompt_mod = @import("../output/prompt.zig");
 const functions = @import("functions.zig");
 const glob_mod = @import("../util/glob.zig");
 const color_mod = @import("../output/color.zig");
-const progress_mod = @import("../output/progress.zig");
 const context_mod = @import("context.zig");
 const RuntimeContext = context_mod.RuntimeContext;
 const Context = context_mod.Context;
@@ -99,6 +98,7 @@ pub const Executor = struct {
     exec_start_time: i128, // Start time of entire execution
     tasks_run: usize, // Number of tasks successfully executed
     tasks_failed: usize, // Number of tasks that failed
+    suppress_summary: bool, // Skip success footer when --silent or the target recipe is @silent
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile) !Executor {
         const owned_index = try allocator.create(JakefileIndex);
@@ -152,6 +152,7 @@ pub const Executor = struct {
             .exec_start_time = 0,
             .tasks_run = 0,
             .tasks_failed = 0,
+            .suppress_summary = false,
         };
     }
 
@@ -249,6 +250,7 @@ pub const Executor = struct {
             .exec_start_time = 0,
             .tasks_run = 0,
             .tasks_failed = 0,
+            .suppress_summary = false,
         };
     }
 
@@ -804,6 +806,10 @@ pub const Executor = struct {
         self.exec_start_time = std.time.nanoTimestamp();
         self.tasks_run = 0;
         self.tasks_failed = 0;
+        // Suppress the success footer when the whole run is --silent or the
+        // requested recipe opted out with @silent. Failure output is always kept.
+        self.suppress_summary = self.ctx.silent or
+            if (self.index.getRecipe(name)) |recipe| recipe.silent else false;
 
         // Use parallel execution if jobs > 1
         if (self.ctx.jobs > 1) {
@@ -836,12 +842,13 @@ pub const Executor = struct {
 
         parallel_exec.dry_run = self.ctx.dry_run;
         parallel_exec.verbose = self.ctx.verbose;
+        parallel_exec.suppress_summary = self.suppress_summary;
 
         // Build dependency graph
         try parallel_exec.buildGraph(name);
 
         // Show parallelism stats in verbose mode (v4: muted prefix)
-        if (self.ctx.verbose) {
+        if (self.ctx.verbose and !self.suppress_summary) {
             const stats = parallel_exec.getParallelismStats();
             self.print("   {s}jake: parallel execution with {d} threads{s}\n", .{ self.color.muted(), self.ctx.jobs, self.color.reset() });
             self.print("   {s}jake: {d} recipes, max {d} parallel, critical path length {d}{s}\n", .{ self.color.muted(), stats.total_recipes, stats.max_parallel, stats.critical_path_length, self.color.reset() });
@@ -928,7 +935,7 @@ pub const Executor = struct {
         if (recipe.kind == .file) {
             const needs_run = self.checkFileTarget(recipe) catch true;
             if (!needs_run) {
-                if (self.ctx.verbose) {
+                if (self.ctx.verbose and !self.ctx.silent and !recipe.silent) {
                     self.print("   {s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), name, self.color.reset() });
                 }
                 self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
@@ -941,24 +948,27 @@ pub const Executor = struct {
         // Run the recipe - capture start time for duration display
         const start_time = std.time.nanoTimestamp();
 
+        const chrome_suppressed = self.ctx.silent or recipe.silent;
+
         // v4: simple header format (spinner disabled due to output interleaving issues)
-        var spinner: ?progress_mod.Spinner = null;
-        if (self.ctx.dry_run) {
-            // Dry-run: use ○ symbol
-            self.print("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(name) });
-        } else {
-            // Execution: use → header with 3-space indent (matches status line)
-            self.print("   {s}→{s} {s}\n", .{ self.color.jakeRose(), self.color.reset(), name });
+        if (!chrome_suppressed) {
+            if (self.ctx.dry_run) {
+                // Dry-run: use ○ symbol
+                self.print("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(name) });
+            } else {
+                // Execution: use → header with 3-space indent (matches status line)
+                self.print("   {s}→{s} {s}\n", .{ self.color.jakeRose(), self.color.reset(), name });
+            }
         }
 
         self.executeRecipeBody(name, recipe) catch |err| {
-            self.stopSpinnerOrPrintStatus(&spinner, name, false, start_time);
+            self.printCompletionStatus(name, false, start_time, false);
             self.tasks_failed += 1;
             return err;
         };
 
-        // Success - stop spinner and print completion
-        self.stopSpinnerOrPrintStatus(&spinner, name, true, start_time);
+        // Success - print completion (failure chrome is kept regardless)
+        self.printCompletionStatus(name, true, start_time, chrome_suppressed);
         self.tasks_run += 1;
         const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
         self.emitTaskComplete(name, true, duration_ms);
@@ -1013,7 +1023,9 @@ pub const Executor = struct {
                 }
             }
         }
-        self.current_quiet = recipe.quiet;
+        // @silent implies @quiet: silence command echo too. A run-wide --silent
+        // acts the same as @quiet on every recipe.
+        self.current_quiet = self.ctx.silent or recipe.quiet or recipe.silent;
 
         // Bind recipe parameters to variables
         self.bindRecipeParams(recipe) catch |err| {
@@ -2208,23 +2220,33 @@ pub const Executor = struct {
         const total_time_ns = std.time.nanoTimestamp() - self.exec_start_time;
         const total_time_ms = @divFloor(total_time_ns, 1_000_000);
         const total_time_s = @as(f64, @floatFromInt(total_time_ms)) / 1000.0;
+        const suppressed = self.suppress_summary;
 
         // Don't print summary in dry-run mode or if no tasks ran
         if (self.ctx.dry_run) {
             // Print dry-run summary
             const total = self.tasks_run + self.tasks_failed;
             if (total > 0) {
-                stderr.writeAll("\n") catch {};
-                var buf: [128]u8 = undefined;
-                const msg = std.fmt.bufPrint(&buf, "   {d} task{s} would run\n", .{ total, if (total == 1) "" else "s" }) catch return;
-                stderr.writeAll(msg) catch {};
                 self.emitExecutionSummary(total, 0, @intCast(total_time_ms));
+                if (!suppressed) {
+                    stderr.writeAll("\n") catch {};
+                    var buf: [128]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "   {d} task{s} would run\n", .{ total, if (total == 1) "" else "s" }) catch return;
+                    stderr.writeAll(msg) catch {};
+                }
             }
             return;
         }
 
         const total_tasks = self.tasks_run + self.tasks_failed;
         if (total_tasks == 0) return;
+
+        // Success chrome is skipped under --silent/@silent; failure chrome is
+        // always kept. The web-UI event is emitted either way.
+        if (self.tasks_failed == 0 and suppressed) {
+            self.emitExecutionSummary(total_tasks, self.tasks_failed, @intCast(total_time_ms));
+            return;
+        }
 
         stderr.writeAll("\n") catch {};
 
@@ -2300,25 +2322,18 @@ pub const Executor = struct {
         } });
     }
 
-    /// Stop spinner (if running) and print completion status
-    /// Used for animated spinner mode - stops the animation thread and prints final status
-    fn stopSpinnerOrPrintStatus(self: *Executor, spinner: *?progress_mod.Spinner, name: []const u8, success: bool, start_time: i128) void {
+    /// Print a recipe's completion status line.
+    /// Failure chrome is always kept; success chrome is skipped under --silent/@silent.
+    fn printCompletionStatus(self: *Executor, name: []const u8, success: bool, start_time: i128, suppress_success: bool) void {
         // In dry-run mode, don't print completion line (tasks don't actually run)
-        if (self.ctx.dry_run) {
-            return;
-        }
+        if (self.ctx.dry_run) return;
+        if (success and suppress_success) return;
 
-        const end_time = std.time.nanoTimestamp();
-        const duration_ns = end_time - start_time;
+        const duration_ns = std.time.nanoTimestamp() - start_time;
 
-        if (spinner.*) |*s| {
-            s.stop(success, duration_ns);
-            spinner.* = null;
-        } else {
-            // Non-TTY: blank line before status for visual separation from command output
-            compat.getStdErr().writeAll("\n") catch {};
-            self.printCompletionStatusWithDuration(name, success, duration_ns);
-        }
+        // Non-TTY: blank line before status for visual separation from command output
+        compat.getStdErr().writeAll("\n") catch {};
+        self.printCompletionStatusWithDuration(name, success, duration_ns);
     }
 
     /// Print completion status with pre-computed duration (for use with spinner)

@@ -1492,6 +1492,10 @@
     "named": false
   },
   {
+    "type": "@silent",
+    "named": false
+  },
+  {
     "type": "@timeout",
     "named": false
   },

@@ -236,6 +236,23 @@ task test-directives:
     grep -q "command exited with code 1" {{out}} && ! grep -q "exceeded timeout" {{out}}
     rm -f /tmp/jake-timeout-failure.jake
     echo "  @timeout does not misreport normal failures ........... PASS"
+    # @silent hides jake's chrome but keeps the recipe's own output
+    {{jake}} -f fixtures/directives/silent.jake help > {{out}} 2>&1
+    grep -q "HELP BODY" {{out}} && ! grep -q "Successfully ran" {{out}} && ! grep -q "Total time" {{out}}
+    echo "  @silent keeps recipe output, hides chrome ............. PASS"
+    # --silent hides chrome run-wide
+    {{jake}} -f fixtures/directives/silent.jake --silent normal > {{out}} 2>&1
+    grep -q "NORMAL BODY" {{out}} && ! grep -q "Successfully ran" {{out}}
+    echo "  --silent keeps recipe output, hides chrome ............ PASS"
+    # JAKE_SILENT=1 behaves like --silent
+    JAKE_SILENT=1 {{jake}} -f fixtures/directives/silent.jake normal > {{out}} 2>&1
+    grep -q "NORMAL BODY" {{out}} && ! grep -q "Successfully ran" {{out}}
+    echo "  JAKE_SILENT=1 hides chrome ............................ PASS"
+    # @silent still surfaces failures and preserves the exit code
+    @ignore
+    {{jake}} -f fixtures/directives/silent.jake failing > {{out}} 2>&1 || true
+    grep -q "FAIL BODY" {{out}} && grep -q "Failed to run" {{out}} && grep -q "command exited with code 1" {{out}} && ! grep -q "Successfully ran" {{out}}
+    echo "  @silent keeps failure output and errors ............... PASS"
 
 # ============================================================================
 # Signal Tests

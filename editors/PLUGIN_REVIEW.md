@@ -245,7 +245,7 @@ To maintain consistency, all plugins should recognize these elements:
 
 **Recipe attributes (before recipe):**
 
-- `@group`, `@desc`, `@alias`, `@quiet`
+- `@group`, `@desc`, `@alias`, `@quiet`, `@silent`
 - `@platform`
 - `@needs` (with hint/fallback variants)
 

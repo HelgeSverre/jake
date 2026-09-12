@@ -58,6 +58,7 @@ pub const ParallelExecutor = struct {
     thread_count: usize,
     dry_run: bool,
     verbose: bool,
+    suppress_summary: bool = false, // Skip success footer when --silent or the target recipe is @silent
     cache: cache_mod.Cache,
     owns_cache: bool, // When false, caller is responsible for saving/merging
     color: color_mod.Color,
@@ -467,7 +468,7 @@ pub const ParallelExecutor = struct {
         if (recipe.kind == .file) {
             const needs_run = self.checkFileTarget(recipe) catch true;
             if (!needs_run) {
-                if (self.verbose) {
+                if (self.verbose and !self.ctx.silent and !recipe.silent) {
                     self.printSynchronized("{s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), recipe.name, self.color.reset() });
                 }
                 const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
@@ -482,11 +483,14 @@ pub const ParallelExecutor = struct {
 
         // Print recipe header and capture start time
         const start_time = std.time.nanoTimestamp();
-        if (self.dry_run) {
-            // v4 format: use ○ for dry-run (no completion line)
-            self.printSynchronized("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(recipe.name) });
-        } else {
-            self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
+        const chrome_suppressed = self.ctx.silent or recipe.silent;
+        if (!chrome_suppressed) {
+            if (self.dry_run) {
+                // v4 format: use ○ for dry-run (no completion line)
+                self.printSynchronized("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(recipe.name) });
+            } else {
+                self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
+            }
         }
 
         if (!self.executeRecipeWithWorker(recipe)) {
@@ -517,7 +521,8 @@ pub const ParallelExecutor = struct {
             }
         }
 
-        if (!self.dry_run) {
+        // Failure chrome is always kept; success chrome is skipped under --silent/@silent.
+        if (!self.dry_run and !chrome_suppressed) {
             self.printCompletionStatus(recipe.name, true, start_time);
         }
         self.incrementTasksRun();
@@ -789,27 +794,41 @@ pub const ParallelExecutor = struct {
         const total_time_ns = std.time.nanoTimestamp() - self.exec_start_time;
         const total_time_ms = @divFloor(total_time_ns, 1_000_000);
         const total_time_s = @as(f64, @floatFromInt(total_time_ms)) / 1000.0;
+        const suppressed = self.suppress_summary;
 
         // Don't print summary in dry-run mode or if no tasks ran
         if (self.dry_run) {
             // Print dry-run summary
             const total = self.tasks_run + self.tasks_failed;
             if (total > 0) {
-                stderr.writeAll("\n") catch {};
-                var buf: [128]u8 = undefined;
-                const msg = std.fmt.bufPrint(&buf, "   {d} task{s} would run\n", .{ total, if (total == 1) "" else "s" }) catch return;
-                stderr.writeAll(msg) catch {};
                 self.ctx.emitEvent(.{ .execution_summary = .{
                     .tasks_run = total,
                     .tasks_failed = 0,
                     .total_ms = @intCast(total_time_ms),
                 } });
+                if (!suppressed) {
+                    stderr.writeAll("\n") catch {};
+                    var buf: [128]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "   {d} task{s} would run\n", .{ total, if (total == 1) "" else "s" }) catch return;
+                    stderr.writeAll(msg) catch {};
+                }
             }
             return;
         }
 
         const total_tasks = self.tasks_run + self.tasks_failed;
         if (total_tasks == 0) return;
+
+        // Success chrome is skipped under --silent/@silent; failure chrome is
+        // always kept. The web-UI event is emitted either way.
+        if (self.tasks_failed == 0 and suppressed) {
+            self.ctx.emitEvent(.{ .execution_summary = .{
+                .tasks_run = total_tasks,
+                .tasks_failed = self.tasks_failed,
+                .total_ms = @intCast(total_time_ms),
+            } });
+            return;
+        }
 
         stderr.writeAll("\n") catch {};
 

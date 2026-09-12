@@ -296,6 +296,7 @@ pub fn main() !void {
     var ctx = jake.Context{
         .dry_run = args.dry_run,
         .verbose = args.verbose,
+        .silent = args.silent,
         .watch_mode = args.watch_enabled,
         .auto_yes = args.yes,
         .jobs = args.jobs orelse 0,

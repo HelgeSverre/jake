@@ -29,7 +29,8 @@ pub const Recipe = struct {
     shell: ?[]const u8, // Shell to use (e.g., "bash", "zsh", "powershell")
     working_dir: ?[]const u8, // Working directory for recipe execution
     only_os: []const []const u8, // List of OSes this recipe runs on (e.g., ["linux", "macos"])
-    quiet: bool, // Suppress command echoing for this recipe
+    quiet: bool, // Suppress command echoing for this recipe (@quiet)
+    silent: bool = false, // Suppress jake's own status chrome for this recipe (@silent)
     hidden: bool, // Hide from recipe listings (alternative to _ prefix)
     needs: []const NeedsRequirement, // Recipe-level command requirements
     requires: []const []const u8 = &.{}, // Recipe-level required env vars (@require before the recipe)
@@ -359,6 +360,7 @@ pub const Parser = struct {
     pending_description: ?[]const u8,
     pending_only_os: std.ArrayListUnmanaged([]const u8),
     pending_quiet: bool,
+    pending_silent: bool,
     pending_hidden: bool,
     pending_default: bool,
     pending_doc_comment: ?[]const u8,
@@ -395,6 +397,7 @@ pub const Parser = struct {
             .pending_description = null,
             .pending_only_os = .empty,
             .pending_quiet = false,
+            .pending_silent = false,
             .pending_hidden = false,
             .pending_default = false,
             .pending_doc_comment = null,
@@ -551,6 +554,13 @@ pub const Parser = struct {
         return quiet;
     }
 
+    /// Consume and return pending silent flag, clearing it for the next recipe
+    fn consumePendingSilent(self: *Parser) bool {
+        const silent = self.pending_silent;
+        self.pending_silent = false;
+        return silent;
+    }
+
     /// Consume and return pending hidden flag, clearing it for the next recipe
     fn consumePendingHidden(self: *Parser) bool {
         const hidden = self.pending_hidden;
@@ -658,7 +668,7 @@ pub const Parser = struct {
             // Allow keywords as names in identifier position
             .kw_default, .kw_import, .kw_as, .kw_if, .kw_elif, .kw_else, .kw_end => true,
             .kw_task, .kw_file, .kw_dotenv, .kw_rooted, .kw_require, .kw_watch, .kw_cache => true,
-            .kw_needs, .kw_confirm, .kw_group, .kw_desc, .kw_platform, .kw_quiet => true,
+            .kw_needs, .kw_confirm, .kw_group, .kw_desc, .kw_platform, .kw_quiet, .kw_silent => true,
             .kw_hidden, .kw_export, .kw_alias, .kw_shell, .kw_cd, .kw_pre, .kw_post => true,
             .kw_on_error, .kw_timeout, .kw_ignore, .kw_each => true,
             else => false,
@@ -758,6 +768,7 @@ pub const Parser = struct {
             .kw_desc => try self.parseDescDirective(),
             .kw_platform => try self.parsePlatformDirective(),
             .kw_quiet => try self.parseQuietDirective(),
+            .kw_silent => try self.parseSilentDirective(),
             .kw_hidden => try self.parseHiddenDirective(),
             .kw_timeout => try self.parseTimeoutDirective(),
             .kw_needs => try self.parseNeedsDirective(),
@@ -852,6 +863,12 @@ pub const Parser = struct {
     fn parseQuietDirective(self: *Parser) ParseError!void {
         self.advance();
         self.pending_quiet = true;
+        self.skipToEndOfLine();
+    }
+
+    fn parseSilentDirective(self: *Parser) ParseError!void {
+        self.advance();
+        self.pending_silent = true;
         self.skipToEndOfLine();
     }
 
@@ -1210,6 +1227,7 @@ pub const Parser = struct {
             .working_dir = info.working_dir,
             .only_os = only_os,
             .quiet = self.consumePendingQuiet(),
+            .silent = self.consumePendingSilent(),
             .hidden = self.consumePendingHidden(),
             .needs = needs,
             .requires = requires,
@@ -3247,6 +3265,57 @@ test "alias with default directive" {
     try std.testing.expect(jakefile.recipes[0].is_default);
     try std.testing.expectEqual(@as(usize, 1), jakefile.recipes[0].aliases.len);
     try std.testing.expectEqualStrings("b", jakefile.recipes[0].aliases[0]);
+}
+
+// --- @silent Tests ---
+
+test "parse silent directive sets recipe.silent" {
+    const source =
+        \\@silent
+        \\task help:
+        \\    cat usage.txt
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expect(jakefile.recipes[0].silent);
+    // @silent is a distinct directive: it does not set @quiet's echo flag.
+    try std.testing.expect(!jakefile.recipes[0].quiet);
+}
+
+test "silent directive applies only to next recipe" {
+    const source =
+        \\@silent
+        \\task quiet_one:
+        \\    echo one
+        \\task loud_one:
+        \\    echo two
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+    try std.testing.expect(jakefile.recipes[0].silent);
+    try std.testing.expect(!jakefile.recipes[1].silent);
+}
+
+test "silent keyword is usable as a recipe name" {
+    const source =
+        \\task silent:
+        \\    echo hi
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("silent", jakefile.recipes[0].name);
 }
 
 // --- @platform Tests ---

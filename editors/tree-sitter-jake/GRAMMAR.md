@@ -70,6 +70,7 @@ recipe_attribute: '@group' (IDENTIFIER | STRING) NEWLINE
                 | '@desc' STRING NEWLINE
                 | '@alias' IDENTIFIER+ NEWLINE
                 | '@quiet' NEWLINE
+                | '@silent' NEWLINE
                 | '@platform' IDENTIFIER+ NEWLINE
                 | '@needs' needs_spec+ NEWLINE
 

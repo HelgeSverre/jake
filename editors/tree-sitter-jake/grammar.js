@@ -285,6 +285,7 @@ module.exports = grammar({
         seq("@desc", field("text", $.string), $._newline),
         seq("@alias", repeat1(field("name", $.identifier)), $._newline),
         seq("@quiet", $._newline),
+        seq("@silent", $._newline),
         seq("@platform", repeat1(field("platform", $.identifier)), $._newline),
         seq("@needs", repeat1(choice(
           seq($.identifier, $.string, "->", $.identifier),  // cmd "hint" -> install_task

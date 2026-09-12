@@ -135,6 +135,7 @@ pub const flags = [_]Flag{
     // Execution
     .{ .short = 'n', .long = "dry-run", .desc = "Print commands without executing", .category = "Execution", .env = "JAKE_DRY_RUN", .aliases = &.{"dryrun"}, .bind = .{ .field = "dry_run" } },
     .{ .short = 'v', .long = "verbose", .desc = "Show verbose output (use -vv or -vvv for more)", .category = "Execution", .countable = true, .negatable = true, .env = "JAKE_VERBOSE", .bind = .{ .kind = .counter, .field = "verbose", .level_field = "verbose_level" } },
+    .{ .short = null, .long = "silent", .desc = "Suppress jake's own status output (errors still shown)", .category = "Execution", .env = "JAKE_SILENT", .bind = .{ .field = "silent" } },
     .{ .short = 'y', .long = "yes", .desc = "Auto-confirm all @confirm prompts", .category = "Execution", .negatable = true, .show_negatable = false, .env = "JAKE_YES", .bind = .{ .field = "yes" } },
     .{ .short = 'w', .long = "watch", .desc = "Watch files and re-run on changes", .takes_value = .optional, .value_name = "PATTERN", .category = "Execution", .bind = .{ .kind = .opt_string, .field = "watch", .enabled_field = "watch_enabled", .predicate = .glob } },
     .{ .short = 'j', .long = "jobs", .desc = "Run N recipes in parallel", .takes_value = .optional, .value_name = "N", .default_display = "CPU count", .category = "Execution", .env = "JAKE_JOBS", .validator = .positive_integer, .bind = .{ .kind = .opt_int, .field = "jobs", .int_width = .usize } },
@@ -246,6 +247,7 @@ pub const Args = struct {
     dry_run: bool = false,
     verbose: bool = false,
     verbose_level: u8 = 0, // Counts -v occurrences: -vvv = 3
+    silent: bool = false, // Suppress jake's own chrome (--silent / JAKE_SILENT)
     yes: bool = false,
     short: bool = false,
     show: ?[]const u8 = null, // Explicit --show=RECIPE target (else derived from recipe)
@@ -1925,6 +1927,27 @@ test "combined -vnv increments verbose_level for each v" {
     try expect(args.verbose_level == 2);
 }
 
+test "--silent sets silent" {
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--silent" });
+    try expect(args.silent);
+}
+
+test "--silent is not default" {
+    const args = try Args.parse(testing.allocator, &.{"jake"});
+    try expect(!args.silent);
+}
+
+test "--silent with -v still parses (silent wins at runtime, no conflict error)" {
+    const args = try Args.parse(testing.allocator, &.{ "jake", "--silent", "-v" });
+    try expect(args.silent);
+    try expect(args.verbose);
+}
+
+test "--no-silent is unknown (not negatable)" {
+    const result = Args.parse(testing.allocator, &.{ "jake", "--no-silent" });
+    try expectError(error.UnknownFlag, result);
+}
+
 // ============================================================================
 // Negatable Flags Tests
 // ============================================================================
@@ -2024,6 +2047,7 @@ test "printHelp shows env var hints" {
     try expect(std.mem.indexOf(u8, output, "[env: JAKEFILE]") != null);
     try expect(std.mem.indexOf(u8, output, "[env: JAKE_JOBS]") != null);
     try expect(std.mem.indexOf(u8, output, "[env: JAKE_VERBOSE]") != null);
+    try expect(std.mem.indexOf(u8, output, "[env: JAKE_SILENT]") != null);
     try expect(std.mem.indexOf(u8, output, "[env: JAKE_YES]") != null);
     try expect(std.mem.indexOf(u8, output, "[env: JAKE_DRY_RUN]") != null);
 }

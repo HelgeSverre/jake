@@ -2163,6 +2163,7 @@ file dist/bundle.js: src/**/*.ts
 @default                         # Set as default task
 @group groupname                 # Group in listings
 @quiet                           # Suppress command echo
+@silent                          # Suppress jake's own status lines for this recipe
 @platform linux macos             # Platform-specific
 task name | alias1 | alias2:     # Aliases
 task _private:                   # Hidden from --list
@@ -2254,6 +2255,7 @@ jake --type file                # Only file recipes
 jake --groups                   # List distinct group names
 jake -n, --dry-run               # Show commands without running
 jake -v, --verbose               # Verbose output
+jake --silent                    # Suppress jake's own status output (errors still shown)
 jake -y, --yes                   # Auto-confirm prompts
 jake -f, --jakefile FILE         # Use specific Jakefile
 jake -j, --jobs N                # Parallel execution (N workers)
@@ -2317,7 +2319,6 @@ Start with a simple `Jakefile`, grow it as your project grows, and never fight y
 ---
 
 _Happy automating!_
-
 
 ## Running and Reconnecting in the Browser
 

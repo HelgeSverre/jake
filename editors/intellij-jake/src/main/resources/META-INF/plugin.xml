@@ -23,7 +23,7 @@
     <h2>Highlighted Elements</h2>
     <ul>
         <li><b>Keywords</b>: task, file, import, as</li>
-        <li><b>Directives</b>: @if, @else, @each, @end, @needs, @require, @cache, @watch, @confirm, @group, @desc, @alias, @quiet, @ignore, @only-os, @platform, @cd, @shell, @export, @pre, @post</li>
+        <li><b>Directives</b>: @if, @else, @each, @end, @needs, @require, @cache, @watch, @confirm, @group, @desc, @alias, @quiet, @silent, @ignore, @only-os, @platform, @cd, @shell, @export, @pre, @post</li>
         <li><b>Variables</b>: {{variable}}, {{function(arg)}}, $VAR, ${VAR}</li>
         <li><b>Functions</b>: dirname(), basename(), extension(), uppercase(), lowercase(), trim(), home(), env(), exists()</li>
         <li><b>Strings</b>: Double and single quoted strings</li>

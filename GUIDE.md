@@ -1106,15 +1106,49 @@ task install-deps:
 
 Valid OS values: `linux`, `macos`, `windows`
 
-### @quiet - Suppress Output
+### @quiet - Suppress Command Echoing
 
-Suppress command echoing for a recipe:
+Suppress command echoing for a recipe (the `jake: executing '...'` lines that
+are otherwise only shown under `-v`):
 
 ```jake
 @quiet
 task secret-task:
     echo "Commands won't be echoed"
 ```
+
+### @silent - Suppress jake's Status Output
+
+`@silent` hides jake's own status chrome for a recipe — the `→ name` start
+line, the `✓ name <time>` completion line, and (when it is the requested
+recipe) the `Successfully ran N tasks / Total time` footer. The recipe's own
+stdout/stderr still comes through, and errors and the exit code are always
+preserved:
+
+```jake
+@silent
+task help:
+    cat docs/usage.txt
+```
+
+`jake help` then prints only `docs/usage.txt`. `@silent` also implies `@quiet`,
+so it hides `-v` command echoing for that recipe.
+
+The same behavior is available run-wide with `--silent` (or `JAKE_SILENT=1`),
+which suppresses jake's chrome for every recipe in the invocation, including
+dependencies:
+
+```bash
+jake --silent help
+JAKE_SILENT=1 jake help
+```
+
+`--silent` is stronger than `@quiet`: `@quiet` only hides command echoing,
+while `--silent`/`@silent` hide the progress chrome too. It is not a
+clean replacement for redirecting recipe output — jake still prints the
+recipe's stdout/stderr, so `jake help 2>/dev/null` remains a valid zero-install
+way to strip the chrome if you would rather not use the flag. Note that with
+`-j`, silent runs produce interleaved, unlabelled recipe output.
 
 ### Recipe Aliases
 
@@ -1485,6 +1519,7 @@ OPTIONS:
         --short             Output one recipe per line (for scripting)
     -n, --dry-run           Print commands without executing
     -v, --verbose           Show verbose output
+        --silent            Suppress jake's own status output (errors still shown)
     -y, --yes               Auto-confirm all @confirm prompts
     -f, --jakefile PATH     Use specified Jakefile
     -w, --watch [PATTERN]   Watch and re-run on changes
