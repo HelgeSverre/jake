@@ -140,6 +140,30 @@ When `-f` points at a Jakefile in another directory, external Makefile/Justfile 
 
 Web UI runs inherit the CLI process' `--verbose` and `--jobs` settings, forward browser-entered recipe params as `name=value`, validate `@require` before execution, and surface `@confirm` prompts back to the browser for interactive approval.
 
+## Interrupting a run
+
+On `SIGINT` (Ctrl-C), `SIGTERM`, or `SIGHUP`, jake forwards the signal to every
+command it has running — to each child's process group, so a recipe's shell takes
+whatever it spawned down with it — and then re-raises the signal on itself, so the
+exit status reports the interruption the way any other program does.
+
+This matters most for commands jake deliberately isolates into their own process
+group (`@timeout`, `--web`, and anything cancellable). The terminal's own group-wide
+Ctrl-C never reaches those, so without the forwarding they would keep running after
+jake exited, reparented to init.
+
+The build cache is not written when a run is interrupted, so a half-finished target is
+never recorded as up to date. The next run rebuilds it.
+
+**Limitation: jake does not escalate.** It sends the signal it received and exits; it
+does not follow up with `SIGKILL`. A command that traps or ignores the signal —
+`trap '' INT` in a recipe, `docker run`, `ssh`, a long-lived port-forward — therefore
+survives, and is orphaned once jake is gone. This is deliberate: those commands
+usually trap the signal precisely so they can shut down gracefully, which can take
+seconds, and killing them outright would strand the work they were cleaning up. If a
+command ignores Ctrl-C, stop it directly (`pkill`, `docker stop`) or give it a
+`@timeout`, which does use `SIGKILL` once the deadline passes.
+
 ## Exit Codes
 
 | Code | Meaning            |

@@ -6,6 +6,19 @@
 //! jake deliberately puts in their own process group (`@timeout`, `--web`,
 //! anything with a cancellation flag set `child.pgid = 0`) never see it and
 //! keep running, reparented to init.
+//!
+//! jake forwards the signal it received and then re-raises it on itself; it does
+//! not escalate to SIGKILL. A child that traps or ignores the signal (`trap ''
+//! INT`, `docker run`, `ssh`) therefore survives and is orphaned anyway. That is
+//! deliberate — such a child usually traps the signal so it can shut down
+//! gracefully, which can take seconds, so killing it outright would strand the
+//! cleanup it was doing. The upgrade path, if this ever needs to change, is the
+//! double-tap that docker-compose and friends use: forward on the first signal
+//! and stay alive, SIGKILL the group on a second one. That needs the main thread
+//! to notice a flag while blocked in `child.wait()` (which retries on EINTR, so
+//! it wants the CancellationMonitor treatment in executor.zig), and the
+//! interrupted path must tear down via `deinitWithoutSavingCache` so an
+//! interrupted build is not recorded as fresh.
 
 const std = @import("std");
 const builtin = @import("builtin");
