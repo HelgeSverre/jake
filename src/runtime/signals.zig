@@ -14,9 +14,14 @@ const enabled = builtin.os.tag != .windows and builtin.os.tag != .wasi;
 
 /// Live child PIDs. Fixed-size so the signal handler only touches atomics —
 /// allocation and locks are not async-signal-safe.
-/// ponytail: 64 slots covers `-j` up to any sane core count; children past the
-/// limit simply are not tracked (same behaviour as before this module existed).
-var tracked: [64]std.atomic.Value(i32) = @splat(std.atomic.Value(i32).init(0));
+///
+/// The bound is on *concurrent* children, which is roughly `-j` plus hooks, so
+/// 256 clears a high-core-count box at default `-j` and the `-j 100` test.
+/// ponytail: past the limit a child is simply not tracked (the behaviour before
+/// this module existed); sizing from `jobs` would mean allocating, and
+/// `install()` deliberately runs before args are parsed so an early Ctrl-C is
+/// already covered.
+var tracked: [256]std.atomic.Value(i32) = @splat(std.atomic.Value(i32).init(0));
 
 /// Set to the received signal number once a handler has begun forwarding.
 /// A child spawned after `forward()` already scanned past its slot would
@@ -204,12 +209,12 @@ test "a repeated untrack cannot clear the child that reused the slot" {
 
 test "track is a no-op once every slot is full" {
     if (!enabled) return error.SkipZigTest;
-    for (&tracked, 0..) |*slot, i| slot.store(@intCast(i + 1), .release);
+    for (&tracked, 0..) |*slot, i| slot.store(@intCast(i + 2), .release);
     defer for (&tracked) |*slot| slot.store(0, .release);
 
     try std.testing.expectEqual(no_slot, track(9999)); // must not overwrite
     for (&tracked, 0..) |*slot, i| {
-        try std.testing.expectEqual(@as(i32, @intCast(i + 1)), slot.load(.acquire));
+        try std.testing.expectEqual(@as(i32, @intCast(i + 2)), slot.load(.acquire));
     }
 }
 
