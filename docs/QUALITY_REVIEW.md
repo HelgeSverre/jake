@@ -6,24 +6,24 @@ agent reviewed the Web UI and reviewed the final server/cancellation changes.
 
 ## Fixes
 
-| Finding | Resolution | Coverage |
-| --- | --- | --- |
-| Public `load()` returned an AST borrowing freed source | Loaded ASTs own their source until `Jakefile.deinit`; `parse()` explicitly borrows source | Loaded-source lifetime and allocation-failure sweep |
-| Pending parser metadata leaked on success or transfer failure | Cleanup runs on every parser exit; transferred require arguments have error cleanup | Valid/invalid syntax and allocation-failure sweep |
-| Imported paths and failed merges had ownership gaps | Persist origin paths, roll back retirement tracking on merge failure, clean keys/dependency arrays, preserve OutOfMemory | Prefixed/rooted import lifetime and allocation-failure sweep |
-| Formatter fuzzing swallowed second-pass failure | Assert successful second format and identical output; preserve OOM classification | Existing seeds, generated syntax semantic comparisons and allocation-failure sweep |
-| Unterminated strings and raw escapes destabilized formatting | Reject unterminated quotes; preserve parsed escape bytes and choose a valid quote delimiter | Quote regressions and 1,736 valid single-byte mutations |
-| Function and condition calls sliced reversed delimiters | Validate that the closing parenthesis follows the opening parenthesis | Malformed-expression regressions and fuzz targets |
-| Invalid text reached environment map assertions | Reject non-WTF-8 environment keys before OS lookup or owned insertion | Invalid-key regression and allocation-failure sweep |
-| Broadcast and reader threads could both destroy clients | Readers exclusively destroy clients; shutdown interrupts I/O without recycling descriptors; teardown waits for readers | Repeated connection teardown under testing allocator |
-| Concurrent writes could interleave frames | Per-client write lock, failed-write shutdown, socket send timeout | Two concurrent writers, 64 whole messages |
-| Protocol fields assumed complete transport reads | Exact-read helper and bounded HTTP header accumulation without consuming following bytes | Chunked in-memory reader, EOF and header-boundary tests |
-| Competing run requests waited and launched later | Separate synchronized admission from cancellation and thread cleanup | Second-tab rejection during active execution |
-| Duplicate or missing terminal events | Executor task events retained; server supplies missing failed-root lifecycle; one summary after teardown | Normal failure, immediate stop, blocked parallel root, confirmation and repeated runs |
-| Reconnect and parallel display state were incomplete | Authoritative run snapshot and active task set; summary belongs to requested root | Node VM state tests and sequential/parallel WebSocket integration |
-| Dependency controls lacked keyboard activation | Native buttons | State/render test and source review |
-| Stop could race child PID registration or miss parallel children | Each child monitors cancellation; worker lifetime includes monitor join | Immediate stop and cancellation of two simultaneous commands |
-| Repeated watch/test execution exposed stale state | Repeated watch reload assertions, pattern allocation cleanup, isolated E2E output fixture | 16 reloads and repeatable full E2E suite |
+| Finding                                                          | Resolution                                                                                                               | Coverage                                                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Public `load()` returned an AST borrowing freed source           | Loaded ASTs own their source until `Jakefile.deinit`; `parse()` explicitly borrows source                                | Loaded-source lifetime and allocation-failure sweep                                   |
+| Pending parser metadata leaked on success or transfer failure    | Cleanup runs on every parser exit; transferred require arguments have error cleanup                                      | Valid/invalid syntax and allocation-failure sweep                                     |
+| Imported paths and failed merges had ownership gaps              | Persist origin paths, roll back retirement tracking on merge failure, clean keys/dependency arrays, preserve OutOfMemory | Prefixed/rooted import lifetime and allocation-failure sweep                          |
+| Formatter fuzzing swallowed second-pass failure                  | Assert successful second format and identical output; preserve OOM classification                                        | Existing seeds, generated syntax semantic comparisons and allocation-failure sweep    |
+| Unterminated strings and raw escapes destabilized formatting     | Reject unterminated quotes; preserve parsed escape bytes and choose a valid quote delimiter                              | Quote regressions and 1,736 valid single-byte mutations                               |
+| Function and condition calls sliced reversed delimiters          | Validate that the closing parenthesis follows the opening parenthesis                                                    | Malformed-expression regressions and fuzz targets                                     |
+| Invalid text reached environment map assertions                  | Reject non-WTF-8 environment keys before OS lookup or owned insertion                                                    | Invalid-key regression and allocation-failure sweep                                   |
+| Broadcast and reader threads could both destroy clients          | Readers exclusively destroy clients; shutdown interrupts I/O without recycling descriptors; teardown waits for readers   | Repeated connection teardown under testing allocator                                  |
+| Concurrent writes could interleave frames                        | Per-client write lock, failed-write shutdown, socket send timeout                                                        | Two concurrent writers, 64 whole messages                                             |
+| Protocol fields assumed complete transport reads                 | Exact-read helper and bounded HTTP header accumulation without consuming following bytes                                 | Chunked in-memory reader, EOF and header-boundary tests                               |
+| Competing run requests waited and launched later                 | Separate synchronized admission from cancellation and thread cleanup                                                     | Second-tab rejection during active execution                                          |
+| Duplicate or missing terminal events                             | Executor task events retained; server supplies missing failed-root lifecycle; one summary after teardown                 | Normal failure, immediate stop, blocked parallel root, confirmation and repeated runs |
+| Reconnect and parallel display state were incomplete             | Authoritative run snapshot and active task set; summary belongs to requested root                                        | Node VM state tests and sequential/parallel WebSocket integration                     |
+| Dependency controls lacked keyboard activation                   | Native buttons                                                                                                           | State/render test and source review                                                   |
+| Stop could race child PID registration or miss parallel children | Each child monitors cancellation; worker lifetime includes monitor join                                                  | Immediate stop and cancellation of two simultaneous commands                          |
+| Repeated watch/test execution exposed stale state                | Repeated watch reload assertions, pattern allocation cleanup, isolated E2E output fixture                                | 16 reloads and repeatable full E2E suite                                              |
 
 ## Coverage added
 
