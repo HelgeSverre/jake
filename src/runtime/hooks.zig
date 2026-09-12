@@ -219,19 +219,16 @@ pub const HookRunner = struct {
             return HookError.SpawnFailed;
         };
 
-        const signal_pid: i32 = if (builtin.os.tag == .windows) 0 else @intCast(child.id);
-        signals.track(signal_pid);
-        // Backstop for the early-return path; the reap below untracks eagerly
-        // so a recycled pid is never a signal target.
-        defer signals.untrack(signal_pid);
+        var signal_slot = signals.track(if (builtin.os.tag == .windows) 0 else @intCast(child.id));
+        // Released right after the reap below; this only covers the error path.
+        defer signals.untrack(&signal_slot);
 
         const result = child.wait() catch |err| {
-            signals.untrack(signal_pid);
             self.printHook("{s}hook wait failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return HookError.WaitFailed;
         };
-        // The pid is reaped and free for reuse - stop signalling it.
-        signals.untrack(signal_pid);
+        // The pid is recycleable the moment it is reaped - stop signalling it.
+        signals.untrack(&signal_slot);
 
         switch (result) {
             .Exited => |code| {

@@ -250,9 +250,17 @@ task test-directives:
     echo "  JAKE_SILENT=1 hides chrome ............................ PASS"
     # @silent still surfaces failures and preserves the exit code
     @ignore
-    {{jake}} -f fixtures/directives/silent.jake failing > {{out}} 2>&1 || true
+    rc=0; {{jake}} -f fixtures/directives/silent.jake failing > {{out}} 2>&1 || rc=$?; [ "$rc" = "1" ]
     grep -q "FAIL BODY" {{out}} && grep -q "Failed to run" {{out}} && grep -q "command exited with code 1" {{out}} && ! grep -q "Successfully ran" {{out}}
     echo "  @silent keeps failure output and errors ............... PASS"
+    # --silent wins over -v: no jake: chrome, recipe output intact
+    {{jake}} -f fixtures/directives/silent.jake --silent -v normal > {{out}} 2>&1
+    grep -q "NORMAL BODY" {{out}} && ! grep -q "jake:" {{out}}
+    echo "  --silent suppresses -v chrome ......................... PASS"
+    # @silent is reported by --show
+    {{jake}} -f fixtures/directives/silent.jake --show help > {{out}} 2>&1
+    grep -q "Silent:" {{out}}
+    echo "  --show reports @silent ................................ PASS"
 
 # ============================================================================
 # Signal Tests

@@ -88,6 +88,9 @@ pub const Executor = struct {
     current_shell: ?[]const u8, // Shell to use for current recipe (from @shell directive)
     current_working_dir: ?[]const u8, // Working directory for current recipe (from @cd directive)
     current_quiet: bool, // Suppress command output for current recipe (from @quiet directive)
+    current_silent: bool, // Suppress jake's own chrome for current recipe (--silent / @silent)
+    current_quiet_directive: bool, // @quiet on the current recipe, without @silent's implication
+    current_ignoring: bool, // Executing an @ignore'd command: its failure is expected, not a failure
     prompt: Prompt, // Confirmation prompt handler
     color: color_mod.Color, // Color output configuration (respects NO_COLOR etc.)
     theme: color_mod.Theme, // Semantic color theme (error, warning, recipe, etc.)
@@ -144,6 +147,9 @@ pub const Executor = struct {
             .current_shell = null,
             .current_working_dir = null,
             .current_quiet = false,
+            .current_silent = false,
+            .current_quiet_directive = false,
+            .current_ignoring = false,
             .prompt = runtime.prompt,
             .color = runtime.color,
             .theme = runtime.theme,
@@ -242,6 +248,9 @@ pub const Executor = struct {
             .current_shell = null,
             .current_working_dir = null,
             .current_quiet = false,
+            .current_silent = false,
+            .current_quiet_directive = false,
+            .current_ignoring = false,
             .prompt = Prompt.init(),
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
@@ -984,7 +993,7 @@ pub const Executor = struct {
         defer self.current_recipe_name = previous_recipe_name;
 
         self.hook_runner.dry_run = self.ctx.dry_run;
-        self.hook_runner.verbose = self.ctx.verbose;
+        self.hook_runner.verbose = self.ctx.verbose and !(self.ctx.silent or recipe.silent);
 
         var hook_context = HookContext{
             .recipe_name = name,
@@ -1025,7 +1034,9 @@ pub const Executor = struct {
         }
         // @silent implies @quiet: silence command echo too. A run-wide --silent
         // acts the same as @quiet on every recipe.
-        self.current_quiet = self.ctx.silent or recipe.quiet or recipe.silent;
+        self.current_silent = self.ctx.silent or recipe.silent;
+        self.current_quiet_directive = recipe.quiet;
+        self.current_quiet = self.current_silent or recipe.quiet;
 
         // Bind recipe parameters to variables
         self.bindRecipeParams(recipe) catch |err| {
@@ -1171,7 +1182,7 @@ pub const Executor = struct {
             const resolved_dep = try self.resolveRootedPath(recipe, dep);
             defer if (resolved_dep.owned) self.allocator.free(resolved_dep.path);
             if (try self.cache.isGlobStale(resolved_dep.path)) {
-                if (self.ctx.verbose) {
+                if (self.ctx.verbose and !self.ctx.silent and !recipe.silent) {
                     self.print("   {s}jake: dependency '{s}' changed, rebuilding '{s}'{s}\n", .{ self.color.muted(), dep, recipe.name, self.color.reset() });
                 }
                 return true;
@@ -1583,7 +1594,12 @@ pub const Executor = struct {
             // Execute command with timeout awareness
             if (ignore_next) {
                 ignore_next = false;
+                self.current_ignoring = true;
+                defer self.current_ignoring = false;
                 self.runCommandWithTimeout(cmd, timeout_ctx) catch |err| {
+                    // Under --silent/@silent an ignored failure is expected, so it
+                    // gets no chrome: the run as a whole still succeeds.
+                    if (self.current_silent) continue;
                     switch (err) {
                         ExecuteError.CommandFailed => {
                             self.print("{s}[ignored]{s} continuing despite command failure\n", .{ self.color.warningYellow(), self.color.reset() });
@@ -1689,12 +1705,11 @@ pub const Executor = struct {
         };
 
         // Register with the signal handler so Ctrl-C reaches this child even
-        // when it was moved into its own process group above.
-        const signal_pid: i32 = if (builtin.os.tag == .windows) 0 else @intCast(child.id);
-        signals.track(signal_pid);
-        // Backstop for the early-return paths; the reap below untracks eagerly
-        // so a recycled pid is never a signal target.
-        defer signals.untrack(signal_pid);
+        // when it was moved into its own process group above. waitForChild
+        // releases the slot at the reap; this defer only covers the paths that
+        // return before getting there.
+        var signal_slot = signals.track(if (builtin.os.tag == .windows) 0 else @intCast(child.id));
+        defer signals.untrack(&signal_slot);
 
         // Register child PID for external cancellation (web UI)
         // Note: On Windows, child.id is a HANDLE (*anyopaque), not a pid_t
@@ -1704,7 +1719,7 @@ pub const Executor = struct {
             }
         }
 
-        if (self.ctx.verbose and !suppress_echo and !self.current_quiet) {
+        if (self.ctx.verbose and !suppress_echo and !self.current_quiet_directive) {
             self.ctx.emitCommand(self.current_recipe_name orelse "", line);
             self.emitCommandStart(line);
         }
@@ -1718,8 +1733,7 @@ pub const Executor = struct {
         defer output_drains.join();
 
         // Wait for child to complete
-        const result = self.waitForChild(&child) catch |err| {
-            signals.untrack(signal_pid);
+        const result = self.waitForChild(&child, &signal_slot) catch |err| {
             if (self.ctx.current_child_pid) |pid_atomic| {
                 pid_atomic.store(0, .release);
             }
@@ -1729,8 +1743,6 @@ pub const Executor = struct {
             self.print("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return ExecuteError.CommandFailed;
         };
-        // The pid is reaped and free for reuse - stop signalling it.
-        signals.untrack(signal_pid);
 
         // Clear child PID
         if (self.ctx.current_child_pid) |pid_atomic| {
@@ -1757,7 +1769,11 @@ pub const Executor = struct {
                         self.ctx.emitOutput(msg, true);
                         self.emitCommandOutput(msg, true);
                     } else {
-                        self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
+                        // An @ignore'd failure under --silent/@silent is expected,
+                        // not the failure chrome that silence always preserves.
+                        if (!(self.current_silent and self.current_ignoring)) {
+                            self.print("{s}command exited with code {d}\n", .{ self.color.errPrefix(), code });
+                        }
                     }
                     return ExecuteError.CommandFailed;
                 }
@@ -1914,8 +1930,13 @@ pub const Executor = struct {
     /// Monitor each child independently. A single shared PID cannot cover
     /// parallel commands or a stop arriving between the pre-spawn check and
     /// PID publication. The monitor owns a stable ID until it has been joined.
-    fn waitForChild(self: *Executor, child: *std.process.Child) !std.process.Child.Term {
-        if (self.ctx.cancellation_flag == null) return child.wait();
+    /// Wait for `child`, releasing its signal-table slot the instant it is
+    /// reaped. `signal_slot` points at the handle `signals.track` returned.
+    fn waitForChild(self: *Executor, child: *std.process.Child, signal_slot: *usize) !std.process.Child.Term {
+        if (self.ctx.cancellation_flag == null) {
+            defer signals.untrack(signal_slot);
+            return child.wait();
+        }
         const CancellationMonitor = struct {
             ctx: *const Context,
             id: std.process.Child.Id,
@@ -1955,7 +1976,11 @@ pub const Executor = struct {
             monitor.done.store(true, .release);
             thread.join();
         }
-        return child.wait();
+        const term = try child.wait();
+        // Release the slot before the deferred join: the monitor polls on a
+        // 10ms interval, and the pid is recycleable the moment it is reaped.
+        signals.untrack(signal_slot);
+        return term;
     }
 
     /// Execute an external recipe by delegating to make or just
@@ -2041,11 +2066,10 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
-        const signal_pid: i32 = if (builtin.os.tag == .windows) 0 else @intCast(child.id);
-        signals.track(signal_pid);
-        // Backstop for the early-return paths; the reap below untracks eagerly
-        // so a recycled pid is never a signal target.
-        defer signals.untrack(signal_pid);
+        // waitForChild releases the slot at the reap; this defer only covers
+        // the paths that return before getting there.
+        var signal_slot = signals.track(if (builtin.os.tag == .windows) 0 else @intCast(child.id));
+        defer signals.untrack(&signal_slot);
 
         if (self.ctx.current_child_pid) |pid_atomic| {
             if (builtin.os.tag != .windows) {
@@ -2053,7 +2077,7 @@ pub const Executor = struct {
             }
         }
 
-        if (self.ctx.verbose and !self.current_quiet) {
+        if (self.ctx.verbose and !self.current_quiet_directive) {
             var command: std.ArrayListUnmanaged(u8) = .empty;
             defer command.deinit(self.allocator);
 
@@ -2070,16 +2094,13 @@ pub const Executor = struct {
         var output_drains = self.startChildOutputDrains(&child);
         defer output_drains.join();
 
-        const result = self.waitForChild(&child) catch |err| {
-            signals.untrack(signal_pid);
+        const result = self.waitForChild(&child, &signal_slot) catch |err| {
             if (self.ctx.current_child_pid) |pid_atomic| {
                 pid_atomic.store(0, .release);
             }
             self.print("{s}failed to wait for {s}: {s}\n", .{ self.color.errPrefix(), tool, @errorName(err) });
             return ExecuteError.CommandFailed;
         };
-        // The pid is reaped and free for reuse - stop signalling it.
-        signals.untrack(signal_pid);
 
         if (self.ctx.current_child_pid) |pid_atomic| {
             pid_atomic.store(0, .release);
@@ -2184,13 +2205,13 @@ pub const Executor = struct {
                         }
                     } else if (self.variables.get(var_name)) |value| {
                         try result.appendSlice(self.allocator, value);
-                        if (self.ctx.verbose) {
+                        if (self.ctx.verbose and !self.current_silent) {
                             self.print("   {s}jake: {{{{{s}}}}} -> '{s}'{s}\n", .{ self.color.muted(), var_name, value, self.color.reset() });
                         }
                     } else {
                         // Keep original if not found
                         try result.appendSlice(self.allocator, line[i .. end + 2]);
-                        if (self.ctx.verbose) {
+                        if (self.ctx.verbose and !self.current_silent) {
                             self.print("   {s}jake: {{{{{s}}}}} not found, keeping literal{s}\n", .{ self.color.muted(), var_name, self.color.reset() });
                         }
                     }
@@ -3161,6 +3182,14 @@ pub const Executor = struct {
         if (recipe.quiet) {
             stdout.writeAll(self.color.muted()) catch {};
             stdout.writeAll("Quiet:") catch {};
+            stdout.writeAll(self.color.reset()) catch {};
+            stdout.writeAll(" yes\n") catch {};
+        }
+
+        // Silent mode - label muted
+        if (recipe.silent) {
+            stdout.writeAll(self.color.muted()) catch {};
+            stdout.writeAll("Silent:") catch {};
             stdout.writeAll(self.color.reset()) catch {};
             stdout.writeAll(" yes\n") catch {};
         }

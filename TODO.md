@@ -234,7 +234,7 @@ task backup:
 - [x] `@timeout 30s` - Kill recipe if exceeds time limit (with proper process termination)
 - [ ] `@retry 3` - Retry failed commands N times
 - [ ] `@env-file .env.local` - Load env file for specific recipe
-- [x] `@silent` - Suppress all output (vs @quiet which hides command echo)
+- [x] `@silent` - Suppress jake's own status chrome, keeping recipe output (vs @quiet which hides command echo)
 - [ ] `@parallel` - Run commands within recipe in parallel
 
 ---

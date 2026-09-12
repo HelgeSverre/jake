@@ -228,6 +228,7 @@ pub fn main() !void {
         const web_ctx = jake.Context{
             .dry_run = args.dry_run,
             .verbose = args.verbose,
+            .silent = args.silent,
             .watch_mode = false,
             .auto_yes = args.yes,
             .jobs = args.jobs orelse 0,

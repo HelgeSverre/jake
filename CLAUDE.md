@@ -139,6 +139,7 @@ The `Jakefile` struct in parser.zig is the main AST:
 | `-l, --list`            | List available recipes                          |
 | `-n, --dry-run`         | Print commands without executing                |
 | `-v, --verbose`         | Show verbose output                             |
+| `--silent`              | Suppress jake's own status output               |
 | `-y, --yes`             | Auto-confirm all @confirm prompts               |
 | `-f, --jakefile FILE`   | Use specified Jakefile                          |
 | `-w, --watch [PATTERN]` | Watch files and re-run on changes               |
