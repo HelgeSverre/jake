@@ -721,7 +721,6 @@ pub const Parser = struct {
 
             switch (self.current.tag) {
                 .at => try self.parseDirective(),
-                .ident => try self.parseVariableOrRecipe(),
                 .kw_task => try self.parseTaskRecipe(),
                 .kw_file => try self.parseFileRecipe(),
                 .comment => {
@@ -737,9 +736,18 @@ pub const Parser = struct {
                     self.advance();
                 },
                 .newline => self.advance(),
+                // Keywords are usable as names, so `silent:` and `quiet = "x"`
+                // must parse like any identifier. parseVariableOrRecipe slices
+                // the source and never inspects the tag, so it needs no help.
+                // This arm sits after .kw_task/.kw_file deliberately:
+                // isNameToken accepts those too, and they are recipe
+                // introducers here, not names.
                 else => {
-                    self.setError("unexpected token at top level", null);
-                    return ParseError.UnexpectedToken;
+                    if (!self.isNameToken()) {
+                        self.setError("unexpected token at top level", null);
+                        return ParseError.UnexpectedToken;
+                    }
+                    try self.parseVariableOrRecipe();
                 },
             }
         }
@@ -3346,6 +3354,47 @@ test "silent directive applies only to next recipe" {
     try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
     try std.testing.expect(jakefile.recipes[0].silent);
     try std.testing.expect(!jakefile.recipes[1].silent);
+}
+
+test "keyword is usable as a bare recipe name" {
+    // `task silent:` went through isNameToken and always worked; the bare form
+    // reached the top-level dispatch, which only routed plain identifiers.
+    const source =
+        \\silent:
+        \\    echo hi
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expectEqualStrings("silent", jakefile.recipes[0].name);
+}
+
+test "keyword is usable as a variable name" {
+    const source =
+        \\quiet = "yes"
+        \\timeout = "30"
+        \\task a:
+        \\    echo {{quiet}} {{timeout}}
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.variables.len);
+    try std.testing.expectEqualStrings("quiet", jakefile.variables[0].name);
+    try std.testing.expectEqualStrings("timeout", jakefile.variables[1].name);
+}
+
+test "a non-name token at top level is still an error" {
+    const source = ": broken\n";
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    try std.testing.expectEqualStrings("unexpected token at top level", p.last_error.?.message);
 }
 
 test "recipe directive with an intervening variable is rejected" {
