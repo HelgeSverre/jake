@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Jake is a modern command runner/build system written in Zig (requires v0.15.2+). It combines features from GNU Make and Just with clean syntax, parallel execution, and file-based dependency tracking.
+Jake is a modern command runner/build system written in Zig. It combines features from GNU Make and Just with clean syntax, parallel execution, and file-based dependency tracking.
+
+**Zig version: 0.15.2 exactly.** `build.zig.zon` sets `.minimum_zig_version = "0.15.2"` and every CI workflow pins `0.15.2`. `build.zig` has a 0.16 shim so the build script itself parses on both, but `src/` does **not** compile on 0.16 (`std.net`, `std.process.EnvMap` and others moved). If `zig version` reports 0.16, use a 0.15.2 toolchain explicitly — e.g. `PATH="$(brew --prefix zig@0.15)/bin:$PATH" zig build test`.
 
 ## Build & Test Commands
 
