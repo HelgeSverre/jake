@@ -6,7 +6,9 @@
 // 2. Recipe-specific hooks - run only for a specific recipe
 
 const std = @import("std");
+const builtin = @import("builtin");
 const compat = @import("../compat.zig");
+const signals = @import("signals.zig");
 const color_mod = @import("../output/color.zig");
 const system = @import("../util/system.zig");
 
@@ -217,10 +219,19 @@ pub const HookRunner = struct {
             return HookError.SpawnFailed;
         };
 
+        const signal_pid: i32 = if (builtin.os.tag == .windows) 0 else @intCast(child.id);
+        signals.track(signal_pid);
+        // Backstop for the early-return path; the reap below untracks eagerly
+        // so a recycled pid is never a signal target.
+        defer signals.untrack(signal_pid);
+
         const result = child.wait() catch |err| {
+            signals.untrack(signal_pid);
             self.printHook("{s}hook wait failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return HookError.WaitFailed;
         };
+        // The pid is reaped and free for reuse - stop signalling it.
+        signals.untrack(signal_pid);
 
         switch (result) {
             .Exited => |code| {

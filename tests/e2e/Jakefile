@@ -6,7 +6,7 @@ out = "/tmp/jake-e2e-output.txt"
 
 @default
 @desc "Run all e2e tests"
-task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-hooks, test-files, test-functions, test-imports, test-rooted, test-external, test-cli, test-web, test-integration, test-traverse]
+task test-all: [test-basic, test-deps, test-parallel, test-conditionals, test-directives, test-signals, test-hooks, test-files, test-functions, test-imports, test-rooted, test-external, test-cli, test-web, test-integration, test-traverse]
     echo ""
     echo "All e2e tests passed!"
 
@@ -236,6 +236,22 @@ task test-directives:
     grep -q "command exited with code 1" {{out}} && ! grep -q "exceeded timeout" {{out}}
     rm -f /tmp/jake-timeout-failure.jake
     echo "  @timeout does not misreport normal failures ........... PASS"
+
+# ============================================================================
+# Signal Tests
+# ============================================================================
+
+@quiet
+task test-signals:
+    echo ""
+    echo "Signal Tests"
+    # Ctrl-C must reach a child jake put in its own process group, not orphan it.
+    # The 3133[7] bracket keeps the pattern from matching this test's own shell.
+    {{jake}} -f fixtures/signals/orphan.jake sleeper > {{out}} 2>&1 & jpid=$!; sleep 2; kill -INT $jpid 2>/dev/null; sleep 2; if pgrep -f 'sleep 3133[7]' > /dev/null; then pkill -f 'sleep 3133[7]'; echo "    child survived SIGINT (orphaned)"; exit 1; fi
+    echo "  SIGINT takes group-isolated children down ............. PASS"
+    # Same for SIGTERM (kill, timeouts, CI cancellation).
+    {{jake}} -f fixtures/signals/orphan.jake sleeper > {{out}} 2>&1 & jpid=$!; sleep 2; kill -TERM $jpid 2>/dev/null; sleep 2; if pgrep -f 'sleep 3133[7]' > /dev/null; then pkill -f 'sleep 3133[7]'; echo "    child survived SIGTERM (orphaned)"; exit 1; fi
+    echo "  SIGTERM takes group-isolated children down ............ PASS"
 
 # ============================================================================
 # Hook Tests

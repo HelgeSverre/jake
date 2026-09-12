@@ -9,6 +9,7 @@ const init = jake.init;
 const color_mod = jake.color;
 const webui = jake.webui;
 const jakefile_loader = jake.jakefile_loader;
+const signals = jake.signals;
 
 const version = build_options.version;
 
@@ -37,6 +38,10 @@ const FileWriter = struct {
 };
 
 pub fn main() !void {
+    // Take spawned children down with us on Ctrl-C / SIGTERM instead of
+    // orphaning them (see runtime/signals.zig).
+    signals.install();
+
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();

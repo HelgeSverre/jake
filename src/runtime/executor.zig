@@ -10,6 +10,7 @@ const JakefileIndex = @import("../frontend/jakefile_index.zig").JakefileIndex;
 const parallel_mod = @import("parallel.zig");
 const env_mod = @import("env.zig");
 const hooks_mod = @import("hooks.zig");
+const signals = @import("signals.zig");
 const system = @import("../util/system.zig");
 const prompt_mod = @import("../output/prompt.zig");
 const functions = @import("functions.zig");
@@ -1675,6 +1676,14 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
+        // Register with the signal handler so Ctrl-C reaches this child even
+        // when it was moved into its own process group above.
+        const signal_pid: i32 = if (builtin.os.tag == .windows) 0 else @intCast(child.id);
+        signals.track(signal_pid);
+        // Backstop for the early-return paths; the reap below untracks eagerly
+        // so a recycled pid is never a signal target.
+        defer signals.untrack(signal_pid);
+
         // Register child PID for external cancellation (web UI)
         // Note: On Windows, child.id is a HANDLE (*anyopaque), not a pid_t
         if (self.ctx.current_child_pid) |pid_atomic| {
@@ -1698,6 +1707,7 @@ pub const Executor = struct {
 
         // Wait for child to complete
         const result = self.waitForChild(&child) catch |err| {
+            signals.untrack(signal_pid);
             if (self.ctx.current_child_pid) |pid_atomic| {
                 pid_atomic.store(0, .release);
             }
@@ -1707,6 +1717,8 @@ pub const Executor = struct {
             self.print("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return ExecuteError.CommandFailed;
         };
+        // The pid is reaped and free for reuse - stop signalling it.
+        signals.untrack(signal_pid);
 
         // Clear child PID
         if (self.ctx.current_child_pid) |pid_atomic| {
@@ -2017,6 +2029,12 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
+        const signal_pid: i32 = if (builtin.os.tag == .windows) 0 else @intCast(child.id);
+        signals.track(signal_pid);
+        // Backstop for the early-return paths; the reap below untracks eagerly
+        // so a recycled pid is never a signal target.
+        defer signals.untrack(signal_pid);
+
         if (self.ctx.current_child_pid) |pid_atomic| {
             if (builtin.os.tag != .windows) {
                 pid_atomic.store(@intCast(child.id), .release);
@@ -2041,12 +2059,15 @@ pub const Executor = struct {
         defer output_drains.join();
 
         const result = self.waitForChild(&child) catch |err| {
+            signals.untrack(signal_pid);
             if (self.ctx.current_child_pid) |pid_atomic| {
                 pid_atomic.store(0, .release);
             }
             self.print("{s}failed to wait for {s}: {s}\n", .{ self.color.errPrefix(), tool, @errorName(err) });
             return ExecuteError.CommandFailed;
         };
+        // The pid is reaped and free for reuse - stop signalling it.
+        signals.untrack(signal_pid);
 
         if (self.ctx.current_child_pid) |pid_atomic| {
             pid_atomic.store(0, .release);

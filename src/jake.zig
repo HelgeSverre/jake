@@ -17,6 +17,7 @@ pub const compat = @import("compat.zig");
 pub const suggest = @import("cli/suggest.zig");
 pub const tracy = @import("util/tracy.zig");
 pub const hooks = @import("runtime/hooks.zig");
+pub const signals = @import("runtime/signals.zig");
 pub const args = @import("cli/args.zig");
 pub const conditions = @import("runtime/conditions.zig");
 pub const prompt = @import("output/prompt.zig");

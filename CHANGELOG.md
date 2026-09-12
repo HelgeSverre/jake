@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Ctrl-C no longer orphans running commands.** `jake` installed no signal handler at all: on `SIGINT`/`SIGTERM`/`SIGHUP` it died on the default disposition and left its children running, reparented to init. Plain recipes usually survived this because the terminal signals the whole foreground process group, but children `jake` deliberately puts in their _own_ group — `@timeout`, `--web`, and anything with a cancellation flag set `child.pgid = 0` — never received the signal and kept running forever. Long-lived commands (`jake fuzz`, dev servers, watchers) would accumulate stray processes across interrupted runs. `jake` now tracks live children and forwards the received signal to each child's process group before re-raising it on itself, so the exit status still reports the signal.
+
 ## [0.9.9] - 2026-09-06
 
 ### Fixed
