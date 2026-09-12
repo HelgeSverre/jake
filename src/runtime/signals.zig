@@ -42,7 +42,7 @@ pub fn track(pid: i32) usize {
             // reached this child, so deliver it now.
             const sig = terminating.load(.acquire);
             if (sig != 0) {
-                kill(pid, sig);
+                killTree(pid, sig);
                 slot.store(0, .release);
                 return no_slot;
             }
@@ -66,16 +66,31 @@ pub fn untrack(handle: *usize) void {
     tracked[slot].store(0, .release);
 }
 
-/// Signal one child: its process group first (negative pid) so shell wrappers
-/// take their own children down with them, then the child itself in case it
-/// never became a group leader.
+/// Signal one child and everything it spawned: its process group first
+/// (negative pid) so shell wrappers take their own children down with them,
+/// then the child itself in case it never became a group leader.
 ///
-/// pid 1 is rejected because `kill(-1, ...)` means "every process we may
-/// signal" — a stray 1 in the table would take down the user's session.
-fn kill(pid: i32, sig: u8) void {
-    if (pid <= 1) return;
+/// Anything <= 1 is rejected. `kill(-1, ...)` means "every process we may
+/// signal" and `kill(-0, ...)` means "jake's own process group", so a stray 0
+/// or 1 reaching here would take down the session or jake itself. Every kill
+/// path in jake routes through this for that guard.
+pub fn killTree(pid: i32, sig: u8) void {
+    if (!enabled or !signalable(pid)) return;
     std.posix.kill(-pid, sig) catch {};
     std.posix.kill(pid, sig) catch {};
+}
+
+/// The "die now, no cleanup" signal, or 0 on platforms with no POSIX signals.
+/// Exposed so callers can name it without reaching into `std.posix.SIG`, which
+/// does not exist on Windows and would fail analysis there even inside a branch
+/// `killTree` ignores.
+pub const sigkill: u8 = if (enabled) std.posix.SIG.KILL else 0;
+
+/// Whether `pid` is safe to use as a kill target. Split out so the guard can be
+/// tested directly: a test that actually called `killTree(1, SIGKILL)` would
+/// take down the developer's session the moment the guard regressed.
+fn signalable(pid: i32) bool {
+    return pid > 1;
 }
 
 /// Forward `sig` to every live child.
@@ -83,7 +98,7 @@ fn forward(sig: u8) void {
     for (&tracked) |*slot| {
         const pid = slot.load(.acquire);
         if (pid <= 0) continue;
-        kill(pid, sig);
+        killTree(pid, sig);
     }
 }
 
@@ -122,6 +137,20 @@ pub fn install() void {
         .flags = 0,
     };
     for (signos) |sig| std.posix.sigaction(sig, &act, null);
+}
+
+test "killTree refuses pids that would widen the blast radius" {
+    // 0 means jake's own process group and 1 means every process we may
+    // signal, so neither may ever reach kill(2). Garbage pids reaching
+    // killTree is the whole reason it exists.
+    try std.testing.expect(!signalable(0));
+    try std.testing.expect(!signalable(1));
+    try std.testing.expect(!signalable(-1));
+    try std.testing.expect(!signalable(std.math.minInt(i32)));
+
+    try std.testing.expect(signalable(2));
+    try std.testing.expect(signalable(4242));
+    try std.testing.expect(signalable(std.math.maxInt(i32)));
 }
 
 test "track returns distinct slots and untrack frees them" {

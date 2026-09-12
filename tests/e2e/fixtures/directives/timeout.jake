@@ -20,3 +20,11 @@ task quick:
 # Task without timeout (default)
 task no-timeout:
     echo "No timeout set"
+
+# Multi-command body whose deadline lands mid-loop. The sleep must be killed by
+# the watchdog, not left running once jake exits.
+@timeout 2s
+task fires:
+    echo "BEFORE SLEEP"
+    sleep 27691
+    echo "UNREACHABLE"

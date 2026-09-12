@@ -1251,14 +1251,23 @@ pub const Executor = struct {
         const TimeoutContext = struct {
             stop_requested: std.atomic.Value(bool),
             timeout_fired: std.atomic.Value(bool),
-            current_child: std.atomic.Value(?*std.process.Child),
+            /// Pid of the command currently running, or 0 for none.
+            ///
+            /// A pid, not a `*Child`: the `Child` is a stack local of
+            /// runCommandWithTimeout, which the command loop re-enters on the
+            /// same frame for every command in the recipe. A pointer published
+            /// here outlives the value it points at, and the watchdog would
+            /// then read `.id` out of a reinitialized frame (Child.init leaves
+            /// it undefined) and kill an arbitrary process group. Same reason
+            /// CancellationMonitor copies child.id by value - see waitForChild.
+            current_pid: std.atomic.Value(i32),
             deadline_ms: i64,
 
             fn init(deadline: i64) @This() {
                 return .{
                     .stop_requested = std.atomic.Value(bool).init(false),
                     .timeout_fired = std.atomic.Value(bool).init(false),
-                    .current_child = std.atomic.Value(?*std.process.Child).init(null),
+                    .current_pid = std.atomic.Value(i32).init(0),
                     .deadline_ms = deadline,
                 };
             }
@@ -1271,16 +1280,9 @@ pub const Executor = struct {
                     if (now >= ctx.deadline_ms) {
                         // Timeout! Signal the child to terminate (don't wait - main thread does that)
                         ctx.timeout_fired.store(true, .release);
-                        if (ctx.current_child.load(.acquire)) |child| {
-                            // Kill the entire process group (shell + children) via negative PID
-                            if (builtin.os.tag != .windows) {
-                                const pid = child.id;
-                                _ = std.posix.kill(-pid, std.posix.SIG.KILL) catch {
-                                    // Fallback: kill just the shell process
-                                    _ = std.posix.kill(pid, std.posix.SIG.KILL) catch {};
-                                };
-                            }
-                        }
+                        // Kills the shell's whole process group, so the
+                        // commands it spawned go too.
+                        signals.killTree(ctx.current_pid.load(.acquire), signals.sigkill);
                         return;
                     }
                     // Check every 50ms
@@ -1726,7 +1728,7 @@ pub const Executor = struct {
 
         // Register child with timeout context so watchdog can kill it
         if (has_timeout) {
-            timeout_ctx.current_child.store(&child, .release);
+            timeout_ctx.current_pid.store(if (builtin.os.tag == .windows) 0 else @intCast(child.id), .release);
         }
 
         var output_drains = self.startChildOutputDrains(&child);
@@ -1738,7 +1740,7 @@ pub const Executor = struct {
                 pid_atomic.store(0, .release);
             }
             if (has_timeout) {
-                timeout_ctx.current_child.store(null, .release);
+                timeout_ctx.current_pid.store(0, .release);
             }
             self.print("{s}failed to wait: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return ExecuteError.CommandFailed;
@@ -1751,7 +1753,7 @@ pub const Executor = struct {
 
         // Clear child from context
         if (has_timeout) {
-            timeout_ctx.current_child.store(null, .release);
+            timeout_ctx.current_pid.store(0, .release);
         }
 
         if (self.ctx.isCancelled()) {
@@ -1948,9 +1950,7 @@ pub const Executor = struct {
                         if (builtin.os.tag == .windows) {
                             std.os.windows.TerminateProcess(monitor.id, 1) catch {};
                         } else if (builtin.os.tag != .wasi) {
-                            std.posix.kill(-monitor.id, std.posix.SIG.KILL) catch {
-                                std.posix.kill(monitor.id, std.posix.SIG.KILL) catch {};
-                            };
+                            signals.killTree(monitor.id, signals.sigkill);
                         }
                         return;
                     }
@@ -7365,11 +7365,7 @@ test "captured command cancellation does not hang" {
         }
 
         fn killChild(child_pid: *std.atomic.Value(i32)) void {
-            const pid = child_pid.load(.acquire);
-            if (pid > 0) {
-                std.posix.kill(-pid, std.posix.SIG.KILL) catch {};
-                std.posix.kill(pid, std.posix.SIG.KILL) catch {};
-            }
+            signals.killTree(child_pid.load(.acquire), signals.sigkill);
         }
     };
 
@@ -7407,6 +7403,38 @@ test "captured command cancellation does not hang" {
     const elapsed = std.time.milliTimestamp() - start;
     try std.testing.expect(elapsed < 3000);
     try std.testing.expect(saw_cancelled.load(.acquire));
+}
+
+test "@timeout kills a multi-command recipe" {
+    // Every other timeout test has a single-command body, so the command loop
+    // never iterates and runCommandWithTimeout's frame is never reused. That is
+    // the shape that let the watchdog read a stale child pointer, so cover it:
+    // several commands, deadline landing mid-loop.
+    if (builtin.os.tag == .windows) return;
+
+    const source =
+        \\@timeout 1s
+        \\task slow:
+        \\    echo one
+        \\    echo two
+        \\    sleep 10
+        \\    echo unreachable
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinit();
+    executor.ctx.verbose = false;
+
+    const start = std.time.milliTimestamp();
+    try std.testing.expectError(ExecuteError.CommandFailed, executor.execute("slow"));
+
+    // Killed at the deadline, not after `sleep 10`.
+    const elapsed = std.time.milliTimestamp() - start;
+    try std.testing.expect(elapsed < 3000);
 }
 
 test "@timeout allows fast commands to complete" {

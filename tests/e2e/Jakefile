@@ -236,6 +236,12 @@ task test-directives:
     grep -q "command exited with code 1" {{out}} && ! grep -q "exceeded timeout" {{out}}
     rm -f /tmp/jake-timeout-failure.jake
     echo "  @timeout does not misreport normal failures ........... PASS"
+    # A timeout that actually fires kills the command and reports itself.
+    # The 2769[1] bracket keeps the pattern from matching this test's own shell.
+    rc=0; {{jake}} -f fixtures/directives/timeout.jake fires > {{out}} 2>&1 || rc=$?; [ "$rc" != "0" ]
+    grep -q "BEFORE SLEEP" {{out}} && grep -q "exceeded timeout" {{out}} && ! grep -q "UNREACHABLE" {{out}}
+    if pgrep -f 'sleep 2769[1]' > /dev/null; then pkill -f 'sleep 2769[1]'; echo "    timed-out child survived"; exit 1; fi
+    echo "  @timeout kills the command it times out ............... PASS"
     # @silent hides jake's chrome but keeps the recipe's own output
     {{jake}} -f fixtures/directives/silent.jake help > {{out}} 2>&1
     grep -q "HELP BODY" {{out}} && ! grep -q "Successfully ran" {{out}} && ! grep -q "Total time" {{out}}
