@@ -484,13 +484,12 @@ pub const ParallelExecutor = struct {
         // Print recipe header and capture start time
         const start_time = std.time.nanoTimestamp();
         const chrome_suppressed = self.ctx.silent or recipe.silent;
-        if (!chrome_suppressed) {
-            if (self.dry_run) {
-                // v4 format: use ○ for dry-run (no completion line)
-                self.printSynchronized("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(recipe.name) });
-            } else {
-                self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
-            }
+        if (self.dry_run) {
+            // v4 format: use ○ for dry-run (no completion line). Kept even when
+            // silent so the commands below it stay attributable to a recipe.
+            self.printSynchronized("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(recipe.name) });
+        } else if (!chrome_suppressed) {
+            self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
         }
 
         if (!self.executeRecipeWithWorker(recipe)) {

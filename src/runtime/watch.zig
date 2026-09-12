@@ -429,27 +429,27 @@ pub const Watcher = struct {
         try self.resolvePatterns();
 
         // v4 format: ◉ watching <pattern> with ◉ in info blue, pattern in muted
-        self.print("   {s} ", .{self.theme.watchingSymbol()});
-        self.print("{s}watching{s} ", .{ self.color.bold(), self.color.reset() });
+        self.printChrome("   {s} ", .{self.theme.watchingSymbol()});
+        self.printChrome("{s}watching{s} ", .{ self.color.bold(), self.color.reset() });
         if (self.watch_patterns.items.len > 0) {
-            self.print("{s}", .{self.color.muted()});
+            self.printChrome("{s}", .{self.color.muted()});
             for (self.watch_patterns.items, 0..) |pattern, i| {
-                if (i > 0) self.print(", ", .{});
-                self.print("{s}", .{pattern});
+                if (i > 0) self.printChrome(", ", .{});
+                self.printChrome("{s}", .{pattern});
             }
-            self.print("{s}", .{self.color.reset()});
+            self.printChrome("{s}", .{self.color.reset()});
         } else {
-            self.print("{s}{d} file(s){s}", .{ self.color.muted(), self.resolved_files.items.len, self.color.reset() });
+            self.printChrome("{s}{d} file(s){s}", .{ self.color.muted(), self.resolved_files.items.len, self.color.reset() });
         }
-        self.print("\n", .{});
+        self.printChrome("\n", .{});
 
         if (self.ctx.verbose) {
             for (self.resolved_files.items) |file| {
-                self.print("  - {s}\n", .{file});
+                self.printChrome("  - {s}\n", .{file});
             }
         }
 
-        self.print("\n", .{});
+        self.printChrome("\n", .{});
 
         // Initial execution
         self.executeRecipe(recipe_name);
@@ -466,7 +466,7 @@ pub const Watcher = struct {
             if (try self.checkForChanges()) |changed_file| {
                 if (!pending_change) {
                     // v4 format: ⟳ changed <file> with ⟳ in warning yellow, file in muted
-                    self.print("   {s} {s}changed{s} {s}{s}{s}\n", .{
+                    self.printChrome("   {s} {s}changed{s} {s}{s}{s}\n", .{
                         self.theme.changedSymbol(),
                         self.color.muted(),
                         self.color.reset(),
@@ -492,7 +492,7 @@ pub const Watcher = struct {
                 const elapsed: u64 = @intCast(now - change_detected_time);
                 if (elapsed >= self.debounce_ns) {
                     pending_change = false;
-                    self.print("\n", .{});
+                    self.printChrome("\n", .{});
 
                     if (pending_reload) {
                         self.reloadConfiguration(recipe_name) catch |err| {
@@ -544,7 +544,7 @@ pub const Watcher = struct {
 
     /// Print the v4 watch mode footer
     fn printWatchFooter(self: *Watcher) void {
-        self.print("\n   {s}watching for changes (ctrl+c to stop){s}\n", .{ self.color.muted(), self.color.reset() });
+        self.printChrome("\n   {s}watching for changes (ctrl+c to stop){s}\n", .{ self.color.muted(), self.color.reset() });
     }
 
     fn print(self: *Watcher, comptime fmt: []const u8, args: anytype) void {
@@ -552,6 +552,15 @@ pub const Watcher = struct {
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
         compat.getStdErr().writeAll(msg) catch {};
+    }
+
+    /// Print watch mode's own status chrome - the banner, the "changed" notice,
+    /// the footer. Suppressed by --silent/JAKE_SILENT. Diagnostics keep using
+    /// `print`: a silent watch must still say why a rebuild failed, so the
+    /// suppression cannot live inside `print` itself.
+    fn printChrome(self: *Watcher, comptime fmt: []const u8, args: anytype) void {
+        if (self.ctx.silent) return;
+        self.print(fmt, args);
     }
 
     fn refreshLoadedState(self: *Watcher) void {
@@ -628,6 +637,7 @@ pub const Watcher = struct {
 
         var exec = try Executor.init(self.allocator, self.jakefile);
         exec.ctx.dry_run = self.ctx.dry_run;
+        exec.ctx.silent = self.ctx.silent;
         exec.ctx.verbose = self.ctx.verbose;
         exec.ctx.auto_yes = self.ctx.auto_yes;
         exec.ctx.watch_mode = true;

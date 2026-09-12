@@ -267,6 +267,10 @@ task test-directives:
     {{jake}} -f fixtures/directives/silent.jake --show help > {{out}} 2>&1
     grep -q "Silent:" {{out}}
     echo "  --show reports @silent ................................ PASS"
+    # -n keeps recipe headers under --silent, or commands are unattributable
+    {{jake}} -f fixtures/directives/silent.jake -n --silent normal > {{out}} 2>&1
+    grep -q "normal" {{out}} && grep -q "NORMAL BODY" {{out}} && ! grep -q "would run" {{out}}
+    echo "  -n --silent keeps recipe headers ...................... PASS"
 
 # ============================================================================
 # Signal Tests
@@ -599,6 +603,11 @@ task test-cli:
     sh -c '{{jake}} -f fixtures/cli/watch-feedback.jake -w build > {{out}} 2>&1 & pid=$!; sleep 1; kill $pid 2>/dev/null; exit 0'
     grep -q "watching" {{out}} && grep -q "src/\*.zig" {{out}}
     echo "  Watch mode shows patterns being watched ............... PASS"
+    # --silent hides watch chrome; recipe output still comes through
+    @ignore
+    sh -c '{{jake}} -f fixtures/cli/watch-feedback.jake --silent -w build > {{out}} 2>&1 & pid=$!; sleep 1; kill $pid 2>/dev/null; exit 0'
+    ! grep -q "watching" {{out}} && ! grep -q "Successfully ran" {{out}}
+    echo "  --silent hides watch mode chrome ...................... PASS"
     # --yes flag after recipe works
     {{jake}} -f fixtures/directives/confirm.jake dangerous --yes > {{out}} 2>&1
     grep -q "auto-confirmed" {{out}} && grep -q "Proceeding with dangerous operation" {{out}}

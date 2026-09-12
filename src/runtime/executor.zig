@@ -960,14 +960,14 @@ pub const Executor = struct {
         const chrome_suppressed = self.ctx.silent or recipe.silent;
 
         // v4: simple header format (spinner disabled due to output interleaving issues)
-        if (!chrome_suppressed) {
-            if (self.ctx.dry_run) {
-                // Dry-run: use ○ symbol
-                self.print("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(name) });
-            } else {
-                // Execution: use → header with 3-space indent (matches status line)
-                self.print("   {s}→{s} {s}\n", .{ self.color.jakeRose(), self.color.reset(), name });
-            }
+        if (self.ctx.dry_run) {
+            // Dry-run: use ○ symbol. Kept even when silent - dry-run prints
+            // nothing but commands, so without the header they cannot be
+            // attributed to a recipe.
+            self.print("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(name) });
+        } else if (!chrome_suppressed) {
+            // Execution: use → header with 3-space indent (matches status line)
+            self.print("   {s}→{s} {s}\n", .{ self.color.jakeRose(), self.color.reset(), name });
         }
 
         self.executeRecipeBody(name, recipe) catch |err| {
