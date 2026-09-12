@@ -554,6 +554,40 @@ pub const Parser = struct {
         return quiet;
     }
 
+    /// A message naming a recipe-prefix directive that is still pending, or null
+    /// if none is. These attach to the *next* recipe, so a top-level element that
+    /// is not a recipe -- a variable, an `@import`, a global directive, or end of
+    /// file -- leaves them dangling, applying somewhere the author did not write
+    /// them or nowhere at all. `jake --fmt` makes it worse than cosmetic: it
+    /// reorders by category, so the intervening element is moved away and the
+    /// wrong association is written back into the source permanently.
+    ///
+    /// Messages are static literals because `setError` stores the slice.
+    /// `@default`'s wording is long-standing and asserted by tests; the rest
+    /// follow its shape.
+    fn danglingDirectiveMessage(self: *const Parser) ?[]const u8 {
+        if (self.pending_default) return "expected recipe after '@default'";
+        if (self.pending_quiet) return "expected recipe after '@quiet'";
+        if (self.pending_silent) return "expected recipe after '@silent'";
+        if (self.pending_hidden) return "expected recipe after '@hidden'";
+        if (self.pending_group != null) return "expected recipe after '@group'";
+        if (self.pending_description != null) return "expected recipe after '@desc'";
+        if (self.pending_timeout != null) return "expected recipe after '@timeout'";
+        if (self.pending_aliases.items.len > 0) return "expected recipe after '@alias'";
+        if (self.pending_only_os.items.len > 0) return "expected recipe after '@platform'";
+        if (self.pending_needs.items.len > 0) return "expected recipe after '@needs'";
+        return null;
+    }
+
+    /// Reject a recipe-prefix directive left dangling by whatever is about to be
+    /// parsed. Call before any top-level element that cannot consume one.
+    fn rejectDanglingDirective(self: *Parser) ParseError!void {
+        if (self.danglingDirectiveMessage()) |message| {
+            self.setError(message, null);
+            return ParseError.UnexpectedToken;
+        }
+    }
+
     /// Consume and return pending silent flag, clearing it for the next recipe
     fn consumePendingSilent(self: *Parser) bool {
         const silent = self.pending_silent;
@@ -710,10 +744,7 @@ pub const Parser = struct {
             }
         }
 
-        if (self.pending_default) {
-            self.setError("expected recipe after '@default'", null);
-            return ParseError.UnexpectedToken;
-        }
+        try self.rejectDanglingDirective();
 
         // A @require with no following recipe never got consumed by finalizeRecipe;
         // flush it as a global directive (validated on any execution).
@@ -760,6 +791,7 @@ pub const Parser = struct {
         switch (self.current.tag) {
             .kw_default => try self.parseDefaultDirective(),
             .kw_import => {
+                try self.rejectDanglingDirective();
                 self.advance();
                 try self.parseImportDirective();
             },
@@ -772,15 +804,30 @@ pub const Parser = struct {
             .kw_hidden => try self.parseHiddenDirective(),
             .kw_timeout => try self.parseTimeoutDirective(),
             .kw_needs => try self.parseNeedsDirective(),
-            .kw_pre, .kw_post => try self.parseGlobalHookDirective(),
-            .kw_before, .kw_after => try self.parseTargetedHookDirective(),
-            .kw_on_error => try self.parseOnErrorDirective(),
+            .kw_pre, .kw_post => {
+                try self.rejectDanglingDirective();
+                try self.parseGlobalHookDirective();
+            },
+            .kw_before, .kw_after => {
+                try self.rejectDanglingDirective();
+                try self.parseTargetedHookDirective();
+            },
+            .kw_on_error => {
+                try self.rejectDanglingDirective();
+                try self.parseOnErrorDirective();
+            },
             .newline, .eof => {
                 self.setError("expected directive name after '@'", null);
                 return ParseError.UnexpectedToken;
             },
-            .kw_dotenv, .kw_export => try self.parseGenericDirective(),
-            .kw_rooted => try self.parseRootedDirective(),
+            .kw_dotenv, .kw_export => {
+                try self.rejectDanglingDirective();
+                try self.parseGenericDirective();
+            },
+            .kw_rooted => {
+                try self.rejectDanglingDirective();
+                try self.parseRootedDirective();
+            },
             .kw_require => try self.parseRequireDirective(),
             else => {
                 self.setError("unknown directive", null);
@@ -1117,10 +1164,7 @@ pub const Parser = struct {
         self.advance();
 
         if (self.current.tag == .equals) {
-            if (self.pending_default) {
-                self.setError("expected recipe after '@default'", null);
-                return ParseError.UnexpectedToken;
-            }
+            try self.rejectDanglingDirective();
             // Variable assignment: name = value
             self.advance();
             const value = switch (self.current.tag) {
@@ -3304,6 +3348,99 @@ test "silent directive applies only to next recipe" {
     try std.testing.expect(!jakefile.recipes[1].silent);
 }
 
+test "recipe directive with an intervening variable is rejected" {
+    // The directive attaches to the *next* recipe, so this reads as though
+    // @silent applies to `a` when nothing says it should. --fmt would then
+    // reorder the variable away and write that wrong association into the file.
+    const source =
+        \\@silent
+        \\FOO = bar
+        \\task a:
+        \\    echo A
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    try std.testing.expectEqualStrings("expected recipe after '@silent'", p.last_error.?.message);
+}
+
+test "recipe directive with an intervening import is rejected" {
+    const source =
+        \\@quiet
+        \\@import "lib.jake"
+        \\task a:
+        \\    echo A
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    try std.testing.expectEqualStrings("expected recipe after '@quiet'", p.last_error.?.message);
+}
+
+test "trailing recipe directive with no recipe is rejected" {
+    const source =
+        \\task a:
+        \\    echo A
+        \\@hidden
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    try std.testing.expectEqualStrings("expected recipe after '@hidden'", p.last_error.?.message);
+}
+
+test "recipe directive before a global hook is rejected" {
+    const source =
+        \\@timeout 30s
+        \\@pre echo setup
+        \\task a:
+        \\    echo A
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    try std.testing.expectError(ParseError.UnexpectedToken, p.parseJakefile());
+    try std.testing.expectEqualStrings("expected recipe after '@timeout'", p.last_error.?.message);
+}
+
+test "stacked recipe directives still reach the recipe" {
+    // Only *non-directive* elements break the chain; directives may stack.
+    const source =
+        \\@silent
+        \\@quiet
+        \\@hidden
+        \\@group build
+        \\task a:
+        \\    echo A
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expect(jakefile.recipes[0].silent);
+    try std.testing.expect(jakefile.recipes[0].quiet);
+    try std.testing.expect(jakefile.recipes[0].hidden);
+    try std.testing.expectEqualStrings("build", jakefile.recipes[0].group.?);
+}
+
+test "a variable before a recipe directive is fine" {
+    // Nothing is pending when the variable is parsed, so this must still work.
+    const source =
+        \\FOO = bar
+        \\@silent
+        \\task a:
+        \\    echo A {{FOO}}
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), jakefile.recipes.len);
+    try std.testing.expect(jakefile.recipes[0].silent);
+}
+
 test "silent keyword is usable as a recipe name" {
     const source =
         \\task silent:
@@ -4179,7 +4316,10 @@ test "parser allocation failures and pending metadata lifecycle" {
         "name = \"value\"\n@import \"lib.jake\" as lib\n@alias short\n@needs zig\n@require HOME\ntask build target=\"debug\": [prepare]\n    echo {{target}}\ntask prepare:\n    echo ready\n",
         "task valid:\n    echo ready\n@default\n",
     };
+    // sources[0] and sources[3] both end with a directive and no recipe to
+    // consume it, which is now a parse error rather than silently discarded.
     for (sources, 0..) |source, i| {
-        try std.testing.checkAllAllocationFailures(std.testing.allocator, checkParserAllocationLifecycle, .{ source, i != 3 });
+        const valid = i != 0 and i != 3;
+        try std.testing.checkAllAllocationFailures(std.testing.allocator, checkParserAllocationLifecycle, .{ source, valid });
     }
 }
