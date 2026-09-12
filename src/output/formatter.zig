@@ -476,6 +476,9 @@ fn renderRecipe(writer: anytype, recipe: *const Recipe) !void {
     if (recipe.silent) {
         try writer.writeAll("@silent\n");
     }
+    if (recipe.hidden) {
+        try writer.writeAll("@hidden\n");
+    }
     if (recipe.timeout_seconds) |timeout| {
         try formatDuration(writer, timeout);
     }
@@ -1371,6 +1374,22 @@ test "edge: recipe with only directives" {
     try std.testing.expect(std.mem.indexOf(u8, result.output, "@desc") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "@quiet") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "@cd") != null);
+}
+
+test "@hidden round-trips (dropping it un-hides the recipe)" {
+    const allocator = std.testing.allocator;
+    const source =
+        \\@hidden
+        \\task secret:
+        \\    echo hi
+    ;
+    const result = try format(allocator, source);
+    defer allocator.free(result.output);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "@hidden") != null);
+
+    const again = try format(allocator, result.output);
+    defer allocator.free(again.output);
+    try std.testing.expectEqualStrings(result.output, again.output);
 }
 
 test "@silent round-trips" {
