@@ -127,6 +127,22 @@ th {
 	font-weight: 600;
 }
 
+/* Wrap long examples and inline code within the mobile documentation column. */
+@media (width < 48rem) {
+	.sl-markdown-content {
+		overflow-wrap: anywhere;
+	}
+
+	.sl-markdown-content :not(pre) > code {
+		overflow-wrap: anywhere;
+	}
+
+	.expressive-code .ec-line .code {
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+}
+
 /* Sidebar active link - use brand color */
 nav.sidebar a[aria-current='page'],
 nav.sidebar a[aria-current='true'] {

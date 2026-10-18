@@ -137,14 +137,26 @@ const useCases = [
           <div class="flex items-center gap-2 mb-4">
             <span class="text-text-muted font-mono text-sm">Sequential</span>
           </div>
-          <pre class="text-xs font-mono text-text-secondary leading-relaxed whitespace-pre">{sequentialDiagram}</pre>
+          <pre class="hidden md:block text-xs font-mono text-text-secondary leading-relaxed whitespace-pre">{sequentialDiagram}</pre>
+          <ol class="md:hidden space-y-2 text-xs font-mono text-text-secondary">
+            <li>build-frontend · 10s</li>
+            <li>↓ build-backend · 10s</li>
+            <li>↓ build-docs · 5s</li>
+          </ol>
+          <p class="md:hidden mt-4 text-sm text-text-secondary">One after another · Total: 25s</p>
         </div>
 
         <div class="bg-bg-card border border-jake/30 rounded-xl p-6 glow-sm">
           <div class="flex items-center gap-2 mb-4">
             <span class="text-jake font-mono text-sm">Parallel with -j</span>
           </div>
-          <pre class="text-xs font-mono text-text-secondary leading-relaxed whitespace-pre">{parallelDiagram}</pre>
+          <pre class="hidden md:block text-xs font-mono text-text-secondary leading-relaxed whitespace-pre">{parallelDiagram}</pre>
+          <ul class="md:hidden space-y-2 text-xs font-mono text-text-secondary">
+            <li>build-frontend · 10s</li>
+            <li>build-backend · 10s</li>
+            <li>build-docs · 5s</li>
+          </ul>
+          <p class="md:hidden mt-4 text-sm text-jake">All at once · Total: 10s</p>
         </div>
       </div>
 

@@ -208,7 +208,7 @@ const logo = "{j}";
             <!-- Mobile Menu -->
             <div
                 id="mobile-menu"
-                class="md:hidden bg-bg-primary border-t border-border overflow-hidden transition-all duration-200 ease-out"
+                class="md:hidden bg-bg-primary border-t border-border overflow-y-auto overscroll-contain transition-all duration-200 ease-out"
                 style="max-height: 0; opacity: 0;"
             >
                 <div class="px-6 py-4 space-y-4">
@@ -299,7 +299,7 @@ const logo = "{j}";
                 let mobileMenuOpen = false;
 
                 const openMenu = () => {
-                    mobileMenu.style.maxHeight = mobileMenu.scrollHeight + "px";
+                    mobileMenu.style.maxHeight = `min(${mobileMenu.scrollHeight}px, calc(100dvh - 4rem))`;
                     mobileMenu.style.opacity = "1";
                     hamburgerIcon.classList.add("hidden");
                     closeIcon.classList.remove("hidden");
@@ -384,7 +384,7 @@ const logo = "{j}";
                 <div
                     class="flex flex-col md:flex-row justify-between items-center gap-6"
                 >
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap justify-center items-center gap-2">
                         <span
                             class="text-jake font-mono text-xl"
                             style="font-family: 'Fira Code', monospace;"

@@ -38,11 +38,31 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* Code examples must not set the minimum width of their grid columns. */
+.grid > * {
+  min-inline-size: 0;
 }
 
 /* Code block base */
 pre, code {
   font-family: 'Fira Code', 'SF Mono', Consolas, monospace;
+}
+
+pre {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+/* Keep examples readable without sideways scrolling on phones. */
+@media (width < 48rem) {
+  pre,
+  pre code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 }
 
 /* Gradient text utility */

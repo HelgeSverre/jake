@@ -131,6 +131,17 @@ file dist/app.js: [src/**/*.ts]
     padding: 0;
     background: transparent !important;
   }
+
+  @media (width < 48rem) {
+    .demo-code,
+    .demo-code pre,
+    .demo-code code,
+    #shiki-output pre,
+    #shiki-output code {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  }
 </style>
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
