@@ -176,7 +176,7 @@ Tasks are your workhorses: running tests, deploying, cleaning up, anything that 
 
 ### File Recipes: "Build This If Needed"
 
-Use `file` for commands that produce an output file. Jake will skip the recipe if the output is newer than all inputs:
+Use `file` for commands that produce an output file. Jake skips the recipe when the output exists and its inputs match the fingerprints recorded by the last successful build:
 
 ```jake
 file dist/bundle.js: src/index.ts src/utils.ts src/app.ts
@@ -186,7 +186,10 @@ file dist/bundle.js: src/index.ts src/utils.ts src/app.ts
 This only runs if:
 
 - `dist/bundle.js` doesn't exist, OR
-- Any of the source files are newer than `dist/bundle.js`
+- A source file is new to the cache or its content has changed since the last successful build
+
+Changed content is detected even if a tool preserves the file's modification time.
+These rules also apply with `-j` and to imported `@rooted` file targets.
 
 This is Make's superpower, now with readable syntax.
 
@@ -2328,7 +2331,8 @@ The dashboard tracks active dependencies separately from the requested recipe.
 
 If the browser reconnects during a run, it restores the current task state and
 elapsed time before enabling controls. Output from the disconnected interval is
-not replayed. Stop cancels active commands, including parallel commands, and the
+not replayed. Stop cancels active commands and hooks, including parallel work,
+and checks cancellation before each subsequent hook. The
 server sends a single run summary after cleanup. Dependency badges support Tab,
 Enter and Space for keyboard navigation.
 

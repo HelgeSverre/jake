@@ -49,6 +49,8 @@ const GraphNode = struct {
 
 /// Parallel executor that runs independent recipes concurrently
 pub const ParallelExecutor = struct {
+    const WorkerSpawner = *const fn (*ParallelExecutor) anyerror!std.Thread;
+
     allocator: std.mem.Allocator,
     jakefile: *const Jakefile,
     index: *const JakefileIndex,
@@ -81,6 +83,10 @@ pub const ParallelExecutor = struct {
     tasks_run: usize, // Successfully completed tasks
     tasks_failed: usize, // Failed tasks
     exec_start_time: i128, // Start time for summary
+
+    // Test-only override for the operating-system thread creation boundary.
+    // Keeping it private means scheduler callers cannot select a launch policy.
+    worker_spawner: ?WorkerSpawner = null,
 
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, thread_count: usize) !ParallelExecutor {
         const owned_index = try allocator.create(JakefileIndex);
@@ -324,7 +330,9 @@ pub const ParallelExecutor = struct {
             return ExecuteError.CyclicDependency;
         }
 
-        // Reset state
+        try self.resetExecutionState();
+
+        // Reset attempt-local state
         self.exec_start_time = std.time.nanoTimestamp();
         self.completed_count = 0;
         self.tasks_run = 0;
@@ -345,16 +353,21 @@ pub const ParallelExecutor = struct {
             return;
         }
 
-        // Spawn worker threads
+        // Reserve every handle before the first worker can run. A launched worker
+        // must always have a slot to be joined from, even if allocation fails.
         var threads: std.ArrayListUnmanaged(std.Thread) = .empty;
         defer threads.deinit(self.allocator);
+        threads.ensureTotalCapacity(self.allocator, max_threads) catch return ExecuteError.OutOfMemory;
 
         for (0..max_threads) |_| {
-            const thread = std.Thread.spawn(.{}, workerThread, .{self}) catch {
-                // If we can't spawn a thread, continue with fewer
+            const thread = self.spawnWorker() catch {
+                // Running with fewer workers is safe once at least one worker
+                // owns the queue. Failing before any worker starts must not
+                // report an empty graph as a successful execution.
+                if (threads.items.len == 0) return ExecuteError.SystemResources;
                 break;
             };
-            threads.append(self.allocator, thread) catch break;
+            threads.appendAssumeCapacity(thread);
         }
 
         // Wait for all threads to complete
@@ -388,6 +401,25 @@ pub const ParallelExecutor = struct {
 
             // Mark as complete and update dependents
             self.completeTask(task_idx, success);
+        }
+    }
+
+    fn spawnWorker(self: *ParallelExecutor) anyerror!std.Thread {
+        if (self.worker_spawner) |spawn| return spawn(self);
+        return std.Thread.spawn(.{}, workerThread, .{self});
+    }
+
+    /// Rebuild the ready queue from immutable graph edges before each attempt.
+    /// `execute` is sequentially reusable after either success or failure; it is
+    /// not safe to call concurrently on the same graph.
+    fn resetExecutionState(self: *ParallelExecutor) ExecuteError!void {
+        self.ready_queue.clearRetainingCapacity();
+        for (self.nodes.items, 0..) |*node, idx| {
+            node.in_degree = node.dependencies.items.len;
+            node.state = if (node.in_degree == 0) .ready else .pending;
+            if (node.in_degree == 0) {
+                self.ready_queue.append(self.allocator, idx) catch return ExecuteError.OutOfMemory;
+            }
         }
     }
 
@@ -451,23 +483,11 @@ pub const ParallelExecutor = struct {
             }
         }
 
-        // Check recipe-level @require environment variables
-        if (recipe.requires.len > 0 and !self.dry_run) {
-            if (!self.checkRecipeRequires(recipe)) {
-                const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
-                self.ctx.emitEvent(.{ .task_complete = .{
-                    .name = recipe.name,
-                    .success = false,
-                    .duration_ms = duration_ms,
-                } });
-                return false;
-            }
-        }
+        const start_time = std.time.nanoTimestamp();
+        const chrome_suppressed = self.ctx.silent or recipe.silent;
 
-        // Check if file target needs rebuilding
-        if (recipe.kind == .file) {
-            const needs_run = self.checkFileTarget(recipe) catch true;
-            if (!needs_run) {
+        switch (self.executeRecipeWithWorker(recipe)) {
+            .skipped => {
                 if (self.verbose and !self.ctx.silent and !recipe.silent) {
                     self.printSynchronized("{s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), recipe.name, self.color.reset() });
                 }
@@ -478,46 +498,28 @@ pub const ParallelExecutor = struct {
                     .duration_ms = duration_ms,
                 } });
                 return true;
-            }
-        }
-
-        // Print recipe header and capture start time
-        const start_time = std.time.nanoTimestamp();
-        const chrome_suppressed = self.ctx.silent or recipe.silent;
-        if (self.dry_run) {
-            // v4 format: use ○ for dry-run (no completion line). Kept even when
-            // silent so the commands below it stay attributable to a recipe.
-            self.printSynchronized("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(recipe.name) });
-        } else if (!chrome_suppressed) {
-            self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
-        }
-
-        if (!self.executeRecipeWithWorker(recipe)) {
-            if (!self.dry_run) {
-                self.printCompletionStatus(recipe.name, false, start_time);
-            }
-            self.incrementTasksFailed();
-            const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
-            self.ctx.emitEvent(.{ .task_complete = .{
-                .name = recipe.name,
-                .success = false,
-                .duration_ms = duration_ms,
-            } });
-            return false;
-        }
-
-        // Update cache for file targets (thread-safe). Record both the output
-        // and every dependency, mirroring the sequential path — otherwise deps
-        // are never cached and file targets always rebuild (jake#17).
-        if (recipe.kind == .file) {
-            self.cache_mutex.lock();
-            defer self.cache_mutex.unlock();
-            if (recipe.output) |output| {
-                self.cache.update(output) catch {};
-            }
-            for (recipe.file_deps) |dep| {
-                self.cache.updatePattern(dep) catch {};
-            }
+            },
+            .failed_before_run => {
+                const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+                self.ctx.emitEvent(.{ .task_complete = .{
+                    .name = recipe.name,
+                    .success = false,
+                    .duration_ms = duration_ms,
+                } });
+                return false;
+            },
+            .failed_during_run => {
+                if (!self.dry_run) self.printCompletionStatus(recipe.name, false, start_time);
+                self.incrementTasksFailed();
+                const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+                self.ctx.emitEvent(.{ .task_complete = .{
+                    .name = recipe.name,
+                    .success = false,
+                    .duration_ms = duration_ms,
+                } });
+                return false;
+            },
+            .ran => {},
         }
 
         // Failure chrome is always kept; success chrome is skipped under --silent/@silent.
@@ -548,7 +550,9 @@ pub const ParallelExecutor = struct {
         output.writeAll("\n") catch {};
     }
 
-    fn executeRecipeWithWorker(self: *ParallelExecutor, recipe: *const Recipe) bool {
+    const WorkerExecution = enum { skipped, ran, failed_before_run, failed_during_run };
+
+    fn executeRecipeWithWorker(self: *ParallelExecutor, recipe: *const Recipe) WorkerExecution {
         var worker_ctx = self.ctx;
         worker_ctx.jobs = 0;
         worker_ctx.watch_mode = false;
@@ -562,7 +566,7 @@ pub const ParallelExecutor = struct {
                 error.OutOfMemory => ExecuteError.OutOfMemory,
                 else => ExecuteError.CommandFailed,
             });
-            return false;
+            return .failed_before_run;
         };
         worker.ctx = &worker_ctx;
         worker.color = self.color;
@@ -581,12 +585,30 @@ pub const ParallelExecutor = struct {
         const snapshot = cache_snapshot catch {
             self.rememberError(ExecuteError.OutOfMemory);
             worker.deinitWithoutSavingCache();
-            return false;
+            return .failed_before_run;
         };
 
         worker.cache.deinit();
         worker.cache.* = snapshot;
         defer worker.deinitWithoutSavingCache();
+
+        // The worker owns the loaded dotenv/export environment and rooted-path
+        // resolution. Running policy through it keeps parallel behavior aligned
+        // with the sequential executor instead of reconstructing a subset here.
+        worker.checkRecipeRequires(recipe) catch |err| {
+            self.rememberError(err);
+            return .failed_before_run;
+        };
+        if (recipe.kind == .file and !(worker.checkFileTarget(recipe) catch true)) {
+            return .skipped;
+        }
+
+        const chrome_suppressed = self.ctx.silent or recipe.silent;
+        if (self.dry_run) {
+            self.printSynchronized("   {s} {f}\n", .{ self.theme.pendingSymbol(), self.theme.recipeHeader(recipe.name) });
+        } else if (!chrome_suppressed) {
+            self.printSynchronized("{s} {f}\n", .{ self.theme.arrowSymbol(), self.theme.recipeHeader(recipe.name) });
+        }
 
         const needs_prompt = !worker_ctx.dry_run and !worker_ctx.auto_yes and recipeUsesDirective(recipe, .confirm);
         if (needs_prompt) {
@@ -596,17 +618,17 @@ pub const ParallelExecutor = struct {
 
         worker.executeRecipeBody(recipe.name, recipe) catch |err| {
             self.rememberError(err);
-            return false;
+            return .failed_during_run;
         };
 
         self.cache_mutex.lock();
         defer self.cache_mutex.unlock();
         self.cache.mergeFrom(worker.cache) catch {
             self.rememberError(ExecuteError.OutOfMemory);
-            return false;
+            return .failed_during_run;
         };
 
-        return true;
+        return .ran;
     }
 
     /// Thread-safe increment of tasks_run counter
@@ -657,42 +679,6 @@ pub const ParallelExecutor = struct {
             }
         }
         return true;
-    }
-
-    /// Validate a recipe's @require environment variables (parallel analogue of
-    /// Executor.checkRecipeRequires). Uses the process environment, which is
-    /// where @dotenv/@export vars are visible to spawned recipes.
-    fn checkRecipeRequires(self: *ParallelExecutor, recipe: *const Recipe) bool {
-        for (recipe.requires) |var_name| {
-            if (std.process.getEnvVarOwned(self.allocator, var_name)) |value| {
-                self.allocator.free(value);
-            } else |_| {
-                self.printSynchronized("{s}Required environment variable '{s}' is not set\n", .{ self.color.errPrefix(), var_name });
-                self.printSynchronized("  hint: recipe '{s}' needs it — set it in your shell or add it to .env\n", .{recipe.name});
-                return false;
-            }
-        }
-        return true;
-    }
-
-    fn checkFileTarget(self: *ParallelExecutor, recipe: *const Recipe) !bool {
-        const output = recipe.output orelse return true;
-
-        std.fs.cwd().access(output, .{}) catch {
-            return true; // Output doesn't exist
-        };
-
-        // Thread-safe cache access
-        self.cache_mutex.lock();
-        defer self.cache_mutex.unlock();
-
-        for (recipe.file_deps) |dep| {
-            if (try self.cache.isGlobStale(dep)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /// Mark a task as complete and update dependents (thread-safe)
@@ -1019,6 +1005,10 @@ fn recipeUsesDirective(recipe: *const Recipe, directive: Recipe.CommandDirective
 }
 
 // Tests
+fn alwaysFailWorkerSpawn(_: *ParallelExecutor) anyerror!std.Thread {
+    return error.SystemResources;
+}
+
 test "parallel executor basic" {
     const source =
         \\task a:
@@ -1039,6 +1029,180 @@ test "parallel executor basic" {
     try exec.buildGraph("c");
 
     try std.testing.expectEqual(@as(usize, 3), exec.nodes.items.len);
+}
+
+test "parallel executor fails when no worker can start" {
+    const source =
+        \\task dependency:
+        \\    echo dependency
+        \\task target: [dependency]
+        \\    echo target
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+    exec.worker_spawner = alwaysFailWorkerSpawn;
+
+    try exec.buildGraph("target");
+    try std.testing.expectError(ExecuteError.SystemResources, exec.execute());
+    try std.testing.expectEqual(@as(usize, 0), exec.completed_count);
+    try std.testing.expectEqual(@as(usize, 0), exec.tasks_run);
+}
+
+test "parallel executor can execute a built graph twice" {
+    const source =
+        \\task dependency:
+        \\task target: [dependency]
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+    try exec.buildGraph("target");
+    try exec.execute();
+    try std.testing.expectEqual(@as(usize, 2), exec.tasks_run);
+
+    // The failed launch is bounded and leaves no worker to block. It observes
+    // the second attempt's reset without relying on a timeout: before the fix
+    // ready_queue remained drained here and this assertion failed.
+    exec.worker_spawner = alwaysFailWorkerSpawn;
+    try std.testing.expectError(ExecuteError.SystemResources, exec.execute());
+    try std.testing.expectEqual(@as(usize, 1), exec.ready_queue.items.len);
+    try std.testing.expectEqual(GraphNode.State.pending, exec.nodes.items[0].state);
+    try std.testing.expectEqual(GraphNode.State.ready, exec.nodes.items[1].state);
+
+    exec.worker_spawner = null;
+    try exec.execute();
+    try std.testing.expectEqual(@as(usize, 2), exec.tasks_run);
+}
+
+test "parallel executor retries a previously failed built graph" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task dependency:
+        \\task target: [dependency]
+        \\    test -f retry-ready
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+    try exec.buildGraph("target");
+    try std.testing.expectError(ExecuteError.CommandFailed, exec.execute());
+
+    // A launch failure is a bounded observation point for the next attempt.
+    // Before resetExecutionState(), both nodes were terminal and no node was
+    // ready here; the following assertions failed instead of hanging.
+    exec.worker_spawner = alwaysFailWorkerSpawn;
+    try std.testing.expectError(ExecuteError.SystemResources, exec.execute());
+    try std.testing.expectEqual(@as(usize, 1), exec.ready_queue.items.len);
+    try std.testing.expectEqual(GraphNode.State.pending, exec.nodes.items[0].state);
+    try std.testing.expectEqual(GraphNode.State.ready, exec.nodes.items[1].state);
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "retry-ready", .data = "ready" });
+    exec.worker_spawner = null;
+    try exec.execute();
+    try std.testing.expectEqual(@as(usize, 2), exec.tasks_run);
+}
+
+test "parallel worker honors dotenv and export values for recipe require" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    try tmp_dir.dir.writeFile(.{ .sub_path = ".env", .data = "JAKE_PARALLEL_DOTENV_REQUIRE=dotenv\n" });
+
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\@dotenv
+        \\@export JAKE_PARALLEL_EXPORT_REQUIRE=exported
+        \\@require JAKE_PARALLEL_DOTENV_REQUIRE JAKE_PARALLEL_EXPORT_REQUIRE
+        \\task dependency:
+        \\    echo dependency
+        \\task target: [dependency]
+        \\    echo target
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+    try exec.buildGraph("target");
+    try exec.execute();
+    try std.testing.expectEqual(@as(usize, 2), exec.tasks_run);
+}
+
+test "parallel rooted file target skips through worker cache policy" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    try tmp_dir.dir.makeDir("module");
+    try tmp_dir.dir.writeFile(.{ .sub_path = "module/input.txt", .data = "input" });
+    try tmp_dir.dir.writeFile(.{ .sub_path = "module/output.txt", .data = "output" });
+
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\file output.txt: input.txt
+        \\    echo rebuilt >> rebuilt.txt
+        \\task build: [output.txt]
+        \\    echo build >> build.txt
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var recipes = @constCast(jakefile.recipes);
+    recipes[0].origin = .{
+        .original_name = "output.txt",
+        .import_prefix = "module",
+        .source_file = "module/Jakefile",
+        .base_dir = "module",
+    };
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+    try exec.cache.update("module/input.txt");
+    try exec.buildGraph("build");
+    try exec.execute();
+
+    try std.testing.expectError(error.FileNotFound, std.fs.cwd().access("module/rebuilt.txt", .{}));
+    try std.testing.expectEqual(@as(usize, 1), exec.tasks_run);
 }
 
 test "cycle detection" {

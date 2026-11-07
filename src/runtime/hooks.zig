@@ -41,6 +41,9 @@ pub const HookContext = struct {
     /// Variables available for substitution
     variables: *const std.StringHashMap([]const u8),
 
+    /// Run permission shared with the recipe owner; false means cancelled.
+    cancellation_flag: ?*std.atomic.Value(bool) = null,
+
     /// Get a variable value by name
     pub fn getVariable(self: *const HookContext, name: []const u8) ?[]const u8 {
         return self.variables.get(name);
@@ -190,6 +193,9 @@ pub const HookRunner = struct {
 
     /// Execute a single hook command
     fn executeHook(self: *HookRunner, hook: Hook, context: *const HookContext) HookError!void {
+        if (context.cancellation_flag) |flag| {
+            if (!flag.load(.acquire)) return HookError.Cancelled;
+        }
         const expanded_cmd = self.expandHookVariables(hook.command, context) catch hook.command;
         // Track if we allocated memory (expanded_cmd ptr differs from original)
         const needs_free = expanded_cmd.ptr != hook.command.ptr;
@@ -214,6 +220,10 @@ pub const HookRunner = struct {
         child.stderr_behavior = .Inherit;
         child.stdout_behavior = .Inherit;
 
+        if (context.cancellation_flag != null and builtin.os.tag != .windows and builtin.os.tag != .wasi) {
+            child.pgid = 0;
+        }
+
         _ = child.spawn() catch |err| {
             self.printHook("{s}hook spawn failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return HookError.SpawnFailed;
@@ -223,12 +233,16 @@ pub const HookRunner = struct {
         // Released right after the reap below; this only covers the error path.
         defer signals.untrack(&signal_slot);
 
-        const result = child.wait() catch |err| {
+        const result = signals.waitForChild(&child, &signal_slot, context.cancellation_flag) catch |err| {
             self.printHook("{s}hook wait failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
             return HookError.WaitFailed;
         };
         // The pid is recycleable the moment it is reaped - stop signalling it.
         signals.untrack(&signal_slot);
+
+        if (context.cancellation_flag) |flag| {
+            if (!flag.load(.acquire)) return HookError.Cancelled;
+        }
 
         switch (result) {
             .Exited => |code| {
@@ -310,6 +324,7 @@ pub const HookRunner = struct {
 };
 
 pub const HookError = error{
+    Cancelled,
     SpawnFailed,
     WaitFailed,
     HookFailed,
@@ -511,4 +526,75 @@ test "hook variable expansion with special characters" {
     defer std.testing.allocator.free(expanded);
 
     try std.testing.expectEqualStrings("echo /some/path with spaces hello \"world\"", expanded);
+}
+
+test "cancellation reaps active hooks before publishing recipe completion" {
+    try checkCancellationAtHook("pre");
+    try checkCancellationAtHook("post");
+}
+
+fn checkCancellationAtHook(kind: []const u8) !void {
+    if (builtin.os.tag == .windows or builtin.os.tag == .wasi) return error.SkipZigTest;
+    const lexer_mod = @import("../frontend/lexer.zig");
+    const parser_mod = @import("../frontend/parser.zig");
+    const executor_mod = @import("executor.zig");
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const root = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root);
+    const source = try std.fmt.allocPrint(
+        allocator,
+        "task run:\n    @{s} printf ready > '{s}/ready'; while [ ! -e '{s}/release' ]; do sleep 0.01; done; printf leaked > '{s}/leaked'\n    printf body > '{s}/body'\n    @post printf later > '{s}/later'\n",
+        .{ kind, root, root, root, root, root },
+    );
+    defer allocator.free(source);
+    var lexer = lexer_mod.Lexer.init(source);
+    var parser = parser_mod.Parser.init(allocator, &lexer);
+    var ast = try parser.parseJakefile();
+    defer ast.deinit(allocator);
+    var exec = try executor_mod.Executor.init(allocator, &ast);
+    defer exec.deinitWithoutSavingCache();
+    var running: std.atomic.Value(bool) = .init(true);
+    exec.ctx.cancellation_flag = &running;
+    const Run = struct {
+        exec: *executor_mod.Executor,
+        done: std.atomic.Value(bool) = .init(false),
+        result: ?executor_mod.ExecuteError = null,
+
+        fn run(self: *@This()) void {
+            self.exec.execute("run") catch |err| {
+                self.result = err;
+            };
+            self.done.store(true, .release);
+        }
+    };
+    var run = Run{ .exec = &exec };
+    const thread = try std.Thread.spawn(.{}, Run.run, .{&run});
+    // A broken cancellation path is released explicitly, so failure is bounded.
+    defer {
+        tmp.dir.writeFile(.{ .sub_path = "release", .data = "" }) catch {};
+        thread.join();
+    }
+    const ready_deadline = std.time.milliTimestamp() + 3000;
+    while (true) {
+        if (tmp.dir.access("ready", .{})) |_| break else |_| {}
+        if (std.time.milliTimestamp() >= ready_deadline) return error.TestUnexpectedResult;
+        std.Thread.sleep(std.time.ns_per_ms);
+    }
+    // The sentinel establishes that the hook is active before Stop is issued.
+    running.store(false, .release);
+    const stop_deadline = std.time.milliTimestamp() + 3000;
+    while (!run.done.load(.acquire) and std.time.milliTimestamp() < stop_deadline) {
+        std.Thread.sleep(std.time.ns_per_ms);
+    }
+    try std.testing.expect(run.done.load(.acquire));
+    try std.testing.expectEqual(error.Cancelled, run.result.?);
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access("leaked", .{}));
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access("later", .{}));
+    if (std.mem.eql(u8, kind, "pre")) {
+        try std.testing.expectError(error.FileNotFound, tmp.dir.access("body", .{}));
+    } else {
+        try tmp.dir.access("body", .{});
+    }
 }

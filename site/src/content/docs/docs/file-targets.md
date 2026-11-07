@@ -3,7 +3,7 @@ title: File Targets
 description: Build files only when dependencies change.
 ---
 
-File recipes are **conditional**—they only run if the output file is missing or any dependency file has been modified.
+File recipes are **conditional**—they run if the output is missing, an input has no recorded fingerprint, or an input's content differs from the last successful build. Jake hashes dependency content even when modification timestamps match. Sequential execution and `-j` use the same checks, including paths in `@rooted` imports.
 
 ## Basic Syntax
 

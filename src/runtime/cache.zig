@@ -57,9 +57,11 @@ pub const Cache = struct {
     }
 
     /// Check if a file has changed since its hash was last recorded.
-    /// Uses mtime as a fast-path: if mtime hasn't changed, skips the full
-    /// SHA-256 hash. This can miss edits that don't update mtime (e.g.,
-    /// writes within the same second on filesystems with 1s granularity).
+    ///
+    /// A file's mtime is metadata, not a content version: copies and source
+    /// checkouts can restore it, and some filesystems coalesce rapid writes.
+    /// Compare the content hash on every cached lookup so a same-mtime edit
+    /// cannot cause a file target to be falsely treated as fresh.
     pub fn isStale(self: *Cache, path: []const u8) !bool {
         const file = std.fs.cwd().openFile(path, .{}) catch |err| {
             if (err == error.FileNotFound) return true;
@@ -67,23 +69,7 @@ pub const Cache = struct {
         };
         defer file.close();
 
-        // Fast path: check mtime first
-        const stat = file.stat() catch {
-            // If stat fails, fall back to hash comparison
-            const current_hash = try self.computeHash(file);
-            if (self.hashes.get(path)) |cached| {
-                return !std.mem.eql(u8, &cached.content_hash, &current_hash);
-            }
-            return true;
-        };
-        const current_mtime = stat.mtime;
-
         if (self.hashes.get(path)) |cached| {
-            // If mtime matches, file hasn't changed - skip hash computation
-            if (cached.mtime == current_mtime) {
-                return false;
-            }
-            // mtime changed, compute hash to verify
             const current_hash = try self.computeHash(file);
             return !std.mem.eql(u8, &cached.content_hash, &current_hash);
         }
@@ -600,7 +586,7 @@ test "cache load handles missing cache file" {
 
 // --- Content-based Hashing ---
 
-test "cache detects content change" {
+test "cache detects content change after its mtime is restored" {
     var cache = Cache.init(std.testing.allocator);
     defer cache.deinit();
 
@@ -634,15 +620,16 @@ test "cache detects content change" {
         try std.testing.expect(!stale);
     }
 
-    // Sleep briefly so the rewrite gets a strictly newer mtime. Windows mtime
-    // resolution can collapse two writes inside a few-ms window onto the same
-    // timestamp, which would make isStale's mtime fast-path falsely say "fresh".
-    std.Thread.sleep(20 * std.time.ns_per_ms);
+    const original_times = try std.fs.cwd().openFile("test.txt", .{});
+    const original_stat = try original_times.stat();
+    original_times.close();
 
-    // Modify the file
+    // Rewrite with the same length, then restore the original timestamps. This
+    // models source restoration and coarse-mtime filesystems without a sleep.
     {
         const file = try std.fs.cwd().createFile("test.txt", .{});
-        try file.writeAll("modified content");
+        try file.writeAll("changed! content");
+        try file.updateTimes(original_stat.atime, original_stat.mtime);
         file.close();
     }
 

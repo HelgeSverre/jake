@@ -43,7 +43,7 @@ Subprocess prompts are different: commands that try to read from stdin themselve
 
 ### Stop / Cancel
 
-Use the stop control in the browser to cancel the active run. Jake terminates the running command tree and reports the cancellation back through the normal task output and summary stream.
+Use the stop control in the browser to cancel the active run. Jake terminates running command and hook trees and reports cancellation through the normal task output and summary stream. Cancellation is checked before each hook, and already completed shell effects cannot be undone. Post-hooks still run for ordinary command failures.
 
 ### Run State and Reconnection
 

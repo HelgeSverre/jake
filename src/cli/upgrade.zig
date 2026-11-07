@@ -385,18 +385,11 @@ fn replaceBinary(allocator: std.mem.Allocator, new_binary_path: []const u8) !voi
 
     if (builtin.os.tag == .windows) {
         // Windows: Cannot replace running executable directly
-        // Rename current to .old, move new into place
+        // Rename current to .old, move new into place. Keep the old binary
+        // recoverable if moving the candidate fails.
         const old_path = std.fmt.allocPrint(allocator, "{s}.old", .{self_path}) catch return error.OutOfMemory;
         defer allocator.free(old_path);
-
-        // Delete any existing .old file
-        std.fs.cwd().deleteFile(old_path) catch {};
-
-        // Rename current -> .old
-        std.fs.cwd().rename(self_path, old_path) catch return error.PermissionDenied;
-
-        // Move new -> current
-        std.fs.cwd().rename(new_binary_path, self_path) catch return error.FileSystemError;
+        try replaceWindowsBinary(self_path, new_binary_path, old_path);
     } else {
         // Unix: Atomic rename works even on running binary
         std.fs.cwd().rename(new_binary_path, self_path) catch |err| {
@@ -409,6 +402,56 @@ fn replaceBinary(allocator: std.mem.Allocator, new_binary_path: []const u8) !voi
         defer file.close();
         file.chmod(0o755) catch {};
     }
+}
+
+/// Replace a Windows executable using explicit paths so the rollback behavior
+/// can be exercised without replacing the running test binary.
+fn replaceWindowsBinary(self_path: []const u8, new_binary_path: []const u8, old_path: []const u8) !void {
+    // A previous successful upgrade may have left a backup. It cannot be the
+    // recovery copy for this attempt, so remove it before reserving old_path.
+    std.fs.cwd().deleteFile(old_path) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return error.FileSystemError,
+    };
+
+    std.fs.cwd().rename(self_path, old_path) catch |err| switch (err) {
+        error.AccessDenied => return error.PermissionDenied,
+        else => return error.FileSystemError,
+    };
+
+    std.fs.cwd().rename(new_binary_path, self_path) catch {
+        // Do not delete old_path if this fails: it is the only known-good
+        // binary until the rollback succeeds. If rollback also fails, leave
+        // the backup in place for manual recovery.
+        _ = std.fs.cwd().rename(old_path, self_path) catch return error.FileSystemError;
+        return error.FileSystemError;
+    };
+}
+
+/// Reserve an empty, unique download path beside the executable. This keeps
+/// replacement on one filesystem and works on Windows where `/tmp` is not a
+/// valid staging location.
+fn createStagedDownloadPath(allocator: std.mem.Allocator, executable_path: []const u8) ![]u8 {
+    const parent = std.fs.path.dirname(executable_path) orelse ".";
+    var attempts: usize = 0;
+    while (attempts < 16) : (attempts += 1) {
+        var name_buf: [32]u8 = undefined;
+        const name = std.fmt.bufPrint(&name_buf, ".jake-upgrade-{x}", .{std.crypto.random.int(u64)}) catch unreachable;
+        const path = std.fs.path.join(allocator, &.{ parent, name }) catch return error.OutOfMemory;
+        const file = std.fs.cwd().createFile(path, .{ .exclusive = true }) catch |err| switch (err) {
+            error.PathAlreadyExists => {
+                allocator.free(path);
+                continue;
+            },
+            else => {
+                allocator.free(path);
+                return error.FileSystemError;
+            },
+        };
+        file.close();
+        return path;
+    }
+    return error.FileSystemError;
 }
 
 // ============================================================================
@@ -474,11 +517,13 @@ pub fn run(
 
     writer.writeAll("\n") catch {};
 
-    // Create temp file for download
-    var tmp_path_buf: [256]u8 = undefined;
-    const tmp_path = std.fmt.bufPrint(&tmp_path_buf, "/tmp/jake-upgrade-{d}", .{
-        std.time.milliTimestamp(),
-    }) catch return error.OutOfMemory;
+    // Stage beside the executable so the final rename is same-filesystem and
+    // valid on every supported platform.
+    const self_path = try getSelfPath(allocator);
+    defer allocator.free(self_path);
+    const tmp_path = try createStagedDownloadPath(allocator, self_path);
+    defer allocator.free(tmp_path);
+    defer std.fs.cwd().deleteFile(tmp_path) catch {};
 
     // Download the binary
     try downloadToFile(allocator, release.download_url, tmp_path, writer);
@@ -493,8 +538,6 @@ pub fn run(
         if (try fetchChecksum(allocator, release.checksum_url)) |expected| {
             const valid = try verifyChecksum(tmp_path, expected);
             if (!valid) {
-                // Clean up temp file
-                std.fs.cwd().deleteFile(tmp_path) catch {};
                 writer.writeAll(color.errorRed()) catch {};
                 writer.writeAll("FAILED\n") catch {};
                 writer.writeAll(color.reset()) catch {};
@@ -827,6 +870,80 @@ test "verifyChecksum handles empty file" {
     const empty_checksum = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".*;
     const result = try verifyChecksum(tmp_path, empty_checksum);
     try std.testing.expect(result == true);
+}
+
+test "staged download path is unique and beside the executable" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try tmp.dir.writeFile(.{ .sub_path = "jake", .data = "installed" });
+    var executable_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const executable_path = try tmp.dir.realpath("jake", &executable_buf);
+
+    const first = try createStagedDownloadPath(allocator, executable_path);
+    defer {
+        std.fs.cwd().deleteFile(first) catch {};
+        allocator.free(first);
+    }
+    const second = try createStagedDownloadPath(allocator, executable_path);
+    defer {
+        std.fs.cwd().deleteFile(second) catch {};
+        allocator.free(second);
+    }
+
+    try std.testing.expect(std.mem.eql(u8, std.fs.path.dirname(first).?, std.fs.path.dirname(executable_path).?));
+    try std.testing.expect(std.mem.eql(u8, std.fs.path.dirname(second).?, std.fs.path.dirname(executable_path).?));
+    try std.testing.expect(!std.mem.eql(u8, first, second));
+    const first_file = try std.fs.cwd().openFile(first, .{});
+    first_file.close();
+    const second_file = try std.fs.cwd().openFile(second, .{});
+    second_file.close();
+}
+
+test "Windows replacement installs candidate and keeps the old binary" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try tmp.dir.writeFile(.{ .sub_path = "jake.exe", .data = "old binary" });
+    try tmp.dir.writeFile(.{ .sub_path = "candidate.exe", .data = "new binary" });
+    var self_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var candidate_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const self_path = try tmp.dir.realpath("jake.exe", &self_buf);
+    const candidate_path = try tmp.dir.realpath("candidate.exe", &candidate_buf);
+    const old_path = try std.fmt.allocPrint(allocator, "{s}.old", .{self_path});
+    defer allocator.free(old_path);
+
+    try replaceWindowsBinary(self_path, candidate_path, old_path);
+
+    const installed = try std.fs.cwd().readFileAlloc(allocator, self_path, 1024);
+    defer allocator.free(installed);
+    const backup = try std.fs.cwd().readFileAlloc(allocator, old_path, 1024);
+    defer allocator.free(backup);
+    try std.testing.expectEqualStrings("new binary", installed);
+    try std.testing.expectEqualStrings("old binary", backup);
+}
+
+test "Windows replacement restores the installed binary when candidate move fails" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try tmp.dir.writeFile(.{ .sub_path = "jake.exe", .data = "old binary" });
+    var self_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const self_path = try tmp.dir.realpath("jake.exe", &self_buf);
+    const missing_candidate = try std.fmt.allocPrint(allocator, "{s}/missing.exe", .{std.fs.path.dirname(self_path).?});
+    defer allocator.free(missing_candidate);
+    const old_path = try std.fmt.allocPrint(allocator, "{s}.old", .{self_path});
+    defer allocator.free(old_path);
+
+    try std.testing.expectError(error.FileSystemError, replaceWindowsBinary(self_path, missing_candidate, old_path));
+
+    const restored = try std.fs.cwd().readFileAlloc(allocator, self_path, 1024);
+    defer allocator.free(restored);
+    try std.testing.expectEqualStrings("old binary", restored);
+    try std.testing.expectError(error.FileNotFound, std.fs.cwd().openFile(old_path, .{}));
 }
 
 // --- Version Parsing Failure Tests ---

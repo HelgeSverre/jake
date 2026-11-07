@@ -53,12 +53,6 @@ pub const ListOptions = struct {
     recipe_type: ?[]const u8 = null,
 };
 
-/// Default CLI context used by init() and initWithIndex() for backwards compatibility.
-/// For production use, pass a Context explicitly via initWithContext().
-var default_context: Context = .{
-    .color = color_mod.Color{ .enabled = false }, // Will be auto-detected when needed
-};
-
 /// Executes recipes from a parsed Jakefile.
 pub const Executor = struct {
     allocator: std.mem.Allocator,
@@ -72,6 +66,10 @@ pub const Executor = struct {
     cache: *Cache,
     // Set only on the owning path (Executor.init); freed in deinit.
     owned_cache: ?*Cache = null,
+    // init() and initWithIndex() allocate an isolated CLI context. This avoids
+    // workers resetting a mutable module-global context while another executor
+    // is reading it. initWithIndexAndContext keeps ownership with its caller.
+    owned_context: ?*Context = null,
 
     executed: std.StringHashMap(void),
     in_progress: std.StringHashMap(void),
@@ -109,6 +107,10 @@ pub const Executor = struct {
             allocator.destroy(owned_index);
             return err;
         };
+        errdefer {
+            owned_index.deinit();
+            allocator.destroy(owned_index);
+        }
         var executor = try initInternal(allocator, jakefile, owned_index);
         executor.owned_index = owned_index;
         executor.index = owned_index;
@@ -163,8 +165,9 @@ pub const Executor = struct {
     }
 
     fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) !Executor {
-        // Reset default context to initial state (important for tests that reuse this)
-        default_context = .{
+        const owned_context = try allocator.create(Context);
+        errdefer allocator.destroy(owned_context);
+        owned_context.* = .{
             .color = color_mod.Color{ .enabled = false },
         };
 
@@ -237,13 +240,14 @@ pub const Executor = struct {
             .index = index,
             .cache = cache,
             .owned_cache = cache,
+            .owned_context = owned_context,
             .executed = std.StringHashMap(void).init(allocator),
             .in_progress = std.StringHashMap(void).init(allocator),
             .variables = variables,
             .expanded_strings = .empty,
             .environment = environment,
             .hook_runner = hook_runner,
-            .ctx = &default_context,
+            .ctx = owned_context,
             .current_recipe_name = null,
             .current_shell = null,
             .current_working_dir = null,
@@ -781,6 +785,10 @@ pub const Executor = struct {
                 self.allocator.destroy(owned);
                 self.owned_cache = null;
             }
+            if (self.owned_context) |owned| {
+                self.allocator.destroy(owned);
+                self.owned_context = null;
+            }
             self.environment.deinit();
             self.hook_runner.deinit();
         }
@@ -1000,12 +1008,13 @@ pub const Executor = struct {
             .success = true,
             .error_message = null,
             .variables = &self.variables,
+            .cancellation_flag = self.ctx.cancellation_flag,
         };
 
         // Run pre-hooks (global and recipe-specific)
         self.hook_runner.runPreHooks(recipe.pre_hooks, &hook_context) catch |err| {
             self.print("{s}pre-hook failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            return ExecuteError.CommandFailed;
+            return if (self.ctx.isCancelled()) ExecuteError.Cancelled else ExecuteError.CommandFailed;
         };
 
         // Set recipe-level shell and working directory
@@ -1077,6 +1086,11 @@ pub const Executor = struct {
         if (!hook_context.success) {
             self.hook_runner.runOnErrorHooks(recipe.on_error_hooks, &hook_context);
         }
+
+        // A cancellation can arrive while a post/on-error hook is running.
+        // It must win over an otherwise successful body so file-target state is
+        // not committed after the user has stopped the execution.
+        if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
 
         // Return the original error if recipe execution failed
         if (exec_result) |_| {} else |err| {
@@ -1166,7 +1180,7 @@ pub const Executor = struct {
         return .{ .path = path, .owned = false };
     }
 
-    fn checkFileTarget(self: *Executor, recipe: *const Recipe) !bool {
+    pub fn checkFileTarget(self: *Executor, recipe: *const Recipe) !bool {
         // Check if output exists
         const output = recipe.output orelse return true;
 
@@ -1935,52 +1949,7 @@ pub const Executor = struct {
     /// Wait for `child`, releasing its signal-table slot the instant it is
     /// reaped. `signal_slot` points at the handle `signals.track` returned.
     fn waitForChild(self: *Executor, child: *std.process.Child, signal_slot: *usize) !std.process.Child.Term {
-        if (self.ctx.cancellation_flag == null) {
-            defer signals.untrack(signal_slot);
-            return child.wait();
-        }
-        const CancellationMonitor = struct {
-            ctx: *const Context,
-            id: std.process.Child.Id,
-            done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-
-            fn run(monitor: *@This()) void {
-                while (!monitor.done.load(.acquire)) {
-                    if (monitor.ctx.isCancelled()) {
-                        if (builtin.os.tag == .windows) {
-                            std.os.windows.TerminateProcess(monitor.id, 1) catch {};
-                        } else if (builtin.os.tag != .wasi) {
-                            signals.killTree(monitor.id, signals.sigkill);
-                        }
-                        return;
-                    }
-                    std.Thread.sleep(10 * std.time.ns_per_ms);
-                }
-            }
-        };
-        var monitor = CancellationMonitor{ .ctx = self.ctx, .id = child.id };
-        if (builtin.os.tag == .windows) {
-            const windows = std.os.windows;
-            const process = windows.GetCurrentProcess();
-            if (windows.kernel32.DuplicateHandle(process, child.id, process, &monitor.id, 0, windows.FALSE, windows.DUPLICATE_SAME_ACCESS) == 0) {
-                _ = child.kill() catch {};
-                return error.SystemResources;
-            }
-        }
-        defer if (builtin.os.tag == .windows) std.os.windows.CloseHandle(monitor.id);
-        const thread = std.Thread.spawn(.{}, CancellationMonitor.run, .{&monitor}) catch |err| {
-            _ = child.kill() catch {};
-            return err;
-        };
-        defer {
-            monitor.done.store(true, .release);
-            thread.join();
-        }
-        const term = try child.wait();
-        // Release the slot before the deferred join: the monitor polls on a
-        // 10ms interval, and the pid is recycleable the moment it is reaped.
-        signals.untrack(signal_slot);
-        return term;
+        return signals.waitForChild(child, signal_slot, self.ctx.cancellation_flag);
     }
 
     /// Execute an external recipe by delegating to make or just
@@ -3276,6 +3245,53 @@ test "executor basic" {
 
     executor.ctx.dry_run = true;
     try executor.execute("hello");
+}
+
+test "executor init gives each executor an isolated default context" {
+    const source =
+        \\task hello:
+        \\    echo "Hello"
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var first = try Executor.init(std.testing.allocator, &jakefile);
+    defer first.deinitWithoutSavingCache();
+    var second = try Executor.init(std.testing.allocator, &jakefile);
+    defer second.deinitWithoutSavingCache();
+
+    try std.testing.expect(first.ctx != second.ctx);
+    first.ctx.dry_run = true;
+    try std.testing.expect(!second.ctx.dry_run);
+}
+
+test "executor init releases the owned index on allocation failure" {
+    const source =
+        \\task hello:
+        \\    echo "Hello"
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, struct {
+        fn initAndDeinit(allocator: std.mem.Allocator, parsed: *const Jakefile) !void {
+            var executor = try Executor.init(allocator, parsed);
+            defer executor.deinitWithoutSavingCache();
+        }
+    }.initAndDeinit, .{&jakefile});
 }
 
 test "line continuation normalization joins continued lines" {

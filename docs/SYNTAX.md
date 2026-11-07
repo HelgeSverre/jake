@@ -106,7 +106,7 @@ task build:
 
 #### 2.2 File Recipe
 
-Only executes if output file is stale relative to dependencies. Introduced with `file` keyword.
+Runs when the output is missing or a dependency has no recorded fingerprint or different content from the last successful build. Dependency content is hashed even when its modification time is unchanged. The same checks apply to sequential and parallel execution, including paths in `@rooted` imports. Introduced with `file` keyword.
 
 ```jake
 file dist/app.js: src/**/*.ts
@@ -261,6 +261,9 @@ See **[CLI-ARGS.md](CLI-ARGS.md)** for the complete argument grammar and rules.
 Directives are special commands prefixed with `@`. They fall into two categories:
 
 ### 6.1 Global Directives
+
+Importing a module under two distinct `as` prefixes makes its recipes available in both namespaces. Repeated identical imports in the same effective namespace are deduplicated; imported global hooks are merged once per source file. Recipe `@require` checks include values from `@dotenv` and `@export` in both sequential and `-j` execution.
+
 
 Appear at the top level of a Jakefile (not indented).
 
@@ -732,4 +735,5 @@ Based on [Sublime Text's scope naming guide](http://www.sublimetext.com/docs/sco
 allows parallel dependencies within that run. Reconnecting browsers restore
 active task state before enabling launch controls; missed output is not replayed.
 Failed and cancelled runs produce one summary, and controls unlock after cleanup.
+Stop also terminates active hook commands; cancellation is checked before each hook. Already completed shell effects cannot be undone.
 See the [Web UI guide](../site/src/content/docs/docs/web-ui.md) for browser behavior.

@@ -111,6 +111,56 @@ fn signalable(pid: i32) bool {
     return pid > 1;
 }
 
+/// Wait and reap one child while honoring a run's cancellation flag. The child
+/// must have its own process group on POSIX when cancellation is enabled.
+/// Consume the signal-table handle at reap and join the monitor before return.
+pub fn waitForChild(child: *std.process.Child, signal_slot: *usize, running: ?*std.atomic.Value(bool)) !std.process.Child.Term {
+    defer untrack(signal_slot);
+    const flag = running orelse return child.wait();
+    const Monitor = struct {
+        running: *std.atomic.Value(bool),
+        id: std.process.Child.Id,
+        done: std.atomic.Value(bool) = .init(false),
+
+        fn run(monitor: *@This()) void {
+            while (!monitor.done.load(.acquire)) {
+                if (!monitor.running.load(.acquire)) {
+                    if (builtin.os.tag == .windows) {
+                        std.os.windows.TerminateProcess(monitor.id, 1) catch {};
+                    } else if (enabled) {
+                        killTree(monitor.id, sigkill);
+                    }
+                    return;
+                }
+                std.Thread.sleep(10 * std.time.ns_per_ms);
+            }
+        }
+    };
+    var monitor = Monitor{ .running = flag, .id = child.id };
+    if (builtin.os.tag == .windows) {
+        const windows = std.os.windows;
+        const process = windows.GetCurrentProcess();
+        if (windows.kernel32.DuplicateHandle(process, child.id, process, &monitor.id, 0, windows.FALSE, windows.DUPLICATE_SAME_ACCESS) == 0) {
+            _ = child.kill() catch {};
+            return error.SystemResources;
+        }
+    }
+    defer if (builtin.os.tag == .windows) std.os.windows.CloseHandle(monitor.id);
+    const thread = std.Thread.spawn(.{}, Monitor.run, .{&monitor}) catch |err| {
+        if (enabled) killTree(child.id, sigkill);
+        _ = child.kill() catch {};
+        return err;
+    };
+    defer {
+        monitor.done.store(true, .release);
+        thread.join();
+    }
+    const term = try child.wait();
+    monitor.done.store(true, .release);
+    untrack(signal_slot);
+    return term;
+}
+
 /// Forward `sig` to every live child.
 fn forward(sig: u8) void {
     for (&tracked) |*slot| {

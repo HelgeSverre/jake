@@ -198,6 +198,8 @@ task fish-example:
 
 ### @cache
 
+Cache checks compare file content with the last successful run, including changes that preserve modification timestamps.
+
 Skips the recipe if none of the matched files have changed since the last successful run. Useful for tasks with no file output target but expensive to run:
 
 ```jake
