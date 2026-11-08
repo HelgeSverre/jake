@@ -745,9 +745,9 @@ yes/no before 1.0.
       docs and landing page make this immediately obvious.
 - [ ] Lock the directive surface — every `@thing` shipped in 1.0 is a
       forever-API. Better to ship fewer.
-- [ ] Decide whether parallel cache merge (POTENTIAL_ISSUES #4) is a 1.0
-      blocker or a "fix when someone hits it" item. Depends on target user
-      (small Jakefiles vs. real build pipelines).
+- [ ] Measure remaining parallel cache snapshot-copy cost (POTENTIAL_ISSUES #4).
+      Stale snapshot publication is fixed; delta writeback now preserves sibling updates.
+      See [the cleanup evidence](docs/code-cleanup.md).
 
 ---
 

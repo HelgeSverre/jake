@@ -13,14 +13,6 @@ const signals = jake.signals;
 
 const version = build_options.version;
 
-fn getStdout() std.fs.File {
-    return compat.getStdOut();
-}
-
-fn getStderr() std.fs.File {
-    return compat.getStdErr();
-}
-
 /// Writer wrapper compatible with Zig 0.15's File.writer() API change
 /// Provides writeAll and print methods for args.zig functions
 const FileWriter = struct {
@@ -68,7 +60,7 @@ pub fn main() !void {
             const err_arg = if (failing_arg.len > 0)
                 failing_arg
             else if (raw_args.len > 1) raw_args[1] else "";
-            const stderr_writer = FileWriter{ .file = getStderr() };
+            const stderr_writer = FileWriter{ .file = compat.getStdErr() };
             // Recover the flag's choices/expected-type from the failing token so
             // value errors can list valid options instead of a bare message.
             const err_ctx = args_mod.buildErrorContext(err_arg);
@@ -79,7 +71,7 @@ pub fn main() !void {
     defer args.deinit(allocator);
 
     if (args.version) {
-        const stdout = getStdout();
+        const stdout = compat.getStdOut();
         const color = color_mod.init();
         stdout.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
         stdout.writeAll(color_mod.symbols.logo) catch {};
@@ -93,15 +85,15 @@ pub fn main() !void {
     }
 
     if (args.help) {
-        const stdout_writer = FileWriter{ .file = getStdout() };
+        const stdout_writer = FileWriter{ .file = compat.getStdOut() };
         args_mod.printHelp(stdout_writer);
         return;
     }
 
     // Handle completions (doesn't need Jakefile)
     if (args.completions_enabled or args.install_completions or args.uninstall_completions) {
-        const stdout = getStdout();
-        const stderr = getStderr();
+        const stdout = compat.getStdOut();
+        const stderr = compat.getStdErr();
 
         const shell = blk: {
             if (args.completions) |shell_name| {
@@ -153,7 +145,7 @@ pub fn main() !void {
     // Handle formatter (reads Jakefile directly, doesn't need executor)
     if (args.fmt or args.dump) {
         const formatter = jake.formatter;
-        const stderr = getStderr();
+        const stderr = compat.getStdErr();
 
         const result = formatter.formatFile(allocator, args.jakefile, args.check or args.dump) catch |err| {
             var buf: [256]u8 = undefined;
@@ -163,7 +155,7 @@ pub fn main() !void {
         };
         defer allocator.free(result.output);
 
-        const stdout = getStdout();
+        const stdout = compat.getStdOut();
 
         if (args.dump) {
             // Output formatted Jakefile to stdout
@@ -181,13 +173,7 @@ pub fn main() !void {
         } else {
             // Format in-place
             if (result.changed) {
-                // Write the formatted output
-                std.fs.cwd().writeFile(.{ .sub_path = args.jakefile, .data = result.output }) catch |err| {
-                    var buf: [256]u8 = undefined;
-                    const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to write: {s}\n", .{@errorName(err)}) catch "error\n";
-                    stderr.writeAll(msg) catch {};
-                    std.process.exit(1);
-                };
+                // formatFile owns the in-place write; main only reports it.
                 stdout.writeAll("Formatted ") catch {};
                 stdout.writeAll(args.jakefile) catch {};
                 stdout.writeAll("\n") catch {};
@@ -199,7 +185,7 @@ pub fn main() !void {
     // Handle web UI mode
     if (args.web) {
         var jakefile_data = jakefile_loader.loadJakefile(allocator, args.jakefile) catch |err| {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             const color = color_mod.init();
             if (err == error.FileNotFound) {
                 stderr.writeAll(if (color.enabled) color_mod.codes.jake_rose else "") catch {};
@@ -238,7 +224,7 @@ pub fn main() !void {
         server.setExecutionContext(&jakefile_data.jakefile, &jakefile_data.index, &jakefile_data.runtime, web_ctx);
 
         server.start() catch |err| {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to start web server: {s}\n", .{@errorName(err)}) catch "error\n";
             stderr.writeAll(msg) catch {};
@@ -260,7 +246,7 @@ pub fn main() !void {
 
     // Load Jakefile
     var jakefile_data = jakefile_loader.loadJakefile(allocator, args.jakefile) catch |err| {
-        const stderr = getStderr();
+        const stderr = compat.getStdErr();
         const color = color_mod.init();
         if (err == error.FileNotFound) {
             // v4 format: {j} error: no Jakefile found (logo only for this error type)
@@ -306,7 +292,7 @@ pub fn main() !void {
     };
 
     var executor = jake.Executor.initWithIndexAndContext(allocator, &jakefile_data.jakefile, &jakefile_data.index, &ctx, &jakefile_data.runtime) catch |err| {
-        const stderr = getStderr();
+        const stderr = compat.getStdErr();
         var buf: [256]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to initialize executor: {s}\n", .{@errorName(err)}) catch "error\n";
         stderr.writeAll(msg) catch {};
@@ -335,13 +321,13 @@ pub fn main() !void {
     // and `jake --show pkg.dev` both work).
     if (args.show_enabled) {
         const recipe_name = args.show orelse args.recipe orelse {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             stderr.writeAll(args_mod.ansi.err_prefix ++ "--show requires a recipe name\n") catch {};
             stderr.writeAll("Usage: jake --show RECIPE  (or: jake RECIPE --show)\n") catch {};
             std.process.exit(1);
         };
         if (!executor.showRecipe(recipe_name)) {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             stderr.writeAll(args_mod.ansi.err_prefix) catch {};
             stderr.writeAll("recipe '") catch {};
             stderr.writeAll(recipe_name) catch {};
@@ -369,7 +355,7 @@ pub fn main() !void {
         if (args.groups) {
             if (args.json) {
                 executor.printGroupsJson(list_options) catch |err| {
-                    const stderr = getStderr();
+                    const stderr = compat.getStdErr();
                     var buf: [256]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to render groups as JSON: {s}\n", .{@errorName(err)}) catch "error\n";
                     stderr.writeAll(msg) catch {};
@@ -377,7 +363,7 @@ pub fn main() !void {
                 };
             } else {
                 executor.printGroups(list_options) catch |err| {
-                    const stderr = getStderr();
+                    const stderr = compat.getStdErr();
                     var buf: [256]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to list groups: {s}\n", .{@errorName(err)}) catch "error\n";
                     stderr.writeAll(msg) catch {};
@@ -390,7 +376,7 @@ pub fn main() !void {
         if (args.short) {
             if (args.json) {
                 executor.printRecipeNamesJson(list_options) catch |err| {
-                    const stderr = getStderr();
+                    const stderr = compat.getStdErr();
                     var buf: [256]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to render recipe names as JSON: {s}\n", .{@errorName(err)}) catch "error\n";
                     stderr.writeAll(msg) catch {};
@@ -398,7 +384,7 @@ pub fn main() !void {
                 };
             } else {
                 executor.printShort(list_options) catch |err| {
-                    const stderr = getStderr();
+                    const stderr = compat.getStdErr();
                     var buf: [256]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to list recipe names: {s}\n", .{@errorName(err)}) catch "error\n";
                     stderr.writeAll(msg) catch {};
@@ -411,7 +397,7 @@ pub fn main() !void {
         if (args.summary) {
             if (args.json) {
                 executor.printRecipeNamesJson(list_options) catch |err| {
-                    const stderr = getStderr();
+                    const stderr = compat.getStdErr();
                     var buf: [256]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to render summary as JSON: {s}\n", .{@errorName(err)}) catch "error\n";
                     stderr.writeAll(msg) catch {};
@@ -419,7 +405,7 @@ pub fn main() !void {
                 };
             } else {
                 executor.printSummary(list_options) catch |err| {
-                    const stderr = getStderr();
+                    const stderr = compat.getStdErr();
                     var buf: [256]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to print summary: {s}\n", .{@errorName(err)}) catch "error\n";
                     stderr.writeAll(msg) catch {};
@@ -431,7 +417,7 @@ pub fn main() !void {
 
         if (args.json) {
             executor.printRecipesJson(list_options) catch |err| {
-                const stderr = getStderr();
+                const stderr = compat.getStdErr();
                 var buf: [256]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to render recipe list as JSON: {s}\n", .{@errorName(err)}) catch "error\n";
                 stderr.writeAll(msg) catch {};
@@ -441,7 +427,7 @@ pub fn main() !void {
         }
 
         executor.listRecipes(list_options) catch |err| {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Failed to list recipes: {s}\n", .{@errorName(err)}) catch "error\n";
             stderr.writeAll(msg) catch {};
@@ -451,7 +437,7 @@ pub fn main() !void {
     }
 
     if (args.json) {
-        const stderr = getStderr();
+        const stderr = compat.getStdErr();
         stderr.writeAll(args_mod.ansi.err_prefix ++ "Option --json currently supports listing output only\n") catch {};
         std.process.exit(1);
     }
@@ -461,14 +447,14 @@ pub fn main() !void {
         if (jakefile_data.index.getDefaultRecipe()) |r| {
             break :blk r.name;
         }
-        getStderr().writeAll(args_mod.ansi.err_prefix ++ "No default recipe and no recipe specified\n") catch {};
+        compat.getStdErr().writeAll(args_mod.ansi.err_prefix ++ "No default recipe and no recipe specified\n") catch {};
         std.process.exit(1);
     };
 
     // Watch mode
     if (args.watch_enabled) {
         var watcher = jake.Watcher.initWithLoadedJakefile(allocator, args.jakefile, jakefile_data, &ctx) catch |err| {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Watch failed: {s}\n", .{@errorName(err)}) catch "error\n";
             stderr.writeAll(msg) catch {};
@@ -485,7 +471,7 @@ pub fn main() !void {
         }
 
         watcher.watch(target) catch |err| {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, args_mod.ansi.err_prefix ++ "Watch failed: {s}\n", .{@errorName(err)}) catch "error\n";
             stderr.writeAll(msg) catch {};
@@ -507,7 +493,7 @@ pub fn main() !void {
 
     // Execute
     executor.execute(target) catch |err| {
-        const stderr = getStderr();
+        const stderr = compat.getStdErr();
         var buf: [512]u8 = undefined;
 
         switch (err) {
@@ -574,7 +560,7 @@ fn handleUpgrade(allocator: std.mem.Allocator, args: []const []const u8) !void {
             printUpgradeHelp();
             return;
         } else if (arg.len > 0 and arg[0] == '-') {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             stderr.writeAll(args_mod.ansi.err_prefix ++ "Unknown option: ") catch {};
             stderr.writeAll(arg) catch {};
             stderr.writeAll("\n") catch {};
@@ -583,8 +569,8 @@ fn handleUpgrade(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     }
 
-    const stdout_writer = FileWriter{ .file = getStdout() };
-    const stderr = getStderr();
+    const stdout_writer = FileWriter{ .file = compat.getStdOut() };
+    const stderr = compat.getStdErr();
 
     upgrade.run(allocator, version, options, stdout_writer) catch |err| {
         switch (err) {
@@ -621,7 +607,7 @@ fn handleUpgrade(allocator: std.mem.Allocator, args: []const []const u8) !void {
 }
 
 fn printUpgradeHelp() void {
-    const stdout = getStdout();
+    const stdout = compat.getStdOut();
     stdout.writeAll(
         \\jake upgrade - Update jake to the latest version
         \\
@@ -665,7 +651,7 @@ fn handleInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
             } else if (std.mem.eql(u8, value, "zig")) {
                 options.template = .zig_lang;
             } else {
-                const stderr = getStderr();
+                const stderr = compat.getStdErr();
                 stderr.writeAll(args_mod.ansi.err_prefix ++ "Unknown template: ") catch {};
                 stderr.writeAll(value) catch {};
                 stderr.writeAll("\nAvailable templates: starter, blank, node, go, rust, python, zig\n") catch {};
@@ -675,7 +661,7 @@ fn handleInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         } else if (std.mem.startsWith(u8, arg, "-p") or std.mem.startsWith(u8, arg, "--path")) {
             const value = if (std.mem.startsWith(u8, arg, "-p")) arg[2..] else std.mem.trimLeft(u8, arg[6..], " =");
             if (value.len == 0) {
-                const stderr = getStderr();
+                const stderr = compat.getStdErr();
                 stderr.writeAll(args_mod.ansi.err_prefix ++ "Missing value for --path\n") catch {};
                 printInitHelp();
                 std.process.exit(1);
@@ -687,14 +673,14 @@ fn handleInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
             printInitHelp();
             return;
         } else if (arg.len > 0 and arg[0] == '-') {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             stderr.writeAll(args_mod.ansi.err_prefix ++ "Unknown option: ") catch {};
             stderr.writeAll(arg) catch {};
             stderr.writeAll("\n") catch {};
             printInitHelp();
             std.process.exit(1);
         } else {
-            const stderr = getStderr();
+            const stderr = compat.getStdErr();
             stderr.writeAll(args_mod.ansi.err_prefix ++ "Unexpected argument: ") catch {};
             stderr.writeAll(arg) catch {};
             stderr.writeAll("\n") catch {};
@@ -703,8 +689,8 @@ fn handleInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     }
 
-    const stdout_writer = FileWriter{ .file = getStdout() };
-    const stderr = getStderr();
+    const stdout_writer = FileWriter{ .file = compat.getStdOut() };
+    const stderr = compat.getStdErr();
 
     init.run(allocator, options, stdout_writer) catch |err| {
         switch (err) {
@@ -723,7 +709,7 @@ fn handleInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
 }
 
 fn printInitHelp() void {
-    const stdout = getStdout();
+    const stdout = compat.getStdOut();
     init.printHelp(stdout) catch {};
 }
 

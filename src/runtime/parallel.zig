@@ -85,10 +85,6 @@ pub const ParallelExecutor = struct {
     tasks_failed: usize, // Failed tasks
     exec_start_time: i128, // Start time for summary
 
-    // Test-only override for the operating-system thread creation boundary.
-    // Keeping it private means scheduler callers cannot select a launch policy.
-    worker_spawner: ?WorkerSpawner = null,
-
     pub fn init(allocator: std.mem.Allocator, jakefile: *const Jakefile, thread_count: usize) !ParallelExecutor {
         const owned_index = try allocator.create(JakefileIndex);
         owned_index.* = JakefileIndex.build(allocator, jakefile) catch |err| {
@@ -134,8 +130,12 @@ pub const ParallelExecutor = struct {
             .nodes = .empty,
             .name_to_index = std.StringHashMap(usize).init(allocator),
             .thread_count = if (thread_count == 0) getDefaultThreadCount() else thread_count,
-            .dry_run = false,
-            .verbose = false,
+            // Keep the standalone fields as the public configuration surface:
+            // callers have historically set them after `init`. Context-aware
+            // construction derives their initial values instead of requiring
+            // every caller to duplicate those assignments.
+            .dry_run = if (ctx) |context| context.dry_run else false,
+            .verbose = if (ctx) |context| context.verbose else false,
             .cache = cache,
             .owns_cache = ctx == null, // When created with context, caller manages cache
             .color = color_mod.init(),
@@ -202,17 +202,6 @@ pub const ParallelExecutor = struct {
         list.append(self.allocator, idx) catch return ExecuteError.OutOfMemory;
     }
 
-    fn findRecipeByOutput(self: *ParallelExecutor, output: []const u8) ?*const Recipe {
-        for (self.jakefile.recipes) |*recipe| {
-            if (recipe.output) |recipe_output| {
-                if (std.mem.eql(u8, recipe_output, output)) {
-                    return recipe;
-                }
-            }
-        }
-        return null;
-    }
-
     /// Recursively add a recipe and its dependencies to the graph
     fn addRecipeToGraph(self: *ParallelExecutor, name: []const u8, dependent_idx: ?usize) ExecuteError!void {
         // Check if already in graph
@@ -258,7 +247,7 @@ pub const ParallelExecutor = struct {
         // File targets also depend on any recipes that produce their file dependencies.
         if (recipe.kind == .file) {
             for (recipe.file_deps) |file_dep| {
-                if (self.findRecipeByOutput(file_dep)) |producing_recipe| {
+                if (self.index.getRecipeByOutput(file_dep)) |producing_recipe| {
                     try self.addRecipeToGraph(producing_recipe.name, node_idx);
                     if (self.name_to_index.get(producing_recipe.name)) |dep_node_idx| {
                         try self.appendUniqueIndex(&self.nodes.items[node_idx].dependencies, dep_node_idx);
@@ -322,6 +311,12 @@ pub const ParallelExecutor = struct {
 
     /// Execute all recipes in the graph with parallel execution
     pub fn execute(self: *ParallelExecutor) ExecuteError!void {
+        return self.executeWithSpawner(null);
+    }
+
+    /// The spawner is an injection seam for scheduler tests, not executor
+    /// state. Production execution always uses the operating-system boundary.
+    fn executeWithSpawner(self: *ParallelExecutor, spawner: ?WorkerSpawner) ExecuteError!void {
         if (self.nodes.items.len == 0) {
             return;
         }
@@ -365,7 +360,10 @@ pub const ParallelExecutor = struct {
         threads.ensureTotalCapacity(self.allocator, max_threads) catch return ExecuteError.OutOfMemory;
 
         for (0..max_threads) |_| {
-            const thread = self.spawnWorker() catch {
+            const thread = (if (spawner) |spawn|
+                spawn(self)
+            else
+                std.Thread.spawn(.{}, workerThread, .{self})) catch {
                 // Running with fewer workers is safe once at least one worker
                 // owns the queue. Failing before any worker starts must not
                 // report an empty graph as a successful execution.
@@ -407,11 +405,6 @@ pub const ParallelExecutor = struct {
             // Mark as complete and update dependents
             self.completeTask(task_idx, success);
         }
-    }
-
-    fn spawnWorker(self: *ParallelExecutor) anyerror!std.Thread {
-        if (self.worker_spawner) |spawn| return spawn(self);
-        return std.Thread.spawn(.{}, workerThread, .{self});
     }
 
     /// Rebuild the ready queue from immutable graph edges before each attempt.
@@ -612,6 +605,11 @@ pub const ParallelExecutor = struct {
             return .cancelled;
         }
         var worker_ctx = self.ctx;
+        // `dry_run` and `verbose` remain independently configurable on the
+        // standalone public executor. Propagate their effective values into
+        // every worker rather than relying on the copied Context defaults.
+        worker_ctx.dry_run = self.dry_run;
+        worker_ctx.verbose = self.verbose;
         worker_ctx.jobs = 0;
         worker_ctx.watch_mode = false;
         worker_ctx.output_callback = outputCallback;
@@ -1151,10 +1149,9 @@ test "parallel executor fails when no worker can start" {
 
     var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
     defer exec.deinit();
-    exec.worker_spawner = alwaysFailWorkerSpawn;
 
     try exec.buildGraph("target");
-    try std.testing.expectError(ExecuteError.SystemResources, exec.execute());
+    try std.testing.expectError(ExecuteError.SystemResources, exec.executeWithSpawner(alwaysFailWorkerSpawn));
     try std.testing.expectEqual(@as(usize, 0), exec.completed_count);
     try std.testing.expectEqual(@as(usize, 0), exec.tasks_run);
 }
@@ -1178,13 +1175,11 @@ test "parallel executor can execute a built graph twice" {
     // The failed launch is bounded and leaves no worker to block. It observes
     // the second attempt's reset without relying on a timeout: before the fix
     // ready_queue remained drained here and this assertion failed.
-    exec.worker_spawner = alwaysFailWorkerSpawn;
-    try std.testing.expectError(ExecuteError.SystemResources, exec.execute());
+    try std.testing.expectError(ExecuteError.SystemResources, exec.executeWithSpawner(alwaysFailWorkerSpawn));
     try std.testing.expectEqual(@as(usize, 1), exec.ready_queue.items.len);
     try std.testing.expectEqual(GraphNode.State.pending, exec.nodes.items[0].state);
     try std.testing.expectEqual(GraphNode.State.ready, exec.nodes.items[1].state);
 
-    exec.worker_spawner = null;
     try exec.execute();
     try std.testing.expectEqual(@as(usize, 2), exec.tasks_run);
 }
@@ -1219,14 +1214,12 @@ test "parallel executor retries a previously failed built graph" {
     // A launch failure is a bounded observation point for the next attempt.
     // Before resetExecutionState(), both nodes were terminal and no node was
     // ready here; the following assertions failed instead of hanging.
-    exec.worker_spawner = alwaysFailWorkerSpawn;
-    try std.testing.expectError(ExecuteError.SystemResources, exec.execute());
+    try std.testing.expectError(ExecuteError.SystemResources, exec.executeWithSpawner(alwaysFailWorkerSpawn));
     try std.testing.expectEqual(@as(usize, 1), exec.ready_queue.items.len);
     try std.testing.expectEqual(GraphNode.State.pending, exec.nodes.items[0].state);
     try std.testing.expectEqual(GraphNode.State.ready, exec.nodes.items[1].state);
 
     try tmp_dir.dir.writeFile(.{ .sub_path = "retry-ready", .data = "ready" });
-    exec.worker_spawner = null;
     try exec.execute();
     try std.testing.expectEqual(@as(usize, 2), exec.tasks_run);
 }
@@ -1514,8 +1507,8 @@ test "parallel workers publish only their cache changes" {
         exec.ctx = ctx;
         // Both records are from the old input. Each worker snapshots before its
         // body starts; B must not later restore A's old record after A builds.
-        try exec.cache.updateScopedPattern("a.out", "input.txt");
-        try exec.cache.updateScopedPattern("b.out", "input.txt");
+        try exec.cache.updateScopedPattern(.{ .recipe = "a.out" }, "input.txt");
+        try exec.cache.updateScopedPattern(.{ .recipe = "b.out" }, "input.txt");
         try std.fs.cwd().writeFile(.{ .sub_path = "input.txt", .data = "new" });
         try exec.buildGraph("all");
         try exec.execute();
@@ -1601,6 +1594,73 @@ test "parallel dry-run does not leak expansions" {
 
     try exec.buildGraph("hello");
     try exec.execute();
+}
+
+test "standalone parallel dry-run reaches the worker context" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task target:
+        \\    touch sentinel
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+    exec.dry_run = true;
+    try exec.buildGraph("target");
+    try exec.execute();
+
+    try std.testing.expectError(error.FileNotFound, std.fs.cwd().access("sentinel", .{}));
+}
+
+test "parallel context constructor derives execution flags" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\task target:
+        \\    touch sentinel
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var index = try JakefileIndex.build(std.testing.allocator, &jakefile);
+    defer index.deinit();
+    var ctx = Context.initWithColor(false);
+    ctx.dry_run = true;
+    ctx.verbose = true;
+
+    var exec = ParallelExecutor.initWithIndexAndContext(std.testing.allocator, &jakefile, &index, &ctx, 2);
+    defer exec.deinit();
+
+    try std.testing.expect(exec.dry_run);
+    try std.testing.expect(exec.verbose);
+    try exec.buildGraph("target");
+    try exec.execute();
+    try std.testing.expectError(error.FileNotFound, std.fs.cwd().access("sentinel", .{}));
 }
 
 // ============================================================================

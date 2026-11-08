@@ -150,7 +150,7 @@ pub const RuntimeContext = struct {
     pub fn initWithColor(allocator: std.mem.Allocator, color_enabled: bool) RuntimeContext {
         var ctx = RuntimeContext.init(allocator);
         ctx.color = color_mod.withEnabled(color_enabled);
-        ctx.theme = color_mod.Theme.initWithColor(ctx.color);
+        ctx.theme = color_mod.Theme.withColor(ctx.color);
         return ctx;
     }
 
@@ -283,6 +283,24 @@ test "Context.initWithColor sets color enabled state" {
 
     const ctx_disabled = Context.initWithColor(false);
     try std.testing.expect(!ctx_disabled.color.enabled);
+}
+
+test "RuntimeContext.initWithColor keeps theme and color in sync" {
+    var enabled = RuntimeContext.initWithColor(std.testing.allocator, true);
+    defer {
+        enabled.save_cache_on_deinit = false;
+        enabled.deinit();
+    }
+    try std.testing.expect(enabled.color.enabled);
+    try std.testing.expectEqualStrings(color_mod.codes.error_red ++ "error:" ++ color_mod.codes.reset ++ " ", enabled.theme.errPrefix());
+
+    var disabled = RuntimeContext.initWithColor(std.testing.allocator, false);
+    defer {
+        disabled.save_cache_on_deinit = false;
+        disabled.deinit();
+    }
+    try std.testing.expect(!disabled.color.enabled);
+    try std.testing.expectEqualStrings("error: ", disabled.theme.errPrefix());
 }
 
 test "Context.emitOutput calls callback with correct args" {

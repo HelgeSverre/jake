@@ -99,6 +99,20 @@ pub const JakefileIndex = struct {
         return self.recipes.get(name);
     }
 
+    /// Find the first recipe declared to produce `output`.
+    ///
+    /// Output recipes are intentionally scanned in source order. That matches
+    /// the old executor lookup behavior, including its first-definition-wins
+    /// result when malformed input declares the same output twice.
+    pub fn getRecipeByOutput(self: *const JakefileIndex, output: []const u8) ?*const parser.Recipe {
+        for (self.jakefile.recipes) |*recipe| {
+            if (recipe.output) |recipe_output| {
+                if (std.mem.eql(u8, recipe_output, output)) return recipe;
+            }
+        }
+        return null;
+    }
+
     pub fn getVariable(self: *const JakefileIndex, name: []const u8) ?[]const u8 {
         return self.variables.get(name);
     }
@@ -115,3 +129,24 @@ pub const JakefileIndex = struct {
         return self.variables.iterator();
     }
 };
+
+test "output lookup returns the first source-order producer" {
+    const source =
+        \\task first:
+        \\task second:
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source);
+    var parser_instance = parser.Parser.init(std.testing.allocator, &lexer);
+    var jakefile = try parser_instance.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var recipes = @constCast(jakefile.recipes);
+    recipes[0].output = "shared.out";
+    recipes[1].output = "shared.out";
+
+    var index = try JakefileIndex.build(std.testing.allocator, &jakefile);
+    defer index.deinit();
+
+    try std.testing.expectEqualStrings("first", index.getRecipeByOutput("shared.out").?.name);
+    try std.testing.expect(index.getRecipeByOutput("missing.out") == null);
+}

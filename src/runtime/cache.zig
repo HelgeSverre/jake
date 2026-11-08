@@ -15,9 +15,50 @@ pub const Cache = struct {
         dirty: bool = false,
     };
 
+    /// The consumer that owns a cached input acknowledgement. Callers supply
+    /// semantic identity; cache owns its persistent key encoding.
+    pub const Scope = union(enum) {
+        recipe: []const u8,
+        block: struct {
+            recipe: []const u8,
+            index: usize,
+        },
+
+        fn matchesEncoded(self: Scope, encoded: []const u8) bool {
+            return switch (self) {
+                .recipe => |recipe| std.mem.startsWith(u8, encoded, recipe_scope_prefix) and
+                    std.mem.eql(u8, encoded[recipe_scope_prefix.len..], recipe),
+                .block => |block| blk: {
+                    if (!std.mem.startsWith(u8, encoded, block_scope_prefix)) break :blk false;
+                    const remaining = encoded[block_scope_prefix.len..];
+                    if (!std.mem.startsWith(u8, remaining, block.recipe)) break :blk false;
+                    const suffix = remaining[block.recipe.len..];
+                    if (suffix.len < 2 or suffix[0] != scope_separator) break :blk false;
+                    const index = std.fmt.parseInt(usize, suffix[1..], 10) catch break :blk false;
+                    break :blk index == block.index;
+                },
+            };
+        }
+
+        fn encode(self: Scope, allocator: std.mem.Allocator) ![]u8 {
+            return switch (self) {
+                .recipe => |recipe| std.mem.concat(allocator, u8, &.{ recipe_scope_prefix, recipe }),
+                .block => |block| std.fmt.allocPrint(allocator, "{s}{s}{c}{d}", .{
+                    block_scope_prefix,
+                    block.recipe,
+                    scope_separator,
+                    block.index,
+                }),
+            };
+        }
+    };
+
     // Stored alongside ordinary file entries; an absent aggregate is stale.
     const glob_key_prefix = "\x01jake-glob:";
     const scoped_key_prefix = "\x01jake-scope:";
+    const recipe_scope_prefix = "r:";
+    const block_scope_prefix = "b:";
+    const scope_separator = '\x1e';
     // Scoped/aggregate fingerprints use 0 for usable and -1 for unavailable.
     const unavailable_mtime: i128 = -1;
 
@@ -47,20 +88,11 @@ pub const Cache = struct {
         for (files) |path| {
             const file = try std.fs.cwd().openFile(path, .{});
             defer file.close();
-            const stat = try file.stat();
-            var file_hasher = std.crypto.hash.sha2.Sha256.init(.{});
-            var buffer: [8192]u8 = undefined;
-            while (true) {
-                const count = try file.read(&buffer);
-                if (count == 0) break;
-                file_hasher.update(buffer[0..count]);
-            }
-            const digest = file_hasher.finalResult();
+            const digest = try hashFile(file);
             hasher.update(path);
             hasher.update("\x00");
             hasher.update(&digest);
             hasher.update("\x00");
-            _ = stat;
         }
         return .{ .content_hash = hasher.finalResult(), .mtime = if (files.len == 0) unavailable_mtime else 0 };
     }
@@ -69,14 +101,16 @@ pub const Cache = struct {
         if (glob_mod.isGlobPattern(pattern)) return globFingerprint(self.allocator, pattern);
         const file = try std.fs.cwd().openFile(pattern, .{});
         defer file.close();
-        return .{ .content_hash = try self.computeHash(file), .mtime = 0 };
+        return .{ .content_hash = try hashFile(file), .mtime = 0 };
     }
 
-    fn scopedKey(allocator: std.mem.Allocator, scope: []const u8, pattern: []const u8) ![]u8 {
-        return std.mem.concat(allocator, u8, &.{ scoped_key_prefix, scope, "\x1f", pattern });
+    fn scopedKey(allocator: std.mem.Allocator, scope: Scope, pattern: []const u8) ![]u8 {
+        const encoded_scope = try scope.encode(allocator);
+        defer allocator.free(encoded_scope);
+        return std.mem.concat(allocator, u8, &.{ scoped_key_prefix, encoded_scope, "\x1f", pattern });
     }
 
-    pub fn isScopedPatternStale(self: *Cache, scope: []const u8, pattern: []const u8) !bool {
+    pub fn isScopedPatternStale(self: *Cache, scope: Scope, pattern: []const u8) !bool {
         const key = try scopedKey(self.allocator, scope, pattern);
         defer self.allocator.free(key);
         const cached = self.hashes.get(key) orelse return true;
@@ -84,7 +118,7 @@ pub const Cache = struct {
         return !fingerprintsMatch(cached, current);
     }
 
-    pub fn updateScopedPattern(self: *Cache, scope: []const u8, pattern: []const u8) !void {
+    pub fn updateScopedPattern(self: *Cache, scope: Scope, pattern: []const u8) !void {
         const key = try scopedKey(self.allocator, scope, pattern);
         defer self.allocator.free(key);
         const fingerprint = self.patternFingerprint(pattern) catch |err| switch (err) {
@@ -105,11 +139,11 @@ pub const Cache = struct {
         value.* = .{ .content_hash = @splat(0), .mtime = unavailable_mtime, .dirty = self.tracks_changes };
     }
 
-    pub fn invalidateScope(self: *Cache, scope: []const u8) void {
+    pub fn invalidateScope(self: *Cache, scope: Scope) void {
         var iter = self.hashes.iterator();
         while (iter.next()) |entry| {
             const candidate = encodedScope(entry.key_ptr.*) orelse continue;
-            if (std.mem.eql(u8, candidate, scope)) self.markUnavailable(entry.value_ptr);
+            if (scope.matchesEncoded(candidate)) self.markUnavailable(entry.value_ptr);
         }
     }
 
@@ -117,8 +151,12 @@ pub const Cache = struct {
         var iter = self.hashes.iterator();
         while (iter.next()) |entry| {
             const scope = encodedScope(entry.key_ptr.*) orelse continue;
-            if (std.mem.eql(u8, scope, recipe) or
-                (std.mem.startsWith(u8, scope, recipe) and scope.len > recipe.len and scope[recipe.len] == '\x1e'))
+            if ((std.mem.startsWith(u8, scope, recipe_scope_prefix) and
+                std.mem.eql(u8, scope[recipe_scope_prefix.len..], recipe)) or
+                (std.mem.startsWith(u8, scope, block_scope_prefix) and
+                    std.mem.startsWith(u8, scope[block_scope_prefix.len..], recipe) and
+                    scope.len > block_scope_prefix.len + recipe.len and
+                    scope[block_scope_prefix.len + recipe.len] == scope_separator))
                 self.markUnavailable(entry.value_ptr);
         }
     }
@@ -220,7 +258,7 @@ pub const Cache = struct {
         defer file.close();
 
         if (self.hashes.get(path)) |cached| {
-            const current_hash = try self.computeHash(file);
+            const current_hash = try hashFile(file);
             return !std.mem.eql(u8, &cached.content_hash, &current_hash);
         }
 
@@ -246,7 +284,7 @@ pub const Cache = struct {
         defer file.close();
 
         const stat = try file.stat();
-        const hash = try self.computeHash(file);
+        const hash = try hashFile(file);
 
         const hash_entry = Hash{
             .content_hash = hash,
@@ -279,8 +317,7 @@ pub const Cache = struct {
         try self.putHash(key, fingerprint);
     }
 
-    fn computeHash(self: *Cache, file: std.fs.File) ![32]u8 {
-        _ = self;
+    fn hashFile(file: std.fs.File) ![32]u8 {
         var hasher = std.crypto.hash.sha2.Sha256.init(.{});
 
         var buffer: [8192]u8 = undefined;
@@ -936,7 +973,7 @@ fn checkForkAllocations(allocator: std.mem.Allocator, path: []const u8) !void {
     try cache.update(path);
     var forked = try cache.fork(allocator);
     defer forked.deinit();
-    try forked.updateScopedPattern("consumer", path);
+    try forked.updateScopedPattern(.{ .recipe = "consumer" }, path);
     try cache.mergeChangesFrom(&forked);
     try cache.updatePattern(path);
 }
@@ -963,15 +1000,46 @@ test "persisted unavailable inputs replace an older live certificate" {
     try tmp.dir.writeFile(.{ .sub_path = "input", .data = "old" });
     var old_view = Cache.init(allocator);
     defer old_view.deinit();
-    try old_view.updateScopedPattern("consumer", "input");
+    try old_view.updateScopedPattern(.{ .recipe = "consumer" }, "input");
     try tmp.dir.deleteFile("input");
     var unavailable_view = Cache.init(allocator);
     defer unavailable_view.deinit();
-    try unavailable_view.updateScopedPattern("consumer", "input");
+    try unavailable_view.updateScopedPattern(.{ .recipe = "consumer" }, "input");
     try unavailable_view.save();
     try tmp.dir.writeFile(.{ .sub_path = "input", .data = "old" });
     try old_view.load();
-    try std.testing.expect(try old_view.isScopedPatternStale("consumer", "input"));
+    try std.testing.expect(try old_view.isScopedPatternStale(.{ .recipe = "consumer" }, "input"));
+}
+
+test "typed scopes isolate blocks and recipe invalidation reaches every consumer" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(old_cwd);
+    const path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(path);
+    try std.posix.chdir(path);
+    defer std.posix.chdir(old_cwd) catch {};
+    try tmp.dir.writeFile(.{ .sub_path = "input", .data = "old" });
+
+    var cache = Cache.init(allocator);
+    defer cache.deinit();
+    const recipe: Cache.Scope = .{ .recipe = "consumer" };
+    const first_block: Cache.Scope = .{ .block = .{ .recipe = "consumer", .index = 1 } };
+    const second_block: Cache.Scope = .{ .block = .{ .recipe = "consumer", .index = 2 } };
+    try cache.updateScopedPattern(recipe, "input");
+    try cache.updateScopedPattern(first_block, "input");
+    try cache.updateScopedPattern(second_block, "input");
+
+    cache.invalidateScope(first_block);
+    try std.testing.expect(!try cache.isScopedPatternStale(recipe, "input"));
+    try std.testing.expect(try cache.isScopedPatternStale(first_block, "input"));
+    try std.testing.expect(!try cache.isScopedPatternStale(second_block, "input"));
+
+    cache.invalidateRecipe("consumer");
+    try std.testing.expect(try cache.isScopedPatternStale(recipe, "input"));
+    try std.testing.expect(try cache.isScopedPatternStale(second_block, "input"));
 }
 
 test "cached empty glob remains stale through the low-level API" {

@@ -867,8 +867,6 @@ pub const Executor = struct {
         parallel_exec.cache.deinit();
         parallel_exec.cache = graph_cache;
 
-        parallel_exec.dry_run = self.ctx.dry_run;
-        parallel_exec.verbose = self.ctx.verbose;
         parallel_exec.suppress_summary = self.suppress_summary;
 
         // Build dependency graph
@@ -955,7 +953,7 @@ pub const Executor = struct {
         if (recipe.kind == .file) {
             for (recipe.file_deps) |file_dep| {
                 // Check if this file dependency has a recipe that produces it
-                if (self.findRecipeByOutput(file_dep)) |producing_recipe| {
+                if (self.index.getRecipeByOutput(file_dep)) |producing_recipe| {
                     try self.executeSequential(producing_recipe.name);
                 }
             }
@@ -1022,7 +1020,7 @@ pub const Executor = struct {
                 self.print("{s}failed to invalidate build cache: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
                 return if (err == error.OutOfMemory) ExecuteError.OutOfMemory else ExecuteError.CommandFailed;
             };
-            if (recipe.kind == .file) self.cache.invalidateScope(recipe.name);
+            if (recipe.kind == .file) self.cache.invalidateScope(.{ .recipe = recipe.name });
         }
         errdefer if (!self.ctx.dry_run) self.cache.invalidateRecipe(name);
 
@@ -1083,7 +1081,7 @@ pub const Executor = struct {
             for (recipe.file_deps) |dep| {
                 const resolved_dep = self.resolveRootedPath(recipe, dep) catch return ExecuteError.OutOfMemory;
                 defer if (resolved_dep.owned) self.allocator.free(resolved_dep.path);
-                try self.stageCachePattern(recipe.name, resolved_dep.path);
+                try self.stageCachePattern(.{ .recipe = recipe.name }, resolved_dep.path);
             }
         }
 
@@ -1131,15 +1129,6 @@ pub const Executor = struct {
             return err;
         }
 
-        // Update cache for file targets
-        if (recipe.kind == .file) {
-            if (recipe.output) |output| {
-                const resolved_output: ResolvedPath = self.resolveRootedPath(recipe, output) catch
-                    .{ .path = output, .owned = false };
-                defer if (resolved_output.owned) self.allocator.free(resolved_output.path);
-            }
-        }
-
         if (!self.ctx.dry_run) self.publishPendingCache() catch return ExecuteError.OutOfMemory;
     }
 
@@ -1151,7 +1140,7 @@ pub const Executor = struct {
         }
     }
 
-    fn stageCachePattern(self: *Executor, scope: []const u8, pattern: []const u8) ExecuteError!void {
+    fn stageCachePattern(self: *Executor, scope: Cache.Scope, pattern: []const u8) ExecuteError!void {
         if (self.pending_cache == null) {
             const pending = self.allocator.create(Cache) catch return ExecuteError.OutOfMemory;
             pending.* = Cache.init(self.allocator);
@@ -1238,7 +1227,7 @@ pub const Executor = struct {
         for (recipe.file_deps) |dep| {
             const resolved_dep = try self.resolveRootedPath(recipe, dep);
             defer if (resolved_dep.owned) self.allocator.free(resolved_dep.path);
-            if (try self.cache.isScopedPatternStale(recipe.name, resolved_dep.path)) {
+            if (try self.cache.isScopedPatternStale(.{ .recipe = recipe.name }, resolved_dep.path)) {
                 if (self.ctx.verbose and !self.ctx.silent and !recipe.silent) {
                     self.print("   {s}jake: dependency '{s}' changed, rebuilding '{s}'{s}\n", .{ self.color.muted(), dep, recipe.name, self.color.reset() });
                 }
@@ -1247,18 +1236,6 @@ pub const Executor = struct {
         }
 
         return false;
-    }
-
-    /// Find a recipe that produces the given output file
-    fn findRecipeByOutput(self: *Executor, output: []const u8) ?*const Recipe {
-        for (self.jakefile.recipes) |*recipe| {
-            if (recipe.output) |recipe_output| {
-                if (std.mem.eql(u8, recipe_output, output)) {
-                    return recipe;
-                }
-            }
-        }
-        return null;
     }
 
     /// Get current OS as a string
@@ -1366,8 +1343,11 @@ pub const Executor = struct {
             return self.executeCommands(cmds);
         };
 
-        // Execute commands, checking for timeout after each
-        const result = self.executeCommandsWithTimeoutCheck(cmds, ctx);
+        // Execute commands, checking for timeout after each.
+        const result = if (ctx.timeout_fired.load(.acquire))
+            ExecuteError.CommandFailed
+        else
+            self.executeCommandsCore(cmds, ctx);
 
         // Signal watchdog to stop and wait for it
         ctx.stop_requested.store(true, .release);
@@ -1383,39 +1363,6 @@ pub const Executor = struct {
         }
 
         return result;
-    }
-
-    /// Execute commands with timeout checking - stores child process for watchdog to kill
-    fn executeCommandsWithTimeoutCheck(
-        self: *Executor,
-        cmds: []const Recipe.Command,
-        timeout_ctx: anytype,
-    ) ExecuteError!void {
-        // This is a wrapper that passes timeout context to runCommand
-        // For now, we'll use a simpler approach: check timeout before each command
-
-        // Execute commands normally but check timeout between each
-        return self.executeCommandsInternal(cmds, timeout_ctx);
-    }
-
-    /// Internal command execution with optional timeout context
-    fn executeCommandsInternal(
-        self: *Executor,
-        cmds: []const Recipe.Command,
-        timeout_ctx: anytype,
-    ) ExecuteError!void {
-        const has_timeout = comptime @TypeOf(timeout_ctx) != ?*anyopaque;
-
-        // Check if timeout already expired
-        if (has_timeout) {
-            if (timeout_ctx.timeout_fired.load(.acquire)) {
-                return ExecuteError.CommandFailed;
-            }
-        }
-
-        // Delegate to the main executeCommands but with timeout awareness
-        // For simplicity, we'll inline a modified version here
-        return self.executeCommandsCore(cmds, timeout_ctx);
     }
 
     /// Core command execution logic with optional timeout context
@@ -1591,12 +1538,10 @@ pub const Executor = struct {
                         if (!executing) continue;
                         const patterns = self.parseCachePatterns(cmd.line);
                         defer self.allocator.free(patterns);
-                        const cache_scope = std.fmt.allocPrint(
-                            self.allocator,
-                            "{s}\x1e{d}",
-                            .{ self.current_recipe_name orelse "", i },
-                        ) catch return ExecuteError.OutOfMemory;
-                        defer self.allocator.free(cache_scope);
+                        const cache_scope: Cache.Scope = .{ .block = .{
+                            .recipe = self.current_recipe_name orelse "",
+                            .index = i,
+                        } };
                         var is_stale = false;
                         for (patterns) |pattern| {
                             if (self.cache.isScopedPatternStale(cache_scope, pattern) catch true) {
