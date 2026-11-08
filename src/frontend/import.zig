@@ -1343,10 +1343,11 @@ test "identical imports in one scope merge once" {
     defer tmp_dir.cleanup();
 
     try tmp_dir.dir.writeFile(.{ .sub_path = "library.jake", .data = "task build:\n    echo build\n" });
-    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data =
-        "@import \"library.jake\"\n" ++
-        "@import \"library.jake\"\n" ++
-        "task main:\n    echo main\n",
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "main.jake",
+        .data = "@import \"library.jake\"\n" ++
+            "@import \"library.jake\"\n" ++
+            "task main:\n    echo main\n",
     });
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1371,14 +1372,16 @@ test "same import replays recipes for aliases but merges global hooks once" {
     var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
-    try tmp_dir.dir.writeFile(.{ .sub_path = "library.jake", .data =
-        "@pre echo prepare\n" ++
-        "task build:\n    echo build\n",
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "library.jake",
+        .data = "@pre echo prepare\n" ++
+            "task build:\n    echo build\n",
     });
-    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data =
-        "@import \"library.jake\" as first\n" ++
-        "@import \"library.jake\" as second\n" ++
-        "task main:\n    echo main\n",
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "main.jake",
+        .data = "@import \"library.jake\" as first\n" ++
+            "@import \"library.jake\" as second\n" ++
+            "task main:\n    echo main\n",
     });
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1407,10 +1410,11 @@ test "diamond imports replay a shared child in distinct namespace scopes" {
     try tmp_dir.dir.writeFile(.{ .sub_path = "shared.jake", .data = "task shared:\n    echo shared\n" });
     try tmp_dir.dir.writeFile(.{ .sub_path = "a.jake", .data = "@import \"shared.jake\"\ntask build:\n    echo a\n" });
     try tmp_dir.dir.writeFile(.{ .sub_path = "b.jake", .data = "@import \"shared.jake\"\ntask build:\n    echo b\n" });
-    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data =
-        "@import \"a.jake\" as a\n" ++
-        "@import \"b.jake\" as b\n" ++
-        "task main:\n    echo main\n",
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "main.jake",
+        .data = "@import \"a.jake\" as a\n" ++
+            "@import \"b.jake\" as b\n" ++
+            "task main:\n    echo main\n",
     });
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1438,10 +1442,11 @@ test "rooted imports have a distinct semantic cache identity" {
     defer tmp_dir.cleanup();
 
     try tmp_dir.dir.writeFile(.{ .sub_path = "library.jake", .data = "task build:\n    echo build\n" });
-    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data =
-        "@import \"library.jake\" as plain\n" ++
-        "@import \"library.jake\" as forced rooted\n" ++
-        "task main:\n    echo main\n",
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "main.jake",
+        .data = "@import \"library.jake\" as plain\n" ++
+            "@import \"library.jake\" as forced rooted\n" ++
+            "task main:\n    echo main\n",
     });
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;

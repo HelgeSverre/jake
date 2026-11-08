@@ -543,10 +543,11 @@ fn checkCancellationAtHook(kind: []const u8) !void {
     defer tmp.cleanup();
     const root = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(root);
+    try tmp.dir.writeFile(.{ .sub_path = "input.txt", .data = "input" });
     const source = try std.fmt.allocPrint(
         allocator,
-        "task run:\n    @{s} printf ready > '{s}/ready'; while [ ! -e '{s}/release' ]; do sleep 0.01; done; printf leaked > '{s}/leaked'\n    printf body > '{s}/body'\n    @post printf later > '{s}/later'\n",
-        .{ kind, root, root, root, root, root },
+        "task run:\n    @{s} printf ready > '{s}/ready'; while [ ! -e '{s}/release' ]; do sleep 0.01; done; printf leaked > '{s}/leaked'\n    @cache {s}/input.txt\n    printf body >> '{s}/body'\n    @post printf later > '{s}/later'\n",
+        .{ kind, root, root, root, root, root, root },
     );
     defer allocator.free(source);
     var lexer = lexer_mod.Lexer.init(source);
@@ -597,4 +598,13 @@ fn checkCancellationAtHook(kind: []const u8) !void {
     } else {
         try tmp.dir.access("body", .{});
     }
+
+    // Retry through the same public executor. A cancelled post-hook must not
+    // make the protected command look cached on the next attempt.
+    try tmp.dir.writeFile(.{ .sub_path = "release", .data = "" });
+    running.store(true, .release);
+    try exec.execute("run");
+    const body = try tmp.dir.readFileAlloc(allocator, "body", 128);
+    defer allocator.free(body);
+    try std.testing.expectEqualStrings(if (std.mem.eql(u8, kind, "post")) "bodybody" else "body", body);
 }

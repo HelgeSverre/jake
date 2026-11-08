@@ -15,6 +15,7 @@ const cache_mod = @import("cache.zig");
 const JakefileIndex = @import("../frontend/jakefile_index.zig").JakefileIndex;
 const color_mod = @import("../output/color.zig");
 const context_mod = @import("context.zig");
+const event_emitter_mod = @import("../output/event_emitter.zig");
 const system = @import("../util/system.zig");
 
 const Jakefile = parser.Jakefile;
@@ -325,6 +326,10 @@ pub const ParallelExecutor = struct {
             return;
         }
 
+        // Admission is closed once the owning context has been cancelled. Do
+        // not publish a task_start for work that will never be allowed to run.
+        if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
+
         // Check for cycles
         if (self.detectCycle()) {
             return ExecuteError.CyclicDependency;
@@ -434,6 +439,13 @@ pub const ParallelExecutor = struct {
                 return null;
             }
 
+            if (self.ctx.isCancelled()) {
+                self.failed = true;
+                if (self.first_error == null) self.first_error = ExecuteError.Cancelled;
+                self.condition.broadcast();
+                return null;
+            }
+
             // Check if there's a ready task
             if (self.ready_queue.items.len > 0) {
                 const idx = self.ready_queue.pop().?;
@@ -452,15 +464,32 @@ pub const ParallelExecutor = struct {
         const recipe = node.recipe;
         const task_start_time_ms = std.time.milliTimestamp();
 
+        if (self.ctx.isCancelled()) {
+            self.rememberError(ExecuteError.Cancelled);
+            return false;
+        }
+
         self.ctx.emitEvent(.{ .task_start = .{
             .name = recipe.name,
             .deps = recipe.dependencies,
         } });
 
+        // Event delivery is synchronous. A Web UI Stop received by the
+        // task_start callback must prevent every success/skip publication.
+        if (self.ctx.isCancelled()) {
+            return self.completeCancelledTask(recipe, task_start_time_ms);
+        }
+
         // Check OS constraints - skip recipe if not for current OS
         if (shouldSkipForOs(recipe)) {
+            if (self.ctx.isCancelled()) {
+                return self.completeCancelledTask(recipe, task_start_time_ms);
+            }
             const current_os = getCurrentOsString();
             self.printSynchronized("jake: skipping '{s}' (not for {s})\n", .{ recipe.name, current_os });
+            if (self.ctx.isCancelled()) {
+                return self.completeCancelledTask(recipe, task_start_time_ms);
+            }
             const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
             self.ctx.emitEvent(.{ .task_complete = .{
                 .name = recipe.name,
@@ -473,6 +502,9 @@ pub const ParallelExecutor = struct {
         // Check recipe-level @needs requirements before running any commands
         if (recipe.needs.len > 0) {
             if (!self.checkRecipeLevelNeeds(recipe)) {
+                if (self.ctx.isCancelled()) {
+                    return self.completeCancelledTask(recipe, task_start_time_ms);
+                }
                 const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
                 self.ctx.emitEvent(.{ .task_complete = .{
                     .name = recipe.name,
@@ -488,8 +520,14 @@ pub const ParallelExecutor = struct {
 
         switch (self.executeRecipeWithWorker(recipe)) {
             .skipped => {
+                if (self.ctx.isCancelled()) {
+                    return self.completeCancelledTask(recipe, task_start_time_ms);
+                }
                 if (self.verbose and !self.ctx.silent and !recipe.silent) {
                     self.printSynchronized("{s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), recipe.name, self.color.reset() });
+                }
+                if (self.ctx.isCancelled()) {
+                    return self.completeCancelledTask(recipe, task_start_time_ms);
                 }
                 const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
                 self.ctx.emitEvent(.{ .task_complete = .{
@@ -508,6 +546,7 @@ pub const ParallelExecutor = struct {
                 } });
                 return false;
             },
+            .cancelled => return self.completeCancelledTask(recipe, task_start_time_ms),
             .failed_during_run => {
                 if (!self.dry_run) self.printCompletionStatus(recipe.name, false, start_time);
                 self.incrementTasksFailed();
@@ -520,6 +559,10 @@ pub const ParallelExecutor = struct {
                 return false;
             },
             .ran => {},
+        }
+
+        if (self.ctx.isCancelled()) {
+            return self.completeCancelledTask(recipe, task_start_time_ms);
         }
 
         // Failure chrome is always kept; success chrome is skipped under --silent/@silent.
@@ -536,6 +579,17 @@ pub const ParallelExecutor = struct {
         return true;
     }
 
+    fn completeCancelledTask(self: *ParallelExecutor, recipe: *const Recipe, task_start_time_ms: i64) bool {
+        self.rememberError(ExecuteError.Cancelled);
+        const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
+        self.ctx.emitEvent(.{ .task_complete = .{
+            .name = recipe.name,
+            .success = false,
+            .duration_ms = duration_ms,
+        } });
+        return false;
+    }
+
     const OutputCallbackContext = struct {
         executor: *ParallelExecutor,
     };
@@ -550,9 +604,13 @@ pub const ParallelExecutor = struct {
         output.writeAll("\n") catch {};
     }
 
-    const WorkerExecution = enum { skipped, ran, failed_before_run, failed_during_run };
+    const WorkerExecution = enum { skipped, ran, cancelled, failed_before_run, failed_during_run };
 
     fn executeRecipeWithWorker(self: *ParallelExecutor, recipe: *const Recipe) WorkerExecution {
+        if (self.ctx.isCancelled()) {
+            self.rememberError(ExecuteError.Cancelled);
+            return .cancelled;
+        }
         var worker_ctx = self.ctx;
         worker_ctx.jobs = 0;
         worker_ctx.watch_mode = false;
@@ -592,15 +650,33 @@ pub const ParallelExecutor = struct {
         worker.cache.* = snapshot;
         defer worker.deinitWithoutSavingCache();
 
+        if (worker_ctx.isCancelled()) {
+            self.rememberError(ExecuteError.Cancelled);
+            return .cancelled;
+        }
+
         // The worker owns the loaded dotenv/export environment and rooted-path
         // resolution. Running policy through it keeps parallel behavior aligned
         // with the sequential executor instead of reconstructing a subset here.
         worker.checkRecipeRequires(recipe) catch |err| {
+            if (worker_ctx.isCancelled()) {
+                self.rememberError(ExecuteError.Cancelled);
+                return .cancelled;
+            }
             self.rememberError(err);
             return .failed_before_run;
         };
+        if (worker_ctx.isCancelled()) {
+            self.rememberError(ExecuteError.Cancelled);
+            return .cancelled;
+        }
         if (recipe.kind == .file and !(worker.checkFileTarget(recipe) catch true)) {
             return .skipped;
+        }
+
+        if (worker_ctx.isCancelled()) {
+            self.rememberError(ExecuteError.Cancelled);
+            return .cancelled;
         }
 
         const chrome_suppressed = self.ctx.silent or recipe.silent;
@@ -618,8 +694,15 @@ pub const ParallelExecutor = struct {
 
         worker.executeRecipeBody(recipe.name, recipe) catch |err| {
             self.rememberError(err);
-            return .failed_during_run;
+            return if (err == ExecuteError.Cancelled) .cancelled else .failed_during_run;
         };
+
+        // The worker cache is private until this merge. Do not publish any
+        // staged file fingerprints after cancellation has been observed.
+        if (worker_ctx.isCancelled()) {
+            self.rememberError(ExecuteError.Cancelled);
+            return .cancelled;
+        }
 
         self.cache_mutex.lock();
         defer self.cache_mutex.unlock();
@@ -896,7 +979,7 @@ pub const ParallelExecutor = struct {
         // Execute in order
         for (order.items) |idx| {
             if (!self.executeNode(idx)) {
-                return ExecuteError.CommandFailed;
+                return self.first_error orelse ExecuteError.CommandFailed;
             }
         }
     }
@@ -1125,6 +1208,153 @@ test "parallel executor retries a previously failed built graph" {
     try std.testing.expectEqual(@as(usize, 2), exec.tasks_run);
 }
 
+test "parallel task-start cancellation cannot publish an OS skip as success" {
+    if (builtin.os.tag == .windows) return;
+
+    const CancellationReceiver = struct {
+        running: *std.atomic.Value(bool),
+        task_starts: usize = 0,
+        successful_completions: usize = 0,
+        failed_completions: usize = 0,
+
+        pub fn onEvent(self: *@This(), event: event_emitter_mod.Event) void {
+            switch (event) {
+                .task_start => {
+                    self.task_starts += 1;
+                    self.running.store(false, .release);
+                },
+                .task_complete => |complete| {
+                    if (complete.success) self.successful_completions += 1 else self.failed_completions += 1;
+                },
+                else => {},
+            }
+        }
+    };
+
+    const source =
+        \\@platform windows
+        \\task skipped:
+        \\    echo unreachable
+        \\task target: [skipped]
+        \\    echo unreachable
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var running = std.atomic.Value(bool).init(true);
+    var receiver = CancellationReceiver{ .running = &running };
+    var ctx = Context.initWithColor(false);
+    ctx.cancellation_flag = &running;
+    ctx.event_emitter = event_emitter_mod.EventEmitter.init(&receiver);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+    exec.ctx = ctx;
+    try exec.buildGraph("target");
+
+    try std.testing.expectError(ExecuteError.Cancelled, exec.execute());
+    try std.testing.expectEqual(@as(usize, 1), receiver.task_starts);
+    try std.testing.expectEqual(@as(usize, 0), receiver.successful_completions);
+    try std.testing.expectEqual(@as(usize, 1), receiver.failed_completions);
+}
+
+test "parallel task-start cancellation cannot publish a file skip as success" {
+    if (builtin.os.tag == .windows) return;
+
+    const CancellationReceiver = struct {
+        running: *std.atomic.Value(bool),
+        successful_completions: usize = 0,
+        failed_completions: usize = 0,
+
+        pub fn onEvent(self: *@This(), event: event_emitter_mod.Event) void {
+            switch (event) {
+                .task_start => self.running.store(false, .release),
+                .task_complete => |complete| {
+                    if (complete.success) self.successful_completions += 1 else self.failed_completions += 1;
+                },
+                else => {},
+            }
+        }
+    };
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    try tmp_dir.dir.writeFile(.{ .sub_path = "input.txt", .data = "input" });
+    try tmp_dir.dir.writeFile(.{ .sub_path = "output.txt", .data = "output" });
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    const source =
+        \\file output.txt: input.txt
+        \\    echo rebuilt >> rebuilt.txt
+        \\task target: [output.txt]
+        \\    echo unreachable
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var running = std.atomic.Value(bool).init(true);
+    var receiver = CancellationReceiver{ .running = &running };
+    var ctx = Context.initWithColor(false);
+    ctx.cancellation_flag = &running;
+    ctx.event_emitter = event_emitter_mod.EventEmitter.init(&receiver);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+    exec.ctx = ctx;
+    try exec.cache.update("input.txt");
+    try exec.buildGraph("target");
+
+    try std.testing.expectError(ExecuteError.Cancelled, exec.execute());
+    try std.testing.expectEqual(@as(usize, 0), receiver.successful_completions);
+    try std.testing.expectEqual(@as(usize, 1), receiver.failed_completions);
+    try std.testing.expectError(error.FileNotFound, std.fs.cwd().access("rebuilt.txt", .{}));
+}
+
+test "parallel execution admits no task after cancellation" {
+    const CancellationReceiver = struct {
+        task_starts: usize = 0,
+
+        pub fn onEvent(self: *@This(), event: event_emitter_mod.Event) void {
+            switch (event) {
+                .task_start => self.task_starts += 1,
+                else => {},
+            }
+        }
+    };
+
+    const source =
+        \\task dependency:
+        \\task target: [dependency]
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var running = std.atomic.Value(bool).init(false);
+    var receiver = CancellationReceiver{};
+    var ctx = Context.initWithColor(false);
+    ctx.cancellation_flag = &running;
+    ctx.event_emitter = event_emitter_mod.EventEmitter.init(&receiver);
+
+    var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer exec.deinit();
+    exec.ctx = ctx;
+    try exec.buildGraph("target");
+
+    try std.testing.expectError(ExecuteError.Cancelled, exec.execute());
+    try std.testing.expectEqual(@as(usize, 0), receiver.task_starts);
+}
+
 test "parallel worker honors dotenv and export values for recipe require" {
     if (builtin.os.tag == .windows) return;
 
@@ -1197,12 +1427,19 @@ test "parallel rooted file target skips through worker cache policy" {
 
     var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
     defer exec.deinit();
-    try exec.cache.update("module/input.txt");
     try exec.buildGraph("build");
     try exec.execute();
+    try std.testing.expectEqual(@as(usize, 2), exec.tasks_run);
 
-    try std.testing.expectError(error.FileNotFound, std.fs.cwd().access("module/rebuilt.txt", .{}));
+    try exec.execute();
+
     try std.testing.expectEqual(@as(usize, 1), exec.tasks_run);
+    const rebuilt = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "module/rebuilt.txt", 1024);
+    defer std.testing.allocator.free(rebuilt);
+    try std.testing.expectEqualStrings("rebuilt\n", rebuilt);
+    const builds = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "build.txt", 1024);
+    defer std.testing.allocator.free(builds);
+    try std.testing.expectEqualStrings("build\nbuild\n", builds);
 }
 
 test "cycle detection" {

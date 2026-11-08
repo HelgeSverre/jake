@@ -13,6 +13,75 @@ pub const Cache = struct {
         mtime: i128,
     };
 
+    // Stored alongside ordinary file entries. The control-byte prefix cannot be
+    // a filesystem path on supported platforms and keeps old cache files
+    // readable: an absent aggregate is conservatively stale.
+    const glob_key_prefix = "\x01jake-glob:";
+    const scoped_key_prefix = "\x01jake-scope:";
+
+    fn globKey(allocator: std.mem.Allocator, pattern: []const u8) ![]u8 {
+        return std.mem.concat(allocator, u8, &.{ glob_key_prefix, pattern });
+    }
+
+    fn globFingerprint(allocator: std.mem.Allocator, pattern: []const u8) !Hash {
+        const files = try glob_mod.expandGlob(allocator, pattern);
+        defer {
+            for (files) |file| allocator.free(file);
+            allocator.free(files);
+        }
+        var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+        hasher.update(pattern);
+        hasher.update("\x00");
+        for (files) |path| {
+            const file = try std.fs.cwd().openFile(path, .{});
+            defer file.close();
+            const stat = try file.stat();
+            var file_hasher = std.crypto.hash.sha2.Sha256.init(.{});
+            var buffer: [8192]u8 = undefined;
+            while (true) {
+                const count = try file.read(&buffer);
+                if (count == 0) break;
+                file_hasher.update(buffer[0..count]);
+            }
+            const digest = file_hasher.finalResult();
+            hasher.update(path);
+            hasher.update("\x00");
+            hasher.update(&digest);
+            hasher.update("\x00");
+            _ = stat;
+        }
+        return .{ .content_hash = hasher.finalResult(), .mtime = 0 };
+    }
+
+    fn patternFingerprint(self: *Cache, pattern: []const u8) !Hash {
+        if (glob_mod.isGlobPattern(pattern)) return globFingerprint(self.allocator, pattern);
+        const file = try std.fs.cwd().openFile(pattern, .{});
+        defer file.close();
+        return .{ .content_hash = try self.computeHash(file), .mtime = 0 };
+    }
+
+    fn scopedKey(allocator: std.mem.Allocator, scope: []const u8, pattern: []const u8) ![]u8 {
+        return std.mem.concat(allocator, u8, &.{ scoped_key_prefix, scope, "\x1f", pattern });
+    }
+
+    pub fn isScopedPatternStale(self: *Cache, scope: []const u8, pattern: []const u8) !bool {
+        const key = try scopedKey(self.allocator, scope, pattern);
+        defer self.allocator.free(key);
+        const cached = self.hashes.get(key) orelse return true;
+        const current = self.patternFingerprint(pattern) catch return true;
+        return !std.mem.eql(u8, &cached.content_hash, &current.content_hash);
+    }
+
+    pub fn updateScopedPattern(self: *Cache, scope: []const u8, pattern: []const u8) !void {
+        const key = try scopedKey(self.allocator, scope, pattern);
+        errdefer self.allocator.free(key);
+        const fingerprint = try self.patternFingerprint(pattern);
+        if (self.hashes.getPtr(key)) |existing| {
+            existing.* = fingerprint;
+            self.allocator.free(key);
+        } else try self.hashes.put(key, fingerprint);
+    }
+
     pub fn init(allocator: std.mem.Allocator) Cache {
         return .{
             .allocator = allocator,
@@ -81,28 +150,11 @@ pub const Cache = struct {
     /// Check if any file matching glob pattern has changed
     pub fn isGlobStale(self: *Cache, pattern: []const u8) !bool {
         if (glob_mod.isGlobPattern(pattern)) {
-            // Expand the glob pattern to actual file paths
-            const files = glob_mod.expandGlob(self.allocator, pattern) catch {
-                // If expansion fails, consider stale
-                return true;
-            };
-            defer {
-                for (files) |f| self.allocator.free(f);
-                self.allocator.free(files);
-            }
-
-            // If no files match, consider stale (might need to build)
-            if (files.len == 0) {
-                return true;
-            }
-
-            // Check if any matched file is stale
-            for (files) |file| {
-                if (try self.isStale(file)) {
-                    return true;
-                }
-            }
-            return false;
+            const key = try globKey(self.allocator, pattern);
+            defer self.allocator.free(key);
+            const cached = self.hashes.get(key) orelse return true;
+            const current = globFingerprint(self.allocator, pattern) catch return true;
+            return !std.mem.eql(u8, &cached.content_hash, &current.content_hash);
         }
         return self.isStale(pattern);
     }
@@ -146,6 +198,15 @@ pub const Cache = struct {
 
         for (files) |file| {
             try self.update(file);
+        }
+        const key = try globKey(self.allocator, pattern);
+        errdefer self.allocator.free(key);
+        const fingerprint = try globFingerprint(self.allocator, pattern);
+        if (self.hashes.getPtr(key)) |existing| {
+            existing.* = fingerprint;
+            self.allocator.free(key);
+        } else {
+            try self.hashes.put(key, fingerprint);
         }
     }
 
@@ -436,10 +497,30 @@ test "cache updatePattern expands glob matches" {
 
     try cache.updatePattern("*.txt");
 
-    try std.testing.expectEqual(@as(usize, 2), cache.hashes.count());
     try std.testing.expect(cache.hashes.contains("a.txt"));
     try std.testing.expect(cache.hashes.contains("b.txt"));
     try std.testing.expect(!cache.hashes.contains("*.txt"));
+}
+
+test "cache glob fingerprint detects membership changes" {
+    var cache = Cache.init(std.testing.allocator);
+    defer cache.deinit();
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+    try std.fs.cwd().writeFile(.{ .sub_path = "a.txt", .data = "a" });
+    try std.fs.cwd().writeFile(.{ .sub_path = "b.txt", .data = "b" });
+    try cache.updatePattern("*.txt");
+    try std.testing.expect(!try cache.isGlobStale("*.txt"));
+    try std.fs.cwd().deleteFile("b.txt");
+    try std.testing.expect(try cache.isGlobStale("*.txt"));
+    try std.fs.cwd().writeFile(.{ .sub_path = "c.txt", .data = "c" });
+    try std.testing.expect(try cache.isGlobStale("*.txt"));
 }
 
 test "cache clone and merge preserve entries" {
