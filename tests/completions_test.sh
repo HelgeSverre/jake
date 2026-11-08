@@ -305,10 +305,9 @@ fi
 
 # Test fish syntax
 if check_shell fish; then
-	if fish -n <(echo "$FISH_COMP") 2>&1; then
+	if FISH_SYNTAX=$(fish -n <(printf '%s\n' "$FISH_COMP") 2>&1); then
 		pass "fish: syntax check passed"
 	else
-		FISH_SYNTAX=$(fish -n <(echo "$FISH_COMP") 2>&1)
 		fail "fish: syntax error: $FISH_SYNTAX"
 	fi
 else

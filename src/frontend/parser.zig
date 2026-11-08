@@ -1611,11 +1611,28 @@ pub const Parser = struct {
         var file_deps: std.ArrayListUnmanaged([]const u8) = .empty;
         errdefer file_deps.deinit(self.allocator);
         while (self.current.tag != .newline and self.current.tag != .eof) {
-            if (self.current.tag == .ident or self.current.tag == .glob_pattern) {
-                file_deps.append(self.allocator, self.slice(self.current)) catch return ParseError.OutOfMemory;
+            if (self.current.tag == .comma) {
+                self.advance();
+                continue;
+            }
+
+            if (self.isFileDependencyToken(self.current)) {
+                const start = self.current.loc.start;
+                var end = self.current.loc.end;
+                self.advance();
+
+                // A leading bracket class (`[ab]*`) remains tokenized as
+                // punctuation so task dependencies keep `[task]` syntax. In
+                // a file-dependency position, combine its contiguous tokens
+                // into the original source slice without admitting whitespace.
+                while (self.isFileDependencyToken(self.current) and self.current.loc.start == end) {
+                    end = self.current.loc.end;
+                    self.advance();
+                }
+                file_deps.append(self.allocator, self.source[start..end]) catch return ParseError.OutOfMemory;
+                continue;
             }
             self.advance();
-            if (self.current.tag == .comma) self.advance();
         }
 
         try self.skipNewlines();
@@ -1648,6 +1665,14 @@ pub const Parser = struct {
             .shell = shell,
             .working_dir = working_dir,
         });
+    }
+
+    fn isFileDependencyToken(self: *const Parser, token: Token) bool {
+        _ = self;
+        return switch (token.tag) {
+            .ident, .number, .glob_pattern, .l_bracket, .r_bracket => true,
+            else => false,
+        };
     }
 };
 
@@ -2531,6 +2556,54 @@ test "parse file recipe with multiple deps" {
     try std.testing.expectEqual(@as(usize, 2), jakefile.recipes[0].file_deps.len);
     try std.testing.expectEqualStrings("src/**/*.ts", jakefile.recipes[0].file_deps[0]);
     try std.testing.expectEqualStrings("lib/*.ts", jakefile.recipes[0].file_deps[1]);
+}
+
+test "formatter-shaped file recipe preserves leading and bracket-class glob dependencies" {
+    const source =
+        // The formatter writes file dependencies as space-separated slices.
+        \\file bundle.bin: *.txt ?odule.txt src/[ab]*.txt [xy].cfg /tmp/[ab]?.txt
+        \\    bundle
+    ;
+    var lex = Lexer.init(source);
+    var p = Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const deps = jakefile.recipes[0].file_deps;
+    try std.testing.expectEqual(@as(usize, 5), deps.len);
+    try std.testing.expectEqualStrings("*.txt", deps[0]);
+    try std.testing.expectEqualStrings("?odule.txt", deps[1]);
+    try std.testing.expectEqualStrings("src/[ab]*.txt", deps[2]);
+    try std.testing.expectEqualStrings("[xy].cfg", deps[3]);
+    try std.testing.expectEqualStrings("/tmp/[ab]?.txt", deps[4]);
+}
+
+test "file glob dependencies survive formatter roundtrip" {
+    const formatter = @import("../output/formatter.zig");
+    const allocator = std.testing.allocator;
+    const source =
+        \\file bundle.bin: *.txt ?odule.txt src/[ab]*.txt [xy].cfg /tmp/[ab]?.txt
+        \\    bundle
+    ;
+
+    const formatted = try formatter.format(allocator, source);
+    defer allocator.free(formatted.output);
+    const formatted_again = try formatter.format(allocator, formatted.output);
+    defer allocator.free(formatted_again.output);
+    try std.testing.expectEqualStrings(formatted.output, formatted_again.output);
+
+    var lex = Lexer.init(formatted.output);
+    var p = Parser.init(allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    const deps = jakefile.recipes[0].file_deps;
+    try std.testing.expectEqual(@as(usize, 5), deps.len);
+    try std.testing.expectEqualStrings("*.txt", deps[0]);
+    try std.testing.expectEqualStrings("?odule.txt", deps[1]);
+    try std.testing.expectEqualStrings("src/[ab]*.txt", deps[2]);
+    try std.testing.expectEqualStrings("[xy].cfg", deps[3]);
+    try std.testing.expectEqualStrings("/tmp/[ab]?.txt", deps[4]);
 }
 
 test "file recipe body parses command-level directives (jake#21)" {

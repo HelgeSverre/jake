@@ -29,6 +29,10 @@ jobs:
       - name: Build
         run: zig build
 
+      - name: Cache lifecycle CLI tests
+        if: runner.os != 'Windows'
+        run: node tests/cache_lifecycle_test.js
+
       - name: Windows CLI smoke
         if: runner.os == 'Windows'
         run: ./tests/windows_cli_smoke.ps1

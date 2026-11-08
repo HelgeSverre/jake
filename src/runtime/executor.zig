@@ -53,12 +53,6 @@ pub const ListOptions = struct {
     recipe_type: ?[]const u8 = null,
 };
 
-/// Default CLI context used by init() and initWithIndex() for backwards compatibility.
-/// For production use, pass a Context explicitly via initWithContext().
-var default_context: Context = .{
-    .color = color_mod.Color{ .enabled = false }, // Will be auto-detected when needed
-};
-
 /// Executes recipes from a parsed Jakefile.
 pub const Executor = struct {
     allocator: std.mem.Allocator,
@@ -72,6 +66,13 @@ pub const Executor = struct {
     cache: *Cache,
     // Set only on the owning path (Executor.init); freed in deinit.
     owned_cache: ?*Cache = null,
+    // A recipe stages @cache fingerprints here before running cached commands.
+    // They become visible only after the whole body and hooks succeed.
+    pending_cache: ?*Cache = null,
+    // init() and initWithIndex() allocate an isolated CLI context. This avoids
+    // workers resetting a mutable module-global context while another executor
+    // is reading it. initWithIndexAndContext keeps ownership with its caller.
+    owned_context: ?*Context = null,
 
     executed: std.StringHashMap(void),
     in_progress: std.StringHashMap(void),
@@ -109,6 +110,10 @@ pub const Executor = struct {
             allocator.destroy(owned_index);
             return err;
         };
+        errdefer {
+            owned_index.deinit();
+            allocator.destroy(owned_index);
+        }
         var executor = try initInternal(allocator, jakefile, owned_index);
         executor.owned_index = owned_index;
         executor.index = owned_index;
@@ -163,8 +168,9 @@ pub const Executor = struct {
     }
 
     fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) !Executor {
-        // Reset default context to initial state (important for tests that reuse this)
-        default_context = .{
+        const owned_context = try allocator.create(Context);
+        errdefer allocator.destroy(owned_context);
+        owned_context.* = .{
             .color = color_mod.Color{ .enabled = false },
         };
 
@@ -237,13 +243,14 @@ pub const Executor = struct {
             .index = index,
             .cache = cache,
             .owned_cache = cache,
+            .owned_context = owned_context,
             .executed = std.StringHashMap(void).init(allocator),
             .in_progress = std.StringHashMap(void).init(allocator),
             .variables = variables,
             .expanded_strings = .empty,
             .environment = environment,
             .hook_runner = hook_runner,
-            .ctx = &default_context,
+            .ctx = owned_context,
             .current_recipe_name = null,
             .current_shell = null,
             .current_working_dir = null,
@@ -771,6 +778,7 @@ pub const Executor = struct {
     }
 
     fn deinitInternal(self: *Executor, save_cache: bool) void {
+        self.discardPendingCache();
         // Only cleanup resources if we own them (not when using RuntimeContext)
         if (self.owns_resources) {
             if (save_cache) {
@@ -780,6 +788,10 @@ pub const Executor = struct {
             if (self.owned_cache) |owned| {
                 self.allocator.destroy(owned);
                 self.owned_cache = null;
+            }
+            if (self.owned_context) |owned| {
+                self.allocator.destroy(owned);
+                self.owned_context = null;
             }
             self.environment.deinit();
             self.hook_runner.deinit();
@@ -849,8 +861,12 @@ pub const Executor = struct {
         );
         defer parallel_exec.deinit();
 
-        parallel_exec.dry_run = self.ctx.dry_run;
-        parallel_exec.verbose = self.ctx.verbose;
+        // Use this runtime's live view, including successful prior recipes.
+        // Build the fork before releasing the old cache so OOM cleanup remains valid.
+        const graph_cache = self.cache.fork(self.allocator) catch return ExecuteError.OutOfMemory;
+        parallel_exec.cache.deinit();
+        parallel_exec.cache = graph_cache;
+
         parallel_exec.suppress_summary = self.suppress_summary;
 
         // Build dependency graph
@@ -865,11 +881,11 @@ pub const Executor = struct {
 
         // Execute
         parallel_exec.execute() catch |err| {
-            self.cache.mergeFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
+            self.cache.mergeChangesFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
             return err;
         };
 
-        self.cache.mergeFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
+        self.cache.mergeChangesFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
     }
 
     /// Execute sequentially (original behavior)
@@ -896,12 +912,15 @@ pub const Executor = struct {
         const task_start_time_ms = std.time.milliTimestamp();
         self.emitTaskStart(recipe);
         errdefer {
+            if (!self.ctx.dry_run) self.cache.invalidateRecipe(name);
             const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
             self.emitTaskComplete(name, false, duration_ms);
         }
+        if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
 
         // Check OS constraints - skip recipe if not for current OS
         if (shouldSkipForOs(recipe)) {
+            if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
             const current_os = getCurrentOsString();
             self.print("jake: skipping '{s}' (not for {s})\n", .{ name, current_os });
             self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
@@ -934,7 +953,7 @@ pub const Executor = struct {
         if (recipe.kind == .file) {
             for (recipe.file_deps) |file_dep| {
                 // Check if this file dependency has a recipe that produces it
-                if (self.findRecipeByOutput(file_dep)) |producing_recipe| {
+                if (self.index.getRecipeByOutput(file_dep)) |producing_recipe| {
                     try self.executeSequential(producing_recipe.name);
                 }
             }
@@ -944,6 +963,7 @@ pub const Executor = struct {
         if (recipe.kind == .file) {
             const needs_run = self.checkFileTarget(recipe) catch true;
             if (!needs_run) {
+                if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
                 if (self.ctx.verbose and !self.ctx.silent and !recipe.silent) {
                     self.print("   {s}jake: '{s}' is up to date{s}\n", .{ self.color.muted(), name, self.color.reset() });
                 }
@@ -976,13 +996,14 @@ pub const Executor = struct {
             return err;
         };
 
-        // Success - print completion (failure chrome is kept regardless)
+        if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
+
+        // Finish fallible bookkeeping before publishing terminal success.
+        self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
         self.printCompletionStatus(name, true, start_time, chrome_suppressed);
         self.tasks_run += 1;
         const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
         self.emitTaskComplete(name, true, duration_ms);
-
-        self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
     }
 
     /// Execute the body of a single recipe: hooks, parameter binding, command
@@ -991,6 +1012,17 @@ pub const Executor = struct {
         const previous_recipe_name = self.current_recipe_name;
         self.current_recipe_name = name;
         defer self.current_recipe_name = previous_recipe_name;
+        self.discardPendingCache();
+        defer self.discardPendingCache();
+
+        if (!self.ctx.dry_run) {
+            self.cache.invalidatePersisted() catch |err| {
+                self.print("{s}failed to invalidate build cache: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
+                return if (err == error.OutOfMemory) ExecuteError.OutOfMemory else ExecuteError.CommandFailed;
+            };
+            if (recipe.kind == .file) self.cache.invalidateScope(.{ .recipe = recipe.name });
+        }
+        errdefer if (!self.ctx.dry_run) self.cache.invalidateRecipe(name);
 
         self.hook_runner.dry_run = self.ctx.dry_run;
         self.hook_runner.verbose = self.ctx.verbose and !(self.ctx.silent or recipe.silent);
@@ -1000,12 +1032,13 @@ pub const Executor = struct {
             .success = true,
             .error_message = null,
             .variables = &self.variables,
+            .cancellation_flag = self.ctx.cancellation_flag,
         };
 
         // Run pre-hooks (global and recipe-specific)
         self.hook_runner.runPreHooks(recipe.pre_hooks, &hook_context) catch |err| {
             self.print("{s}pre-hook failed: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
-            return ExecuteError.CommandFailed;
+            return if (self.ctx.isCancelled()) ExecuteError.Cancelled else ExecuteError.CommandFailed;
         };
 
         // Set recipe-level shell and working directory
@@ -1044,6 +1077,14 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
+        if (recipe.kind == .file and !self.ctx.dry_run) {
+            for (recipe.file_deps) |dep| {
+                const resolved_dep = self.resolveRootedPath(recipe, dep) catch return ExecuteError.OutOfMemory;
+                defer if (resolved_dep.owned) self.allocator.free(resolved_dep.path);
+                try self.stageCachePattern(.{ .recipe = recipe.name }, resolved_dep.path);
+            }
+        }
+
         // Execution path: external recipe -> delegate to make/just;
         // timeout specified -> executeCommandsWithTimeout; otherwise -> executeCommands.
         const exec_result = if (recipe.origin) |origin| blk: {
@@ -1078,33 +1119,38 @@ pub const Executor = struct {
             self.hook_runner.runOnErrorHooks(recipe.on_error_hooks, &hook_context);
         }
 
+        // A cancellation can arrive while a post/on-error hook is running.
+        // It must win over an otherwise successful body so file-target state is
+        // not committed after the user has stopped the execution.
+        if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
+
         // Return the original error if recipe execution failed
         if (exec_result) |_| {} else |err| {
             return err;
         }
 
-        // Update cache for file targets
-        if (recipe.kind == .file) {
-            if (recipe.output) |output| {
-                // Cache update is best-effort; failure doesn't affect recipe execution.
-                // Resolve against a `@rooted` module's base_dir so the cached path
-                // matches the one checkFileTarget probes.
-                const resolved_output: ResolvedPath = self.resolveRootedPath(recipe, output) catch
-                    .{ .path = output, .owned = false };
-                defer if (resolved_output.owned) self.allocator.free(resolved_output.path);
-                self.cache.update(resolved_output.path) catch {};
-            }
-            // Record each dependency too. checkFileTarget decides staleness via
-            // isGlobStale(dep); without recording the deps here they are never in
-            // the cache, so isStale() always returns true and the target rebuilds
-            // on every run (jake#17).
-            for (recipe.file_deps) |dep| {
-                const resolved_dep: ResolvedPath = self.resolveRootedPath(recipe, dep) catch
-                    .{ .path = dep, .owned = false };
-                defer if (resolved_dep.owned) self.allocator.free(resolved_dep.path);
-                self.cache.updatePattern(resolved_dep.path) catch {};
-            }
+        if (!self.ctx.dry_run) self.publishPendingCache() catch return ExecuteError.OutOfMemory;
+    }
+
+    fn discardPendingCache(self: *Executor) void {
+        if (self.pending_cache) |pending| {
+            pending.deinit();
+            self.allocator.destroy(pending);
+            self.pending_cache = null;
         }
+    }
+
+    fn stageCachePattern(self: *Executor, scope: Cache.Scope, pattern: []const u8) ExecuteError!void {
+        if (self.pending_cache == null) {
+            const pending = self.allocator.create(Cache) catch return ExecuteError.OutOfMemory;
+            pending.* = Cache.init(self.allocator);
+            self.pending_cache = pending;
+        }
+        self.pending_cache.?.updateScopedPattern(scope, pattern) catch return ExecuteError.OutOfMemory;
+    }
+
+    fn publishPendingCache(self: *Executor) !void {
+        if (self.pending_cache) |pending| try self.cache.mergeFrom(pending);
     }
 
     /// Bind recipe parameters to variables based on CLI args and defaults.
@@ -1166,7 +1212,7 @@ pub const Executor = struct {
         return .{ .path = path, .owned = false };
     }
 
-    fn checkFileTarget(self: *Executor, recipe: *const Recipe) !bool {
+    pub fn checkFileTarget(self: *Executor, recipe: *const Recipe) !bool {
         // Check if output exists
         const output = recipe.output orelse return true;
 
@@ -1181,7 +1227,7 @@ pub const Executor = struct {
         for (recipe.file_deps) |dep| {
             const resolved_dep = try self.resolveRootedPath(recipe, dep);
             defer if (resolved_dep.owned) self.allocator.free(resolved_dep.path);
-            if (try self.cache.isGlobStale(resolved_dep.path)) {
+            if (try self.cache.isScopedPatternStale(.{ .recipe = recipe.name }, resolved_dep.path)) {
                 if (self.ctx.verbose and !self.ctx.silent and !recipe.silent) {
                     self.print("   {s}jake: dependency '{s}' changed, rebuilding '{s}'{s}\n", .{ self.color.muted(), dep, recipe.name, self.color.reset() });
                 }
@@ -1190,18 +1236,6 @@ pub const Executor = struct {
         }
 
         return false;
-    }
-
-    /// Find a recipe that produces the given output file
-    fn findRecipeByOutput(self: *Executor, output: []const u8) ?*const Recipe {
-        for (self.jakefile.recipes) |*recipe| {
-            if (recipe.output) |recipe_output| {
-                if (std.mem.eql(u8, recipe_output, output)) {
-                    return recipe;
-                }
-            }
-        }
-        return null;
     }
 
     /// Get current OS as a string
@@ -1309,8 +1343,11 @@ pub const Executor = struct {
             return self.executeCommands(cmds);
         };
 
-        // Execute commands, checking for timeout after each
-        const result = self.executeCommandsWithTimeoutCheck(cmds, ctx);
+        // Execute commands, checking for timeout after each.
+        const result = if (ctx.timeout_fired.load(.acquire))
+            ExecuteError.CommandFailed
+        else
+            self.executeCommandsCore(cmds, ctx);
 
         // Signal watchdog to stop and wait for it
         ctx.stop_requested.store(true, .release);
@@ -1326,39 +1363,6 @@ pub const Executor = struct {
         }
 
         return result;
-    }
-
-    /// Execute commands with timeout checking - stores child process for watchdog to kill
-    fn executeCommandsWithTimeoutCheck(
-        self: *Executor,
-        cmds: []const Recipe.Command,
-        timeout_ctx: anytype,
-    ) ExecuteError!void {
-        // This is a wrapper that passes timeout context to runCommand
-        // For now, we'll use a simpler approach: check timeout before each command
-
-        // Execute commands normally but check timeout between each
-        return self.executeCommandsInternal(cmds, timeout_ctx);
-    }
-
-    /// Internal command execution with optional timeout context
-    fn executeCommandsInternal(
-        self: *Executor,
-        cmds: []const Recipe.Command,
-        timeout_ctx: anytype,
-    ) ExecuteError!void {
-        const has_timeout = comptime @TypeOf(timeout_ctx) != ?*anyopaque;
-
-        // Check if timeout already expired
-        if (has_timeout) {
-            if (timeout_ctx.timeout_fired.load(.acquire)) {
-                return ExecuteError.CommandFailed;
-            }
-        }
-
-        // Delegate to the main executeCommands but with timeout awareness
-        // For simplicity, we'll inline a modified version here
-        return self.executeCommandsCore(cmds, timeout_ctx);
     }
 
     /// Core command execution logic with optional timeout context
@@ -1534,9 +1538,13 @@ pub const Executor = struct {
                         if (!executing) continue;
                         const patterns = self.parseCachePatterns(cmd.line);
                         defer self.allocator.free(patterns);
+                        const cache_scope: Cache.Scope = .{ .block = .{
+                            .recipe = self.current_recipe_name orelse "",
+                            .index = i,
+                        } };
                         var is_stale = false;
                         for (patterns) |pattern| {
-                            if (self.cache.isGlobStale(pattern) catch true) {
+                            if (self.cache.isScopedPatternStale(cache_scope, pattern) catch true) {
                                 is_stale = true;
                                 break;
                             }
@@ -1550,10 +1558,15 @@ pub const Executor = struct {
                         }
                         i += 1;
                         if (i < cmds.len and cmds[i].directive == null) {
-                            try self.runCommandWithTimeout(cmds[i], timeout_ctx);
-                            for (patterns) |pattern| {
-                                self.cache.updatePattern(pattern) catch {};
+                            // Capture the inputs before the command observes them.
+                            // Publishing is delayed until executeRecipeBody's final
+                            // success fence so a later command/hook cannot certify
+                            // a failed recipe as cached.
+                            if (!self.ctx.dry_run) {
+                                for (patterns) |pattern| try self.stageCachePattern(cache_scope, pattern);
+                                self.cache.invalidateScope(cache_scope);
                             }
+                            try self.runCommandWithTimeout(cmds[i], timeout_ctx);
                         }
                         continue;
                     },
@@ -1935,52 +1948,7 @@ pub const Executor = struct {
     /// Wait for `child`, releasing its signal-table slot the instant it is
     /// reaped. `signal_slot` points at the handle `signals.track` returned.
     fn waitForChild(self: *Executor, child: *std.process.Child, signal_slot: *usize) !std.process.Child.Term {
-        if (self.ctx.cancellation_flag == null) {
-            defer signals.untrack(signal_slot);
-            return child.wait();
-        }
-        const CancellationMonitor = struct {
-            ctx: *const Context,
-            id: std.process.Child.Id,
-            done: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-
-            fn run(monitor: *@This()) void {
-                while (!monitor.done.load(.acquire)) {
-                    if (monitor.ctx.isCancelled()) {
-                        if (builtin.os.tag == .windows) {
-                            std.os.windows.TerminateProcess(monitor.id, 1) catch {};
-                        } else if (builtin.os.tag != .wasi) {
-                            signals.killTree(monitor.id, signals.sigkill);
-                        }
-                        return;
-                    }
-                    std.Thread.sleep(10 * std.time.ns_per_ms);
-                }
-            }
-        };
-        var monitor = CancellationMonitor{ .ctx = self.ctx, .id = child.id };
-        if (builtin.os.tag == .windows) {
-            const windows = std.os.windows;
-            const process = windows.GetCurrentProcess();
-            if (windows.kernel32.DuplicateHandle(process, child.id, process, &monitor.id, 0, windows.FALSE, windows.DUPLICATE_SAME_ACCESS) == 0) {
-                _ = child.kill() catch {};
-                return error.SystemResources;
-            }
-        }
-        defer if (builtin.os.tag == .windows) std.os.windows.CloseHandle(monitor.id);
-        const thread = std.Thread.spawn(.{}, CancellationMonitor.run, .{&monitor}) catch |err| {
-            _ = child.kill() catch {};
-            return err;
-        };
-        defer {
-            monitor.done.store(true, .release);
-            thread.join();
-        }
-        const term = try child.wait();
-        // Release the slot before the deferred join: the monitor polls on a
-        // 10ms interval, and the pid is recycleable the moment it is reaped.
-        signals.untrack(signal_slot);
-        return term;
+        return signals.waitForChild(child, signal_slot, self.ctx.cancellation_flag);
     }
 
     /// Execute an external recipe by delegating to make or just
@@ -3276,6 +3244,93 @@ test "executor basic" {
 
     executor.ctx.dry_run = true;
     try executor.execute("hello");
+}
+
+test "task-start cancellation cannot publish a skipped success" {
+    const events = @import("../output/event_emitter.zig");
+    const source =
+        \\task test:
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinitWithoutSavingCache();
+
+    var running: std.atomic.Value(bool) = .init(true);
+    const Receiver = struct {
+        running: *std.atomic.Value(bool),
+        starts: usize = 0,
+        successes: usize = 0,
+        failures: usize = 0,
+        pub fn onEvent(self: *@This(), event: events.Event) void {
+            switch (event) {
+                .task_start => {
+                    self.starts += 1;
+                    self.running.store(false, .release);
+                },
+                .task_complete => |complete| {
+                    if (complete.success) self.successes += 1 else self.failures += 1;
+                },
+                else => {},
+            }
+        }
+    };
+    var receiver = Receiver{ .running = &running };
+    executor.ctx.cancellation_flag = &running;
+    executor.ctx.event_emitter = events.EventEmitter.init(&receiver);
+    try std.testing.expectError(ExecuteError.Cancelled, executor.execute("test"));
+    try std.testing.expectEqual(@as(usize, 1), receiver.starts);
+    try std.testing.expectEqual(@as(usize, 0), receiver.successes);
+    try std.testing.expectEqual(@as(usize, 1), receiver.failures);
+}
+
+test "executor init gives each executor an isolated default context" {
+    const source =
+        \\task hello:
+        \\    echo "Hello"
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var first = try Executor.init(std.testing.allocator, &jakefile);
+    defer first.deinitWithoutSavingCache();
+    var second = try Executor.init(std.testing.allocator, &jakefile);
+    defer second.deinitWithoutSavingCache();
+
+    try std.testing.expect(first.ctx != second.ctx);
+    first.ctx.dry_run = true;
+    try std.testing.expect(!second.ctx.dry_run);
+}
+
+test "executor init releases the owned index on allocation failure" {
+    const source =
+        \\task hello:
+        \\    echo "Hello"
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, struct {
+        fn initAndDeinit(allocator: std.mem.Allocator, parsed: *const Jakefile) !void {
+            var executor = try Executor.init(allocator, parsed);
+            defer executor.deinitWithoutSavingCache();
+        }
+    }.initAndDeinit, .{&jakefile});
 }
 
 test "line continuation normalization joins continued lines" {
@@ -5664,6 +5719,158 @@ test "@cache skips command when inputs unchanged" {
     // Verify no error - command was skipped due to cache hit
 }
 
+test "@cache does not publish after a later command fails" {
+    if (builtin.os.tag == .windows) return;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+    try std.fs.cwd().writeFile(.{ .sub_path = "input.txt", .data = "input" });
+    const source =
+        \\task test:
+        \\    @cache input.txt
+        \\    echo body >> log.txt
+        \\    false
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+    var executor = try Executor.init(std.testing.allocator, &jakefile);
+    defer executor.deinitWithoutSavingCache();
+    try std.testing.expectError(ExecuteError.CommandFailed, executor.execute("test"));
+    try std.testing.expectError(ExecuteError.CommandFailed, executor.execute("test"));
+    const log = try std.fs.cwd().readFileAlloc(std.testing.allocator, "log.txt", 64);
+    defer std.testing.allocator.free(log);
+    try std.testing.expectEqualStrings("body\nbody\n", log);
+}
+
+test "file targets sharing an input each rebuild after it changes" {
+    if (builtin.os.tag == .windows) return;
+    const source =
+        \\file a.bin: input.txt
+        \\    cp input.txt a.bin
+        \\file b.bin: input.txt
+        \\    cp input.txt b.bin
+        \\task all: [a.bin, b.bin]
+    ;
+    for ([_]usize{ 0, 2 }, 0..) |jobs, case_index| {
+        var tmp_dir = std.testing.tmpDir(.{});
+        defer tmp_dir.cleanup();
+        const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+        defer std.testing.allocator.free(old_cwd);
+        const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+        defer std.testing.allocator.free(tmp_path);
+        try std.posix.chdir(tmp_path);
+        defer std.posix.chdir(old_cwd) catch {};
+        _ = case_index;
+        try std.fs.cwd().writeFile(.{ .sub_path = "input.txt", .data = "old" });
+        var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+        var p = parser.Parser.init(std.testing.allocator, &lex);
+        var jakefile = try p.parseJakefile();
+        defer jakefile.deinit(std.testing.allocator);
+        {
+            var executor = try Executor.init(std.testing.allocator, &jakefile);
+            executor.ctx.jobs = jobs;
+            try executor.execute("all");
+            executor.deinit();
+        }
+        try std.fs.cwd().writeFile(.{ .sub_path = "input.txt", .data = "new" });
+        {
+            var executor = try Executor.init(std.testing.allocator, &jakefile);
+            defer executor.deinitWithoutSavingCache();
+            executor.ctx.jobs = jobs;
+            try executor.execute("all");
+        }
+        const a = try std.fs.cwd().readFileAlloc(std.testing.allocator, "a.bin", 16);
+        defer std.testing.allocator.free(a);
+        const b = try std.fs.cwd().readFileAlloc(std.testing.allocator, "b.bin", 16);
+        defer std.testing.allocator.free(b);
+        try std.testing.expectEqualStrings("new", a);
+        try std.testing.expectEqualStrings("new", b);
+    }
+}
+
+test "cache snapshots input before command mutation" {
+    if (builtin.os.tag == .windows) return;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+    try std.fs.cwd().writeFile(.{ .sub_path = "input.txt", .data = "old" });
+    const source =
+        \\task test:
+        \\    @cache input.txt
+        \\    cp input.txt output.txt; echo new > input.txt
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+    {
+        var executor = try Executor.init(std.testing.allocator, &jakefile);
+        try executor.execute("test");
+        executor.deinit();
+    }
+    {
+        var executor = try Executor.init(std.testing.allocator, &jakefile);
+        defer executor.deinitWithoutSavingCache();
+        try executor.execute("test");
+    }
+    const output = try std.fs.cwd().readFileAlloc(std.testing.allocator, "output.txt", 16);
+    defer std.testing.allocator.free(output);
+    try std.testing.expectEqualStrings("new\n", output);
+}
+
+test "cache directives with shared inputs remain consumer scoped" {
+    if (builtin.os.tag == .windows) return;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+    try std.fs.cwd().writeFile(.{ .sub_path = "input.txt", .data = "one" });
+    const source =
+        \\task a:
+        \\    @cache input.txt
+        \\    echo a >> log.txt
+        \\task b:
+        \\    @cache input.txt
+        \\    echo b >> log.txt
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+    {
+        var executor = try Executor.init(std.testing.allocator, &jakefile);
+        try executor.execute("a");
+        try executor.execute("b");
+        executor.deinit();
+    }
+    try std.fs.cwd().writeFile(.{ .sub_path = "input.txt", .data = "two" });
+    {
+        var executor = try Executor.init(std.testing.allocator, &jakefile);
+        defer executor.deinitWithoutSavingCache();
+        try executor.execute("a");
+        try executor.execute("b");
+    }
+    const log = try std.fs.cwd().readFileAlloc(std.testing.allocator, "log.txt", 64);
+    defer std.testing.allocator.free(log);
+    try std.testing.expectEqualStrings("a\nb\na\nb\n", log);
+}
+
 test "@cache with multiple files" {
     const source =
         \\task test:
@@ -5728,20 +5935,32 @@ test "@cache with glob pattern updates matched files" {
     const source =
         \\task test:
         \\    @cache *.txt
-        \\    echo "building"
+        \\    echo building >> build.log
     ;
     var lex = @import("../frontend/lexer.zig").Lexer.init(source);
     var p = parser.Parser.init(std.testing.allocator, &lex);
     var jakefile = try p.parseJakefile();
     defer jakefile.deinit(std.testing.allocator);
 
-    var executor = try Executor.init(std.testing.allocator, &jakefile);
-    defer executor.deinit();
-
-    try executor.execute("test");
-    try std.testing.expect(executor.cache.hashes.contains("a.txt"));
-    try std.testing.expect(executor.cache.hashes.contains("b.txt"));
-    try std.testing.expect(!executor.cache.hashes.contains("*.txt"));
+    {
+        var executor = try Executor.init(std.testing.allocator, &jakefile);
+        try executor.execute("test");
+        executor.deinit();
+    }
+    {
+        var executor = try Executor.init(std.testing.allocator, &jakefile);
+        try executor.execute("test");
+        executor.deinitWithoutSavingCache();
+    }
+    try std.fs.cwd().deleteFile("b.txt");
+    {
+        var executor = try Executor.init(std.testing.allocator, &jakefile);
+        defer executor.deinitWithoutSavingCache();
+        try executor.execute("test");
+    }
+    const log = try std.fs.cwd().readFileAlloc(std.testing.allocator, "build.log", 64);
+    defer std.testing.allocator.free(log);
+    try std.testing.expectEqualStrings("building\nbuilding\n", log);
 }
 
 test "@cache with empty deps always runs" {
@@ -7867,4 +8086,120 @@ test "hasGlobMeta distinguishes shell-expanded patterns from literal globs" {
     try std.testing.expect(!Executor.hasGlobMeta("opencode-sema"));
     try std.testing.expect(!Executor.hasGlobMeta("build"));
     try std.testing.expect(!Executor.hasGlobMeta(""));
+}
+
+test "empty glob file dependencies remain stale in sequential and parallel runs" {
+    if (builtin.os.tag == .windows) return;
+    const allocator = std.testing.allocator;
+    const source =
+        \\file output.bin: inputs/*.txt
+        \\    echo rebuilt >> runs.txt
+        \\    touch output.bin
+        \\task all: [output.bin]
+    ;
+    for ([_]usize{ 0, 2 }) |jobs| {
+        var tmp = std.testing.tmpDir(.{});
+        defer tmp.cleanup();
+        try tmp.dir.makeDir("inputs");
+        const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+        defer allocator.free(old_cwd);
+        const path = try tmp.dir.realpathAlloc(allocator, ".");
+        defer allocator.free(path);
+        try std.posix.chdir(path);
+        defer std.posix.chdir(old_cwd) catch {};
+        var lexer = @import("../frontend/lexer.zig").Lexer.init(source);
+        var parser_instance = parser.Parser.init(allocator, &lexer);
+        var ast = try parser_instance.parseJakefile();
+        defer ast.deinit(allocator);
+        for (0..2) |_| {
+            var executor = try Executor.init(allocator, &ast);
+            defer executor.deinit();
+            executor.ctx.jobs = jobs;
+            try executor.execute("all");
+        }
+        const runs = try std.fs.cwd().readFileAlloc(allocator, "runs.txt", 128);
+        defer allocator.free(runs);
+        try std.testing.expectEqualStrings("rebuilt\nrebuilt\n", runs);
+    }
+}
+
+test "unavailable inputs cannot revive an older consumer fingerprint" {
+    if (builtin.os.tag == .windows) return;
+    const allocator = std.testing.allocator;
+    for ([_][]const u8{ "inputs/*.txt", "input.txt" }) |pattern| {
+        for ([_]usize{ 0, 2 }) |jobs| {
+            var tmp = std.testing.tmpDir(.{});
+            defer tmp.cleanup();
+            try tmp.dir.makeDir("inputs");
+            const input = if (std.mem.startsWith(u8, pattern, "inputs/")) "inputs/a.txt" else "input.txt";
+            const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+            defer allocator.free(old_cwd);
+            const path = try tmp.dir.realpathAlloc(allocator, ".");
+            defer allocator.free(path);
+            try std.posix.chdir(path);
+            defer std.posix.chdir(old_cwd) catch {};
+            const source = try std.fmt.allocPrint(
+                allocator,
+                "file output.bin: {s}\n    cat {s} > output.bin 2>/dev/null || true\n    echo ran >> runs.txt\ntask all: [output.bin]\n",
+                .{ pattern, pattern },
+            );
+            defer allocator.free(source);
+            var lexer = @import("../frontend/lexer.zig").Lexer.init(source);
+            var parser_instance = parser.Parser.init(allocator, &lexer);
+            var ast = try parser_instance.parseJakefile();
+            defer ast.deinit(allocator);
+            for (0..3) |attempt| {
+                if (attempt == 1) {
+                    try tmp.dir.deleteFile(input);
+                } else {
+                    try tmp.dir.writeFile(.{ .sub_path = input, .data = "old" });
+                }
+                var executor = try Executor.init(allocator, &ast);
+                defer executor.deinit();
+                executor.ctx.jobs = jobs;
+                try executor.execute("all");
+                const output = try std.fs.cwd().readFileAlloc(allocator, "output.bin", 128);
+                defer allocator.free(output);
+                try std.testing.expectEqualStrings(if (attempt == 1) "" else "old", output);
+            }
+            const runs = try std.fs.cwd().readFileAlloc(allocator, "runs.txt", 128);
+            defer allocator.free(runs);
+            try std.testing.expectEqualStrings("ran\nran\nran\n", runs);
+        }
+    }
+}
+
+test "terminal success cannot be followed by fallible execution bookkeeping" {
+    const events = @import("../output/event_emitter.zig");
+    const allocator = std.testing.allocator;
+    var lexer = @import("../frontend/lexer.zig").Lexer.init("task test:\n");
+    var parser_instance = parser.Parser.init(allocator, &lexer);
+    var ast = try parser_instance.parseJakefile();
+    defer ast.deinit(allocator);
+    var failing = std.testing.FailingAllocator.init(allocator, .{});
+    var executor = try Executor.init(failing.allocator(), &ast);
+    defer executor.deinitWithoutSavingCache();
+    executor.ctx.dry_run = true;
+    const Receiver = struct {
+        allocator: *std.testing.FailingAllocator,
+        successes: usize = 0,
+        failures: usize = 0,
+        pub fn onEvent(self: *@This(), event: events.Event) void {
+            switch (event) {
+                .task_complete => |complete| {
+                    if (complete.success) {
+                        self.successes += 1;
+                        // Once observers see success, any later allocation fails.
+                        self.allocator.fail_index = self.allocator.alloc_index;
+                    } else self.failures += 1;
+                },
+                else => {},
+            }
+        }
+    };
+    var receiver = Receiver{ .allocator = &failing };
+    executor.ctx.event_emitter = events.EventEmitter.init(&receiver);
+    try executor.execute("test");
+    try std.testing.expectEqual(@as(usize, 1), receiver.successes);
+    try std.testing.expectEqual(@as(usize, 0), receiver.failures);
 }

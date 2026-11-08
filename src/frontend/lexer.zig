@@ -306,8 +306,10 @@ pub const Lexer = struct {
                 };
             },
             '"', '\'' => return self.scanString(start, start_line, start_column),
-            '.' => {
-                // Starts with dot - could be a dotfile like .env or a path like ./foo
+            '.', '*', '?', '/' => {
+                // A path/glob may begin with a dot, wildcard, or absolute-path
+                // separator. `[` stays a punctuation token so task dependency
+                // lists retain their existing bracket grammar.
                 return self.scanIdentKeywordOrGlob(start, start_line, start_column);
             },
             else => {
@@ -327,10 +329,19 @@ pub const Lexer = struct {
 
     fn scanIdentKeywordOrGlob(self: *Lexer, start: usize, start_line: usize, start_column: usize) Token {
         // Scan identifier/keyword or glob pattern
-        // Glob patterns can contain: letters, digits, _, -, ., /, *, **
+        // Glob patterns can contain: letters, digits, _, -, ., /, *, ?, and
+        // bracket classes. Leading bracket classes are assembled by the file
+        // recipe parser so `[task]` keeps its task-dependency-list meaning.
+        var in_bracket_class = false;
         while (self.index < self.source.len) {
             const ch = self.source[self.index];
-            if (isIdentContinue(ch) or ch == '/' or ch == '*' or ch == '.') {
+            if (ch == '[') {
+                in_bracket_class = true;
+                self.advanceIndex();
+            } else if (ch == ']' and in_bracket_class) {
+                in_bracket_class = false;
+                self.advanceIndex();
+            } else if (isIdentContinue(ch) or ch == '/' or ch == '*' or ch == '?' or ch == '.') {
                 self.advanceIndex();
             } else {
                 break;
@@ -339,9 +350,9 @@ pub const Lexer = struct {
 
         const text = self.source[start..self.index];
 
-        // Determine if it's a glob pattern (contains * or /)
+        // Determine if it's a glob pattern (contains a glob/path metacharacter)
         // Note: "." alone or in the middle of an identifier is not a glob
-        const is_glob = std.mem.indexOfAny(u8, text, "*/") != null;
+        const is_glob = std.mem.indexOfAny(u8, text, "*?[]/") != null;
 
         if (is_glob) {
             return .{
@@ -431,10 +442,18 @@ pub const Lexer = struct {
     }
 
     fn scanIdentOrGlob(self: *Lexer, start: usize, start_line: usize, start_column: usize) Token {
-        // Glob patterns can contain: letters, digits, _, -, ., /, *, **
+        // Glob patterns can contain: letters, digits, _, -, ., /, *, ?, and
+        // bracket classes.
+        var in_bracket_class = false;
         while (self.index < self.source.len) {
             const ch = self.source[self.index];
-            if (isIdentContinue(ch) or ch == '/' or ch == '*' or ch == '.') {
+            if (ch == '[') {
+                in_bracket_class = true;
+                self.advanceIndex();
+            } else if (ch == ']' and in_bracket_class) {
+                in_bracket_class = false;
+                self.advanceIndex();
+            } else if (isIdentContinue(ch) or ch == '/' or ch == '*' or ch == '?' or ch == '.') {
                 self.advanceIndex();
             } else {
                 break;
@@ -443,8 +462,8 @@ pub const Lexer = struct {
 
         const text = self.source[start..self.index];
 
-        // Determine if it's a glob pattern (contains * or /)
-        const is_glob = std.mem.indexOfAny(u8, text, "*/") != null;
+        // Determine if it's a glob pattern (contains a glob/path metacharacter)
+        const is_glob = std.mem.indexOfAny(u8, text, "*?[]/") != null;
 
         return .{
             .tag = if (is_glob) .glob_pattern else .ident,
@@ -757,6 +776,28 @@ test "lexer glob pattern with path only" {
     const tok = lex.next();
     try std.testing.expectEqual(Token.Tag.glob_pattern, tok.tag);
     try std.testing.expectEqualStrings("src/lib/utils.ts", tok.slice(source));
+}
+
+test "lexer accepts leading and bracket-class glob patterns" {
+    const source = "*.txt ?odule.txt /tmp/[ab]*.txt src/[ab]*.txt";
+    var lex = Lexer.init(source);
+
+    inline for ([_][]const u8{ "*.txt", "?odule.txt", "/tmp/[ab]*.txt", "src/[ab]*.txt" }) |pattern| {
+        const tok = lex.next();
+        try std.testing.expectEqual(Token.Tag.glob_pattern, tok.tag);
+        try std.testing.expectEqualStrings(pattern, tok.slice(source));
+    }
+}
+
+test "lexer preserves task dependency brackets" {
+    const source = "[build, test]";
+    var lex = Lexer.init(source);
+
+    try std.testing.expectEqual(Token.Tag.l_bracket, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.ident, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.comma, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.ident, lex.next().tag);
+    try std.testing.expectEqual(Token.Tag.r_bracket, lex.next().tag);
 }
 
 test "lexer identifier not glob" {

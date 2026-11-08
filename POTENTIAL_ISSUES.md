@@ -26,9 +26,9 @@
 
 - **Files:** `src/runtime/parallel.zig`
 - **Impact:** Performance, memory usage
-- **Summary:** Each worker clones the shared cache, executes with the clone, then merges the entire result back under a lock.
-- **Why this matters:** For larger projects or many parallel tasks, this adds avoidable O(cache-size × tasks) copy/merge overhead and memory churn directly on the hot path for `-j` execution.
-- **Suggested fix:** Move to a more incremental cache-update model: shared read-only view plus narrow writeback, per-task delta tracking, or finer-grained synchronization around cache mutation.
+- **Summary:** Each worker still copies a read snapshot, but now tracks writes and merges only its delta under a lock. Correctness defects from stale snapshot publication are fixed; see [the maintained cleanup evidence](docs/code-cleanup.md#cache-attempt-and-publication-model).
+- **Why this matters:** For larger projects or many parallel tasks, this adds avoidable O(cache-size × tasks) snapshot-copy overhead and memory churn directly on the hot path for `-j` execution.
+- **Suggested fix:** Delta writeback is implemented. A shared immutable read view could further reduce snapshot-copy cost; measure before changing ownership.
 
 ## 5. Watch mode repeatedly re-expands globs and re-deduplicates the full file set
 
@@ -43,5 +43,5 @@
 1. Fix hook shell selection.
 2. Remove `chdir()` from Jakefile loading.
 3. ~~Replace the `@on_error` parsing heuristic.~~ FIXED.
-4. Rework parallel cache handling.
+4. Measure remaining parallel cache snapshot-copy cost (delta correctness is fixed).
 5. Make watch mode maintain stable resolved file state.

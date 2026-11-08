@@ -21,6 +21,8 @@ All recipes from `docker.jake` become available directly by name.
 
 Recipes are prefixed: `deploy.production`, `deploy.staging`, etc. Use namespaced imports when you have recipes with the same name in multiple files.
 
+The same file can be imported under different prefixes; each prefix receives its own recipes and namespaced dependencies. Repeating an identical import in the same effective namespace is deduplicated. Imported global hooks run once per source file, including when that file is used under several aliases.
+
 **The prefix applies only to recipes, not variables.** Variables from the imported file are merged globally without any prefix. If the imported file defines `version = "1.0"`, that variable becomes available everywhere — and will override any existing `version` variable defined earlier.
 
 ## What Gets Merged
@@ -132,7 +134,7 @@ If a module expects its own `.env` file, use a path relative to the project root
 
 **Circular imports are an error.** If file A imports file B and file B imports file A, Jake detects the cycle and stops with an error. The same applies to longer chains (A → B → C → A).
 
-**Diamond imports work.** If A imports B and C, and both B and C import D, Jake processes D once and skips it on the second encounter. You won't get duplicate recipes or hooks from being imported via multiple paths.
+**Diamond imports work.** If A imports B and C without distinct namespaces, and both B and C import D, Jake processes D once in that effective namespace. If B and C are imported under different aliases, each namespace receives its own D recipes. Global hooks from D are still merged once per source file.
 
 ## Example
 

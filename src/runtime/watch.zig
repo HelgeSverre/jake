@@ -11,6 +11,7 @@ const JakefileIndex = @import("../frontend/jakefile_index.zig").JakefileIndex;
 const jakefile_loader = @import("../frontend/jakefile_loader.zig");
 const glob_mod = @import("../util/glob.zig");
 const color_mod = @import("../output/color.zig");
+const event_emitter = @import("../output/event_emitter.zig");
 const context_mod = @import("context.zig");
 const RuntimeContext = context_mod.RuntimeContext;
 const Context = context_mod.Context;
@@ -19,7 +20,8 @@ const Jakefile = parser.Jakefile;
 const Executor = executor_mod.Executor;
 const LoadedJakefile = jakefile_loader.LoadedJakefile;
 
-/// Default CLI context used by init() and initWithIndex() for backwards compatibility.
+/// Default CLI context used by the non-fallible legacy `initWithIndex` path.
+/// `init` can report allocation failure and therefore owns an isolated context.
 var default_context: Context = .{
     .color = color_mod.Color{ .enabled = false },
 };
@@ -30,6 +32,7 @@ pub const Watcher = struct {
     jakefile: *const Jakefile,
     index: *const JakefileIndex,
     owned_index: ?*JakefileIndex = null,
+    owned_context: ?*Context = null,
     watch_patterns: std.ArrayListUnmanaged([]const u8),
     file_mtimes: std.StringHashMapUnmanaged(i128),
     resolved_files: std.ArrayListUnmanaged([]const u8),
@@ -56,14 +59,32 @@ pub const Watcher = struct {
             allocator.destroy(owned_index);
             return err;
         };
-        var watcher = initInternal(allocator, jakefile, owned_index);
+        errdefer {
+            owned_index.deinit();
+            allocator.destroy(owned_index);
+        }
+
+        const owned_context = try allocator.create(Context);
+        errdefer allocator.destroy(owned_context);
+        owned_context.* = .{
+            .color = color_mod.Color{ .enabled = false },
+        };
+
+        var watcher = initInternal(allocator, jakefile, owned_index, owned_context);
         watcher.owned_index = owned_index;
+        watcher.owned_context = owned_context;
         watcher.index = owned_index;
         return watcher;
     }
 
     pub fn initWithIndex(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {
-        return initInternal(allocator, jakefile, index);
+        // This legacy constructor cannot report allocation failure, so retain
+        // its existing shared default context. New production callers use a
+        // context-owning constructor instead.
+        default_context = .{
+            .color = color_mod.Color{ .enabled = false },
+        };
+        return initInternal(allocator, jakefile, index, &default_context);
     }
 
     /// Initialize with a pre-configured RuntimeContext (shares color, theme) and CLI Context.
@@ -73,6 +94,7 @@ pub const Watcher = struct {
             .allocator = allocator,
             .jakefile = jakefile,
             .index = index,
+            .owned_context = null,
             .watch_patterns = .empty,
             .file_mtimes = .empty,
             .resolved_files = .empty,
@@ -89,12 +111,7 @@ pub const Watcher = struct {
         };
     }
 
-    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex) Watcher {
-        // Reset default context to initial state (important for tests that reuse this)
-        default_context = .{
-            .color = color_mod.Color{ .enabled = false },
-        };
-
+    fn initInternal(allocator: std.mem.Allocator, jakefile: *const Jakefile, index: *const JakefileIndex, ctx: *Context) Watcher {
         return .{
             .allocator = allocator,
             .jakefile = jakefile,
@@ -107,7 +124,7 @@ pub const Watcher = struct {
             .last_change_time = 0,
             .color = color_mod.init(),
             .theme = color_mod.Theme.init(),
-            .ctx = &default_context,
+            .ctx = ctx,
             .runtime = null,
             .loaded_jakefile = null,
             .requested_jakefile_path = null,
@@ -128,6 +145,7 @@ pub const Watcher = struct {
             .jakefile = undefined,
             .index = undefined,
             .owned_index = null,
+            .owned_context = null,
             .watch_patterns = .empty,
             .file_mtimes = .empty,
             .resolved_files = .empty,
@@ -167,6 +185,11 @@ pub const Watcher = struct {
             owned.deinit();
             self.allocator.destroy(owned);
             self.owned_index = null;
+        }
+
+        if (self.owned_context) |owned| {
+            self.allocator.destroy(owned);
+            self.owned_context = null;
         }
 
         if (self.requested_jakefile_path) |path| {
@@ -636,18 +659,11 @@ pub const Watcher = struct {
         }
 
         var exec = try Executor.init(self.allocator, self.jakefile);
-        exec.ctx.dry_run = self.ctx.dry_run;
-        exec.ctx.silent = self.ctx.silent;
-        exec.ctx.verbose = self.ctx.verbose;
-        exec.ctx.auto_yes = self.ctx.auto_yes;
+        // Keep Executor's isolated Context allocation, while copying the
+        // complete caller configuration. Enumerating selected fields here
+        // dropped transport callbacks and would keep doing so as Context grew.
+        exec.ctx.* = self.ctx.*;
         exec.ctx.watch_mode = true;
-        exec.ctx.jobs = self.ctx.jobs;
-        exec.ctx.color = self.ctx.color;
-        exec.ctx.positional_args = self.ctx.positional_args;
-        exec.ctx.cancellation_flag = self.ctx.cancellation_flag;
-        exec.ctx.current_child_pid = self.ctx.current_child_pid;
-        exec.ctx.output_callback = self.ctx.output_callback;
-        exec.ctx.output_callback_ctx = self.ctx.output_callback_ctx;
         return exec;
     }
 };
@@ -761,6 +777,79 @@ test "watcher settings" {
     watcher.ctx.dry_run = true;
     try std.testing.expect(watcher.ctx.verbose);
     try std.testing.expect(watcher.ctx.dry_run);
+}
+
+test "watcher init contexts are isolated" {
+    const source =
+        \\task build:
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var first = try Watcher.init(std.testing.allocator, &jakefile);
+    defer first.deinit();
+    first.ctx.dry_run = true;
+
+    var second = try Watcher.init(std.testing.allocator, &jakefile);
+    defer second.deinit();
+
+    try std.testing.expect(first.ctx.dry_run);
+    try std.testing.expect(!second.ctx.dry_run);
+}
+
+test "watcher init releases owned context and index on allocation failure" {
+    const source =
+        \\task build:
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, struct {
+        fn initAndDeinit(allocator: std.mem.Allocator, parsed: *const Jakefile) !void {
+            var watcher = try Watcher.init(allocator, parsed);
+            defer watcher.deinit();
+        }
+    }.initAndDeinit, .{&jakefile});
+}
+
+test "watcher fallback executor preserves complete caller context" {
+    const Receiver = struct {
+        events: usize = 0,
+
+        pub fn onEvent(self: *@This(), _: event_emitter.Event) void {
+            self.events += 1;
+        }
+    };
+
+    const source =
+        \\task build:
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    var watcher = try Watcher.init(std.testing.allocator, &jakefile);
+    defer watcher.deinit();
+    var receiver = Receiver{};
+    watcher.ctx.allow_interactive_stdin = false;
+    watcher.ctx.event_emitter = event_emitter.EventEmitter.init(&receiver);
+
+    var exec = try watcher.initExecutor();
+    defer exec.deinit();
+
+    try std.testing.expect(!exec.ctx.allow_interactive_stdin);
+    try std.testing.expect(exec.ctx.watch_mode);
+    exec.ctx.emitEvent(.{ .execution_summary = .{
+        .tasks_run = 0,
+        .tasks_failed = 0,
+        .total_ms = 0,
+    } });
+    try std.testing.expectEqual(@as(usize, 1), receiver.events);
 }
 
 test "watcher deinit cleans up patterns" {

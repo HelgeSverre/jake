@@ -76,8 +76,12 @@ pub const ImportResolver = struct {
     allocator: std.mem.Allocator,
     /// Stack of file paths currently being processed (for cycle detection)
     import_stack: std.StringHashMapUnmanaged(void),
-    /// Cache of already resolved absolute paths to avoid re-processing
+    /// Cache of imports already merged into an equivalent namespace/rooted scope.
     resolved_cache: std.StringHashMapUnmanaged(void),
+    /// Imported source files whose global hooks have already been merged.
+    /// Recipes can be replayed under a different namespace, but global hooks
+    /// apply project-wide and must only be installed once.
+    hook_cache: std.StringHashMapUnmanaged(void),
     /// Sources that have been loaded (kept alive for slices in Jakefile)
     loaded_sources: std.ArrayListUnmanaged([]const u8),
     /// Prefixed names that have been allocated (need to outlive resolver)
@@ -101,6 +105,7 @@ pub const ImportResolver = struct {
             .allocator = allocator,
             .import_stack = .{},
             .resolved_cache = .{},
+            .hook_cache = .{},
             .loaded_sources = .{},
             .allocated_names = .{},
             .replaced_slices = .{
@@ -132,6 +137,12 @@ pub const ImportResolver = struct {
             self.allocator.free(key.*);
         }
         self.resolved_cache.deinit(self.allocator);
+
+        var hook_it = self.hook_cache.keyIterator();
+        while (hook_it.next()) |key| {
+            self.allocator.free(key.*);
+        }
+        self.hook_cache.deinit(self.allocator);
 
         // Free all replaced slices that were orphaned during merging
         for (self.replaced_slices.variables.items) |slice| {
@@ -226,9 +237,23 @@ pub const ImportResolver = struct {
         jakefile: *Jakefile,
         base_path: []const u8,
     ) ImportError!void {
+        try self.resolveImportsInScope(jakefile, base_path, .{});
+    }
+
+    const ImportScope = struct {
+        namespace: []const u8 = "",
+        rooted: bool = false,
+    };
+
+    fn resolveImportsInScope(
+        self: *ImportResolver,
+        jakefile: *Jakefile,
+        base_path: []const u8,
+        scope: ImportScope,
+    ) ImportError!void {
         // Process each import directive
         for (jakefile.imports) |import_directive| {
-            try self.processImport(jakefile, import_directive, base_path);
+            try self.processImport(jakefile, import_directive, base_path, scope);
         }
     }
 
@@ -238,6 +263,7 @@ pub const ImportResolver = struct {
         target: *Jakefile,
         import_directive: ImportDirective,
         base_path: []const u8,
+        parent_scope: ImportScope,
     ) ImportError!void {
         // Resolve the import path relative to base_path
         const resolved_path = self.resolvePath(import_directive.path, base_path) catch |err| {
@@ -252,60 +278,94 @@ pub const ImportResolver = struct {
             return ImportError.CircularImport;
         }
 
-        // Check if already processed
-        if (self.resolved_cache.contains(resolved_path)) {
-            return; // Already imported, skip
-        }
-
         // Mark as in-progress
         const stack_key = try self.allocator.dupe(u8, resolved_path);
         self.import_stack.put(self.allocator, stack_key, {}) catch {
             self.allocator.free(stack_key);
             return ImportError.OutOfMemory;
         };
+        var stack_active = true;
+        errdefer if (stack_active) {
+            if (self.import_stack.fetchRemove(resolved_path)) |entry| {
+                self.allocator.free(entry.key);
+            }
+        };
 
         // Load and parse the imported file
         var imported = self.loadAndParse(resolved_path) catch |err| {
             recordFailedImport(import_directive.path);
-            // Clean up the import stack entry on error (free the duplicated key)
+            return err;
+        };
+        var imported_active = true;
+        errdefer if (imported_active) imported.deinit(self.allocator);
+
+        const namespace = if (import_directive.prefix) |prefix| blk: {
+            if (parent_scope.namespace.len == 0) {
+                break :blk self.allocator.dupe(u8, prefix) catch return ImportError.OutOfMemory;
+            }
+            break :blk std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ parent_scope.namespace, prefix }) catch return ImportError.OutOfMemory;
+        } else parent_scope.namespace;
+        defer if (import_directive.prefix != null) self.allocator.free(namespace);
+
+        const scope = ImportScope{
+            .namespace = namespace,
+            .rooted = parent_scope.rooted or import_directive.rooted or imported.rooted,
+        };
+        const cache_key = try self.makeCacheKey(resolved_path, scope);
+        var cache_key_owned = true;
+        defer if (cache_key_owned) self.allocator.free(cache_key);
+
+        // Identical imports into one effective target scope are idempotent.
+        // A different namespace or rooted context changes the merged AST and
+        // must be replayed, even when the source file is the same.
+        if (self.resolved_cache.contains(cache_key)) {
+            imported.deinit(self.allocator);
+            imported_active = false;
             if (self.import_stack.fetchRemove(resolved_path)) |entry| {
                 self.allocator.free(entry.key);
             }
-            return err;
-        };
+            stack_active = false;
+            return;
+        }
 
         // Get the directory of the imported file for resolving its imports
         const import_base = std.fs.path.dirname(resolved_path) orelse ".";
 
         // Recursively resolve imports in the imported file
-        self.resolveImports(&imported, import_base) catch |err| {
-            imported.deinit(self.allocator); // Free the imported jakefile on error
-            if (self.import_stack.fetchRemove(resolved_path)) |entry| {
-                self.allocator.free(entry.key);
-            }
-            return err;
-        };
+        try self.resolveImportsInScope(&imported, import_base, scope);
 
         // Merge the imported content into target. The module is rooted if EITHER
         // its file declared `@rooted` OR this import directive says `rooted`
         // (monotonic — additive only).
-        self.mergeJakefile(target, imported, import_directive.prefix, resolved_path, import_directive.rooted) catch |err| {
-            imported.deinit(self.allocator); // Free the imported jakefile on error
-            if (self.import_stack.fetchRemove(resolved_path)) |entry| {
-                self.allocator.free(entry.key);
-            }
-            return err;
-        };
+        const merge_global_hooks = !self.hook_cache.contains(resolved_path);
+        try self.mergeJakefile(target, imported, import_directive.prefix, resolved_path, import_directive.rooted, merge_global_hooks);
+        imported_active = false;
 
         // Remove from in-progress (free the duplicated key), add to resolved cache
         if (self.import_stack.fetchRemove(resolved_path)) |entry| {
             self.allocator.free(entry.key);
         }
-        const cache_key = try self.allocator.dupe(u8, resolved_path);
+        stack_active = false;
         self.resolved_cache.put(self.allocator, cache_key, {}) catch {
-            self.allocator.free(cache_key);
             return ImportError.OutOfMemory;
         };
+        cache_key_owned = false;
+
+        if (merge_global_hooks) {
+            const hook_key = try self.allocator.dupe(u8, resolved_path);
+            self.hook_cache.put(self.allocator, hook_key, {}) catch {
+                self.allocator.free(hook_key);
+                return ImportError.OutOfMemory;
+            };
+        }
+    }
+
+    fn makeCacheKey(self: *ImportResolver, resolved_path: []const u8, scope: ImportScope) ImportError![]u8 {
+        return std.fmt.allocPrint(
+            self.allocator,
+            "{d}:{s}{d}:{s}{c}",
+            .{ resolved_path.len, resolved_path, scope.namespace.len, scope.namespace, @as(u8, if (scope.rooted) '1' else '0') },
+        ) catch return ImportError.OutOfMemory;
     }
 
     /// Resolve a potentially relative path to an absolute path
@@ -369,6 +429,7 @@ pub const ImportResolver = struct {
         prefix: ?[]const u8,
         source_file: []const u8,
         force_rooted: bool,
+        merge_global_hooks: bool,
     ) ImportError!void {
         // Until commit, both input ASTs still own their slices. On failure
         // discard retirement records, and free only newly built dependency
@@ -538,23 +599,23 @@ pub const ImportResolver = struct {
         @memcpy(new_directives[target.directives.len..], imported.directives);
 
         // Merge global hooks
-        const new_pre_hooks_len = target.global_pre_hooks.len + imported.global_pre_hooks.len;
+        const new_pre_hooks_len = target.global_pre_hooks.len + if (merge_global_hooks) imported.global_pre_hooks.len else 0;
         const new_pre_hooks = self.allocator.alloc(Hook, new_pre_hooks_len) catch return ImportError.OutOfMemory;
         errdefer self.allocator.free(new_pre_hooks);
         @memcpy(new_pre_hooks[0..target.global_pre_hooks.len], target.global_pre_hooks);
-        @memcpy(new_pre_hooks[target.global_pre_hooks.len..], imported.global_pre_hooks);
+        if (merge_global_hooks) @memcpy(new_pre_hooks[target.global_pre_hooks.len..], imported.global_pre_hooks);
 
-        const new_post_hooks_len = target.global_post_hooks.len + imported.global_post_hooks.len;
+        const new_post_hooks_len = target.global_post_hooks.len + if (merge_global_hooks) imported.global_post_hooks.len else 0;
         const new_post_hooks = self.allocator.alloc(Hook, new_post_hooks_len) catch return ImportError.OutOfMemory;
         errdefer self.allocator.free(new_post_hooks);
         @memcpy(new_post_hooks[0..target.global_post_hooks.len], target.global_post_hooks);
-        @memcpy(new_post_hooks[target.global_post_hooks.len..], imported.global_post_hooks);
+        if (merge_global_hooks) @memcpy(new_post_hooks[target.global_post_hooks.len..], imported.global_post_hooks);
 
-        const new_on_error_hooks_len = target.global_on_error_hooks.len + imported.global_on_error_hooks.len;
+        const new_on_error_hooks_len = target.global_on_error_hooks.len + if (merge_global_hooks) imported.global_on_error_hooks.len else 0;
         const new_on_error_hooks = self.allocator.alloc(Hook, new_on_error_hooks_len) catch return ImportError.OutOfMemory;
         // No errdefer needed - remaining operations are infallible assignments.
         @memcpy(new_on_error_hooks[0..target.global_on_error_hooks.len], target.global_on_error_hooks);
-        @memcpy(new_on_error_hooks[target.global_on_error_hooks.len..], imported.global_on_error_hooks);
+        if (merge_global_hooks) @memcpy(new_on_error_hooks[target.global_on_error_hooks.len..], imported.global_on_error_hooks);
 
         // Update target with merged content
         target.variables = new_vars;
@@ -624,9 +685,11 @@ pub fn resolveImports(
 
     try resolver.resolveImports(jakefile, base_path);
 
-    // Move from import_stack to resolved_cache after successful processing
-    resolver.resolved_cache.put(allocator, real_path, {}) catch return ImportError.OutOfMemory;
-    _ = resolver.import_stack.remove(real_path);
+    // The root stays on the path-global stack only while its imports resolve.
+    // It is not an import-cache entry: those are keyed by semantic scope.
+    if (resolver.import_stack.fetchRemove(real_path)) |entry| {
+        allocator.free(entry.key);
+    }
     const allocations = try resolver.extractPersistentAllocations();
     resolver.deinit();
     return allocations;
@@ -1272,6 +1335,162 @@ test "multiple imports with different prefixes" {
     try std.testing.expect(found_main);
     try std.testing.expect(found_a_build);
     try std.testing.expect(found_b_build);
+}
+
+test "identical imports in one scope merge once" {
+    const allocator = std.testing.allocator;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "library.jake", .data = "task build:\n    echo build\n" });
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "main.jake",
+        .data = "@import \"library.jake\"\n" ++
+            "@import \"library.jake\"\n" ++
+            "task main:\n    echo main\n",
+    });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+    var lex = Lexer.init(main_source);
+    var parser = Parser.init(allocator, &lex);
+    var jakefile = try parser.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var allocations = try resolveImports(allocator, &jakefile, main_path);
+    defer allocations.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), jakefile.recipes.len);
+    try std.testing.expect(jakefile.getRecipe("build") != null);
+    try std.testing.expect(jakefile.getRecipe("main") != null);
+}
+
+test "same import replays recipes for aliases but merges global hooks once" {
+    const allocator = std.testing.allocator;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "library.jake",
+        .data = "@pre echo prepare\n" ++
+            "task build:\n    echo build\n",
+    });
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "main.jake",
+        .data = "@import \"library.jake\" as first\n" ++
+            "@import \"library.jake\" as second\n" ++
+            "task main:\n    echo main\n",
+    });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+    var lex = Lexer.init(main_source);
+    var parser = Parser.init(allocator, &lex);
+    var jakefile = try parser.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var allocations = try resolveImports(allocator, &jakefile, main_path);
+    defer allocations.deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), jakefile.recipes.len);
+    try std.testing.expect(jakefile.getRecipe("first.build") != null);
+    try std.testing.expect(jakefile.getRecipe("second.build") != null);
+    try std.testing.expectEqual(@as(usize, 1), jakefile.global_pre_hooks.len);
+}
+
+test "diamond imports replay a shared child in distinct namespace scopes" {
+    const allocator = std.testing.allocator;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "shared.jake", .data = "task shared:\n    echo shared\n" });
+    try tmp_dir.dir.writeFile(.{ .sub_path = "a.jake", .data = "@import \"shared.jake\"\ntask build:\n    echo a\n" });
+    try tmp_dir.dir.writeFile(.{ .sub_path = "b.jake", .data = "@import \"shared.jake\"\ntask build:\n    echo b\n" });
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "main.jake",
+        .data = "@import \"a.jake\" as a\n" ++
+            "@import \"b.jake\" as b\n" ++
+            "task main:\n    echo main\n",
+    });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+    var lex = Lexer.init(main_source);
+    var parser = Parser.init(allocator, &lex);
+    var jakefile = try parser.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var allocations = try resolveImports(allocator, &jakefile, main_path);
+    defer allocations.deinit();
+
+    try std.testing.expectEqual(@as(usize, 5), jakefile.recipes.len);
+    try std.testing.expect(jakefile.getRecipe("a.build") != null);
+    try std.testing.expect(jakefile.getRecipe("a.shared") != null);
+    try std.testing.expect(jakefile.getRecipe("b.build") != null);
+    try std.testing.expect(jakefile.getRecipe("b.shared") != null);
+}
+
+test "rooted imports have a distinct semantic cache identity" {
+    const allocator = std.testing.allocator;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "library.jake", .data = "task build:\n    echo build\n" });
+    try tmp_dir.dir.writeFile(.{
+        .sub_path = "main.jake",
+        .data = "@import \"library.jake\" as plain\n" ++
+            "@import \"library.jake\" as forced rooted\n" ++
+            "task main:\n    echo main\n",
+    });
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const main_path = try tmp_dir.dir.realpath("main.jake", &path_buf);
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+    var lex = Lexer.init(main_source);
+    var parser = Parser.init(allocator, &lex);
+    var jakefile = try parser.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var allocations = try resolveImports(allocator, &jakefile, main_path);
+    defer allocations.deinit();
+
+    const plain = jakefile.getRecipe("plain.build") orelse return error.TestUnexpectedResult;
+    const rooted = jakefile.getRecipe("forced.build") orelse return error.TestUnexpectedResult;
+    try std.testing.expect(plain.origin.?.base_dir == null);
+    try std.testing.expect(rooted.origin.?.base_dir != null);
+}
+
+test "failed import can be resolved on retry with the same resolver" {
+    const allocator = std.testing.allocator;
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "main.jake", .data = "@import \"library.jake\" as lib\n" });
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const base_path = try tmp_dir.dir.realpath(".", &path_buf);
+    const main_source = try tmp_dir.dir.readFileAlloc(allocator, "main.jake", 1024 * 1024);
+    defer allocator.free(main_source);
+    var lex = Lexer.init(main_source);
+    var parser = Parser.init(allocator, &lex);
+    var jakefile = try parser.parseJakefile();
+    defer jakefile.deinit(allocator);
+
+    var resolver = ImportResolver.init(allocator);
+    defer resolver.deinit();
+    try std.testing.expectError(ImportError.FileNotFound, resolver.resolveImports(&jakefile, base_path));
+    try std.testing.expectEqual(@as(usize, 0), resolver.import_stack.count());
+    try std.testing.expectEqual(@as(usize, 0), resolver.resolved_cache.count());
+
+    try tmp_dir.dir.writeFile(.{ .sub_path = "library.jake", .data = "task build:\n    echo build\n" });
+    try resolver.resolveImports(&jakefile, base_path);
+    try std.testing.expect(jakefile.getRecipe("lib.build") != null);
 }
 
 test "nested imports 2 levels deep with prefixes" {

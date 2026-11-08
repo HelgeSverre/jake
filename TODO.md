@@ -4,6 +4,10 @@
 
 ## NOW
 
+### Code cleanup sweep
+
+State-machine findings, grouped fixes, regression results and module decisions are maintained in [docs/code-cleanup.md](docs/code-cleanup.md).
+
 ### Args Library Improvements (`src/cli/args.zig`)
 
 Comprehensive overhaul inspired by Clap, Cobra, Click, Typer, Commander.js, Yargs, Picocli, zig-clap.
@@ -691,9 +695,9 @@ yes/no before 1.0.
       wedge: _Make's correctness model (file targets, stale rebuilds) with
       Just's ergonomics, in a fast single binary_. Current framing puts Jake
       directly in Just's competitive frame where Just wins on maturity.
-- [ ] "Smart rebuilds" oversells what is `mtime`-based file targets. Either
-      back it with content hashing or rename it to be honest about the
-      mechanism.
+- [x] Back file-target staleness with content hashes even when timestamps match;
+      keep sequential/parallel rooted-path and environment checks consistent.
+      See [the cleanup evidence](docs/code-cleanup.md).
 - [ ] Decide the audience: solo devs who want Just + rebuilds (small
       surface, polish path), or teams replacing Make in real build pipelines
       (correctness, hermeticity, caching primitives). Current feature set
@@ -741,9 +745,9 @@ yes/no before 1.0.
       docs and landing page make this immediately obvious.
 - [ ] Lock the directive surface — every `@thing` shipped in 1.0 is a
       forever-API. Better to ship fewer.
-- [ ] Decide whether parallel cache merge (POTENTIAL_ISSUES #4) is a 1.0
-      blocker or a "fix when someone hits it" item. Depends on target user
-      (small Jakefiles vs. real build pipelines).
+- [ ] Measure remaining parallel cache snapshot-copy cost (POTENTIAL_ISSUES #4).
+      Stale snapshot publication is fixed; delta writeback now preserves sibling updates.
+      See [the cleanup evidence](docs/code-cleanup.md).
 
 ---
 
