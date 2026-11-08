@@ -38,6 +38,8 @@ The inventory, transition tables, grouped issue records, module dispositions and
 | JAKE-16 | P2: exported color constructor cannot compile when used | RuntimeContext.initWithColor references nonexistent Theme.initWithColor; Zig lazy analysis leaves the broken public method uninstantiated in normal builds. | Call the actual Theme.withColor constructor and instantiate both enabled/disabled paths in regression coverage. | Fixed; regression compilation fails on de48151 (missing Theme member), passes now for both color modes. B independent review pending. |
 | JAKE-17 | P2: legacy watcher fallback loses caller transport policy | Watcher.initExecutor copies selected Context fields but drops event/command/confirmation callbacks and allow_interactive_stdin. Fallback execution cannot honor the configured transport. | Copy the full Context into the owned executor allocation, then enforce watch_mode; assert event delivery and stdin policy. | Fixed; context/stdin regression fails on de48151 and passes now. B independent review pending. |
 
+| JAKE-18 | P2: generated zsh/fish completions have invalid syntax | The shipped --silent description contains an apostrophe; both generators interpolate it into single-quoted words. The real shell syntax suite fails on 37f9be4 and pre-repair B. Its fish diagnostic rerun also escaped the result collector under set -e. | Completion generator owns shell-specific description quoting across primary flags and aliases; test collector captures the first fish error without aborting the remaining suite. | Fixed; real-shell regression red on baseline (2 failures), green now (53 passed, 0 skipped). Independent Verify pending. |
+
 The failure traces above are actionable issues local to this document. Test results and final invariants replace the provisional status as each fix is verified. The actual data-race schedule in JAKE-3 is source-proven; a deterministic ownership regression does not itself constitute a race-detector run.
 
 ## Machine inventory and invariants
@@ -142,7 +144,7 @@ Source paths below are relative to src/. Changed entries are awaiting Sweep B Ch
 | frontend/jakefile_loader + jakefile_index; CLI / executor / watcher | Resource aggregation and repeated file-output scans. | Retain loader owner and indexed lookup owner; move source-order output lookup into index. | getRecipeByOutput replaces duplicate runtime scans; preserve first-match behavior. | Ownership/allocation and generated-dependency tests; changed index. |
 | main + compat; all CLI paths | Pure getStdout/getStderr wrappers duplicate compat; main writes formatted file after formatter already did. | Delete local forwarding; formatter owns formatting writes. Keep main dispatch and compat platform boundary. | Call compat directly; main renders outcome without a second write. | Build/formatter/CLI checks; changed. |
 | output/formatter; main / library | Formatting and optional publication already owned here. | Retain: AST-preserving rendering is deep behavior. Preserve public check-only choice; it is not derivable from formatter data. | Existing formatFile contract; duplicate caller write removed. | Parse-format-parse, file formatting and CLI checks; changed caller only. |
-| cli/args, completions, init + templates, suggest; main | Argument validation, shell conventions, template selection and suggestions. | Retain distinct policies; no generic CLI utility merger. init.Options.yes is unread but publicly accepted: defer removal pending compatibility decision. Runtime global -y remains meaningful. | No breaking CLI flag removal in this sweep. | Parser/template/completion/docs contract tests; retained, one deferred dead flag. |
+| cli/args, completions, init + templates, suggest; main | Argument validation, shell conventions, template selection and suggestions. | Retain distinct policies; completion generator owns shell description quoting, with no generic CLI utility merger. init.Options.yes is unread but publicly accepted: defer removal pending compatibility decision. Runtime global -y remains meaningful. | No breaking CLI flag removal in this sweep. | Parser/template/completion/docs contract tests; completion quoting repaired in B; one deferred dead flag. |
 | cli/upgrade; main / library | Staged artifact verification and platform replacement recovery. | Retain: deleting moves recovery choreography into main. Stage beside installation and restore on failed Windows replacement. | Private explicit-path replacement helper owns rollback. | Local file tests; native/live validation limitation; changed A, retained B. |
 | output/event_emitter, prompt, color; Context / server / CLI | Event transport, confirmation policy and rendering. | Retain separate owners: callbacks/server transport and CLI presentation differ. | No wrapper-only abstraction added. | Event cardinality, confirm and color suites; retained. |
 | output/progress; exported library | Optional spinner thread lifecycle; no active app integration. | Retain unknown public API; removal would discard actual animation/join behavior. | No concurrency contract expansion. | Existing tests/source inspection; retained. |
@@ -152,6 +154,8 @@ Source paths below are relative to src/. Changed entries are awaiting Sweep B Ch
 | jake.zig; library users / test discovery | Stable public import facade and test module registration. | Retain meaningful public boundary; deletion would force consumers to know private layout. | Export inventory preserved. | Library compilation/unit discovery; retained. |
 
 ### Before / after caller examples
+
+The scoped-cache methods were introduced during Sweep A of this same unpublished branch; changing them to typed Scope does not break the baseline public Cache API. Baseline raw file APIs and allocator ownership inputs are preserved. Legacy unscoped records rebuild conservatively.
 
 - Cache block: allocate and free a recipe-plus-separator-plus-index string → pass Scope{ .block = .{ .recipe = name, .index = i } }; Cache alone serializes/matches it.
 - Parallel: construct with Context, then assign dry_run and verbose again → construct once; standalone public overrides still apply to worker contexts.
@@ -170,13 +174,30 @@ Source paths below are relative to src/. Changed entries are awaiting Sweep B Ch
 | A Verify, further repair | d4dec05 / 05407f5: three rotated scopes | Found revived historical certificates, dry-run publication and terminal-event bookkeeping follow-ups (JAKE-14/15 and JAKE-10). Repaired and reran affected suites. |
 | A Verify, final | de48151: all three independent reviewers | All three passed their scoped reviews. Unit suite: 1,222 library tests passed, 1 skipped; executable test passed. |
 | B Discover | de48151: runtime/cache; graph/watch/signals; CLI/frontend/output | Two transports failed; replaced those roles with fresh contexts. Three completed roles synthesized above; changes implemented. Unit suite: 1,230 passed, 1 skipped, main test passed; 12 fuzz targets discovered. |
+| B Challenge | 1113ed3: rotated runtime/cache; graph/watch/index; CLI/document/stale consumers | No confirmed code regression. Rejected alleged scoped-API compatibility break: those methods are new in this branch, absent from 37f9be4. Corrected JAKE-15 status wording. Required shell suite independently found baseline JAKE-18; repaired before Verify. |
 
 Rejected candidates: a claimed duplicate local on-error call was absent in current code. A supposed missing failure event was investigated through actual callback/error ordering and covered by the repaired cardinality regression. Reviewer agreement alone is not executable evidence.
 
 ## Verification and limitations
 
-Baseline was 1,185 passing library tests. Sweep A final de48151: 1,222 passing, 1 skipped, one executable test, 12 fuzz targets discovered (no fuzz campaign). Historical release build/e2e checkpoint after Challenge: all 17 tasks, Node web state, formatting and diff checks passed. The pre-Challenge B combined head passes 1,230 library tests, 1 skipped and one executable test. The final combined head will receive fresh required checks after Sweep B.
+Baseline was 1,185 passing library tests. Sweep A final de48151: 1,222 passing, 1 skipped, one executable test, 12 fuzz targets discovered (no fuzz campaign). Historical release build/e2e checkpoint after Challenge: all 17 tasks, Node web state, formatting and diff checks passed. The pre-Challenge B combined head passes 1,230 library tests, 1 skipped and one executable test. The combined code after the completion repair passes the same full unit suite; native ReleaseFast and x86_64 Windows cross-compilation succeed. Native Windows execution is still untested.
 
 The permanent POSIX CLI matrix node tests/cache_lifecycle_test.js covers eight file-target/@cache × sequential/parallel × dry-run/failed-body scenarios. It is red on 37f9be4 and green on the repaired CLI. CI wiring runs it on Linux/macOS; Windows explicitly skips this shell-based matrix.
 
 Known boundaries: no native Windows/live self-upgrade, no TSan, no inter-process cache isolation, no exhaustive network backpressure or fuzz campaign. Import partial-merge OOM requires discarding the target AST rather than transactional retry. Legacy [Watcher.initWithIndex follow-up #38](https://github.com/HelgeSverre/jake/issues/38) exposes a non-fallible, shared mutable fallback Context; shipped CLI uses explicit contexts, and independent legacy library watchers remain a deferred ownership/API issue. Removing it requires an explicit compatibility decision for the non-fallible constructor and externally addressable ctx pointer. The deferred init -y flag and Tracy surface likewise need a public compatibility decision ([#39](https://github.com/HelgeSverre/jake/issues/39)); they are not silently removed based only on first-party callsites.
+
+Final gate commands use Zig 0.15.2 at /opt/homebrew/opt/zig@0.15/bin/zig (abbreviated zig below). Logs are task-local under .git/code-cleanup.
+
+| Gate | Result on final code |
+| --- | --- |
+| zig build test | 1,230 passed, 1 skipped; executable-module test passed; 12 fuzz targets discovered, not fuzzed. |
+| zig build -Doptimize=ReleaseFast | Pass. |
+| zig build -Dtarget=x86_64-windows -Doptimize=ReleaseFast --prefix .git/code-cleanup/windows-out | Pass; compilation only. |
+| cd tests/e2e && ../../zig-out/bin/jake test-all | Final post-completion-repair run in progress; previous runtime checkpoint passed all 17 tasks. |
+| node tests/cache_lifecycle_test.js | Pass; eight CLI cases. |
+| node tests/webui_state_test.js | Pass. |
+| bash tests/completions_test.sh | 53 passed, 0 failed, 0 skipped; bash/zsh/fish present. |
+| bash tests/docs_contract_test.sh | 45 passed, 0 failed. |
+| zig fmt --check src/; git diff --check | Pass. |
+
+Removed-interface searches cover src, tests, examples, exports and active docs: no worker_spawner field, old findRecipeByOutput runtime wrapper, timeout forwarding functions or executor-side scope separator remains. Historical mention in this evidence file is intentional. Public Cache raw APIs, formatter check-only policy, explicit allocator ownership and standalone ParallelExecutor overrides remain supported.

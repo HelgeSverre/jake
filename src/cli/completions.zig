@@ -31,6 +31,23 @@ pub const Shell = enum {
     }
 };
 
+// Descriptions are embedded inside single-quoted shell words. Keep each
+// shell's quoting rules here rather than in every flag/alias rendering path.
+const Description = struct {
+    text: []const u8,
+    shell: Shell,
+
+    pub fn format(self: Description, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        for (self.text) |byte| {
+            switch (byte) {
+                '\'' => try writer.writeAll(if (self.shell == .fish) "\\'" else "'\\''"),
+                '\\' => try writer.writeAll(if (self.shell == .fish) "\\\\" else "\\"),
+                else => try writer.writeByte(byte),
+            }
+        }
+    }
+};
+
 /// Zsh environment type for smart installation
 pub const ZshEnv = enum {
     oh_my_zsh, // Has Oh-My-Zsh installed
@@ -621,28 +638,29 @@ pub fn generateZsh(writer: anytype) !void {
     for (args_mod.flags) |flag| {
         if (flag.hidden) continue;
         if (flag.deprecated != null) continue;
+        const desc = Description{ .text = flag.desc, .shell = .zsh };
         if (flag.short) |s| {
             switch (flag.takes_value) {
-                .none => try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{s}]' \\\n", .{ s, flag.long, s, flag.long, flag.desc }),
+                .none => try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{f}]' \\\n", .{ s, flag.long, s, flag.long, desc }),
                 .required => {
                     const value_name = flag.value_name orelse "VALUE";
-                    try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{s}]:{s}:->value' \\\n", .{ s, flag.long, s, flag.long, flag.desc, value_name });
+                    try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{f}]:{s}:->value' \\\n", .{ s, flag.long, s, flag.long, desc, value_name });
                 },
                 .optional => {
                     const value_name = flag.value_name orelse "VALUE";
-                    try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{s}]::{s}:->value' \\\n", .{ s, flag.long, s, flag.long, flag.desc, value_name });
+                    try writer.print("        '(-{c} --{s})'{{-{c},--{s}}}'[{f}]::{s}:->value' \\\n", .{ s, flag.long, s, flag.long, desc, value_name });
                 },
             }
         } else {
             switch (flag.takes_value) {
-                .none => try writer.print("        '--{s}[{s}]' \\\n", .{ flag.long, flag.desc }),
+                .none => try writer.print("        '--{s}[{f}]' \\\n", .{ flag.long, desc }),
                 .required => {
                     const value_name = flag.value_name orelse "VALUE";
-                    try writer.print("        '--{s}[{s}]:{s}:->value' \\\n", .{ flag.long, flag.desc, value_name });
+                    try writer.print("        '--{s}[{f}]:{s}:->value' \\\n", .{ flag.long, desc, value_name });
                 },
                 .optional => {
                     const value_name = flag.value_name orelse "VALUE";
-                    try writer.print("        '--{s}[{s}]::{s}:->value' \\\n", .{ flag.long, flag.desc, value_name });
+                    try writer.print("        '--{s}[{f}]::{s}:->value' \\\n", .{ flag.long, desc, value_name });
                 },
             }
         }
@@ -658,9 +676,9 @@ pub fn generateZsh(writer: anytype) !void {
         if (flag.aliases) |aliases| {
             for (aliases) |alias| {
                 if (flag.short) |s| {
-                    try writer.print("        '(--{s} -{c})--{s}[{s}]' \\\n", .{ flag.long, s, alias, flag.desc });
+                    try writer.print("        '(--{s} -{c})--{s}[{f}]' \\\n", .{ flag.long, s, alias, desc });
                 } else {
-                    try writer.print("        '(--{s})--{s}[{s}]' \\\n", .{ flag.long, alias, flag.desc });
+                    try writer.print("        '(--{s})--{s}[{f}]' \\\n", .{ flag.long, alias, desc });
                 }
             }
         }
@@ -758,11 +776,12 @@ pub fn generateFish(writer: anytype) !void {
     for (args_mod.flags) |flag| {
         if (flag.hidden) continue;
         if (flag.deprecated != null) continue;
+        const desc = Description{ .text = flag.desc, .shell = .fish };
         if (flag.short) |s| {
             switch (flag.takes_value) {
-                .none => try writer.print("complete -c jake -s {c} -l {s} -d '{s}'\n", .{ s, flag.long, flag.desc }),
+                .none => try writer.print("complete -c jake -s {c} -l {s} -d '{f}'\n", .{ s, flag.long, desc }),
                 .required => {
-                    try writer.print("complete -c jake -s {c} -l {s} -d '{s}' -r", .{ s, flag.long, flag.desc });
+                    try writer.print("complete -c jake -s {c} -l {s} -d '{f}' -r", .{ s, flag.long, desc });
                     if (std.mem.eql(u8, flag.long, "jakefile")) {
                         try writer.writeAll(" -F");
                     } else if (std.mem.eql(u8, flag.long, "show")) {
@@ -775,7 +794,7 @@ pub fn generateFish(writer: anytype) !void {
                     try writer.writeAll("\n");
                 },
                 .optional => {
-                    try writer.print("complete -c jake -s {c} -l {s} -d '{s}'", .{ s, flag.long, flag.desc });
+                    try writer.print("complete -c jake -s {c} -l {s} -d '{f}'", .{ s, flag.long, desc });
                     if (std.mem.eql(u8, flag.long, "jobs")) {
                         try writer.writeAll(" -a '1 2 4 8 16'");
                     } else if (std.mem.eql(u8, flag.long, "external")) {
@@ -786,9 +805,9 @@ pub fn generateFish(writer: anytype) !void {
             }
         } else {
             switch (flag.takes_value) {
-                .none => try writer.print("complete -c jake -l {s} -d '{s}'\n", .{ flag.long, flag.desc }),
+                .none => try writer.print("complete -c jake -l {s} -d '{f}'\n", .{ flag.long, desc }),
                 .required, .optional => {
-                    try writer.print("complete -c jake -l {s} -d '{s}'", .{ flag.long, flag.desc });
+                    try writer.print("complete -c jake -l {s} -d '{f}'", .{ flag.long, desc });
                     if (std.mem.eql(u8, flag.long, "completions")) {
                         try writer.writeAll(" -a 'bash zsh fish'");
                     } else if (std.mem.eql(u8, flag.long, "external")) {
@@ -809,7 +828,7 @@ pub fn generateFish(writer: anytype) !void {
         // Add aliases
         if (flag.aliases) |aliases| {
             for (aliases) |alias| {
-                try writer.print("complete -c jake -l {s} -d '{s}'\n", .{ alias, flag.desc });
+                try writer.print("complete -c jake -l {s} -d '{f}'\n", .{ alias, desc });
             }
         }
     }
