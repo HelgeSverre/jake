@@ -7,16 +7,24 @@ pub const Cache = struct {
     allocator: std.mem.Allocator,
     cache_dir: []const u8,
     hashes: std.StringHashMap(Hash),
-    dirty: ?std.StringHashMap(void) = null,
+    tracks_changes: bool = false,
 
     pub const Hash = struct {
         content_hash: [32]u8,
         mtime: i128,
+        dirty: bool = false,
     };
 
     // Stored alongside ordinary file entries; an absent aggregate is stale.
     const glob_key_prefix = "\x01jake-glob:";
     const scoped_key_prefix = "\x01jake-scope:";
+    // Scoped/aggregate fingerprints use 0 for usable and -1 for unavailable.
+    const unavailable_mtime: i128 = -1;
+
+    fn fingerprintsMatch(a: Hash, b: Hash) bool {
+        return a.mtime != unavailable_mtime and b.mtime != unavailable_mtime and
+            std.mem.eql(u8, &a.content_hash, &b.content_hash);
+    }
 
     fn globKey(allocator: std.mem.Allocator, pattern: []const u8) ![]u8 {
         return std.mem.concat(allocator, u8, &.{ glob_key_prefix, pattern });
@@ -28,7 +36,6 @@ pub const Cache = struct {
             for (files) |file| allocator.free(file);
             allocator.free(files);
         }
-        if (files.len == 0) return error.FileNotFound;
         std.mem.sort([]const u8, files, {}, struct {
             fn lessThan(_: void, a: []const u8, b: []const u8) bool {
                 return std.mem.lessThan(u8, a, b);
@@ -55,7 +62,7 @@ pub const Cache = struct {
             hasher.update("\x00");
             _ = stat;
         }
-        return .{ .content_hash = hasher.finalResult(), .mtime = 0 };
+        return .{ .content_hash = hasher.finalResult(), .mtime = if (files.len == 0) unavailable_mtime else 0 };
     }
 
     fn patternFingerprint(self: *Cache, pattern: []const u8) !Hash {
@@ -74,14 +81,66 @@ pub const Cache = struct {
         defer self.allocator.free(key);
         const cached = self.hashes.get(key) orelse return true;
         const current = self.patternFingerprint(pattern) catch return true;
-        return !std.mem.eql(u8, &cached.content_hash, &current.content_hash);
+        return !fingerprintsMatch(cached, current);
     }
 
     pub fn updateScopedPattern(self: *Cache, scope: []const u8, pattern: []const u8) !void {
         const key = try scopedKey(self.allocator, scope, pattern);
         defer self.allocator.free(key);
-        const fingerprint = try self.patternFingerprint(pattern);
+        const fingerprint = self.patternFingerprint(pattern) catch |err| switch (err) {
+            error.OutOfMemory => return err,
+            else => Hash{ .content_hash = @splat(0), .mtime = unavailable_mtime },
+        };
         try self.putHash(key, fingerprint);
+    }
+
+    fn encodedScope(key: []const u8) ?[]const u8 {
+        if (!std.mem.startsWith(u8, key, scoped_key_prefix)) return null;
+        const scope_start = scoped_key_prefix.len;
+        const end = std.mem.indexOfScalarPos(u8, key, scope_start, '\x1f') orelse return null;
+        return key[scope_start..end];
+    }
+
+    fn markUnavailable(self: *Cache, value: *Hash) void {
+        value.* = .{ .content_hash = @splat(0), .mtime = unavailable_mtime, .dirty = self.tracks_changes };
+    }
+
+    pub fn invalidateScope(self: *Cache, scope: []const u8) void {
+        var iter = self.hashes.iterator();
+        while (iter.next()) |entry| {
+            const candidate = encodedScope(entry.key_ptr.*) orelse continue;
+            if (std.mem.eql(u8, candidate, scope)) self.markUnavailable(entry.value_ptr);
+        }
+    }
+
+    pub fn invalidateRecipe(self: *Cache, recipe: []const u8) void {
+        var iter = self.hashes.iterator();
+        while (iter.next()) |entry| {
+            const scope = encodedScope(entry.key_ptr.*) orelse continue;
+            if (std.mem.eql(u8, scope, recipe) or
+                (std.mem.startsWith(u8, scope, recipe) and scope.len > recipe.len and scope[recipe.len] == '\x1e'))
+                self.markUnavailable(entry.value_ptr);
+        }
+    }
+
+    pub fn invalidateChangedScopes(self: *Cache) void {
+        var iter = self.hashes.iterator();
+        while (iter.next()) |entry| {
+            if (entry.value_ptr.dirty and encodedScope(entry.key_ptr.*) != null)
+                self.markUnavailable(entry.value_ptr);
+        }
+    }
+
+    /// An attempted build may mutate artifacts even if it fails or exits before
+    /// deinitialization. Remove the old persisted certificates before work so a
+    /// later process cannot revive them after a failed or interrupted attempt.
+    pub fn invalidatePersisted(self: *const Cache) !void {
+        const path = try std.fs.path.join(self.allocator, &.{ self.cache_dir, "cache" });
+        defer self.allocator.free(path);
+        std.fs.cwd().deleteFile(path) catch |err| switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        };
     }
 
     pub fn init(allocator: std.mem.Allocator) Cache {
@@ -100,7 +159,9 @@ pub const Cache = struct {
         while (iter.next()) |entry| {
             const key = try allocator.dupe(u8, entry.key_ptr.*);
             errdefer allocator.free(key);
-            try copy.hashes.put(key, entry.value_ptr.*);
+            var value = entry.value_ptr.*;
+            value.dirty = false;
+            try copy.hashes.put(key, value);
         }
 
         return copy;
@@ -108,16 +169,15 @@ pub const Cache = struct {
 
     pub fn fork(self: *const Cache, allocator: std.mem.Allocator) !Cache {
         var copy = try self.clone(allocator);
-        copy.dirty = std.StringHashMap(void).init(allocator);
+        copy.tracks_changes = true;
         return copy;
     }
 
     pub fn mergeChangesFrom(self: *Cache, forked: *const Cache) !void {
-        const dirty = forked.dirty orelse return;
-        var iter = dirty.keyIterator();
-        while (iter.next()) |key_ptr| {
-            const value = forked.hashes.get(key_ptr.*) orelse continue;
-            try self.putHash(key_ptr.*, value);
+        if (!forked.tracks_changes) return;
+        var iter = forked.hashes.iterator();
+        while (iter.next()) |entry| {
+            if (entry.value_ptr.dirty) try self.putHash(entry.key_ptr.*, entry.value_ptr.*);
         }
     }
 
@@ -132,24 +192,18 @@ pub const Cache = struct {
             self.allocator.free(key_ptr.*);
         }
         self.hashes.deinit();
-        if (self.dirty) |*dirty| {
-            var dirty_iter = dirty.keyIterator();
-            while (dirty_iter.next()) |key_ptr| self.allocator.free(key_ptr.*);
-            dirty.deinit();
-        }
     }
 
     fn putHash(self: *Cache, key: []const u8, value: Hash) !void {
-        if (self.hashes.getPtr(key)) |existing| existing.* = value else {
+        var stored = value;
+        stored.dirty = self.tracks_changes;
+        if (self.hashes.getPtr(key)) |existing| {
+            existing.* = stored;
+        } else {
             const owned = try self.allocator.dupe(u8, key);
             errdefer self.allocator.free(owned);
-            try self.hashes.put(owned, value);
+            try self.hashes.put(owned, stored);
         }
-        if (self.dirty) |*dirty| if (!dirty.contains(key)) {
-            const owned = try self.allocator.dupe(u8, key);
-            errdefer self.allocator.free(owned);
-            try dirty.put(owned, {});
-        };
     }
 
     /// Check if a file has changed since its hash was last recorded.
@@ -894,4 +948,28 @@ test "cache fork and scoped publication release all allocation-failure state" {
     const path = try tmp.dir.realpathAlloc(std.testing.allocator, "input");
     defer std.testing.allocator.free(path);
     try std.testing.checkAllAllocationFailures(std.testing.allocator, checkForkAllocations, .{path});
+}
+
+test "persisted unavailable inputs replace an older live certificate" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(old_cwd);
+    const path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(path);
+    try std.posix.chdir(path);
+    defer std.posix.chdir(old_cwd) catch {};
+    try tmp.dir.writeFile(.{ .sub_path = "input", .data = "old" });
+    var old_view = Cache.init(allocator);
+    defer old_view.deinit();
+    try old_view.updateScopedPattern("consumer", "input");
+    try tmp.dir.deleteFile("input");
+    var unavailable_view = Cache.init(allocator);
+    defer unavailable_view.deinit();
+    try unavailable_view.updateScopedPattern("consumer", "input");
+    try unavailable_view.save();
+    try tmp.dir.writeFile(.{ .sub_path = "input", .data = "old" });
+    try old_view.load();
+    try std.testing.expect(try old_view.isScopedPatternStale("consumer", "input"));
 }

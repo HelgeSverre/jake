@@ -915,6 +915,7 @@ pub const Executor = struct {
         self.emitTaskStart(recipe);
         if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
         errdefer {
+            if (!self.ctx.dry_run) self.cache.invalidateRecipe(name);
             const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
             self.emitTaskComplete(name, false, duration_ms);
         }
@@ -1017,6 +1018,15 @@ pub const Executor = struct {
         self.discardPendingCache();
         defer self.discardPendingCache();
 
+        if (!self.ctx.dry_run) {
+            self.cache.invalidatePersisted() catch |err| {
+                self.print("{s}failed to invalidate build cache: {s}\n", .{ self.color.errPrefix(), @errorName(err) });
+                return if (err == error.OutOfMemory) ExecuteError.OutOfMemory else ExecuteError.CommandFailed;
+            };
+            if (recipe.kind == .file) self.cache.invalidateScope(recipe.name);
+        }
+        errdefer if (!self.ctx.dry_run) self.cache.invalidateRecipe(name);
+
         self.hook_runner.dry_run = self.ctx.dry_run;
         self.hook_runner.verbose = self.ctx.verbose and !(self.ctx.silent or recipe.silent);
 
@@ -1070,12 +1080,11 @@ pub const Executor = struct {
             return ExecuteError.CommandFailed;
         };
 
-        if (recipe.kind == .file) {
+        if (recipe.kind == .file and !self.ctx.dry_run) {
             for (recipe.file_deps) |dep| {
-                const resolved_dep: ResolvedPath = self.resolveRootedPath(recipe, dep) catch
-                    .{ .path = dep, .owned = false };
+                const resolved_dep = self.resolveRootedPath(recipe, dep) catch return ExecuteError.OutOfMemory;
                 defer if (resolved_dep.owned) self.allocator.free(resolved_dep.path);
-                self.stageCachePattern(recipe.name, resolved_dep.path);
+                try self.stageCachePattern(recipe.name, resolved_dep.path);
             }
         }
 
@@ -1132,7 +1141,7 @@ pub const Executor = struct {
             }
         }
 
-        self.publishPendingCache() catch return ExecuteError.OutOfMemory;
+        if (!self.ctx.dry_run) self.publishPendingCache() catch return ExecuteError.OutOfMemory;
     }
 
     fn discardPendingCache(self: *Executor) void {
@@ -1143,13 +1152,13 @@ pub const Executor = struct {
         }
     }
 
-    fn stageCachePattern(self: *Executor, scope: []const u8, pattern: []const u8) void {
+    fn stageCachePattern(self: *Executor, scope: []const u8, pattern: []const u8) ExecuteError!void {
         if (self.pending_cache == null) {
-            const pending = self.allocator.create(Cache) catch return;
+            const pending = self.allocator.create(Cache) catch return ExecuteError.OutOfMemory;
             pending.* = Cache.init(self.allocator);
             self.pending_cache = pending;
         }
-        self.pending_cache.?.updateScopedPattern(scope, pattern) catch {};
+        self.pending_cache.?.updateScopedPattern(scope, pattern) catch return ExecuteError.OutOfMemory;
     }
 
     fn publishPendingCache(self: *Executor) !void {
@@ -1609,7 +1618,10 @@ pub const Executor = struct {
                             // Publishing is delayed until executeRecipeBody's final
                             // success fence so a later command/hook cannot certify
                             // a failed recipe as cached.
-                            for (patterns) |pattern| self.stageCachePattern(cache_scope, pattern);
+                            if (!self.ctx.dry_run) {
+                                for (patterns) |pattern| try self.stageCachePattern(cache_scope, pattern);
+                                self.cache.invalidateScope(cache_scope);
+                            }
                             try self.runCommandWithTimeout(cmds[i], timeout_ctx);
                         }
                         continue;
@@ -8155,5 +8167,51 @@ test "empty glob file dependencies remain stale in sequential and parallel runs"
         const runs = try std.fs.cwd().readFileAlloc(allocator, "runs.txt", 128);
         defer allocator.free(runs);
         try std.testing.expectEqualStrings("rebuilt\nrebuilt\n", runs);
+    }
+}
+
+test "unavailable inputs cannot revive an older consumer fingerprint" {
+    if (builtin.os.tag == .windows) return;
+    const allocator = std.testing.allocator;
+    for ([_][]const u8{ "inputs/*.txt", "input.txt" }) |pattern| {
+        for ([_]usize{ 0, 2 }) |jobs| {
+            var tmp = std.testing.tmpDir(.{});
+            defer tmp.cleanup();
+            try tmp.dir.makeDir("inputs");
+            const input = if (std.mem.startsWith(u8, pattern, "inputs/")) "inputs/a.txt" else "input.txt";
+            const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+            defer allocator.free(old_cwd);
+            const path = try tmp.dir.realpathAlloc(allocator, ".");
+            defer allocator.free(path);
+            try std.posix.chdir(path);
+            defer std.posix.chdir(old_cwd) catch {};
+            const source = try std.fmt.allocPrint(
+                allocator,
+                "file output.bin: {s}\n    cat {s} > output.bin 2>/dev/null || true\n    echo ran >> runs.txt\ntask all: [output.bin]\n",
+                .{ pattern, pattern },
+            );
+            defer allocator.free(source);
+            var lexer = @import("../frontend/lexer.zig").Lexer.init(source);
+            var parser_instance = parser.Parser.init(allocator, &lexer);
+            var ast = try parser_instance.parseJakefile();
+            defer ast.deinit(allocator);
+            for (0..3) |attempt| {
+                if (attempt == 1) {
+                    try tmp.dir.deleteFile(input);
+                } else {
+                    try tmp.dir.writeFile(.{ .sub_path = input, .data = "old" });
+                }
+                var executor = try Executor.init(allocator, &ast);
+                defer executor.deinit();
+                executor.ctx.jobs = jobs;
+                try executor.execute("all");
+                const output = try std.fs.cwd().readFileAlloc(allocator, "output.bin", 128);
+                defer allocator.free(output);
+                try std.testing.expectEqualStrings(if (attempt == 1) "" else "old", output);
+            }
+            const runs = try std.fs.cwd().readFileAlloc(allocator, "runs.txt", 128);
+            defer allocator.free(runs);
+            try std.testing.expectEqualStrings("ran\nran\nran\n", runs);
+        }
     }
 }

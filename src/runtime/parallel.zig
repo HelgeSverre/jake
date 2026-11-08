@@ -694,13 +694,35 @@ pub const ParallelExecutor = struct {
         }
 
         worker.executeRecipeBody(recipe.name, recipe) catch |err| {
+            // Sequential execution invalidates the consumer's prior
+            // certificate before work starts. A parallel worker holds that
+            // invalidation in its fork; it must reach the graph cache even
+            // though the body did not publish a new success fingerprint.
+            worker.cache.invalidateChangedScopes();
+            self.cache_mutex.lock();
+            defer self.cache_mutex.unlock();
+            self.cache.mergeChangesFrom(worker.cache) catch {
+                self.rememberError(err);
+                self.rememberError(ExecuteError.OutOfMemory);
+                return if (err == ExecuteError.Cancelled) .cancelled else .failed_during_run;
+            };
             self.rememberError(err);
             return if (err == ExecuteError.Cancelled) .cancelled else .failed_during_run;
         };
 
-        // The worker cache is private until this merge. Do not publish any
-        // staged file fingerprints after cancellation has been observed.
+        // A stop can arrive after executeRecipeBody published its private
+        // success snapshot but before it reaches the graph cache. Replace the
+        // dirty scoped records with unavailable markers, then publish only
+        // those invalidations so retry cannot revive an older certificate.
         if (worker_ctx.isCancelled()) {
+            worker.cache.invalidateChangedScopes();
+            self.cache_mutex.lock();
+            defer self.cache_mutex.unlock();
+            self.cache.mergeChangesFrom(worker.cache) catch {
+                self.rememberError(ExecuteError.Cancelled);
+                self.rememberError(ExecuteError.OutOfMemory);
+                return .cancelled;
+            };
             self.rememberError(ExecuteError.Cancelled);
             return .cancelled;
         }
