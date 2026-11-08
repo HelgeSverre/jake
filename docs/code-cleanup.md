@@ -16,7 +16,7 @@ A confirmed issue requires a valid input/event trace through a real entry point 
 
 The inventory, transition tables, grouped issue records, module dispositions and review/check results below are maintained as implementation proceeds. The final model describes supported behavior, including explicit limitations, rather than implying arbitrary concurrent library calls are supported.
 
-## Confirmed issue groups (implementation in progress)
+## Confirmed issue groups
 
 | ID | Priority / impact | Evidence and former reachable transition | Owning fix and acceptance criteria | Status |
 | --- | --- | --- | --- | --- |
@@ -35,6 +35,9 @@ The inventory, transition tables, grouped issue records, module dispositions and
 | JAKE-10 | P1/P2: cancellation observed after task start can still publish skip success | Task-start callbacks can revoke permission synchronously. Sequential OS/file-target skip paths and parallel skip handling then emit successful completion without rechecking permission. | Check observed cancellation before skipped/normal success publication; return `Cancelled` and emit no successful completion for the revoked task. Test both schedulers using event-driven revocation, no scheduling sleeps. | Fixed; synchronous task-start cancellation regressions cover both schedulers. Verify pending. |
 | JAKE-11 | P2: file glob dependencies silently change meaning | Baseline `file bundle.bin: *.txt` is displayed as a dependency on `.txt`: leading glob punctuation becomes invalid tokens that the file-dependency parser discards. Other supported glob forms can be fragmented too. | Preserve complete supported glob patterns in file-dependency grammar; retain task-dependency bracket syntax and formatter round-trip. | Fixed; exact dependency tokens and parse/format/parse regressions pass. Verify pending. |
 
+| JAKE-12 | P2: verification caught an introduced empty-glob regression | The first scoped aggregate implementation at `52fbd84` made a zero-match glob fresh, contrary to baseline behavior and the documented stale-on-empty policy. | Empty glob fingerprints stay uncacheable/stale; public fresh-executor regressions run twice with jobs=0 and jobs=2. | Repaired during Verify; focused regression pending final full suite. |
+| JAKE-13 | P1: stale worker snapshots can overwrite newer sibling publications | Workers cloned a complete cache view and merged every entry. A slow worker could restore an old fingerprint written by neither its body nor its staged delta, potentially falsely certifying an output after input restoration. | Forks track only writes; both worker→graph and graph→runtime merge only deltas. Seed graphs from the live runtime cache, not independently reloaded disk snapshots. Test forced worker ordering, sibling preservation and allocation failures. | Repaired during Verify; deterministic worker/delta regressions pass; final verification pending. |
+
 The failure traces above are actionable issues local to this document. Test results and final invariants replace the provisional status as each fix is verified. The actual data-race schedule in JAKE-3 is source-proven; a deterministic ownership regression does not itself constitute a race-detector run.
 
 ## Machine inventory and invariants
@@ -52,7 +55,7 @@ The states below are projections of actual fields and resources, not new enum re
 | M7 `ParallelExecutor` graph | `pending/ready/running/completed/failed`, ready queue, in-degree, joined thread handles, completed count, first error, and serial/dry-run versus threaded mode. Each worker-scheduled node has one terminal result per attempt; sequential reuse rebuilds eligibility from immutable graph edges; dependents become runnable only after successful dependencies; no owner can be destroyed before workers join. | `runtime/parallel.zig`; changed for JAKE-1/4. |
 | M8 recipe body / `HookRunner` | Pre-hooks → bound context/commands → post-hooks → on-error → cache commit on success. Pre-hook errors abort; ordinary post-hook errors warn and preserve the body outcome; on-error hook errors are swallowed. Cancellation is checked before hooks and fenced before success/cache publication, while in-flight shell effects cannot be undone. | `executor.zig`, `hooks.zig`; changed for hook cancellation (JAKE-6). |
 | M9 child process / timeout / signals | Spawned, signal-tracked slot, optional timeout/cancel monitor and output drains, terminated, reaped, monitor joined, slot released. Tracking handles are consumed; every started monitor joins before stack owner returns. | `signals.zig`, executor command/external paths, hooks; shared cancellation wait owner. |
-| M10 `Cache` / file-target gate | Dependency absent/unrecorded/changed/unchanged and on-disk snapshot. Missing output or stale dependency requires execution; only successful execution records the new snapshot. Equal timestamps do not prove equal content. | `runtime/cache.zig`; changed JAKE-2; worker snapshot/merge remains synchronized. |
+| M10 `Cache` / file-target gate | Dependency absent/unrecorded/changed/unchanged and on-disk snapshot. Missing output or stale dependency requires execution; only successful execution records the new snapshot. Equal timestamps do not prove equal content. | `runtime/cache.zig`; changed JAKE-2; cache handoff uses write-tracked forks and delta-only publication under `cache_mutex`. |
 | M11 `Watcher` | Per-path mtime or missing sentinel, pending debounce, pending reload, current owning configuration and per-run executor. A failed reload preserves the last valid configuration; a removed/reappeared path emits one change per observation. | `runtime/watch.zig`; retained; existing reload/deletion/cycle tests. Watch notification remains timestamp polling, distinct from build-cache content checks. |
 | M12 `WebUIServer` run | Server running; execution active until cleanup; `execution_running` as run permission; run recipe, task set and final summary. Stop revokes permission but does not permit a new run until old execution and cleanup finish. | Server execution mutex, task callbacks, snapshots and join; retained. |
 | M13 browser authority / task view | Disconnected, connected awaiting authoritative `run_state`, launch pending, running/stopping, terminal; active task set and pending confirmation. Launch controls require connection plus authoritative state; reconnect cannot assume idle or relaunch a run. | `webui/app.js`; retained; existing Node state and socket e2e coverage. |
@@ -105,7 +108,7 @@ Upgrade is a separate staged-file lifecycle: select release → download candida
 
 ## Sweep A implementation checkpoint
 
-All eight issue groups above have implementation changes and focused regressions at this checkpoint. The provisional row status describes discovery evidence, not an unresolved implementation task. Final verification status is recorded after the independent Challenge and Verify rounds.
+At `b8cf8ff` (before Challenge), JAKE-1 through JAKE-8 had implementation changes and focused regressions. Later rows record subsequent rounds; this checkpoint is historical. The provisional row status describes discovery evidence, not an unresolved implementation task. Final verification status is recorded after the independent Challenge and Verify rounds.
 
 | Check | Checkpoint result |
 | --- | --- |
@@ -146,3 +149,11 @@ The parallel executor's serial/dry-run mode uses topological execution without r
 ### Sweep A repaired checkpoint
 
 After Challenge repairs: `zig build test` passes 1,214 library tests with 1 skipped, plus the executable test; `zig build -Doptimize=ReleaseFast`, all 17 e2e tasks, Node browser-state tests, `zig fmt --check src/` and `git diff --check` pass. The real CLI reproductions now rebuild both shared-input outputs, rebuild after glob deletion, and rebuild after a controlled input edit during work. These results precede independent Verify.
+
+JAKE-12 is an intermediate regression introduced by the new glob fingerprinting and caught before publication. JAKE-1 through JAKE-11 and JAKE-13 describe baseline defects. Delta-fork integration also has allocation-failure coverage so helper key ownership and cleanup are tested, not inferred from normal operation.
+
+| A Verify (required repair) | `52fbd84`: three rotated readers checked parallel/frontend/upgrader, cache/executor/hooks/signals, and document/consumer contracts | Found JAKE-12 empty-glob regression and JAKE-13 stale worker snapshot publication. This was not a clean Verify. Repairs add scoped-empty regressions, write-tracked fork publication at both cache handoffs, forced worker ordering, and fork allocation-failure tests. |
+
+### Sweep A delta-publication checkpoint
+
+`zig build test` now passes 1,218 library tests with 1 skipped, plus the executable test. `cache fork merges only its writes and preserves a newer sibling fingerprint`, `cache fork and scoped publication release all allocation-failure state`, `parallel workers publish only their cache changes`, and `empty glob file dependencies remain stale in sequential and parallel runs` cover the Verify repairs. A graph receives a fork of the runtime's live cache; a worker receives a fork of that graph view. Only dirty entries travel back through either handoff. Old snapshots cannot re-publish untouched base entries.

@@ -861,6 +861,12 @@ pub const Executor = struct {
         );
         defer parallel_exec.deinit();
 
+        // Use this runtime's live view, including successful prior recipes.
+        // Build the fork before releasing the old cache so OOM cleanup remains valid.
+        const graph_cache = self.cache.fork(self.allocator) catch return ExecuteError.OutOfMemory;
+        parallel_exec.cache.deinit();
+        parallel_exec.cache = graph_cache;
+
         parallel_exec.dry_run = self.ctx.dry_run;
         parallel_exec.verbose = self.ctx.verbose;
         parallel_exec.suppress_summary = self.suppress_summary;
@@ -877,11 +883,11 @@ pub const Executor = struct {
 
         // Execute
         parallel_exec.execute() catch |err| {
-            self.cache.mergeFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
+            self.cache.mergeChangesFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
             return err;
         };
 
-        self.cache.mergeFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
+        self.cache.mergeChangesFrom(&parallel_exec.cache) catch return ExecuteError.OutOfMemory;
     }
 
     /// Execute sequentially (original behavior)
@@ -8115,4 +8121,39 @@ test "hasGlobMeta distinguishes shell-expanded patterns from literal globs" {
     try std.testing.expect(!Executor.hasGlobMeta("opencode-sema"));
     try std.testing.expect(!Executor.hasGlobMeta("build"));
     try std.testing.expect(!Executor.hasGlobMeta(""));
+}
+
+test "empty glob file dependencies remain stale in sequential and parallel runs" {
+    if (builtin.os.tag == .windows) return;
+    const allocator = std.testing.allocator;
+    const source =
+        \\file output.bin: inputs/*.txt
+        \\    echo rebuilt >> runs.txt
+        \\    touch output.bin
+        \\task all: [output.bin]
+    ;
+    for ([_]usize{ 0, 2 }) |jobs| {
+        var tmp = std.testing.tmpDir(.{});
+        defer tmp.cleanup();
+        try tmp.dir.makeDir("inputs");
+        const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+        defer allocator.free(old_cwd);
+        const path = try tmp.dir.realpathAlloc(allocator, ".");
+        defer allocator.free(path);
+        try std.posix.chdir(path);
+        defer std.posix.chdir(old_cwd) catch {};
+        var lexer = @import("../frontend/lexer.zig").Lexer.init(source);
+        var parser_instance = parser.Parser.init(allocator, &lexer);
+        var ast = try parser_instance.parseJakefile();
+        defer ast.deinit(allocator);
+        for (0..2) |_| {
+            var executor = try Executor.init(allocator, &ast);
+            defer executor.deinit();
+            executor.ctx.jobs = jobs;
+            try executor.execute("all");
+        }
+        const runs = try std.fs.cwd().readFileAlloc(allocator, "runs.txt", 128);
+        defer allocator.free(runs);
+        try std.testing.expectEqualStrings("rebuilt\nrebuilt\n", runs);
+    }
 }

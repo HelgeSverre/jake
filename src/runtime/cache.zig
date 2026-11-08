@@ -7,15 +7,14 @@ pub const Cache = struct {
     allocator: std.mem.Allocator,
     cache_dir: []const u8,
     hashes: std.StringHashMap(Hash),
+    dirty: ?std.StringHashMap(void) = null,
 
     pub const Hash = struct {
         content_hash: [32]u8,
         mtime: i128,
     };
 
-    // Stored alongside ordinary file entries. The control-byte prefix cannot be
-    // a filesystem path on supported platforms and keeps old cache files
-    // readable: an absent aggregate is conservatively stale.
+    // Stored alongside ordinary file entries; an absent aggregate is stale.
     const glob_key_prefix = "\x01jake-glob:";
     const scoped_key_prefix = "\x01jake-scope:";
 
@@ -29,6 +28,12 @@ pub const Cache = struct {
             for (files) |file| allocator.free(file);
             allocator.free(files);
         }
+        if (files.len == 0) return error.FileNotFound;
+        std.mem.sort([]const u8, files, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
         var hasher = std.crypto.hash.sha2.Sha256.init(.{});
         hasher.update(pattern);
         hasher.update("\x00");
@@ -74,12 +79,9 @@ pub const Cache = struct {
 
     pub fn updateScopedPattern(self: *Cache, scope: []const u8, pattern: []const u8) !void {
         const key = try scopedKey(self.allocator, scope, pattern);
-        errdefer self.allocator.free(key);
+        defer self.allocator.free(key);
         const fingerprint = try self.patternFingerprint(pattern);
-        if (self.hashes.getPtr(key)) |existing| {
-            existing.* = fingerprint;
-            self.allocator.free(key);
-        } else try self.hashes.put(key, fingerprint);
+        try self.putHash(key, fingerprint);
     }
 
     pub fn init(allocator: std.mem.Allocator) Cache {
@@ -104,17 +106,24 @@ pub const Cache = struct {
         return copy;
     }
 
+    pub fn fork(self: *const Cache, allocator: std.mem.Allocator) !Cache {
+        var copy = try self.clone(allocator);
+        copy.dirty = std.StringHashMap(void).init(allocator);
+        return copy;
+    }
+
+    pub fn mergeChangesFrom(self: *Cache, forked: *const Cache) !void {
+        const dirty = forked.dirty orelse return;
+        var iter = dirty.keyIterator();
+        while (iter.next()) |key_ptr| {
+            const value = forked.hashes.get(key_ptr.*) orelse continue;
+            try self.putHash(key_ptr.*, value);
+        }
+    }
+
     pub fn mergeFrom(self: *Cache, other: *const Cache) !void {
         var iter = other.hashes.iterator();
-        while (iter.next()) |entry| {
-            if (self.hashes.getPtr(entry.key_ptr.*)) |value_ptr| {
-                value_ptr.* = entry.value_ptr.*;
-            } else {
-                const key = try self.allocator.dupe(u8, entry.key_ptr.*);
-                errdefer self.allocator.free(key);
-                try self.hashes.put(key, entry.value_ptr.*);
-            }
-        }
+        while (iter.next()) |entry| try self.putHash(entry.key_ptr.*, entry.value_ptr.*);
     }
 
     pub fn deinit(self: *Cache) void {
@@ -123,6 +132,24 @@ pub const Cache = struct {
             self.allocator.free(key_ptr.*);
         }
         self.hashes.deinit();
+        if (self.dirty) |*dirty| {
+            var dirty_iter = dirty.keyIterator();
+            while (dirty_iter.next()) |key_ptr| self.allocator.free(key_ptr.*);
+            dirty.deinit();
+        }
+    }
+
+    fn putHash(self: *Cache, key: []const u8, value: Hash) !void {
+        if (self.hashes.getPtr(key)) |existing| existing.* = value else {
+            const owned = try self.allocator.dupe(u8, key);
+            errdefer self.allocator.free(owned);
+            try self.hashes.put(owned, value);
+        }
+        if (self.dirty) |*dirty| if (!dirty.contains(key)) {
+            const owned = try self.allocator.dupe(u8, key);
+            errdefer self.allocator.free(owned);
+            try dirty.put(owned, {});
+        };
     }
 
     /// Check if a file has changed since its hash was last recorded.
@@ -172,14 +199,7 @@ pub const Cache = struct {
             .mtime = stat.mtime,
         };
 
-        if (self.hashes.getPtr(path)) |value_ptr| {
-            value_ptr.* = hash_entry;
-        } else {
-            // New key, allocate and insert
-            const key = try self.allocator.dupe(u8, path);
-            errdefer self.allocator.free(key);
-            try self.hashes.put(key, hash_entry);
-        }
+        try self.putHash(path, hash_entry);
     }
 
     /// Update one or more cache entries from a literal path or glob pattern.
@@ -200,14 +220,9 @@ pub const Cache = struct {
             try self.update(file);
         }
         const key = try globKey(self.allocator, pattern);
-        errdefer self.allocator.free(key);
+        defer self.allocator.free(key);
         const fingerprint = try globFingerprint(self.allocator, pattern);
-        if (self.hashes.getPtr(key)) |existing| {
-            existing.* = fingerprint;
-            self.allocator.free(key);
-        } else {
-            try self.hashes.put(key, fingerprint);
-        }
+        try self.putHash(key, fingerprint);
     }
 
     fn computeHash(self: *Cache, file: std.fs.File) ![32]u8 {
@@ -827,4 +842,56 @@ test "cache handles multiple files" {
         const stale = try cache.isStale(filename);
         try std.testing.expect(!stale);
     }
+}
+
+test "cache fork merges only its writes and preserves a newer sibling fingerprint" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "input", .data = "old" });
+    try tmp.dir.writeFile(.{ .sub_path = "other", .data = "other" });
+    const input = try tmp.dir.realpathAlloc(allocator, "input");
+    defer allocator.free(input);
+    const other = try tmp.dir.realpathAlloc(allocator, "other");
+    defer allocator.free(other);
+    var committed = Cache.init(allocator);
+    defer committed.deinit();
+    try committed.update(input);
+    var earlier = try committed.fork(allocator);
+    defer earlier.deinit();
+    var newer = try committed.fork(allocator);
+    defer newer.deinit();
+    try tmp.dir.writeFile(.{ .sub_path = "input", .data = "new" });
+    var staged = Cache.init(allocator);
+    defer staged.deinit();
+    try staged.update(input);
+    // Recipe publication uses mergeFrom on a worker view: it must track writes.
+    try newer.mergeFrom(&staged);
+    try committed.mergeChangesFrom(&newer);
+    try earlier.update(other);
+    try committed.mergeChangesFrom(&earlier);
+    try std.testing.expect(!try committed.isStale(input));
+    // Restoring old content must invalidate the newer record, not resurrect it.
+    try tmp.dir.writeFile(.{ .sub_path = "input", .data = "old" });
+    try std.testing.expect(try committed.isStale(input));
+}
+
+fn checkForkAllocations(allocator: std.mem.Allocator, path: []const u8) !void {
+    var cache = Cache.init(allocator);
+    defer cache.deinit();
+    try cache.update(path);
+    var forked = try cache.fork(allocator);
+    defer forked.deinit();
+    try forked.updateScopedPattern("consumer", path);
+    try cache.mergeChangesFrom(&forked);
+    try cache.updatePattern(path);
+}
+
+test "cache fork and scoped publication release all allocation-failure state" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "input", .data = "input" });
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, "input");
+    defer std.testing.allocator.free(path);
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkForkAllocations, .{path});
 }

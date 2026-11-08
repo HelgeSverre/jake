@@ -632,13 +632,14 @@ pub const ParallelExecutor = struct {
         worker.hook_runner.color = self.color;
         worker.hook_runner.theme = self.theme;
 
-        // Clone the shared cache into an isolated snapshot so the worker can read/write
-        // without holding cache_mutex during the entire recipe execution. Changes are
-        // merged back under the lock after execution completes.
+        // Fork the shared cache into an isolated snapshot so the worker can read/write
+        // without holding cache_mutex during the entire recipe execution. The fork
+        // remembers only keys it changes, so publishing cannot overwrite a sibling's
+        // newer record with an unchanged value from this worker's snapshot.
         const cache_snapshot = blk: {
             self.cache_mutex.lock();
             defer self.cache_mutex.unlock();
-            break :blk self.cache.clone(self.allocator);
+            break :blk self.cache.fork(self.allocator);
         };
         const snapshot = cache_snapshot catch {
             self.rememberError(ExecuteError.OutOfMemory);
@@ -706,7 +707,7 @@ pub const ParallelExecutor = struct {
 
         self.cache_mutex.lock();
         defer self.cache_mutex.unlock();
-        self.cache.mergeFrom(worker.cache) catch {
+        self.cache.mergeChangesFrom(worker.cache) catch {
             self.rememberError(ExecuteError.OutOfMemory);
             return .failed_during_run;
         };
@@ -1440,6 +1441,75 @@ test "parallel rooted file target skips through worker cache policy" {
     const builds = try tmp_dir.dir.readFileAlloc(std.testing.allocator, "build.txt", 1024);
     defer std.testing.allocator.free(builds);
     try std.testing.expectEqualStrings("build\nbuild\n", builds);
+}
+
+test "parallel workers publish only their cache changes" {
+    if (builtin.os.tag == .windows) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const old_cwd = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(old_cwd);
+    const tmp_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    try std.fs.cwd().writeFile(.{ .sub_path = "input.txt", .data = "old" });
+    try std.fs.cwd().writeFile(.{ .sub_path = "a.out", .data = "old" });
+    try std.fs.cwd().writeFile(.{ .sub_path = "b.out", .data = "old" });
+    const source =
+        \\file a.out: input.txt
+        \\    attempts=0; while [ ! -e b-cloned ]; do attempts=$((attempts + 1)); [ "$attempts" -lt 300 ] || exit 70; sleep 0.01; done; cp input.txt a.out
+        \\file b.out: input.txt
+        \\    touch b-cloned; attempts=0; while [ ! -e a-published ]; do attempts=$((attempts + 1)); [ "$attempts" -lt 300 ] || exit 71; sleep 0.01; done; printf old > input.txt; touch b.out
+        \\task all: [a.out, b.out]
+    ;
+    var lex = @import("../frontend/lexer.zig").Lexer.init(source);
+    var p = parser.Parser.init(std.testing.allocator, &lex);
+    var jakefile = try p.parseJakefile();
+    defer jakefile.deinit(std.testing.allocator);
+
+    const PublicationReceiver = struct {
+        pub fn onEvent(_: *@This(), event: event_emitter_mod.Event) void {
+            switch (event) {
+                .task_complete => |complete| {
+                    if (complete.success and std.mem.eql(u8, complete.name, "a.out")) {
+                        std.fs.cwd().writeFile(.{ .sub_path = "a-published", .data = "" }) catch {};
+                    }
+                },
+                else => {},
+            }
+        }
+    };
+    var receiver = PublicationReceiver{};
+    var ctx = Context.initWithColor(false);
+    ctx.event_emitter = event_emitter_mod.EventEmitter.init(&receiver);
+
+    {
+        var exec = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+        defer exec.deinit();
+        exec.ctx = ctx;
+        // Both records are from the old input. Each worker snapshots before its
+        // body starts; B must not later restore A's old record after A builds.
+        try exec.cache.updateScopedPattern("a.out", "input.txt");
+        try exec.cache.updateScopedPattern("b.out", "input.txt");
+        try std.fs.cwd().writeFile(.{ .sub_path = "input.txt", .data = "new" });
+        try exec.buildGraph("all");
+        try exec.execute();
+    }
+
+    // B restored the input after seeing A's completion event, which is emitted
+    // only after A merges its worker cache. A's current output is still new;
+    // a fresh public execution must see the restored old input as stale and
+    // rebuild it. A full worker-snapshot merge falsely skipped this run.
+    var retry = try ParallelExecutor.init(std.testing.allocator, &jakefile, 2);
+    defer retry.deinit();
+    try retry.buildGraph("a.out");
+    try retry.execute();
+    const rebuilt = try std.fs.cwd().readFileAlloc(std.testing.allocator, "a.out", 16);
+    defer std.testing.allocator.free(rebuilt);
+    try std.testing.expectEqualStrings("old", rebuilt);
 }
 
 test "cycle detection" {
