@@ -913,12 +913,12 @@ pub const Executor = struct {
 
         const task_start_time_ms = std.time.milliTimestamp();
         self.emitTaskStart(recipe);
-        if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
         errdefer {
             if (!self.ctx.dry_run) self.cache.invalidateRecipe(name);
             const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
             self.emitTaskComplete(name, false, duration_ms);
         }
+        if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
 
         // Check OS constraints - skip recipe if not for current OS
         if (shouldSkipForOs(recipe)) {
@@ -1000,13 +1000,12 @@ pub const Executor = struct {
 
         if (self.ctx.isCancelled()) return ExecuteError.Cancelled;
 
-        // Success - print completion (failure chrome is kept regardless)
+        // Finish fallible bookkeeping before publishing terminal success.
+        self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
         self.printCompletionStatus(name, true, start_time, chrome_suppressed);
         self.tasks_run += 1;
         const duration_ms: u64 = @intCast(@max(0, std.time.milliTimestamp() - task_start_time_ms));
         self.emitTaskComplete(name, true, duration_ms);
-
-        self.executed.put(name, {}) catch return ExecuteError.OutOfMemory;
     }
 
     /// Execute the body of a single recipe: hooks, parameter binding, command
@@ -3317,11 +3316,18 @@ test "task-start cancellation cannot publish a skipped success" {
     var running: std.atomic.Value(bool) = .init(true);
     const Receiver = struct {
         running: *std.atomic.Value(bool),
-        completions: usize = 0,
+        starts: usize = 0,
+        successes: usize = 0,
+        failures: usize = 0,
         pub fn onEvent(self: *@This(), event: events.Event) void {
             switch (event) {
-                .task_start => self.running.store(false, .release),
-                .task_complete => self.completions += 1,
+                .task_start => {
+                    self.starts += 1;
+                    self.running.store(false, .release);
+                },
+                .task_complete => |complete| {
+                    if (complete.success) self.successes += 1 else self.failures += 1;
+                },
                 else => {},
             }
         }
@@ -3330,7 +3336,9 @@ test "task-start cancellation cannot publish a skipped success" {
     executor.ctx.cancellation_flag = &running;
     executor.ctx.event_emitter = events.EventEmitter.init(&receiver);
     try std.testing.expectError(ExecuteError.Cancelled, executor.execute("test"));
-    try std.testing.expectEqual(@as(usize, 0), receiver.completions);
+    try std.testing.expectEqual(@as(usize, 1), receiver.starts);
+    try std.testing.expectEqual(@as(usize, 0), receiver.successes);
+    try std.testing.expectEqual(@as(usize, 1), receiver.failures);
 }
 
 test "executor init gives each executor an isolated default context" {
@@ -8214,4 +8222,39 @@ test "unavailable inputs cannot revive an older consumer fingerprint" {
             try std.testing.expectEqualStrings("ran\nran\nran\n", runs);
         }
     }
+}
+
+test "terminal success cannot be followed by fallible execution bookkeeping" {
+    const events = @import("../output/event_emitter.zig");
+    const allocator = std.testing.allocator;
+    var lexer = @import("../frontend/lexer.zig").Lexer.init("task test:\n");
+    var parser_instance = parser.Parser.init(allocator, &lexer);
+    var ast = try parser_instance.parseJakefile();
+    defer ast.deinit(allocator);
+    var failing = std.testing.FailingAllocator.init(allocator, .{});
+    var executor = try Executor.init(failing.allocator(), &ast);
+    defer executor.deinitWithoutSavingCache();
+    executor.ctx.dry_run = true;
+    const Receiver = struct {
+        allocator: *std.testing.FailingAllocator,
+        successes: usize = 0,
+        failures: usize = 0,
+        pub fn onEvent(self: *@This(), event: events.Event) void {
+            switch (event) {
+                .task_complete => |complete| {
+                    if (complete.success) {
+                        self.successes += 1;
+                        // Once observers see success, any later allocation fails.
+                        self.allocator.fail_index = self.allocator.alloc_index;
+                    } else self.failures += 1;
+                },
+                else => {},
+            }
+        }
+    };
+    var receiver = Receiver{ .allocator = &failing };
+    executor.ctx.event_emitter = events.EventEmitter.init(&receiver);
+    try executor.execute("test");
+    try std.testing.expectEqual(@as(usize, 1), receiver.successes);
+    try std.testing.expectEqual(@as(usize, 0), receiver.failures);
 }

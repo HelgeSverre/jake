@@ -235,7 +235,7 @@ pub const Cache = struct {
             defer self.allocator.free(key);
             const cached = self.hashes.get(key) orelse return true;
             const current = globFingerprint(self.allocator, pattern) catch return true;
-            return !std.mem.eql(u8, &cached.content_hash, &current.content_hash);
+            return !fingerprintsMatch(cached, current);
         }
         return self.isStale(pattern);
     }
@@ -972,4 +972,18 @@ test "persisted unavailable inputs replace an older live certificate" {
     try tmp.dir.writeFile(.{ .sub_path = "input", .data = "old" });
     try old_view.load();
     try std.testing.expect(try old_view.isScopedPatternStale("consumer", "input"));
+}
+
+test "cached empty glob remains stale through the low-level API" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(path);
+    const pattern = try std.fs.path.join(allocator, &.{ path, "*.txt" });
+    defer allocator.free(pattern);
+    var cache = Cache.init(allocator);
+    defer cache.deinit();
+    try cache.updatePattern(pattern);
+    try std.testing.expect(try cache.isGlobStale(pattern));
 }
